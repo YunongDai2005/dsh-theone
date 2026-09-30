@@ -1,13 +1,32 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { randomUUID } from 'node:crypto'
+import { installModelSelection, type ModelSelectionRef } from '@deepseek-ai/dsh-agent'
 import { harness, ask, FixtureModel, textResponse } from './harness.ts'
+
+test('plugin installed through the UI starts without a database environment variable', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'theone-default-home-'))
+  const previous = process.env.DSH_HOME
+  process.env.DSH_HOME = root
+  try {
+    const app = await harness(root, new FixtureModel(), { databasePath: null })
+    try {
+      assert.ok((await stat(join(root, 'theone', 'contexts.db'))).isFile())
+      assert.equal(app.ctx.theone.store.contexts().length, 2)
+      assert.equal((await ask(app.gateway, 'Qwen 那个')).end?.data.reason.kind, 'completed')
+    } finally { await app.close() }
+  } finally {
+    if (previous === undefined) delete process.env.DSH_HOME
+    else process.env.DSH_HOME = previous
+    await rm(root, { recursive: true, force: true })
+  }
+})
 
 test('Gateway is advertised in the DSH model catalog used by Web selection',async()=>{
   const root=await mkdtemp(join(tmpdir(),'theone-catalog-'))
@@ -16,6 +35,28 @@ test('Gateway is advertised in the DSH model catalog used by Web selection',asyn
     assert.deepEqual(await app.ctx.llm.listModels('theone'),[{provider:'theone',id:'gateway',name:'TheOne 主聊天',inputModalities:['text']}])
     assert.ok(app.ctx.llm.listProviders().some(provider=>provider.id==='theone' && provider.name==='TheOne'))
   } finally {await app.close();await rm(root,{recursive:true,force:true})}
+})
+
+test('Web model selection routes an ordinary session into TheOne and can switch away', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'theone-web-selection-'))
+  const app = await harness(root)
+  const selection: ModelSelectionRef = { current: { provider: 'theone', model: 'gateway' }, assembled: undefined }
+  try {
+    const handle = await app.ctx.agents.create({
+      sessionId: SessionId(randomUUID()), agentOptions: { provider: 'fixture', model: 'fixture' },
+      setup: agentCtx => { installModelSelection(agentCtx, selection) },
+    })
+    const result = await ask(handle.agent, '继续昨天那个')
+    assert.equal(result.end?.data.reason.kind, 'completed')
+    assert.match(result.output, /哪个话题/)
+    assert.equal(app.ctx.theone.store.route(result.input.id)?.decision.action, 'CLARIFY')
+    assert.equal(app.model.requests.length, 0)
+    selection.current = { provider: 'fixture', model: 'fixture' }
+    app.model.behavior = async function* () { yield* textResponse('ordinary model response') }
+    const ordinary = await ask(handle.agent, '普通会话')
+    assert.equal(ordinary.output, 'ordinary model response')
+    assert.equal(app.ctx.theone.store.route(ordinary.input.id), undefined)
+  } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
 })
 
 test('unclear input asks for clarification without a worker; CREATE survives reopen', { timeout: 30000 }, async () => {

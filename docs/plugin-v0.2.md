@@ -2,6 +2,14 @@
 
 日期：2026-09-30。基于已完成 CLI 验收的 v0.1 增加浏览器客户端。
 
+## v0.2.1 安装修复（2026-10-01）
+
+GitHub 直接安装会按 package.json 的 files 列表打包，但旧仓库忽略了 dist，导致安装后的包没有后端和客户端入口。现在将编译产物随源码提交，CI 在重新构建后检查产物是否一致；安装不依赖生命周期脚本。
+
+未设置 THEONE_DATABASE_PATH 时，目录数据库使用 `$DSH_HOME/theone/contexts.db`，DSH_HOME 未设置时使用 `~/.dsh/theone/contexts.db`。
+
+Web 会话切换模型不会修改 Agent 初始 options。路由现在按当前轮次的 prompt assembly 模型判断，支持普通会话切入 TheOne 及切回其他模型。预览 assembly 不会覆盖执行中的路由。新增默认数据库和 Web 模型切换的真实 DSH 集成回归，共 51 项测试通过。
+
 ## 行为
 
 - 主聊天固定在普通会话浏览器上方，独立于按更新时间排列的会话列表。

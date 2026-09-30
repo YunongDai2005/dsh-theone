@@ -40,7 +40,7 @@ export class FixtureModel extends LlmAdapter {
   }
 }
 
-export async function harness(root: string, model = new FixtureModel(), options: { descriptorPath?: string; compression?: 'none' | 'zstd'; queryPath?: string; routerMode?: 'rules' | 'llm' } = {}) {
+export async function harness(root: string, model = new FixtureModel(), options: { databasePath?: string | null; descriptorPath?: string; compression?: 'none' | 'zstd'; queryPath?: string; routerMode?: 'rules' | 'llm' } = {}) {
   const ctx = new Context()
   try {
     await ctx.plugin(LlmRuntime)
@@ -54,7 +54,7 @@ export async function harness(root: string, model = new FixtureModel(), options:
     await ctx.plugin(AgentLoop, { agents: [] })
     ctx.llm.registerAdapter(['fixture'], model)
     await ctx.plugin(TheOne, {
-      databasePath: join(root, 'contexts.db'), contextsPath: options.descriptorPath ?? contextsPath, gatewayKey: 'test-gateway',
+      databasePath: options.databasePath === null ? undefined : options.databasePath ?? join(root, 'contexts.db'), contextsPath: options.descriptorPath ?? contextsPath, gatewayKey: 'test-gateway',
       routerMode: options.routerMode ?? 'rules', workerProvider: 'fixture', workerModel: 'fixture', maxDescriptorChars: 4000, maxResponseChars: 100000,
     })
     const gateway = (await ctx.agents.create({

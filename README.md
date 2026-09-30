@@ -4,6 +4,12 @@
 
 **v0.2 增加 Web 侧栏固定主聊天入口。** 浅色主题使用鲜亮、低透明度的橙色外光晕，深色主题使用淡蓝色光晕；TheOne 字标带小光点。兼容 DSH `0.2.0-rc.2`、Node.js 24；类型检查、构建和 49 项测试通过。原 CLI / DeepSeek Worker 验收见 [v0.1 记录](./docs/plugin-v0.1.md)。
 
+## 从 DSH 插件页安装
+
+在插件页使用 GitHub 地址 `YunongDai2005/dsh-theone` 安装。v0.2.1 起仓库包含编译后的后端和 Web 客户端，不需要安装脚本或本机编译。默认目录数据库保存在 `$DSH_HOME/theone/contexts.db`（未设置 DSH_HOME 时为 `~/.dsh/theone/contexts.db`）；可通过 `THEONE_DATABASE_PATH` 覆盖。一个数据库同时运行一个 profile 进程。
+
+默认路由模式为 `rules`。使用 LLM 路由仍需配置 `THEONE_ROUTER_MODE=llm` 和 `THEONE_ROUTER_API_KEY`，Worker 使用 DSH 已配置的模型凭据。
+
 ## 本地试用 Web 版
 
 需要 Node.js 24，以及已登录 GitHub 的 `gh`。本仓库是独立的 DSH 插件。
@@ -92,7 +98,7 @@ DSH 安装命令会启用 bundle，默认模型成为 `theone/gateway`。每次 
 
 | 变量 | 用途 / 默认值 |
 | --- | --- |
-| `THEONE_DATABASE_PATH` | 必填，项目目录数据库的绝对路径 |
+| `THEONE_DATABASE_PATH` | 可选，覆盖默认 `$DSH_HOME/theone/contexts.db` |
 | `THEONE_CONTEXTS_PATH` | 可选，人工目录 JSON；省略时从空目录开始 |
 | `THEONE_GATEWAY_KEY` | 入口标识，默认 `default` |
 | `THEONE_ROUTER_MODE` | `rules` / `llm`，默认 `rules` |

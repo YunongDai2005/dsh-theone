@@ -1,5 +1,6 @@
 # Install this bundle in a DSH 0.2.0-rc.2 profile.
-# THEONE_DATABASE_PATH is required. Credentials stay in the environment / DSH store.
+# THEONE_DATABASE_PATH overrides the default under DSH_HOME/theone.
+# Credentials stay in the environment / DSH store.
 - id: agent-default-model
   config:
     provider: theone

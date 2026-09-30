@@ -1,6 +1,8 @@
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { readFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { LlmAdapter, createUserMessage, resolveRetryPolicy } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, LlmResolvedModelInfo, StreamChunk, UserMessage } from '@deepseek-ai/dsh-llm'
 import type { Agent, AgentHandle } from '@deepseek-ai/dsh-agent'
@@ -23,7 +25,7 @@ function redactDescriptor(text: string): string {
 }
 
 export interface Config {
-  databasePath: string
+  databasePath?: string
   contextsPath?: string
   gatewayKey: string
   workerProvider: string
@@ -77,7 +79,7 @@ function readDescriptors(path: string): ContextDescriptor[] {
 export default class TheOne extends Service {
   static inject = ['agents', 'llm', 'sessionQuery', 'tools']
   static Config: z<Config> = z.object({
-    databasePath: z.string().required(), contextsPath: z.string(),
+    databasePath: z.string(), contextsPath: z.string(),
     gatewayKey: z.string().default('default'),
     workerProvider: z.string().required(), workerModel: z.string().required(),
     maxDescriptorChars: z.number().step(1).min(128).default(4000),
@@ -98,7 +100,7 @@ export default class TheOne extends Service {
     if (config.workerProvider === 'theone') throw new Error('Worker cannot use the gateway provider')
     const descriptors = config.contextsPath ? readDescriptors(config.contextsPath) : []
     if (config.routerMode === 'llm') this.router = new DeepSeekRouter({apiKey:process.env[config.routerApiKeyEnv ?? 'THEONE_ROUTER_API_KEY'] ?? '',baseUrl:config.routerBaseUrl,model:config.routerModel})
-    this.store = new ContextStore(config.databasePath)
+    this.store = new ContextStore(config.databasePath || join(process.env.DSH_HOME || join(homedir(), '.dsh'), 'theone', 'contexts.db'))
     ctx.effect(() => async () => {
       try { await Promise.all([...this.workers.values()].map(handle => handle.dispose())) }
       finally { this.store.close() }
@@ -108,9 +110,22 @@ export default class TheOne extends Service {
     ctx.on('session/event', (session, event) => {
       if (event.type === 'turn/end' && session.id === this.reservedGateway) this.reservedGateway = undefined
     })
+    // Web selection overrides AgentOptions during assembly; use that turn's selection.
+    // Ignore preview assemblies so they cannot replace a running turn's route.
+    const selectedProviders = new WeakMap<Agent, { signal: AbortSignal; provider: string }>()
+    ctx.on('system-prompt/assemble', async (_assembly, context, next) => {
+      const assembled = await next()
+      if (context.agent && context.signal) {
+        const provider = assembled.variables.provider
+        if (typeof provider === 'string') selectedProviders.set(context.agent, { signal: context.signal, provider })
+      }
+      return assembled
+    }, { prepend: true })
     ctx.on('agent/pre-step', async ({ agent, signal }, next) => {
       const decision = await next()
-      if (decision.kind === 'reject' || agent.options.provider !== 'theone') return decision
+      const selected = selectedProviders.get(agent)
+      const provider = selected?.signal === signal ? selected.provider : agent.options.provider
+      if (decision.kind === 'reject' || provider !== 'theone') return decision
       signal.throwIfAborted()
       const users = decision.messages.filter(message => message.source.kind === 'user')
       if (users.length !== 1) throw new Error('TheOne requires exactly one direct user message per gateway step')
