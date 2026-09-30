@@ -1,0 +1,19 @@
+# Install this bundle in a DSH 0.2.0-rc.2 profile.
+# THEONE_DATABASE_PATH is required. Credentials stay in the environment / DSH store.
+- id: agent-default-model
+  config:
+    provider: theone
+    model: gateway
+- insert:
+    - id: theone
+      name: dsh-theone
+      config:
+        databasePath: !!js process.env.THEONE_DATABASE_PATH
+        contextsPath: !!js process.env.THEONE_CONTEXTS_PATH
+        gatewayKey: !!js process.env.THEONE_GATEWAY_KEY || 'default'
+        workerProvider: !!js process.env.THEONE_WORKER_PROVIDER || 'deepseek-official'
+        workerModel: !!js process.env.THEONE_WORKER_MODEL || 'deepseek-flash'
+        routerMode: !!js process.env.THEONE_ROUTER_MODE || 'rules'
+        routerBaseUrl: !!js process.env.THEONE_ROUTER_BASE_URL || 'https://api.deepseek.com'
+        routerModel: !!js process.env.THEONE_ROUTER_MODEL || 'deepseek-flash'
+        routerApiKeyEnv: THEONE_ROUTER_API_KEY
