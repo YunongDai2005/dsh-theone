@@ -33,12 +33,12 @@ const shaftTex = () => canvasTex('shaft', 128, 512, g => {
   }
 });
 
-const N = 380;
+const N = 240;
 const CLOUD = (() => {
   const r0 = rng(77), kx = KEY[0], ky = KEY[1];
   return Array.from({ length: N }, () => {
-    const z = -2700 + r0() * 2150;   // always behind the structure
-    return { x: kx - 1900 + r0() * 7200, y: ky - 1500 + r0() * 2900, z, s: .75 + r0() * .55, rz: (r0() - .5) * .5, ry: (r0() - .5) * .6, ph: r0() * 6.28, sp: .15 + r0() * .25, depth: (z + 2700) / 2150 };
+    const z = -3600 + r0() * 2000;   // well behind the structure, so it reads as depth, not clutter
+    return { x: kx - 2200 + r0() * 7800, y: ky - 1700 + r0() * 3300, z, s: .6 + r0() * .4, rz: (r0() - .5) * .5, ry: (r0() - .5) * .6, ph: r0() * 6.28, sp: .15 + r0() * .25, depth: (z + 3600) / 2000 };
   });
 })();
 
@@ -49,7 +49,7 @@ export function Atmosphere({ t, theme, camQ }: { t: number; theme: Theme; camQ: 
   const mat = useMemo(() => new THREE.MeshBasicMaterial({ map: cardTex(dark), transparent: true, depthWrite: false }), [dark]);
   const bg = new THREE.Color(dark ? '#111215' : '#e3e8f0'), white = new THREE.Color('#ffffff');
   const show = seg(t, D + .1, r(2.2)) * (1 - seg(t, r(28.3), r(28.9)));
-  mat.opacity = show * (dark ? .8 : .9);
+  mat.opacity = show * (dark ? .7 : .75);
   useLayoutEffect(() => {
     const m = ref.current; if (!m) return;
     const o = new THREE.Object3D(), c = new THREE.Color();
@@ -57,7 +57,7 @@ export function Atmosphere({ t, theme, camQ }: { t: number; theme: Theme; camQ: 
       o.position.set(p.x + 30 * Math.sin((t - D) * p.sp + p.ph), p.y + 40 * Math.sin((t - D) * p.sp * .8 + p.ph * 2), p.z);
       o.rotation.set(0, p.ry, p.rz + .05 * Math.sin((t - D) * p.sp + p.ph)); o.scale.setScalar(p.s); o.updateMatrix(); m.setMatrixAt(i, o.matrix);
       // far cards sink into the backdrop (instanced colour stands in for per-card opacity)
-      c.copy(white).lerp(bg, dark ? .25 + .6 * (1 - p.depth) : .3 + .62 * (1 - p.depth)); m.setColorAt(i, c);
+      c.copy(white).lerp(bg, dark ? .45 + .45 * (1 - p.depth) : .55 + .4 * (1 - p.depth)); m.setColorAt(i, c);
     });
     m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true;
   });
@@ -75,7 +75,7 @@ export function Atmosphere({ t, theme, camQ }: { t: number; theme: Theme; camQ: 
         <mesh key={i} position={[KEY[0] + 700 + k * 900, KEY[1] + 900, -900 - i * 120]} quaternion={camQ} renderOrder={-3}>
           <planeGeometry args={[340 + 120 * (i % 2), 3200]} />
           <meshBasicMaterial map={shaftTex()} color={new THREE.Color(`rgb(${A.join(',')})`)} transparent depthWrite={false}
-            opacity={show * (dark ? .12 : .2) * (1 + .7 * pz) * (.8 + .2 * Math.sin((t - D) * .7 + i))} blending={dark ? THREE.AdditiveBlending : THREE.NormalBlending} />
+            opacity={show * (dark ? .08 : .07) * (1 + .35 * pz) * (.8 + .2 * Math.sin((t - D) * .7 + i))} blending={dark ? THREE.AdditiveBlending : THREE.NormalBlending} />
         </mesh>
       ))}
     </group>
