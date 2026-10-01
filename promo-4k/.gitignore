@@ -1,0 +1,11 @@
+node_modules/
+out/
+public/*
+!public/.gitkeep
+src/generated/
+*.mp4
+*.mov
+*.wav
+*.m4a
+.extract.mjs
+.dsh/
