@@ -12,7 +12,7 @@ const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1080, height: 1920 }, deviceScaleFactor: 1 });
 page.on('console', m => console.log('[page]', m.text()));
 page.on('pageerror', e => console.log('[pageerror]', e.message));
-await page.goto('file://' + path.join(here, 'promo.html'));
+await page.goto('file://' + path.join(here, process.env.PAGE || 'film.html'));
 const ncues = await page.evaluate(() => window.warm());
 const TOTAL = await page.evaluate(() => window.TOTAL);
 console.log('cues', ncues, 'total', TOTAL);
