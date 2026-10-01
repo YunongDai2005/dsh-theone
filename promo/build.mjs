@@ -14,6 +14,8 @@ import { fileURLToPath } from 'url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 process.chdir(here);
 const args = process.argv.slice(2);
+// a section left over from a test (render.mjs START/END) would silently cut the film to that section
+for (const k of ['START', 'END']) if (process.env[k]) { console.log(`ignoring ${k}=${process.env[k]}: build.mjs renders the whole film`); delete process.env[k]; }
 const FAST = args.includes('--fast');
 const [THEME = 'light', FPS = '60', SS = process.env.SS || (FAST ? '2' : '3')] = args.filter(a => a !== '--fast');
 if (FAST) {
