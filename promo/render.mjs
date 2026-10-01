@@ -31,11 +31,12 @@ if (mode === 'cues') {
   }
 } else if (mode === 'video') {
   const fps = +(arg2 || 30);
-  const n = Math.round(TOTAL * fps);
+  const t0s = +(process.env.START || 0), t1s = +(process.env.END || TOTAL); // render only a section when START/END are set
+  const n0 = Math.round(t0s * fps), n = Math.round(t1s * fps);
   const ff = spawn('ffmpeg', ['-y', '-v', 'error', '-f', 'image2pipe', '-framerate', String(fps), '-c:v', 'mjpeg', '-i', '-',
     '-vf', 'scale=1080:1920:flags=lanczos', '-c:v', 'libx264', '-preset', 'slow', '-crf', '16', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', arg], { stdio: ['pipe', 'inherit', 'inherit'] });
   const t0 = Date.now();
-  for (let i = 0; i < n; i++) {
+  for (let i = n0; i < n; i++) {
     await page.evaluate(t => window.render(t), i / fps);
     const buf = await page.screenshot({ type: 'jpeg', quality: 96 });
     if (!ff.stdin.write(buf)) await new Promise(r => ff.stdin.once('drain', r));

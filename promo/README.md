@@ -1,6 +1,6 @@
 # TheOne — vertical film
 
-1080×1920, 30 fps, 34.6 s. Light theme, English only, almost no on-screen text. Every frame is a pure function of `t` in `film.js`; Playwright screenshots each frame and ffmpeg encodes. All sound effects are synthesized by `sfx.py`.
+1080×1920, 30 fps, 35.2 s. Light theme, English only, almost no on-screen text. Every frame is a pure function of `t` in `film.js`; Playwright screenshots each frame and ffmpeg encodes. All sound effects are synthesized by `sfx.py`.
 
 The UI is a replica of the DSH web client built with DSH's own icons, whale mark and wordmark (`extract-icons.tsx` renders them from the `deepseek-harness` sources). The window is laid out at 2.8× resolution with CSS `zoom` and scaled back down, so text stays sharp under the 3D camera. The top 170 px stay background-only for the phone notch.
 
@@ -29,11 +29,12 @@ Video frames are rendered at 2× (`SS=2`) and downsampled with Lanczos, which ke
 | r1 / r2¼ / r3 | Layers drop in behind it: router → 9 sessions → history | Layer thocks on the hits |
 | r4–r8 | "Kyoto, day 3?" → router `SWAP` → *Trip to Kyoto* lights up → reply comes back | Blips |
 | r8–r12 | "New topic: a cat feeder" → `CREATE` → a new session appears | Sparkle |
-| r12–r17 | Old titles tumble chaotically, snap into PROJECT A / PROJECT B / TRAVEL / HOME, then hold | Snaps |
-| r17 | Each group folds its titles into one card | Fold |
-| r17–r18¼ | The camera pulls back up to the 3D key; the four cards rise after it and land in it on r18¼ | Rise, stacking thocks |
-| r19–r20 | The key turns face-on, its thickness folds away, and the camera pushes into "One" until it blooms | Swoosh |
-| r20–r24 | **The One** forms out of the light · One chat. Every context. (r21) · github.com/YunongDai2005/dsh-theone (r22¼) | Shimmer |
+| r12–r15½ | The history sheet shows four topic slots (PROJECT A / PROJECT B / TRAVEL / HOME); old titles tumble in 3D, then drop into the slots on r13, r14¼, r15, r15½ | Snaps |
+| r16½ | The sheet becomes an envelope: four flaps unfold from under it | Paper rustle |
+| r17 / r17½ / r18 | Side flaps, bottom flap, then the top flap fold in; an orange One seal stamps on | Paper folds, seal |
+| r18¼–r19 | The sealed envelope lifts into the 3D key and lands on r19 | Rise, landing thock |
+| r20–r21 | The key turns face-on, flattens, and the camera pushes into "One" until it blooms | Swoosh |
+| r21–r24¾ | **The One** forms out of the light · One chat. Every context. (r22¼) · github.com/YunongDai2005/dsh-theone (r23) | Shimmer |
 
 ## Build
 
@@ -44,14 +45,14 @@ git clone --depth 1 https://github.com/deepseek-ai/deepseek-harness.git ../.dsh
 npx esbuild extract-icons.tsx --bundle --platform=node --format=esm --jsx=automatic \
   --external:react --external:react-dom --external:react/jsx-runtime --outfile=.extract.mjs && node .extract.mjs
 node render.mjs cues cues.json
-echo '{"total":34.586}' > meta.json && python3 sfx.py          # → sfx.wav
+echo '{"total":35.171}' > meta.json && python3 sfx.py          # → sfx.wav
 ffmpeg -i bgm.m4a -i sfx.wav -filter_complex \
-  "[0:a]aresample=44100,atrim=start=77.6942:duration=34.586,asetpts=PTS-STARTPTS,afade=t=in:d=0.4,afade=t=out:st=33.59:d=1.0[m];[m][1:a]amix=inputs=2:normalize=0,alimiter=limit=0.95:level=false[a]" \
+  "[0:a]aresample=44100,atrim=start=77.6942:duration=35.171,asetpts=PTS-STARTPTS,afade=t=in:d=0.4,afade=t=out:st=34.17:d=1.0[m];[m][1:a]amix=inputs=2:normalize=0,alimiter=limit=0.95:level=false[a]" \
   -map "[a]" -c:a pcm_s16le mix.wav
 SS=2 node render.mjs video film_noaudio.mp4 30   # 2× supersampled, Lanczos down to 1080×1920
 ffmpeg -i film_noaudio.mp4 -i mix.wav -c:v copy -c:a aac -b:a 256k -shortest theone-film.mp4
 ```
 
-Preview frames with `node render.mjs stills 1.2,15.584,25 out/`. Opening `film.html` in a browser loops the film silently.
+Render just one section with `START=27.2 END=32.6 SS=2 node render.mjs video part.mp4 30`. Preview frames with `node render.mjs stills 1.2,15.584,25 out/`. Opening `film.html` in a browser loops the film silently.
 
 The BGM, the extracted DSH artwork and the rendered video are not committed. The BGM is a third-party track, so check its licence before publishing. The end card states the film is an unofficial community plugin, in line with DSH's brand guidelines.
