@@ -190,8 +190,11 @@ function cursorAt(t, sc) {
 /* ---------------------------------------------------------- 3D: what is behind the button */
 const ONE = { x: 186, y: 208 };
 const ONE_HTML = `<span class="osym"></span><span class="ocopy"><span class="otitle"><span class="owm"><span class="othe">The</span><span class="oone">One<span class="odot"></span></span></span><span class="olab">Main chat</span></span><span class="osub">Pick up the conversation</span></span>`;
-const lift = h('div', 'lay', `<div class="lf sd" id="lfF"></div><div class="lf sr" id="lfR"></div><div class="lf top" id="lfT"><div class="zin">${ONE_HTML}</div></div>`);
+// a rounded slab: thin rounded-rect slices stacked in z form the body, the face sits on top
+const SLICES = 30;
+const lift = h('div', 'lay', Array.from({ length: SLICES }, (_, i) => `<div class="lf slice" data-i="${i}"></div>`).join('') + `<div class="lf top" id="lfT"><div class="zin">${ONE_HTML}</div></div>`);
 Object.assign(lift.style, { width: '336px', height: '91px', borderRadius: '0' }); w3.appendChild(lift);
+lift.querySelectorAll('.slice').forEach(el => { const k = +el.dataset.i / (SLICES - 1); el.style.background = `rgb(${Math.round(lerp(196, 244, k))},${Math.round(lerp(112, 178, k))},${Math.round(lerp(52, 120, k))})`; });
 const router = h('div', 'lay glass', `<div class="rlab">ROUTER</div><svg class="ring" width="180" height="180" viewBox="0 0 180 180"><circle cx="90" cy="90" r="82" fill="none" stroke="rgba(40,60,110,.16)" stroke-width="1.5"/><circle cx="90" cy="90" r="56" fill="none" stroke="rgba(40,60,110,.28)" stroke-width="1.5" stroke-dasharray="4 7"/><circle cx="90" cy="90" r="9" fill="#ff8a2a"/></svg><div class="rtag" id="rtag"></div>`);
 Object.assign(router.style, { width: '520px', height: '300px' }); w3.appendChild(router);
 const CARD_T = ['Trip to Kyoto', 'Q3 budget', 'Habit tracker', 'Cycling route', 'Weekly report', 'Balcony herbs', 'Auth refactor', 'Paper notes', 'Landing page'];
@@ -352,7 +355,7 @@ function sApp(t, ovs) {
   const TH = 28 * E.oe(seg(t, D, r(1)));
   $('#lfT').style.transform = `translateZ(${TH}px)`;
   $('#lfT').style.boxShadow = `0 0 ${50 + 30 * pulse(t)}px ${8 + 8 * pulse(t)}px rgba(255,140,40,${.35 + .2 * pulse(t)})`;
-  for (const [id, css] of [['lfF', `left:0;top:91px;width:336px;height:${TH}px;transform-origin:50% 0;transform:rotateX(90deg)`], ['lfR', `left:336px;top:0;width:${TH}px;height:91px;transform-origin:0 50%;transform:rotateY(-90deg)`]]) $('#' + id).style.cssText = css;
+  lift.querySelectorAll('.slice').forEach(el => { el.style.transform = `translateZ(${(+el.dataset.i / (SLICES - 1) * (TH - .6)).toFixed(2)}px)`; el.style.display = TH > .5 ? '' : 'none'; });
   const app = (t0, z0, z1) => [E.oe(seg(t, t0 - .08, t0 + .4)), lerp(z0, z1, E.oe(seg(t, t0 - .08, t0 + .4)))];
   const [ra, rz0] = app(r(1), 0, Z.router); place(router, ONE.x, ONE.y, rz0, 520, 300, post ? ra * dimC : 0);
   CARDS.forEach((c, i) => { const [ca, cz0] = app(r(2.25) + (i % 3) * .03 + Math.floor(i / 3) * .03, Z.router, Z.cards); place(c.el, c.x, c.y, cz0, 230, 136, post ? ca * dimC : 0); });
