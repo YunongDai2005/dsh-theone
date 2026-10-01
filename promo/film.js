@@ -489,9 +489,6 @@ const preRays = h('div', 'gl3 grays'); preGlow.appendChild(preRays);
 const glowL = h('div', null); glowL.id = 'glowLayer'; glowL.style.cssText = 'position:absolute;left:0;top:0;width:1080px;height:' + SH + 'px;pointer-events:none;z-index:0'; $('#cam').insertBefore(glowL, w3); $('#cam').insertBefore(preGlow, $('#ov'));
 glowL.innerHTML = `<svg id="cone" width="1080" height="${SH}" style="position:absolute;left:0;top:0;overflow:visible"><defs><filter id="coneB" filterUnits="userSpaceOnUse" x="-600" y="-600" width="2280" height="3360"><feGaussianBlur stdDeviation="7"/></filter></defs><g id="coneP" filter="url(#coneB)"></g><g id="coneP2" filter="url(#coneB)"></g></svg>
   <div class="gl3 grays"></div><div class="gl3 gstreak"></div><div class="gl3 gstreak2"></div>`;
-// the routing wavefront is light in transit, so it draws above the 3D layers (glows around objects stay behind them)
-const waveL = h('div', null); waveL.style.cssText = 'position:absolute;left:0;top:0;width:1080px;height:' + SH + 'px;pointer-events:none;z-index:2';
-$('#cam').insertBefore(waveL, $('#ov')); waveL.appendChild($('#cone'));
 const hull = P => { P = P.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]); const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]); const lo = [], up = []; for (const p of P) { while (lo.length > 1 && cr(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop(); lo.push(p); } for (const p of P.reverse()) { while (up.length > 1 && cr(up[up.length - 2], up[up.length - 1], p) <= 0) up.pop(); up.push(p); } return lo.slice(0, -1).concat(up.slice(0, -1)); };
 // glow that follows an object's real projected outline: the hull of its box corners, rounded by a
 // round-joined stroke, drawn as three blurred layers (edge, bloom, haze) — no more screen ellipses
@@ -521,13 +518,20 @@ const KEY_L = [{ col: `rgb(${W(255, 150, 60)})`, e: 5, b: 5, o: DARK ? .55 : .6 
 const HALO_L = [{ col: `rgb(${W(255, 150, 60)})`, e: 4, b: 4, o: DARK ? .5 : .6 }, { col: `rgb(${W(255, 165, 85)})`, e: 18, b: 9, o: DARK ? .32 : .38 }, { col: `rgb(${W(255, 182, 120)})`, e: 54, b: 22, o: DARK ? .11 : .14 }];
 const HALOS = {};
 const CONE_F = `rgb(${W(255, 190, 130)})`, CONE_S = `rgb(${W(255, 170, 95)})`;
+// routing wavefronts are real planes in the 3D world: depth decides what covers them, so a wave travelling from the
+// router down to a card passes under the router and over the cards
+const WAVES = [0, 1].map(() => [0, 1, 2].map(() => {
+  const e = h('div', 'lay'); e.style.cssText += `;border:3px solid ${CONE_S};border-radius:14px;background:rgba(${W(255, 190, 130)},.07);` +
+    `box-shadow:0 0 18px 6px rgba(${W(255, 160, 80)},.5),inset 0 0 14px rgba(${W(255, 190, 130)},.45);pointer-events:none;display:none`;
+  w3.appendChild(e); return e;
+}));
 function drawHalo(id, P, hw, hh, o, rad = 18) {
   if (!HALOS[id]) HALOS[id] = makeShapeGlow(glowL, HALO_L, false);
   setShapeGlow(HALOS[id], e => boxHull(P[0], P[1], hw - rad + e, hh - rad + e, P[2], P[2]), o, rad);
 }
 let KEYG = null;
 function drawGlow(t, post, z, S, TH, o, gI, flare, coneO) {
-  show(glowL, post); [...glowL.querySelectorAll('.grays,.gstreak,.gstreak2'), $('#cone')].forEach(e => e.style.visibility = o > .01 ? '' : 'hidden'); if (KEYG && !(o > .01)) KEYG.svg.style.display = 'none'; if (!(post && o > .01)) return;
+  show(glowL, post); glowL.querySelectorAll('.grays,.gstreak,.gstreak2,#cone').forEach(e => e.style.visibility = o > .01 ? '' : 'hidden'); if (KEYG && !(o > .01)) KEYG.svg.style.display = 'none'; if (!(post && o > .01)) { WAVES.forEach(rs => rs.forEach(e => { e.style.display = 'none'; })); return; }
   const zc = z + TH * .5, c = proj([ONE.x, ONE.y, zc]);
   const pa = proj([ONE.x - 168 * S, ONE.y, zc]), pb = proj([ONE.x + 168 * S, ONE.y, zc]), pc = proj([ONE.x, ONE.y - 45.5 * S, zc]), pd = proj([ONE.x, ONE.y + 45.5 * S, zc]);
   const L = Math.hypot(pb[0] - pa[0], pb[1] - pa[1]), W = Math.max(30, Math.hypot(pd[0] - pc[0], pd[1] - pc[1]) + TH * S * c[2]), ang = Math.atan2(pb[1] - pa[1], pb[0] - pa[0]) * 180 / Math.PI;
@@ -544,26 +548,22 @@ function drawGlow(t, post, z, S, TH, o, gI, flare, coneO) {
   const LEGS = [[r(4.4), r(5), KEY, RT], [r(8.4), r(9), KEY, RT]];
   // the wave is the key's rectangle carried down through 3D space into the target's rectangle, so every
   // wavefront has the same angle and perspective as the planes it travels between
-  ['#coneP', '#coneP2'].forEach((pid, slot) => {
-    const cp = $(pid); let on = false;
-    if (!cp.children.length) cp.innerHTML = [0, 1, 2].map(() => `<polygon fill="${CONE_F}" stroke="${CONE_S}" stroke-linejoin="round"/>`).join('');
+  WAVES.forEach((rings, slot) => {
+    let on = false;
     LEGS.forEach(([a0, a1, A, B], li) => {
       if (li % 2 !== slot || t < a0 - .05 || t > a1 + .35) return;
       on = true;
       const su = clamp((t - a0) / (a1 - a0)), sw = seg(t, a0 - .05, a0 + .1) * (1 - seg(t, a1 + .05, a1 + .35));
       const uu = lerp(.05, 1, E.iq(su));
-      [...cp.children].forEach((pg, i) => {
-        const u = uu - i * .075; if (u < 0) { pg.style.opacity = 0; return; }
-        const R = A.map((v, j) => lerp(v, B[j], u)), rad = 14;
-        const pts = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([sx, sy]) => proj([R[0] + sx * (R[2] - rad), R[1] + sy * (R[3] - rad), R[4]]));
-        const k = proj([R[0], R[1], R[4]])[2] || 1;
-        pg.setAttribute('points', pts.map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' '));
-        pg.setAttribute('stroke-width', Math.max(2, 2 * rad * k).toFixed(1));
-        pg.style.opacity = 1; pg.style.fillOpacity = (.07 * (1 - i * .4)).toFixed(3); pg.style.strokeOpacity = (.3 * (1 - i * .38)).toFixed(3);
+      rings.forEach((el, i) => {
+        const u = uu - i * .075; if (u < 0) { el.style.display = 'none'; return; }
+        const R = A.map((v, j) => lerp(v, B[j], u)), w = 2 * R[2], hh = 2 * R[3];
+        el.style.display = ''; el.style.width = w + 'px'; el.style.height = hh + 'px';
+        el.style.transform = `translate3d(${R[0] - w / 2}px,${R[1] - hh / 2}px,${R[4]}px)`;
+        el.style.opacity = (coneO * sw * .6 * (1 - i * .38)).toFixed(3);
       });
-      cp.style.opacity = coneO * sw;
     });
-    if (!on) cp.style.opacity = 0;
+    if (!on) rings.forEach(el => { el.style.display = 'none'; });
   });
 }
 function pulse(t) { if (t < D) return 0; const x = ((t - D) / BEAT) % 4, d = x - 1; return d >= 0 ? Math.exp(-d * 3.2) : 0; }
