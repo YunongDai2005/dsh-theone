@@ -192,7 +192,7 @@ const ONE = { x: 186, y: 208 };
 const ONE_HTML = `<span class="osym"></span><span class="ocopy"><span class="otitle"><span class="owm"><span class="othe">The</span><span class="oone">One<span class="odot"></span></span></span><span class="olab">Main chat</span></span><span class="osub">Pick up the conversation</span></span>`;
 // a rounded slab: thin rounded-rect slices stacked in z form the body, the face sits on top
 const SLICES = 30;
-const lift = h('div', 'lay', Array.from({ length: SLICES }, (_, i) => `<div class="lf slice" data-i="${i}"></div>`).join('') + `<div class="lf top" id="lfT"><div class="zin">${ONE_HTML}</div></div>`);
+const lift = h('div', 'lay', Array.from({ length: SLICES }, (_, i) => `<div class="lf slice" data-i="${i}"></div>`).join('') + `<div class="lf top" id="lfT"><div class="zin">${ONE_HTML}</div><div class="sheen" id="lfS"></div></div>`);
 Object.assign(lift.style, { width: '336px', height: '91px', borderRadius: '0' }); w3.appendChild(lift);
 lift.querySelectorAll('.slice').forEach(el => { const k = +el.dataset.i / (SLICES - 1); el.style.background = `rgb(${Math.round(lerp(196, 244, k))},${Math.round(lerp(112, 178, k))},${Math.round(lerp(52, 120, k))})`; });
 const router = h('div', 'lay glass', `<div class="rlab">ROUTER</div><svg class="ring" width="180" height="180" viewBox="0 0 180 180"><circle cx="90" cy="90" r="82" fill="none" stroke="rgba(40,60,110,.16)" stroke-width="1.5"/><circle cx="90" cy="90" r="56" fill="none" stroke="rgba(40,60,110,.28)" stroke-width="1.5" stroke-dasharray="4 7"/><circle cx="90" cy="90" r="9" fill="#ff8a2a"/></svg><div class="rtag" id="rtag"></div>`);
@@ -359,14 +359,19 @@ function sApp(t, ovs) {
   const post = t >= D;
   op(win, post ? lerp(1, .07, E.io(seg(t, D, r(1.4)))) * (1 - seg(t, r(11.6), r(12.4))) : 1);
   const dimC = 1 - E.io(seg(t, r(11.6), r(12.3)));
-  place(lift, ONE.x, ONE.y, post ? lerp(0, Z.lift, E.oe(seg(t, D, r(1.2)))) : 0, 336, 91, post ? Math.max(dimC, E.io(seg(t, r(17.2), r(17.8)))) : 0, post ? lerp(1, 1.5, E.oe(seg(t, D, r(1.4)))) : 1);
+    const app = (t0, z0, z1) => [E.oe(seg(t, t0 - .08, t0 + .4)), lerp(z0, z1, E.oe(seg(t, t0 - .08, t0 + .4)))];
+  const [ra, rz0] = app(r(1), 0, Z.router); place(router, ONE.x, ONE.y, rz0, 520, 300, post ? ra * dimC : 0);
+  const liftZ = post ? lerp(0, Z.lift, E.oe(seg(t, D, r(1.2)))) : 0, liftS = post ? lerp(1, 1.5, E.oe(seg(t, D, r(1.4)))) : 1;
+  place(lift, ONE.x, ONE.y, liftZ, 336, 91, post ? Math.max(dimC, E.io(seg(t, r(17.2), r(17.8)))) : 0, liftS);
   const TH = 28 * E.oe(seg(t, D, r(1))) * (1 - E.io(seg(t, r(19.1), r(19.8))));
   $('#lfT').style.transform = `translateZ(${TH}px)`;
   const flare = t > r(18.25) - .3 ? Math.max(Math.exp(-Math.max(0, t - r(18.25)) * 4) * (t > r(18.25) ? 1 : seg(t, r(18.25) - .3, r(18.25))), E.ie(seg(t, r(19.3), r(20)))) : 0;
-  $('#lfT').style.boxShadow = `0 0 ${50 + 30 * pulse(t) + 90 * flare}px ${8 + 8 * pulse(t) + 26 * flare}px rgba(255,140,40,${.35 + .2 * pulse(t) + .4 * flare})`;
+  const gI = Math.min(1.6, .55 + .5 * pulse(t) + flare);
+  $('#lfT').style.boxShadow = `inset 0 0 0 1.5px rgba(255,196,140,${.55 + .3 * gI}),inset 0 0 ${14 + 18 * gI}px rgba(255,165,85,${.18 + .22 * gI})`;
+  const hit0 = lastHit(t), su = (t - hit0) / .6; $('#lfS').style.backgroundPosition = `${lerp(130, -40, E.io(clamp(su)))}% 0`; op($('#lfS'), su >= 0 && su <= 1 ? Math.sin(Math.PI * su) : 0);
+  lift.querySelectorAll('.slice').forEach(el => { const k0 = +el.dataset.i / (SLICES - 1), e0 = 26 * Math.min(1, pulse(t) + flare) * k0; el.style.background = `rgb(${Math.round(Math.min(255, lerp(196, 244, k0) + e0))},${Math.round(lerp(112, 178, k0) + e0)},${Math.round(lerp(52, 120, k0) + e0 * .6)})`; });
+  drawGlow(t, post, liftZ, liftS, TH, Math.max(dimC, E.io(seg(t, r(17.2), r(17.8)))) * (t >= D ? 1 : 0), gI, flare, ra * dimC);
   lift.querySelectorAll('.slice').forEach(el => { el.style.transform = `translateZ(${(+el.dataset.i / (SLICES - 1) * (TH - .6)).toFixed(2)}px)`; el.style.display = TH > .5 ? '' : 'none'; });
-  const app = (t0, z0, z1) => [E.oe(seg(t, t0 - .08, t0 + .4)), lerp(z0, z1, E.oe(seg(t, t0 - .08, t0 + .4)))];
-  const [ra, rz0] = app(r(1), 0, Z.router); place(router, ONE.x, ONE.y, rz0, 520, 300, post ? ra * dimC : 0);
   CARDS.forEach((c, i) => { const [ca, cz0] = app(r(2.25) + (i % 3) * .03 + Math.floor(i / 3) * .03, Z.router, Z.cards); place(c.el, c.x, c.y, cz0, 230, 136, post ? ca * dimC : 0); });
   const [ha, hz0] = app(r(3), Z.cards, Z.hist); place(hist, ONE.x, ONE.y, hz0, 880, 560, post ? ha * (1 - E.io(seg(t, r(17.6), r(18.4)))) : 0);
   const nk = seg(t, r(10.25) - .1, r(10.25) + .35); place(NEWC, NEWP.x, NEWP.y, Z.cards, 230, 136, post ? Math.min(1, nk * 3) * dimC : 0, lerp(.6, 1, E.ob(nk)));
@@ -415,7 +420,30 @@ function sApp(t, ovs) {
     G4.style.transform = `translate(${gp[0]}px,${gp[1]}px) translate(-50%,-50%) scale(${gp[2] * lerp(1, .55, E.i(seg(t, land - .2, land))) * lerp(.7, 1, E.ob(seg(t, r(17), r(17) + .25)))})`;
     op(G4, seg(t, r(17) + .02, r(17) + .14) * (1 - seg(t, land - .03, land))); });
 }
-function pulse(t) { if (t < D) return 0; const x = ((t - D) / BEAT) % 4; let p = 0; for (const a of [0, 1, 2.25, 3]) { const d = x - a; if (d >= 0) p = Math.max(p, Math.exp(-d * 5)); } return p; }
+const glowL = h('div', null); glowL.style.cssText = 'position:absolute;left:0;top:0;width:1080px;height:1920px;pointer-events:none'; $('#cam').insertBefore(glowL, w3);
+glowL.innerHTML = `<svg id="cone" width="1080" height="1920" style="position:absolute;left:0;top:0"><defs><linearGradient id="coneG" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="rgb(255,150,60)" stop-opacity=".30"/><stop offset=".55" stop-color="rgb(255,170,90)" stop-opacity=".10"/><stop offset="1" stop-color="rgb(255,190,120)" stop-opacity="0"/></linearGradient><filter id="coneB"><feGaussianBlur stdDeviation="10"/></filter></defs><polygon id="coneP" fill="url(#coneG)" filter="url(#coneB)"/></svg>
+  <div class="gl3 gwide"></div><div class="gl3 gcore"></div><div class="gl3 grays"></div><div class="gl3 gstreak"></div><div class="gl3 gstreak2"></div>`;
+const hull = P => { P = P.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]); const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]); const lo = [], up = []; for (const p of P) { while (lo.length > 1 && cr(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop(); lo.push(p); } for (const p of P.reverse()) { while (up.length > 1 && cr(up[up.length - 2], up[up.length - 1], p) <= 0) up.pop(); up.push(p); } return lo.slice(0, -1).concat(up.slice(0, -1)); };
+function drawGlow(t, post, z, S, TH, o, gI, flare, coneO) {
+  show(glowL, post && o > .01); if (!(post && o > .01)) return;
+  const zc = z + TH * .5, c = proj([ONE.x, ONE.y, zc]);
+  const pa = proj([ONE.x - 168 * S, ONE.y, zc]), pb = proj([ONE.x + 168 * S, ONE.y, zc]), pc = proj([ONE.x, ONE.y - 45.5 * S, zc]), pd = proj([ONE.x, ONE.y + 45.5 * S, zc]);
+  const L = Math.hypot(pb[0] - pa[0], pb[1] - pa[1]), W = Math.max(30, Math.hypot(pd[0] - pc[0], pd[1] - pc[1]) + TH * S * c[2]), ang = Math.atan2(pb[1] - pa[1], pb[0] - pa[0]) * 180 / Math.PI;
+  const at = (cls, w, hh, rot, opv, sc = 1) => { const el = glowL.querySelector('.' + cls); el.style.width = w + 'px'; el.style.height = hh + 'px'; el.style.transform = `translate(${c[0] - w / 2}px,${c[1] - hh / 2}px) rotate(${rot}deg) scale(${sc})`; op(el, opv); };
+  at('gwide', L * 2.3, W * 4.2 + 260, ang, o * Math.min(1, .45 + .35 * gI));
+  at('gcore', L * 1.25, W * 2.1 + 40, ang, o * Math.min(1, .5 + .4 * gI));
+  at('grays', 1900, 1900, (t - D) * 4, o * Math.min(.5, .16 + .22 * gI), Math.max(.6, L / 700));
+  at('gstreak', L * 3.4, 6, ang, o * Math.min(1, .25 + .9 * (pulse(t) + flare)));
+  at('gstreak2', L * 1.9, 26, ang, o * Math.min(.8, .12 + .5 * (pulse(t) + flare)));
+  // volumetric cone from the key down to the router
+  const P0 = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([sx, sy]) => proj([ONE.x + sx * 168 * S, ONE.y + sy * 45.5 * S, z]));
+  const P1 = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([sx, sy]) => proj([ONE.x + sx * 260, ONE.y + sy * 150, Z.router]));
+  const H = hull([...P0, ...P1].map(p => [p[0], p[1]])), rc = proj([ONE.x, ONE.y, Z.router]);
+  const cp = $('#coneP'); cp.setAttribute('points', H.map(p => p.join(',')).join(' ')); cp.style.opacity = coneO * (.65 + .35 * pulse(t));
+  const g0 = $('#coneG'); g0.setAttribute('x1', c[0]); g0.setAttribute('y1', c[1]); g0.setAttribute('x2', rc[0]); g0.setAttribute('y2', rc[1]);
+}
+function pulse(t) { if (t < D) return 0; const x = ((t - D) / BEAT) % 4, d = x - 1; return d >= 0 ? Math.exp(-d * 3.2) : 0; }
+function lastHit(t) { const k = Math.floor(((t - D) / BEAT - 1) / 4); return D + (4 * k + 1) * BEAT; }
 
 /* ---------------------------------------------------------- end card */
 const endEl = $('#end');
