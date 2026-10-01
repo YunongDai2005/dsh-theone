@@ -72,24 +72,22 @@ var panelId = "theone-gateway";
 var catalogPanelId = "theone-catalog";
 function apply(ctx) {
   const lifetime = new AbortController();
-  async function workspaceForGateway() {
-    const known = ctx.workspaces.list.getSnapshot().items;
-    const workspace = known[0] ?? await ctx.workspaces.initializeDefault(lifetime.signal);
-    if (!workspace) throw new Error("Create a DSH workspace before opening TheOne");
-    return workspace.workspaceId;
+  async function createGateway(id) {
+    const response = await fetch("/api/theone/gateway", { signal: lifetime.signal, cache: "no-store" });
+    if (!response.ok) throw new Error("Global gateway directory unavailable");
+    const { cwd } = await response.json();
+    await ctx.sessions.create({ sessionId: id, cwd });
   }
   const navigation = new GatewayNavigation({
     async exists(id) {
       await ctx.sessions.refresh();
       return ctx.sessions.list.getSnapshot().ids.includes(id);
     },
-    async create(id) {
-      await ctx.sessions.create({ sessionId: id, workspaceId: await workspaceForGateway() });
-    },
+    create: createGateway,
     async prepare(id) {
       const target = id;
       if (!ctx.sessions.list.getSnapshot().byId[target]?.cwd) {
-        await ctx.sessions.create({ sessionId: target, workspaceId: await workspaceForGateway() });
+        await createGateway(id);
       }
       await ctx.sessions.using(target, { source: "controllerOperation", signal: lifetime.signal }, async (reference) => {
         await reference.ready;
@@ -99,6 +97,13 @@ function apply(ctx) {
         const renamed = await reference.binding.session.rename("TheOne \xB7 \u4E3B\u804A\u5929");
         if (!renamed.ok) throw renamed.error;
       });
+      const prepared = await fetch("/api/theone/gateway/prepare", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ sessionId: id }),
+        signal: lifetime.signal
+      });
+      if (!prepared.ok) throw new Error("Global gateway preparation failed");
       await ctx.uiWorkspace.unarchiveSession(target);
     },
     open(id) {
@@ -278,6 +283,23 @@ function apply(ctx) {
     document.head.append(style);
     return () => {
       lifetime.abort();
+      style.remove();
+    };
+  });
+  ctx.effect(() => {
+    const style = document.createElement("style");
+    style.dataset.plugin = "dsh-theone-gateway-row";
+    const update = () => {
+      const id = navigation.getSnapshot();
+      style.textContent = id ? `[role="treeitem"][data-row-key="${CSS.escape(`session:${id}`)}"]{display:none!important}` : "";
+    };
+    update();
+    const unsubscribe = navigation.subscribe(update);
+    window.addEventListener("storage", update);
+    document.head.append(style);
+    return () => {
+      unsubscribe();
+      window.removeEventListener("storage", update);
       style.remove();
     };
   });

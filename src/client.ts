@@ -24,19 +24,20 @@ const catalogPanelId = 'theone-catalog' as MainPanelId
 
 export function apply(ctx: Context) {
   const lifetime = new AbortController()
-  async function workspaceForGateway() {
-    const known = ctx.workspaces.list.getSnapshot().items
-    const workspace = known[0] ?? await ctx.workspaces.initializeDefault(lifetime.signal)
-    if (!workspace) throw new Error('Create a DSH workspace before opening TheOne')
-    return workspace.workspaceId
+  async function createGateway(id: string) {
+    const response = await fetch('/api/theone/gateway', { signal: lifetime.signal, cache: 'no-store' })
+    if (!response.ok) throw new Error('Global gateway directory unavailable')
+    const { cwd } = await response.json() as { cwd: string }
+    // The native create API accepts an explicit cwd without attaching a Workspace.
+    await ctx.sessions.create({ sessionId: id as SessionId, cwd })
   }
   const navigation = new GatewayNavigation({
     async exists(id) { await ctx.sessions.refresh(); return ctx.sessions.list.getSnapshot().ids.includes(id as SessionId) },
-    async create(id) { await ctx.sessions.create({ sessionId: id as SessionId, workspaceId: await workspaceForGateway() }) },
+    create: createGateway,
     async prepare(id) {
       const target = id as SessionId
       if (!ctx.sessions.list.getSnapshot().byId[target]?.cwd) {
-        await ctx.sessions.create({sessionId:target,workspaceId:await workspaceForGateway()})
+        await createGateway(id)
       }
       await ctx.sessions.using(target, { source: 'controllerOperation', signal: lifetime.signal }, async reference => {
         await reference.ready
@@ -46,6 +47,9 @@ export function apply(ctx: Context) {
         const renamed = await reference.binding.session.rename('TheOne · 主聊天')
         if (!renamed.ok) throw renamed.error
       })
+      const prepared = await fetch('/api/theone/gateway/prepare', { method: 'POST',
+        headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sessionId: id }), signal: lifetime.signal })
+      if (!prepared.ok) throw new Error('Global gateway preparation failed')
       // Archiving the underlying session must not strand the fixed entry.
       await ctx.uiWorkspace.unarchiveSession(target)
     },
@@ -163,6 +167,23 @@ export function apply(ctx: Context) {
     style.textContent = sidebarCss + catalogCss
     document.head.append(style)
     return () => { lifetime.abort(); style.remove() }
+  })
+  ctx.effect(() => {
+    const style = document.createElement('style')
+    style.dataset.plugin = 'dsh-theone-gateway-row'
+    // DSH's grouped and flat lists expose the exact Session row identity.
+    // Keep the host Session active; only its duplicate navigation row is hidden.
+    const update = () => {
+      const id = navigation.getSnapshot()
+      style.textContent = id
+        ? `[role="treeitem"][data-row-key="${CSS.escape(`session:${id}`)}"]{display:none!important}`
+        : ''
+    }
+    update()
+    const unsubscribe = navigation.subscribe(update)
+    window.addEventListener('storage', update)
+    document.head.append(style)
+    return () => { unsubscribe(); window.removeEventListener('storage', update); style.remove() }
   })
   // Wait for the owning plugins' declarations; retain their normal browser and chat.
   ctx.slots.inject('main', () => [

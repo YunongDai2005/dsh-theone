@@ -13,6 +13,7 @@ export declare class ContextStore {
     current(gatewayKey: string): string | undefined;
     groups(): TopicGroup[];
     isGateway(sessionId: string): boolean;
+    rememberGateway(gatewayKey: string, sessionId: string): void;
     origin(contextId: string): {
         sessionId: string;
         cwd?: string;

@@ -105,6 +105,9 @@ export class ContextStore {
     isGateway(sessionId) {
         return !!this.db.prepare('SELECT 1 FROM gateway_sessions WHERE gateway_id = ? LIMIT 1').get(sessionId);
     }
+    rememberGateway(gatewayKey, sessionId) {
+        this.db.prepare('INSERT OR IGNORE INTO gateway_sessions VALUES (?, ?)').run(gatewayKey, sessionId);
+    }
     origin(contextId) {
         const row = this.db.prepare('SELECT * FROM context_origins WHERE context_id = ?').get(contextId);
         return row ? { sessionId: String(row.session_id), ...(row.cwd ? { cwd: String(row.cwd) } : {}) } : undefined;

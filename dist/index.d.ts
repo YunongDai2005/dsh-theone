@@ -53,6 +53,7 @@ export default class TheOne extends Service {
     private readonly workerSelections;
     private active;
     private reservedGateway;
+    private readonly gatewayDirectory;
     constructor(ctx: Context, config: Config);
     /** DSH Connection protects plugin routes inside its authenticated /api fence. */
     private registerCatalogChannel;

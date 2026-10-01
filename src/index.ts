@@ -1,8 +1,9 @@
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { readFileSync } from 'node:fs'
+import { mkdir } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { LlmAdapter, createUserMessage, resolveRetryPolicy } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, LlmResolvedModelInfo, StreamChunk, UserMessage } from '@deepseek-ai/dsh-llm'
 import type { Agent, AgentHandle, ModelSelection, ModelSelectionRef } from '@deepseek-ai/dsh-agent'
@@ -12,6 +13,7 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 import type { TurnEndReason, SessionEvent } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-compaction/types'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
+import type {} from '@deepseek-ai/dsh-workspace'
 import { buildSessionEventSearchDocuments, filterSessionEventDocuments } from '@deepseek-ai/dsh-session-query'
 import type { SessionEventWindow } from '@deepseek-ai/dsh-session-query'
 import { HistoryCatalog } from './history-catalog.ts'
@@ -105,12 +107,15 @@ export default class TheOne extends Service {
   private readonly workerSelections = new Map<string, ModelSelectionRef>()
   private active = false
   private reservedGateway: string | undefined
+  private readonly gatewayDirectory: string
 
   constructor(ctx: Context, private readonly config: Config) {
     super(ctx, 'theone')
     if (config.workerProvider === 'theone') throw new Error('Worker cannot use the gateway provider')
     const descriptors = config.contextsPath ? readDescriptors(config.contextsPath) : []
-    this.store = new ContextStore(config.databasePath || join(process.env.DSH_HOME || join(homedir(), '.dsh'), 'theone', 'contexts.db'))
+    const databasePath = config.databasePath || join(process.env.DSH_HOME || join(homedir(), '.dsh'), 'theone', 'contexts.db')
+    this.store = new ContextStore(databasePath)
+    this.gatewayDirectory = resolve(dirname(databasePath), 'gateway')
     ctx.effect(() => async () => {
       try { await Promise.all([...this.workers.values()].map(handle => handle.dispose())) }
       finally { await this.catalog?.close(); this.store.close() }
@@ -229,6 +234,35 @@ export default class TheOne extends Service {
         path: string; methods: string[]; requestBody?: string; fetch: (request: Request) => Promise<Response>
       }) => () => void } } | undefined
       if (!connection?.fetch?.register) return
+      child.inject(['workspaceRegistry'], scope => {
+        scope.effect(() => connection.fetch!.register({ path: '/api/theone/gateway', methods: ['GET'], requestBody: 'buffered', fetch: async () => {
+          await mkdir(this.gatewayDirectory, { recursive: true })
+          return Response.json({ cwd: this.gatewayDirectory }, { headers: { 'cache-control': 'no-store' } })
+        } }))
+        scope.effect(() => connection.fetch!.register({ path: '/api/theone/gateway/prepare', methods: ['POST'], requestBody: 'buffered', fetch: async request => {
+          let value: unknown
+          try { value = await request.json() } catch { return Response.json({ error: 'INVALID_INPUT' }, { status: 400 }) }
+          if (!value || typeof value !== 'object' || !('sessionId' in value) || typeof value.sessionId !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(value.sessionId))
+            return Response.json({ error: 'INVALID_INPUT' }, { status: 400 })
+          const id = SessionId(value.sessionId)
+          const sessions = await this.ctx.sessionQuery.listSessions()
+          if (!sessions.some(session => session.header.id === id)) return Response.json({ error: 'UNKNOWN_SESSION' }, { status: 400 })
+          if (!this.store.isGateway(id)) {
+            // Adopt a pre-upgrade Gateway only when it carries our reserved title
+            // and has no ordinary-model request history.
+            const title = await this.ctx.sessionQuery.readTitle(id)
+            const log = await this.ctx.sessionQuery.readSession(id)
+            if (title?.title !== 'TheOne · 主聊天' || log.events.some(event => event.type === 'request/header' && event.data.header.config.provider !== 'theone'))
+              return Response.json({ error: 'NOT_GATEWAY' }, { status: 400 })
+          }
+          for (const workspace of scope.workspaceRegistry.list()) {
+            if (workspace.sessionIds.includes(id)) await workspace.detachSession(id)
+          }
+          this.store.rememberGateway(this.config.gatewayKey, id)
+          await scope.workspaceRegistry.unarchiveSession(id)
+          return Response.json({ prepared: true, workspaceId: null })
+        } }))
+      })
       child.effect(() => connection.fetch!.register({ path: '/api/theone/catalog', methods: ['GET'], requestBody: 'buffered', fetch: async () =>
         Response.json(this.catalog?.snapshot() ?? { groups: this.store.groups(), contexts: this.store.contexts().map(c => ({ ...c, sourceSessionIds: this.store.sources(c.id) })),
           status: { running: false, scanned: 0, indexed: 0, skipped: 0, failed: 0, pending: 0 } }, { headers: { 'cache-control': 'no-store' } }) }))
@@ -358,7 +392,9 @@ export default class TheOne extends Service {
       this.refreshCompactionSummary(existing.agent, context.id); return existing.agent
     }
     const sessionId = SessionId(context.workingSessionId)
-    const cwd = this.store.origin(context.id)?.cwd ?? this.ctx.agents.get(SessionId(gatewayId))?.session.header.cwd ?? process.cwd()
+    const originCwd = this.store.origin(context.id)?.cwd
+    const cwd = originCwd ?? this.gatewayDirectory
+    if (!originCwd) await mkdir(cwd, { recursive: true })
     const setup = (agentCtx: Context, agent: Agent) => {
       const selection = { current: agentOptions, assembled: undefined }
       this.workerSelections.set(context.id, selection)

@@ -2,7 +2,7 @@
 
 用户始终在一个主聊天入口里聊天。TheOne 判断所属项目，挂载项目摘要，再交给该项目独立的 DSH Worker 执行。DSH 保存原始对话、运行模型与工具；TheOne 保存项目目录、摘要和路由记录。
 
-左侧固定 **TheOne · 主聊天**：浅色主题为淡橙色外光晕，深色主题为淡蓝色。兼容 DSH `0.2.0-rc.2`、Node.js 24。
+左侧固定 **TheOne · 主聊天**：浅色主题为淡橙色外光晕，深色主题为淡蓝色。兼容 DSH `0.2.0-rc.2`、Node.js 24。主聊天作为全局入口，不挂到任何项目工作区，也不显示在普通会话列表中。升级时自动解除旧主聊天的工作区关联，保留原始聊天记录。新的主聊天使用 DSH 数据目录中的独立目录；历史话题的文件执行目录保留。
 
 ## 安装并使用
 
@@ -10,7 +10,7 @@
 2. 打开 **插件 → 添加插件**，粘贴 `https://github.com/YunongDai2005/dsh-theone`，点击安装。
 3. 点击左侧 **TheOne · 主聊天**，直接开始聊天。
 
-**v0.3.1 默认开启 LLM 路由，复用 DSH 的模型调用和 API 凭据，无需再填一个 API Key。** 路由和项目 Worker 使用打开 TheOne 前 DSH 选中的模型。改模型时，先在 DSH 选好新的普通聊天模型，再打开 TheOne。
+**v0.3.2 默认开启 LLM 路由，复用 DSH 的模型调用和 API 凭据，无需再填一个 API Key。** 路由和项目 Worker 使用打开 TheOne 前 DSH 选中的模型。改模型时，先在 DSH 选好新的普通聊天模型，再打开 TheOne。
 
 仓库公开，包含编译后的后端和 Web 客户端，安装不需要本机编译或安装脚本。也可以用 DSH CLI：
 
@@ -22,7 +22,7 @@ DSH 当前没有插件自动更新；旧版用户按 DSH 插件页提示卸载�
 
 数据库默认保存在 `$DSH_HOME/theone/contexts.db`，未设置 DSH_HOME 时为 `~/.dsh/theone/contexts.db`。卸载重装应保留这个目录以继续原话题。每个数据库同时运行一个 profile 进程。
 
-## 历史目录与话题工作区（v0.3.1）
+## 历史目录与话题工作区（v0.3.2）
 
 启用后，插件在后台通过 `ctx.sessionQuery` 读取既有 DSH 会话，自动提取话题目录。优先使用已成功完成的 compaction 摘要；没有摘要的部分只读取有界的用户输入和回答摘录。每批最多 8 轮，通过用户在 DSH 配置的模型做轻量提取；不重新总结完整长会话。
 
@@ -79,7 +79,7 @@ npm run pack:plugin
 
 测试使用真实 DSH 服务、AgentLoop、Session、SQLite Query、JSONL 持久化和 compaction；模型被模拟，不调用外部 API。演示目录为虚构资料。
 
-打包生成 `.dsh-test/dsh-theone-0.3.1.tgz`，包含后端、Web 客户端和配置，不包含 API Key、聊天快照或数据库。
+打包生成 `.dsh-test/dsh-theone-0.3.2.tgz`，包含后端、Web 客户端和配置，不包含 API Key、聊天快照或数据库。
 
 本地隔离开发可运行 `npm run install:local` 和 `npm run start:local`，数据保存在 `~/.dsh-theone`。这是独立 profile，需要在其 DSH 设置中配置模型。可复制 `.env.example` 为 `.env` 调整端口等；`.env` 不提交到 GitHub。
 
