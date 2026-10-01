@@ -37,7 +37,7 @@ svg{display:block}
 #appwrap{position:absolute;left:0;top:0;width:1080px;height:2160px;transform-origin:0 0}
 #cam{position:absolute;left:0;top:0;width:1080px;height:2160px;perspective:2200px;perspective-origin:540px 1080px;
   background:radial-gradient(1200px 1500px at 50% 42%,#ffffff 0%,#f4f6fa 55%,#e7ebf2 100%)}
-#w3{position:absolute;left:0;top:0;width:0;height:0;transform-style:preserve-3d}
+#w3{position:absolute;left:0;top:0;width:0;height:0;transform-style:preserve-3d;z-index:1}
 .win{position:absolute;left:0;top:0;width:2000px;height:1100px;background:#fff;border-radius:22px;overflow:hidden;zoom:3.3;transform-origin:0 0;transform:scale(calc(1 / 3.3));
   box-shadow:0 40px 120px rgba(30,45,80,.18),0 0 0 1px rgba(20,30,60,.07)}
 .side{position:absolute;left:0;top:0;width:372px;height:1100px;background:rgb(249,250,251);border-right:1px solid #eceef1}
@@ -103,7 +103,7 @@ svg{display:block}
 
 /* ---------- 3D layers (light) ---------- */
 .lay{position:absolute;left:0;top:0;transform-style:preserve-3d;border-radius:22px}
-.glass{background:rgba(255,255,255,.94);border:1.5px solid rgba(30,45,80,.09);
+.glass{transform-style:flat;background:rgba(255,255,255,.94);border:1.5px solid rgba(30,45,80,.09);
   box-shadow:0 24px 60px rgba(30,45,90,.13),inset 0 1px 0 #fff}
 .lf{position:absolute;left:0;top:0;backface-visibility:visible}
 .lf.top{width:336px;height:91px;border-radius:12px;background:#fff5ec;border:2px solid #f0c9a4;overflow:hidden}
@@ -132,7 +132,7 @@ svg{display:block}
 .hist .hl{position:absolute;height:7px;border-radius:4px;background:rgba(30,45,80,.06)}
 
 /* ---------- overlays ---------- */
-#ov{position:absolute;left:0;top:0;width:1080px;height:2160px;pointer-events:none}
+#ov{position:absolute;left:0;top:0;width:1080px;height:2160px;pointer-events:none;z-index:3}
 .orb{position:absolute;left:0;top:0;width:24px;height:24px;margin:-12px 0 0 -12px;border-radius:50%;background:#fff;
   box-shadow:0 0 0 3px #ff8a2a,0 0 22px 8px rgba(255,138,42,.85),0 0 60px 20px rgba(255,150,60,.35)}
 .bub{position:absolute;left:0;top:0;white-space:nowrap;font-size:31px;font-weight:500;padding:15px 25px;border-radius:24px;

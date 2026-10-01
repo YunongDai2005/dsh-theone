@@ -15,5 +15,5 @@ export function launch() {
   if (process.platform === 'win32') args.push('--use-angle=d3d11');
   return chromium.launch({ channel: 'chromium', args });
 }
-// what the page is actually drawn with: "SwiftShader" means software, otherwise the GPU's name
+// WebGL adapter probe: "SwiftShader" means this context uses software. CSS/SVG can take other paths.
 export const renderer = page => page.evaluate(() => { const g = document.createElement('canvas').getContext('webgl'); const x = g && g.getExtension('WEBGL_debug_renderer_info'); return g ? (x ? g.getParameter(x.UNMASKED_RENDERER_WEBGL) : g.getParameter(g.RENDERER)) : 'no WebGL'; });

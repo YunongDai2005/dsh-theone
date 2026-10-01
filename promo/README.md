@@ -57,6 +57,32 @@ node build.mjs dark 30 1         # quick preview: 30 fps, no supersampling
 - `CRF` and `PRESET` override the x264 settings (default 16 / slow), e.g. `CRF=28 PRESET=veryfast` for a small preview.
 - On Windows PowerShell, set variables first: `$env:GPU=1; $env:WORKERS=8; node build.mjs dark`.
 
+### Faster export
+
+```powershell
+npm.cmd run build:fast
+# Dark theme:
+npm.cmd run build:dark:fast
+```
+
+The fast profile keeps 60 fps and 1080×2160 output. It uses GPU browser rendering, `SS=2`, JPEG quality 90, x264 `veryfast` / CRF 18, and up to four browser workers. Its screenshots contain 44% as many pixels as the standard `SS=3` build; reduced supersampling and JPEG quality can soften small text and edges. Output names end in `-fast.mp4`. Speed gains depend on which stage limits the machine; this profile has not been benchmarked.
+
+For AMD hardware encoding, use an FFmpeg build with `h264_amf` and an installed AMD driver:
+
+```powershell
+$env:ENCODER = 'h264_amf'
+npm.cmd run build:fast
+Remove-Item Env:ENCODER
+```
+
+This sends video encoding to the AMD encoder. Browser screenshots, JPEG processing, and some scaling or transfers still use the CPU. The AMD defaults are `AMF_QUALITY=balanced`, `QP=20` for I-frames and 22 for P-frames; these replace x264's `CRF` and `PRESET` settings. Lower `QP` improves quality and increases file size. See [AMD's AMF settings](https://github.com/GPUOpen-LibrariesAndSDKs/AMF/wiki/AMF-Encoder-Settings-and-Tuning-in-FFmpeg).
+
+Existing environment settings override the fast profile. An explicit supersampling argument overrides `SS`, for example `node build.mjs dark 60 1 --fast` for native-resolution screenshots. Video rendering pipelines one pending screenshot per worker into FFmpeg in frame order, so workers can start the next frame while FFmpeg consumes the preceding frame.
+
+Before each still or video screenshot, the renderer flushes layout and waits for two animation-frame callbacks with timeline time held fixed. This gives CSS 3D and SVG updates time to paint before capture. It is a mitigation for intermittent missing layers observed in existing exports; corrected exports have not been verified. If the problem persists, compare a section with `WORKERS=1` and then with `GPU=0` to distinguish worker pressure from the hardware rendering path.
+
+`GPU=1` is this project's switch; it selects Playwright's full Chromium channel. The logged renderer identifies a WebGL context and does not prove that every CSS/SVG effect runs on the GPU. See [Playwright's browser modes](https://playwright.dev/docs/browsers#chromium-new-headless-mode).
+
 Render just one section with `START=27.2 END=32.6 SS=2 node render.mjs video part.mp4 30`. Preview frames with `node render.mjs stills 1.2,15.584,25 out/`. Opening `film.html` in a browser loops the film silently.
 
 The BGM, the extracted DSH artwork and the rendered video are not committed. The BGM is a third-party track, so check its licence before publishing. The end card states the film is an unofficial community plugin, in line with DSH's brand guidelines.

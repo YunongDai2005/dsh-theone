@@ -2,15 +2,25 @@
 //   node build.mjs                 light, 60 fps, 3× supersampled  → TheOne-light-9x18-60fps.mp4
 //   node build.mjs dark            night version                   → TheOne-dark-9x18-60fps.mp4
 //   node build.mjs dark 30 1       quick preview (add CRF=28 PRESET=veryfast for a small file)
+//   node build.mjs --fast          GPU, 60 fps, 2× screenshots, faster CPU encoding
+//   ENCODER=h264_amf uses AMD hardware encoding instead of x264.
 // Needs Node 18+, ffmpeg + ffprobe, Python 3 with numpy and scipy, git, and the BGM saved as promo/bgm.m4a.
 // GPU=1 renders with the graphics card; WORKERS=n sets how many browsers render in parallel.
 import { spawnSync } from 'child_process';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 process.chdir(here);
-const [THEME = 'light', FPS = '60', SS = '3'] = process.argv.slice(2);
+const args = process.argv.slice(2);
+const FAST = args.includes('--fast');
+const [THEME = 'light', FPS = '60', SS = process.env.SS || (FAST ? '2' : '3')] = args.filter(a => a !== '--fast');
+if (FAST) {
+  const defaults = { GPU: '1', PRESET: 'veryfast', CRF: '18', JPEG_QUALITY: '90',
+    WORKERS: String(Math.max(1, Math.min(4, Math.floor(os.cpus().length / 2)))) };
+  for (const [key, value] of Object.entries(defaults)) process.env[key] ??= value;
+}
 const win = process.platform === 'win32';
 const run = (cmd, args, env = {}, capture = false) => {
   const r = spawnSync(cmd, args, { stdio: capture ? ['inherit', 'pipe', 'inherit'] : 'inherit', env: { ...process.env, ...env }, shell: win && /^(npm|npx)$/.test(cmd), encoding: 'utf8' });
@@ -41,7 +51,7 @@ run('ffmpeg', ['-v', 'error', '-y', '-i', 'bgm.m4a', '-i', 'sfx.wav', '-filter_c
   `[0:a]aresample=48000,atrim=start=77.6942:duration=${TOTAL},asetpts=PTS-STARTPTS,afade=t=in:d=0.3,afade=t=out:st=${(TOTAL - 1.197).toFixed(3)}:d=1.2[m];[1:a]aresample=48000[s];[m][s]amix=inputs=2:normalize=0,alimiter=limit=0.95:level=false[a]`,
   '-map', '[a]', '-c:a', 'pcm_s16le', 'mix.wav']);
 
-const OUT = `TheOne-${THEME}-9x18-${FPS}fps.mp4`, t0 = Date.now();
+const OUT = `TheOne-${THEME}-9x18-${FPS}fps${FAST ? '-fast' : ''}.mp4`, t0 = Date.now();
 run('node', ['render.mjs', 'video', 'film_noaudio.mp4', FPS], { PAGE, SS });
 console.log(`rendered in ${((Date.now() - t0) / 60000).toFixed(1)} min`);
 // audio and video are the same length, so no -shortest (it trims the last few frames of the fade)
