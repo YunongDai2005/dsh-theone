@@ -15,6 +15,7 @@ import { Desktop } from './dom/Desktop';
 import { WindowLayer } from './dom/WindowLayer';
 import { EndCard, END_IN } from './dom/EndCard';
 import { Motes } from './dom/Motes';
+import { Words } from './dom/Words';
 import { Scene3D } from './three/Scene3D';
 
 export type FilmProps = { theme: Theme; audio?: boolean };
@@ -35,6 +36,7 @@ export const Film: React.FC<FilmProps> = ({ theme, audio = true }) => {
       {t >= CLICK_DSH - .5 && t < r(12.5) && <WindowLayer t={t} shot={shot} theme={theme} />}
       {t >= D - 3 && t < END_IN + .5 && <Scene3D t={t} shot={shot} theme={theme} />}
       <Motes t={t} theme={theme} />
+      <Words t={t} theme={theme} />
       {t >= END_IN - .5 && <EndCard t={t} theme={theme} />}
       <div className="flash" style={{ opacity: flash }} />
       <div className="vig" />

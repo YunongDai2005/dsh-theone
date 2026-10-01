@@ -5,7 +5,8 @@
 .film[data-theme=dark]{color:rgb(236,238,241);--dsw-alias-label-primary:rgb(249,250,251);--dsw-alias-label-primary-inverted:rgb(53,54,56)}
 
 /* ---------- backdrop behind the window and the 3D scene ---------- */
-.backdrop{position:absolute;inset:0;background:radial-gradient(1500px 1100px at 50% 45%,#ffffff 0%,#f4f6fa 55%,#e7ebf2 100%)}
+/* a little darker than white, so white panels and glows stand out */
+.backdrop{position:absolute;inset:0;background:radial-gradient(1500px 1100px at 50% 42%,#fbfcfd 0%,#eaeef4 52%,#d6dce6 100%)}
 .film[data-theme=dark] .backdrop{background:radial-gradient(1500px 1100px at 50% 45%,#1b1c20 0%,#111215 55%,#08080a 100%)}
 
 /* ---------- desktop ---------- */
@@ -40,6 +41,10 @@
 .camera{position:absolute;left:0;top:0;width:1920px;height:1080px;transform-style:preserve-3d}
 .winobj{position:absolute;left:0;top:0;width:2000px;height:1100px}
 .winz{position:absolute;left:0;top:0;width:2000px;height:1100px;transform-origin:0 0}
+.wallobj{position:absolute;left:0;top:0;width:5600px;height:3400px}
+.wchip{position:absolute;white-space:nowrap;font-size:30px;padding:16px 24px;border-radius:16px;background:rgba(255,255,255,.6);color:rgba(40,55,90,.42);border:1px solid rgba(30,45,80,.07)}
+.film[data-theme=dark] .wchip{background:rgba(38,39,43,.55);color:rgba(220,225,235,.3);border-color:rgba(255,255,255,.05)}
+.bigword{position:absolute;white-space:nowrap;font-weight:600;letter-spacing:-.045em;line-height:1;pointer-events:none}
 .motes{position:absolute;inset:0;pointer-events:none}
 .mote{position:absolute;left:0;top:0;width:6px;height:6px;border-radius:50%}
 
@@ -165,7 +170,7 @@
 
 /* ---------- full-frame FX ---------- */
 .flash{position:absolute;inset:0;opacity:0;pointer-events:none;background:radial-gradient(1300px 900px at 50% 50%,#fffaf2 0%,rgba(255,236,210,.95) 40%,rgba(255,230,200,.6) 75%,rgba(255,240,225,.3) 100%)}
-.vig{position:absolute;inset:0;pointer-events:none;background:radial-gradient(1700px 1100px at 50% 50%,transparent 60%,rgba(30,45,80,.07) 100%)}
+.vig{position:absolute;inset:0;pointer-events:none;background:radial-gradient(1700px 1100px at 50% 50%,transparent 52%,rgba(30,45,80,.16) 100%)}
 .fade{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none}
 .film[data-theme=dark] .flash{background:radial-gradient(1300px 900px at 50% 50%,#eef6ff 0%,rgba(200,225,255,.85) 40%,rgba(120,170,230,.45) 75%,rgba(60,90,140,.2) 100%)}
 .film[data-theme=dark] .vig{background:radial-gradient(1700px 1100px at 50% 50%,transparent 55%,rgba(0,0,0,.5) 100%)}
