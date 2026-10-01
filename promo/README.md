@@ -4,7 +4,7 @@
 
 The UI is a replica of the DSH web client built with DSH's own icons, whale mark and wordmark (`extract-icons.tsx` renders them from the `deepseek-harness` sources). The window is laid out at 2.8× resolution with CSS `zoom` and scaled back down, so text stays sharp under the 3D camera. The top 170 px stay background-only for the phone notch.
 
-Video frames are rendered at 2× (`SS=2`) and downsampled with Lanczos, which keeps text sharp on oblique 3D planes. After the drop, The One key carries a screen-space volumetric glow (halo shaped to its projection, soft rays, an anamorphic streak and a light cone down to the router); it flares only on each bar's strongest hit (`r(4k+1)`). The pre-drop sidebar button, the router and the highlighted session cards use the same screen-space halos, so no glow lies flat on a tilted plane.
+Video frames are rendered at 3× (`SS=3`) and downsampled with Lanczos, which keeps text sharp on oblique 3D planes. After the drop, The One key carries a screen-space volumetric glow (halo shaped to its projection, soft rays, an anamorphic streak and a light cone down to the router); it flares only on each bar's strongest hit (`r(4k+1)`). The 3D key's face is a pre-rendered 8× bitmap (`mkface.mjs`); whenever the key faces the camera it is swapped for a flat 2D copy fitted to its projected corners, because Chromium caps the raster resolution of 3D layers but not 2D ones. The pre-drop sidebar button, the router and the highlighted session cards use the same screen-space halos, so no glow lies flat on a tilted plane.
 
 ## Beat map
 
@@ -44,12 +44,13 @@ npm install && pip install numpy scipy
 git clone --depth 1 https://github.com/deepseek-ai/deepseek-harness.git ../.dsh
 npx esbuild extract-icons.tsx --bundle --platform=node --format=esm --jsx=automatic \
   --external:react --external:react-dom --external:react/jsx-runtime --outfile=.extract.mjs && node .extract.mjs
+node mkface.mjs                  # The One key face as an 8× bitmap (face.png)
 node render.mjs cues cues.json
 echo '{"total":35.171}' > meta.json && python3 sfx.py          # → sfx.wav
 ffmpeg -i bgm.m4a -i sfx.wav -filter_complex \
   "[0:a]aresample=44100,atrim=start=77.6942:duration=35.171,asetpts=PTS-STARTPTS,afade=t=in:d=0.4,afade=t=out:st=34.17:d=1.0[m];[m][1:a]amix=inputs=2:normalize=0,alimiter=limit=0.95:level=false[a]" \
   -map "[a]" -c:a pcm_s16le mix.wav
-SS=2 node render.mjs video film_noaudio.mp4 30   # 2× supersampled, Lanczos down to 1080×1920
+SS=3 node render.mjs video film_noaudio.mp4 30   # 3× supersampled, Lanczos down to 1080×1920
 ffmpeg -i film_noaudio.mp4 -i mix.wav -c:v copy -c:a aac -b:a 256k -shortest theone-film.mp4
 ```
 
