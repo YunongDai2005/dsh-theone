@@ -119,6 +119,11 @@ export class ContextStore {
     }))
   }
 
+  /** Context ids, newest first. contexts() is ordered by id, and generated ids are random. */
+  contextIdsByRecency(): string[] {
+    return this.db.prepare('SELECT id FROM contexts ORDER BY rowid DESC').all().map(row => String(row.id))
+  }
+
   current(gatewayKey: string): string | undefined {
     const row = this.db.prepare('SELECT context_id FROM gateway_state WHERE gateway_key = ?').get(gatewayKey)
     return row ? String(row.context_id) : undefined
@@ -180,8 +185,13 @@ export class ContextStore {
       for (const topic of topics) {
         const id = topic.contextId ?? randomUUID()
         const existing = this.contexts().find(context => context.id === id)
+        // The Worker's own progress note and DSH compaction summary outrank a catalog re-extraction, which only
+        // sees short excerpts; otherwise every re-index after a turn would overwrite them.
+        const stated = existing && this.db.prepare('SELECT 1 FROM context_state_updates WHERE context_id = ? LIMIT 1').get(id)
+        const summarized = existing && this.db.prepare('SELECT 1 FROM context_summary_updates WHERE context_id = ? LIMIT 1').get(id)
         const descriptor: ContextDescriptor = { id, title: existing?.title ?? topic.title,
-          summary: topic.summary, entities: topic.entities, keywords: topic.keywords, lastState: topic.lastState }
+          summary: summarized ? existing.summary : topic.summary, entities: topic.entities, keywords: topic.keywords,
+          lastState: stated ? existing.lastState : topic.lastState }
         if (existing) this.db.prepare('UPDATE contexts SET descriptor = ? WHERE id = ?').run(JSON.stringify(descriptor), id)
         else {
           this.seed([descriptor])

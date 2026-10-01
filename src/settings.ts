@@ -24,7 +24,8 @@ export function validateSettings(value: unknown): EditableSettings {
   const routerBaseUrl = text('routerBaseUrl', 2048)
   let url: URL
   try { url = new URL(routerBaseUrl) } catch { return fail() }
-  if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) return fail()
+  // The legacy router only sends its key over HTTPS; accepting http here would save a config it refuses at startup.
+  if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash) return fail()
   const routerApiKeyEnv = text('routerApiKeyEnv', 128)
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(routerApiKeyEnv)) return fail()
   return { workerProvider, workerModel, routerMode: row.routerMode as EditableSettings['routerMode'],

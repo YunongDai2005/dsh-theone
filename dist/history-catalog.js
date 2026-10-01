@@ -87,6 +87,8 @@ export class HistoryCatalog {
     timer;
     dirty = false;
     status = { running: false, scanned: 0, indexed: 0, skipped: 0, failed: 0, pending: 0 };
+    /** Sessions the last finished scan could not index; a scan in progress doesn't make the catalog incomplete. */
+    settledPending;
     constructor(ctx, store, selection, intervalMs = 60000, batchBudget = 64) {
         this.ctx = ctx;
         this.store = store;
@@ -109,7 +111,7 @@ export class HistoryCatalog {
         return { status: { ...this.status }, groups: this.store.groups(),
             contexts: this.store.contexts().map(context => ({ ...context, sourceSessionIds: this.store.sources(context.id) })) };
     }
-    get incomplete() { return this.status.running || this.status.pending > 0 || !!this.status.searchUnavailable || !this.status.lastCompletedAt; }
+    get incomplete() { return !this.status.lastCompletedAt || (this.settledPending ?? 1) > 0 || !!this.status.searchUnavailable; }
     refresh() {
         if (this.abort.signal.aborted)
             return Promise.resolve();
@@ -131,6 +133,7 @@ export class HistoryCatalog {
             signal.throwIfAborted();
             this.status.failed = 1;
             this.status.pending = 1;
+            this.settledPending = 1;
             return;
         }
         this.status.pending = records.length;
@@ -144,8 +147,14 @@ export class HistoryCatalog {
                 continue;
             }
             const live = this.ctx.agents.get(sessionId);
-            if (live && live.status !== 'idle')
+            if (live && live.status !== 'idle') {
+                // Its turn in progress is indexed once it settles; what was already indexed stays usable meanwhile.
+                if (this.store.indexState(sessionId)?.status === 'ready') {
+                    this.status.indexed++;
+                    this.status.pending--;
+                }
                 continue;
+            }
             if (budget <= 0)
                 continue;
             try {
@@ -184,7 +193,13 @@ export class HistoryCatalog {
                     if (owned)
                         knownIds.add(owned.id);
                     const all = this.store.contexts();
-                    const contexts = [...all.filter(c => knownIds.has(c.id)), ...all.filter(c => !knownIds.has(c.id)).slice(-(24 - knownIds.size))]
+                    // Offer the topics most likely to continue here: same project directory first, then the newest.
+                    const recency = new Map(this.store.contextIdsByRecency().map((id, i) => [id, i]));
+                    const cwd = log.session.cwd;
+                    const others = all.filter(c => !knownIds.has(c.id));
+                    const near = new Set(cwd ? others.filter(c => this.store.origin(c.id)?.cwd === cwd).map(c => c.id) : []);
+                    others.sort((a, b) => Number(near.has(b.id)) - Number(near.has(a.id)) || recency.get(a.id) - recency.get(b.id));
+                    const contexts = [...all.filter(c => knownIds.has(c.id)), ...others.slice(0, Math.max(0, 24 - knownIds.size))]
                         .map(c => ({ id: c.id, title: c.title, summary: clean(c.summary, 240), lastState: clean(c.lastState, 120) }));
                     const groups = this.store.groups().slice(-24).map(({ id, title, summary }) => ({ id, title, summary: clean(summary, 120) }));
                     budget--;
@@ -209,6 +224,7 @@ export class HistoryCatalog {
                 // One bad source cannot prevent the remaining sessions from being indexed.
             }
         }
+        this.settledPending = this.status.pending;
         this.status.lastCompletedAt = Date.now();
     }
     async candidates(text, currentId, signal) {

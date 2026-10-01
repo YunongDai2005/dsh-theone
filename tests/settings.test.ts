@@ -94,6 +94,7 @@ test('settings save atomically, reject stale or invalid forms, and apply only af
       { ...desired, workerProvider: 'fixture', workerModel: null },
       { ...desired, routerBaseUrl: 'https://user:password@example.com' },
       { ...desired, routerBaseUrl: 'https://example.com?key=secret' },
+      { ...desired, routerBaseUrl: 'http://example.com/v1' },
       { ...desired, routerApiKeyEnv: 'actual-secret-value!' },
       { ...desired, apiKey: 'private-key' },
       { ...desired, routerTransport: 'legacy', routerApiKeyEnv: 'THEONE_TEST_MISSING_SETTINGS_KEY' },
@@ -122,4 +123,22 @@ test('settings save atomically, reject stale or invalid forms, and apply only af
     assert.equal((await put(restarted.savedValues, 1)).status, 200)
     assert.equal((await app.ctx.theone.settingsSnapshot()).restartRequired, false)
   } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
+})
+
+test('saved settings whose legacy router cannot start fall back to the deployment configuration', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'theone-settings-fallback-'))
+  let app = await harness(root, new CapacityModel())
+  try {
+    const initial = await app.ctx.theone.settingsSnapshot()
+    process.env.THEONE_TEST_REMOVED_KEY = 'present-at-save-time'
+    assert.ok(app.ctx.theone.store.saveSettings('test-gateway',
+      { ...initial.savedValues, routerMode: 'llm', routerTransport: 'legacy', routerApiKeyEnv: 'THEONE_TEST_REMOVED_KEY' }, 0))
+    await app.close()
+    delete process.env.THEONE_TEST_REMOVED_KEY
+    app = await harness(root, new CapacityModel())
+    const restarted = await app.ctx.theone.settingsSnapshot()
+    assert.equal(restarted.values.routerMode, 'rules')
+    assert.equal(restarted.savedValues.routerTransport, 'legacy')
+    assert.equal(restarted.restartRequired, true)
+  } finally { delete process.env.THEONE_TEST_REMOVED_KEY; await app.close(); await rm(root, { recursive: true, force: true }) }
 })

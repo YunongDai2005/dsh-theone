@@ -22,6 +22,8 @@ export declare class HistoryCatalog {
     private timer?;
     private dirty;
     private status;
+    /** Sessions the last finished scan could not index; a scan in progress doesn't make the catalog incomplete. */
+    private settledPending?;
     constructor(ctx: Context, store: ContextStore, selection: () => ModelSelection, intervalMs?: number, batchBudget?: number);
     start(): void;
     private schedule;
