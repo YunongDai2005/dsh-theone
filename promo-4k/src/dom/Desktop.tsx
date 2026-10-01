@@ -30,7 +30,7 @@ export function Desktop({ t }: { t: number }) {
   ];
   const bg = ['linear-gradient(180deg,#6cc6ff,#1f7ae0)', 'linear-gradient(180deg,#fff6cf,#ffd45c)', 'linear-gradient(180deg,#ff7a8a,#e2334f)', '', 'linear-gradient(180deg,#8fe0b0,#18a058)'];
   return (
-    <div className="desk">
+    <div className="desk" style={{ opacity: 1 - seg(t, WIN_OPEN - .25, WIN_OPEN) }}>
       <div className="deskWorld" style={{ transform: `translate(960px,540px) scale(${z}) translate(${-cx}px,${-cy}px)`,
         filter: `blur(${4 * seg(t, CLICK_DSH + .1, b(3.9))}px) brightness(${1 - .15 * seg(t, CLICK_DSH, b(3.9))})` }}>
         <div className="wall" />
