@@ -1,7 +1,8 @@
 // usage: node render.mjs stills 0,1.5,3 outdir   |   node render.mjs video out.mp4 [fps]   |   node render.mjs cues cues.json
 // env: PAGE (film.html, add ?theme=dark for night), SS supersample, VH stage height, START/END section,
 //      CRF/PRESET x264 encoder, ENCODER=libx264|h264_amf, QP/AMF_QUALITY for AMD,
-//      JPEG_QUALITY (default 96), WORKERS parallel browsers, GPU=1 hardware rendering
+//      SHOT=jpeg|png frame capture (JPEG_QUALITY, default 96), SETTLE_MS wait before capture (default 120),
+//      WORKERS parallel browsers, GPU=1 hardware rendering
 import { spawn } from 'child_process';
 import fs from 'fs';
 import os from 'os';
@@ -15,18 +16,25 @@ const SS = +(process.env.SS || 1); // supersample: render at SS× and downsample
 const VH = +(process.env.VH || 2160); // stage height: 2160 for 9:18
 const PAGE = process.env.PAGE || 'film.html';
 const JPEG_QUALITY = +(process.env.JPEG_QUALITY || 96);
+// A capture taken right after drawing can return a frame before every layer is composited (whole cards, glows
+// and text missing on isolated frames). A short settle before each capture prevents it; SHOT=png is a slower
+// alternative that also prevents it.
+const SHOT = process.env.SHOT || 'jpeg';
+const SETTLE_MS = +(process.env.SETTLE_MS ?? 120);
+if (!['png', 'jpeg'].includes(SHOT)) throw new Error('SHOT must be png or jpeg');
 const ENCODER = process.env.ENCODER || 'libx264';
 if (!['libx264', 'h264_amf'].includes(ENCODER)) throw new Error('ENCODER must be libx264 or h264_amf');
 if (!Number.isInteger(JPEG_QUALITY) || JPEG_QUALITY < 1 || JPEG_QUALITY > 100) throw new Error('JPEG_QUALITY must be an integer from 1 to 100');
 const browsers = [];
 async function prepareFrame(page, t) {
-  await page.evaluate(async t => {
+  await page.evaluate(async ([t, settle]) => {
     window.render(t);
     // Flush layout, then allow painting/compositing after the CSS 3D and SVG updates.
     // Timeline time stays fixed while the browser catches up.
     document.documentElement.getBoundingClientRect();
-    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-  }, t);
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    if (settle > 0) await new Promise(resolve => setTimeout(resolve, settle));
+  }, [t, SETTLE_MS]);
 }
 try {
 async function open() {
@@ -64,11 +72,11 @@ if (mode === 'cues') {
   if (!Number.isInteger(NW)) throw new Error('WORKERS must be a positive integer');
   const pages = [page];
   for (let k = 1; k < NW; k++) pages.push((await open()).page);
-  console.log(`${n - n0} frames at ${fps} fps, SS=${SS} (${1080 * SS}x${VH * SS}), JPEG=${JPEG_QUALITY}, ${NW} workers, encoder=${ENCODER}`);
+  console.log(`${n - n0} frames at ${fps} fps, SS=${SS} (${1080 * SS}x${VH * SS}), ${SHOT === 'png' ? 'PNG' : `JPEG=${JPEG_QUALITY}`} capture, ${NW} workers, encoder=${ENCODER}`);
   const encoderArgs = ENCODER === 'h264_amf'
     ? ['-quality', process.env.AMF_QUALITY || 'balanced', '-rc', 'cqp', '-qp_i', process.env.QP || '20', '-qp_p', String(+(process.env.QP || 20) + 2)]
     : ['-preset', process.env.PRESET || 'slow', '-crf', process.env.CRF || '16'];
-  const ff = spawn('ffmpeg', ['-y', '-v', 'error', '-f', 'image2pipe', '-framerate', String(fps), '-c:v', 'mjpeg', '-i', '-',
+  const ff = spawn('ffmpeg', ['-y', '-v', 'error', '-f', 'image2pipe', '-framerate', String(fps), '-c:v', SHOT === 'png' ? 'png' : 'mjpeg', '-i', '-',
     ...(SS === 1 ? [] : ['-vf', `scale=1080:${VH}:flags=lanczos`]), '-c:v', ENCODER, ...encoderArgs,
     '-profile:v', 'high', '-level', '5.2', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', arg], { stdio: ['pipe', 'inherit', 'inherit'] });
   const ffDone = new Promise(resolve => {
@@ -79,7 +87,7 @@ if (mode === 'cues') {
   ff.on('error', error => { ffError = error; });
   ff.stdin.on('error', error => { ffError = error; });
   const t0 = Date.now();
-  const shot = async (p, i) => { await prepareFrame(p, i / fps); return p.screenshot({ type: 'jpeg', quality: JPEG_QUALITY }); };
+  const shot = async (p, i) => { await prepareFrame(p, i / fps); return SHOT === 'png' ? p.screenshot({ type: 'png' }) : p.screenshot({ type: 'jpeg', quality: JPEG_QUALITY }); };
   // One pending frame per page bounds memory. Start its next shot while ffmpeg consumes this one.
   // Catch pending failures immediately, then report them when their frame reaches the output queue.
   const queueShot = (p, i) => shot(p, i).then(buf => ({ buf }), error => ({ error }));
