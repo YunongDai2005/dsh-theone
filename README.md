@@ -20,7 +20,7 @@ Compatible with **DSH 0.2.0-rc.2** and **Node.js 24**.
 2. Open **Plugins → Add plugin**, paste `https://github.com/YunongDai2005/dsh-theone`, and install.
 3. Open **TheOne · Main chat** in the sidebar and start chatting.
 
-**v0.3.3 enables LLM routing by default and reuses DSH’s model calls and API credentials. No additional API key is needed.** Routing and topic workers use the model selected in DSH before opening TheOne. To change models, select another regular chat model in DSH, then open TheOne again.
+**v0.3.5 enables LLM routing by default and reuses DSH’s model calls and API credentials. No additional API key is needed.** Routing, topic workers, and the entry's context capacity follow the model selected in DSH before opening TheOne. To change models, select another regular chat model in DSH, then open TheOne again.
 
 The public repository includes the compiled backend and web client. Installation needs no local build or lifecycle scripts. You can also use the DSH CLI:
 
@@ -48,9 +48,23 @@ These workspaces are logical groups stored by TheOne. Native DSH workspaces are 
 
 Catalog entries, groups, source ranges, and indexing progress live in TheOne’s SQLite database. DSH keeps the original logs. The plugin organizes history at startup, updates after chats, and periodically checks for changes. Unchanged sessions do not trigger new model calls. Each scan processes at most 64 extraction batches and continues remaining work later. Initial indexing takes time and uses your configured API quota.
 
-Routing uses the catalog and DSH full-text search to retrieve up to 16 candidates for the LLM. If search fails, it falls back to the existing catalog and checks additional entries. A proposed new topic triggers up to three further batches of catalog checks; if entries remain unchecked, the plugin asks for clarification. Incomplete indexing or unreadable sources prevent a search miss from being treated as proof of a new topic. An explicit `新话题：` (Chinese for “new topic:”) request can still create one.
+Routing uses the catalog and DSH full-text search to retrieve up to 16 candidates for the LLM. If search fails, it falls back to the existing catalog and checks additional entries. A proposed new topic triggers up to three further batches of catalog checks. While indexing is incomplete or entries remain unchecked, a complete standalone request may create a topic if every review agrees that it needs no missing history. Unresolved historical references ask for clarification. This keeps independent tasks usable during indexing, but a candidate miss can still create a duplicate topic; it does not prove that all history has been searched. An explicit `新话题：` (Chinese for “new topic:”) request can still create one.
 
 Set `THEONE_HISTORY_CATALOG=false` to stop automatic indexing while keeping existing entries and groups. Failed sessions appear in the status and are retried later; one failed source does not block the others.
+
+## Entry context and usage-based compression
+
+The entry reports the backing model's context window and default output allowance from DSH, including adapter configuration overrides. It does not set a separate fixed context capacity. DSH still chooses when to compact, which old region to replace, and how much recent conversation to retain; its normal capacity thresholds remain in use.
+
+When DSH compacts through the TheOne provider, the plugin creates a bounded reference checkpoint from the topic catalog and completed routing calls:
+
+- **Hot:** the current topic, a topic used in the past day, or a topic used in the past seven days with at least three successful calls in the past 30 days. Retain a longer summary and up to three recent user/reply pairs when space permits.
+- **Warm:** another topic used in the past 30 days. Retain a shorter summary and up to one recent pair.
+- **Cold:** older topics or topics without recorded TheOne usage. Keep a short summary and state; omit their dialogue excerpts. A resumed topic becomes current and receives priority again.
+
+Only successful calls heat a topic. Failed requests and clarification do not increase its frequency. Usage survives entry reconstruction. Checkpoints are redacted, bounded by the model capacity and the compaction output allowance, and can be compacted again without multiplying retained excerpts. Compression makes no additional model call and never runs a worker or a tool. Original DSH logs, source ranges, topic summaries, and working sessions remain available for history retrieval.
+
+This changes the gateway checkpoint, not workers' ordinary DSH compaction. It activates when DSH compacts; age alone does not start a background compression job. An explicitly configured separate DSH summarization provider uses that provider's summary policy instead.
 
 ## Current features
 
@@ -95,7 +109,7 @@ npm run pack:plugin
 
 Tests use real DSH services, AgentLoop, sessions, SQLite queries, JSONL persistence, and compaction, with mocked models and no external API calls. Demo catalogs contain fictional data.
 
-Packaging produces `.dsh-test/dsh-theone-0.3.3.tgz`, containing the backend, web client, configuration, and bilingual documentation. It excludes API keys, chat snapshots, and databases.
+Packaging produces `.dsh-test/dsh-theone-0.3.5.tgz`, containing the backend, web client, configuration, and bilingual documentation. It excludes API keys, chat snapshots, and databases.
 
 For isolated local development, run `npm run install:local` and `npm run start:local`. Data lives under `~/.dsh-theone`; configure a model in that separate DSH profile. Copy `.env.example` to `.env` to adjust the port and other settings. Do not commit `.env`.
 

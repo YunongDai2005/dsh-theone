@@ -209,7 +209,7 @@ test('related groups remain separate from per-topic working sessions', () => {
   } finally { store.close() }
 })
 
-test('automatic catalog blocks implicit CREATE until an unreadable history is repaired', { timeout: 30000 }, async () => {
+test('unresolved history stays blocked until repaired, while a standalone download can run during indexing', { timeout: 30000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'theone-catalog-admission-'))
   const model = fixture()
   const app = await harness(root, model, { routerMode: 'llm', routerTransport: 'dsh', historyCatalog: true })
@@ -220,13 +220,33 @@ test('automatic catalog blocks implicit CREATE until an unreadable history is re
     await app.ctx.theone.catalog!.refresh()
     const originalBehavior = model.behavior!
     model.behavior = async function* (options) {
-      if (options.system === ROUTING_PROMPT) yield* textResponse(JSON.stringify({ action: 'CREATE', contextId: null, title: '摄影学习', question: null, reason: '独立的新事项' }))
+      if (options.system === ROUTING_PROMPT) {
+        const payload = JSON.parse(options.messages[0].content.filter(b => b.type === 'text').map(b => b.text).join(''))
+        const standalone = payload.text.includes('https://www.bilibili.com/video/BV1mSffBFE4A/')
+        assert.equal(payload.historyIncomplete, app.ctx.theone.catalog!.incomplete)
+        yield* textResponse(JSON.stringify({ action: 'CREATE', contextId: null, title: standalone ? '音频下载' : '摄影学习', question: null, reason: standalone ? '链接和目标完整，可独立执行' : '旧话题未找到', historyIndependent: standalone }))
+      }
       else yield* originalBehavior(options)
     }
-    const blocked = await ask(app.gateway, '我想学习摄影，请给我一个计划')
-    assert.match(blocked.output, /整理以前的聊天/)
+    const blocked = await ask(app.gateway, '继续昨天那个摄影计划')
+    assert.match(blocked.output, /之前哪件事/)
     assert.equal(app.ctx.theone.store.route(blocked.input.id)?.decision.action, 'CLARIFY')
     assert.ok(!app.ctx.theone.store.contexts().some(c => c.title === '摄影学习'))
+    const before = app.ctx.theone.store.contexts().length
+    const download = await ask(app.gateway, '帮我下载 https://www.bilibili.com/video/BV1mSffBFE4A/ 这个音频到桌面最高码率')
+    assert.equal(download.end?.data.reason.kind, 'completed')
+    assert.equal(download.output, '测试回答')
+    const route = app.ctx.theone.store.route(download.input.id)!
+    assert.equal(route.decision.action, 'CREATE')
+    assert.equal(route.decision.historyIndependent, true)
+    assert.equal(app.ctx.theone.store.contexts().length, before + 1)
+    assert.equal(app.ctx.theone.catalog!.incomplete, true)
+    const context = app.ctx.theone.store.contexts().find(c => c.id === route.decision.contextId)!
+    assert.ok(app.ctx.agents.get(SessionId(context.workingSessionId)))
+    // A subsequent message with a missing old reference must not inherit that permission.
+    const stillUnresolved = await ask(app.gateway, '继续之前那个摄影计划')
+    assert.equal(app.ctx.theone.store.route(stillUnresolved.input.id)?.decision.action, 'CLARIFY')
+    assert.equal(app.ctx.theone.store.contexts().length, before + 1)
     app.ctx.sessionQuery.readSession = originalRead
     await app.ctx.theone.catalog!.refresh()
     assert.equal(app.ctx.theone.catalog!.incomplete, false)
@@ -250,7 +270,7 @@ test('candidate miss is reviewed against remaining catalog before an implicit ne
         const payload = JSON.parse(options.messages[0].content.filter(b => b.type === 'text').map(b => b.text).join(''))
         yield* textResponse(JSON.stringify(payload.contexts.some((c: { id: string }) => c.id === 'z-target')
           ? { action: 'EXISTING', contextId: 'z-target', title: null, question: null, reason: '找到原来的论文' }
-          : { action: 'CREATE', contextId: null, title: '论文新工作', question: null, reason: '首批没有候选' }))
+          : { action: 'CREATE', contextId: null, title: '论文新工作', question: null, reason: '首批没有候选', historyIndependent: true }))
       } else yield* textResponse('继续旧论文')
     }
     const count = app.ctx.theone.store.contexts().length
@@ -307,4 +327,30 @@ test('broken native FTS still routes known topics and blocks implicit CREATE unt
     assert.equal(app.ctx.theone.store.route(fresh.input.id)?.decision.action, 'CREATE')
     assert.equal(app.ctx.theone.store.contexts().length, count + 1)
   } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
+})
+
+
+test('large-catalog review limits do not stop standalone tasks or bypass unresolved-history clarification', { timeout: 30000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'theone-catalog-review-limit-'))
+  const model = fixture()
+  const app = await harness(root, model, { routerMode:'llm', routerTransport:'dsh', historyCatalog:true })
+  try {
+    await app.ctx.theone.catalog!.refresh()
+    app.ctx.theone.store.seed(Array.from({length:70},(_,i)=>({id:`large-${i}`,title:`历史项目 ${i}`,summary:'一个不同的项目',entities:[],keywords:[],lastState:'待续'})))
+    app.ctx.theone.catalog!.candidates = async () => app.ctx.theone.store.contexts().slice(0,16)
+    model.behavior = async function* (options) {
+      if (options.system === ROUTING_PROMPT) {
+        const payload = JSON.parse(options.messages[0].content.filter(b=>b.type==='text').map(b=>b.text).join(''))
+        yield* textResponse(JSON.stringify({action:'CREATE',contextId:null,title:'独立资料下载',question:null,reason:'首批未匹配',historyIndependent:payload.text.includes('https://example.com/guide.pdf')}))
+      } else yield* textResponse('Worker 已收到完整请求')
+    }
+    const count = app.ctx.theone.store.contexts().length
+    const ambiguous = await ask(app.gateway,'继续上次的资料下载')
+    assert.equal(app.ctx.theone.store.route(ambiguous.input.id)?.decision.reason,'CATALOG_REVIEW_LIMIT')
+    assert.equal(app.ctx.theone.store.contexts().length,count)
+    const standalone = await ask(app.gateway,'把 https://example.com/guide.pdf 保存到桌面')
+    assert.equal(standalone.output,'Worker 已收到完整请求')
+    assert.equal(app.ctx.theone.store.route(standalone.input.id)?.decision.action,'CREATE')
+    assert.equal(app.ctx.theone.store.contexts().length,count+1)
+  } finally { await app.close(); await rm(root,{recursive:true,force:true}) }
 })

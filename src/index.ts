@@ -17,6 +17,7 @@ import type {} from '@deepseek-ai/dsh-workspace'
 import { buildSessionEventSearchDocuments, filterSessionEventDocuments } from '@deepseek-ai/dsh-session-query'
 import type { SessionEventWindow } from '@deepseek-ai/dsh-session-query'
 import { HistoryCatalog } from './history-catalog.ts'
+import { gatewayCheckpoint } from './gateway-compaction.ts'
 import { ContextStore } from './store.ts'
 import { resolveContext } from './router.ts'
 import { DeepSeekRouter, DshRouter, RouterFailure } from './llm-router.ts'
@@ -60,10 +61,9 @@ class GatewayAdapter extends LlmAdapter {
   constructor(private readonly service: TheOne) { super() }
   override providerInfo(provider: string) { return { id: provider, name: 'TheOne' } }
   override async listModels(provider: string) { return [{ provider, id: 'gateway', name: 'TheOne', inputModalities: ['text' as const] }] }
-  override resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
+  override resolveModel(provider: string, model: string, signal?: AbortSignal): Promise<LlmResolvedModelInfo> {
     if (model !== 'gateway') throw new Error('TheOne only exposes the gateway model')
-    this.service.captureDefaultModel()
-    return Promise.resolve({ provider, id: model, name: 'TheOne Gateway' })
+    return this.service.gatewayModelInfo(provider, signal)
   }
   override providerRetryPolicy() { return resolveRetryPolicy({ mode: 'normal', maxRetries: 0 }, 'theone.retry') }
   override stream(options: GenerateOptions): AsyncIterable<StreamChunk> { return this.service.answer(options) }
@@ -179,7 +179,7 @@ export default class TheOne extends Service {
         } else if (this.router) {
           const recent = await this.recentMessages(agent, input.id, signal)
           try {
-            const result = await this.router.decide({text,contexts,currentId,recent},signal)
+            const result = await this.router.decide({text,contexts,currentId,recent,historyIncomplete: this.catalog?.incomplete},signal)
             proposed = result.decision
             // A miss in a short candidate list is not proof that the whole catalog has no match.
             if (proposed.action === 'CREATE' && this.catalog && !/^新话题[：:]/.test(text.trim())) {
@@ -190,14 +190,17 @@ export default class TheOne extends Service {
               let checked = 0
               for (let offset = 0; offset < remaining.length && checked < 3; offset += pageSize, checked++) {
                 const page = [...(current ? [current] : []), ...remaining.slice(offset, offset + pageSize)]
-                const review = await this.router.decide({text,contexts:page,currentId,recent},signal)
+                const review = await this.router.decide({text,contexts:page,currentId,recent,historyIncomplete: this.catalog.incomplete},signal)
                 result.elapsedMs += review.elapsedMs
                 if (review.usage) result.usage = { prompt_tokens: (result.usage?.prompt_tokens ?? 0) + review.usage.prompt_tokens,
                   completion_tokens: (result.usage?.completion_tokens ?? 0) + review.usage.completion_tokens,
                   total_tokens: (result.usage?.total_tokens ?? 0) + review.usage.total_tokens }
                 if (review.decision.action !== 'CREATE') { proposed = review.decision; break }
+                // Every review must agree that execution needs no missing history.
+                if (proposed.historyIndependent && review.decision.historyIndependent !== true)
+                  proposed = { ...proposed, historyIndependent: false }
               }
-              if (proposed.action === 'CREATE' && remaining.length > checked * pageSize)
+              if (proposed.action === 'CREATE' && !proposed.historyIndependent && remaining.length > checked * pageSize)
                 proposed = { action: 'CLARIFY' as const, reason: 'CATALOG_REVIEW_LIMIT', question: '暂时没有找到明确相关的旧话题。你是在说一件新的事情吗？' }
             }
             Object.assign(receipt,{model:result.model,elapsedMs:result.elapsedMs,
@@ -210,8 +213,8 @@ export default class TheOne extends Service {
             proposed = {action:'CLARIFY' as const,reason:error.code,question:error.code === 'ROUTER_MODEL_MISSING' ? '请先在 DSH 中选择一个已配置的聊天模型，再打开 TheOne。无需另配 API Key。' : '话题判断暂时不可用，请稍后重试。'}
           }
         } else proposed = resolveContext(text,contexts,currentId)
-        if (proposed.action === 'CREATE' && this.catalog?.incomplete && !/^新话题[：:]/.test(text.trim()))
-          proposed = { action: 'CLARIFY' as const, reason: 'CATALOG_NOT_READY', question: '我还在整理以前的聊天，暂时不能确认这是不是新的事情，请稍后再试。' }
+        if (proposed.action === 'CREATE' && this.catalog?.incomplete && !proposed.historyIndependent && !/^新话题[：:]/.test(text.trim()))
+          proposed = { action: 'CLARIFY' as const, reason: 'CATALOG_NOT_READY', question: '你指的是之前哪件事？可以补充目标或链接，我就能继续处理。'  }
         signal.throwIfAborted()
         route = this.store.plan(input.id,agent.id,config.gatewayKey,proposed)
       } catch (error) {
@@ -298,6 +301,20 @@ export default class TheOne extends Service {
     const selection = this.store.rememberedModel(this.config.gatewayKey)
     if (!selection) throw new RouterFailure('ROUTER_MODEL_MISSING')
     return selection
+  }
+
+  /** The entry has exactly the configured backing model's capacity, including DSH overrides. */
+  async gatewayModelInfo(provider = 'theone', signal?: AbortSignal): Promise<LlmResolvedModelInfo> {
+    const info: LlmResolvedModelInfo = { provider, id: 'gateway', name: 'TheOne Gateway', inputModalities: ['text'] }
+    let selection: ModelSelection
+    try { selection = this.backingModel() }
+    catch (error) {
+      if (error instanceof RouterFailure && error.code === 'ROUTER_MODEL_MISSING') return info
+      throw error
+    }
+    const backing = await this.ctx.llm.resolveModelInfo(selection.provider, selection.model, signal)
+    return { ...info, ...(backing.context ? { context: { ...backing.context } } : {}),
+      ...(backing.defaultMaxTokens !== undefined ? { defaultMaxTokens: backing.defaultMaxTokens } : {}) }
   }
 
   /** Recover bounded routing context from DSH references after the Gateway is rebuilt. */
@@ -469,6 +486,25 @@ export default class TheOne extends Service {
 
   /** Stream text from committed worker attempts; tools execute exclusively in the worker. */
   async *answer(options: GenerateOptions): AsyncIterable<StreamChunk> {
+    // DSH calls the selected provider for maintenance without an ordinary turn route.
+    // Summarization must never claim/replay an input or start a Worker.
+    if (options.purpose) {
+      options.signal?.throwIfAborted()
+      let text = 'TheOne'
+      if (options.purpose === 'compaction') {
+        if (!options.sessionId || !this.store.isGateway(options.sessionId)) throw new Error('Gateway checkpoint requires a known entry session')
+        const info = await this.gatewayModelInfo('theone', options.signal)
+        options.signal?.throwIfAborted()
+        text = gatewayCheckpoint({ messages: options.messages, contexts: this.store.contexts(),
+          usage: this.store.contextUsage(this.config.gatewayKey), currentId: this.store.current(this.config.gatewayKey),
+          route: id => this.store.route(id), contextWindow: info.context?.contextWindow, maxTokens: options.maxTokens })
+      }
+      yield { type: 'block-start', index: 0, blockType: 'text' }
+      yield { type: 'text-delta', index: 0, text }
+      yield { type: 'block-end', index: 0, block: { type: 'text', text } }
+      yield { type: 'finish', reason: { kind: 'stop' } }
+      return
+    }
     const input = [...options.messages].reverse().find((message): message is UserMessage =>
       message.role === 'user' && 'source' in message && message.source?.kind === 'user')
     if (!input || !options.sessionId) throw new Error('TheOne requires a session-backed user input')

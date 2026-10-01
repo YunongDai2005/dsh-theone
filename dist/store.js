@@ -96,6 +96,20 @@ export class ContextStore {
         const row = this.db.prepare('SELECT context_id FROM gateway_state WHERE gateway_key = ?').get(gatewayKey);
         return row ? String(row.context_id) : undefined;
     }
+    /** Successful uses only: retries, failed work and clarification never heat a topic. */
+    contextUsage(gatewayKey, now = Date.now()) {
+        const cutoff = new Date(now - 30 * 86400000).toISOString().slice(0, 19).replace('T', ' ');
+        return this.db.prepare(`SELECT json_extract(r.decision, '$.contextId') AS context_id,
+      COUNT(*) AS calls, SUM(r.created_at >= ?) AS recent_calls, MAX(r.created_at) AS last_used
+      FROM routing_events r JOIN gateway_sessions gs ON gs.gateway_id = r.gateway_id
+      WHERE gs.gateway_key = ? AND r.status = 'completed'
+        AND json_extract(r.decision, '$.action') != 'CLARIFY'
+        AND json_extract(r.decision, '$.contextId') IS NOT NULL
+      GROUP BY context_id`).all(cutoff, gatewayKey).map(row => ({
+            contextId: String(row.context_id), completedCalls: Number(row.calls),
+            recentCalls: Number(row.recent_calls), lastUsedAt: Date.parse(String(row.last_used).replace(' ', 'T') + 'Z'),
+        }));
+    }
     groups() {
         return this.db.prepare('SELECT * FROM topic_groups ORDER BY title').all().map(row => ({
             id: String(row.id), title: String(row.title), summary: String(row.summary),

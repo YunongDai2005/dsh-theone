@@ -1,6 +1,6 @@
 import { Context, Service } from '@deepseek-ai/cordis';
 import z from '@deepseek-ai/schemastery';
-import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm';
+import type { GenerateOptions, LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm';
 import type { SessionEventWindow } from '@deepseek-ai/dsh-session-query';
 import { HistoryCatalog } from './history-catalog.ts';
 import { ContextStore } from './store.ts';
@@ -60,6 +60,8 @@ export default class TheOne extends Service {
     /** Capture before Web saves the gateway itself as DSH's new default. */
     captureDefaultModel(): void;
     private backingModel;
+    /** The entry has exactly the configured backing model's capacity, including DSH overrides. */
+    gatewayModelInfo(provider?: string, signal?: AbortSignal): Promise<LlmResolvedModelInfo>;
     /** Recover bounded routing context from DSH references after the Gateway is rebuilt. */
     private recentMessages;
     /** Literal Unicode search over reviewed ranges; failures are isolated per source. */

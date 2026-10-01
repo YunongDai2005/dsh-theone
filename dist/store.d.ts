@@ -1,6 +1,6 @@
 import type { ModelSelection } from '@deepseek-ai/dsh-agent';
 import type { ExtractedTopic, HistoryPart, TopicGroup } from './catalog-types.ts';
-import type { ContextDescriptor, Decision, RouteRecord, StoredContext, SourceRange } from './types.ts';
+import type { ContextDescriptor, ContextUsage, Decision, RouteRecord, StoredContext, SourceRange } from './types.ts';
 /** Stores descriptors and routing metadata. Original conversation stays in DSH. */
 export declare class ContextStore {
     private readonly db;
@@ -11,6 +11,8 @@ export declare class ContextStore {
     seed(contexts: ContextDescriptor[]): void;
     contexts(): StoredContext[];
     current(gatewayKey: string): string | undefined;
+    /** Successful uses only: retries, failed work and clarification never heat a topic. */
+    contextUsage(gatewayKey: string, now?: number): ContextUsage[];
     groups(): TopicGroup[];
     isGateway(sessionId: string): boolean;
     rememberGateway(gatewayKey: string, sessionId: string): void;

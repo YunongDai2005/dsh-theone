@@ -11,6 +11,13 @@ export interface StoredContext extends ContextDescriptor {
   workingSessionId: string
 }
 
+export interface ContextUsage {
+  contextId: string
+  completedCalls: number
+  recentCalls: number
+  lastUsedAt: number
+}
+
 export type Action = 'KEEP' | 'MOUNT' | 'SWAP' | 'CREATE' | 'CLARIFY'
 export interface Decision {
   action: Action
@@ -18,6 +25,8 @@ export interface Decision {
   title?: string
   reason: string
   question?: string
+  /** CREATE can proceed during indexing only when the request needs no missing history. */
+  historyIndependent?: boolean
 }
 
 export interface RouteRecord {
