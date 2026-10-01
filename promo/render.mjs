@@ -10,7 +10,8 @@ const [mode, arg, arg2] = process.argv.slice(2);
 
 const browser = await chromium.launch();
 const SS = +(process.env.SS || 1); // supersample: render at SS× and downsample with Lanczos
-const page = await browser.newPage({ viewport: { width: 1080, height: 1920 }, deviceScaleFactor: SS });
+const VH = +(process.env.VH || 2160); // stage height: 2160 for 9:18
+const page = await browser.newPage({ viewport: { width: 1080, height: VH }, deviceScaleFactor: SS });
 page.on('console', m => console.log('[page]', m.text()));
 page.on('pageerror', e => console.log('[pageerror]', e.message));
 await page.goto('file://' + path.join(here, process.env.PAGE || 'film.html'));
@@ -27,14 +28,14 @@ if (mode === 'cues') {
     await page.evaluate(t => window.render(t), t);
     const out = path.join(arg2, `f_${t.toFixed(2).padStart(6, '0')}.jpg`);
     const buf = await page.screenshot({ type: 'png' });
-    await new Promise((res, rej) => { const f = spawn('ffmpeg', ['-y', '-v', 'error', '-i', '-', '-vf', 'scale=1080:1920:flags=lanczos', '-q:v', '2', out]); f.on('close', res); f.on('error', rej); f.stdin.end(buf); });
+    await new Promise((res, rej) => { const f = spawn('ffmpeg', ['-y', '-v', 'error', '-i', '-', '-vf', `scale=1080:${VH}:flags=lanczos`, '-q:v', '2', out]); f.on('close', res); f.on('error', rej); f.stdin.end(buf); });
   }
 } else if (mode === 'video') {
   const fps = +(arg2 || 30);
   const t0s = +(process.env.START || 0), t1s = +(process.env.END || TOTAL); // render only a section when START/END are set
   const n0 = Math.round(t0s * fps), n = Math.round(t1s * fps);
   const ff = spawn('ffmpeg', ['-y', '-v', 'error', '-f', 'image2pipe', '-framerate', String(fps), '-c:v', 'mjpeg', '-i', '-',
-    '-vf', 'scale=1080:1920:flags=lanczos', '-c:v', 'libx264', '-preset', 'slow', '-crf', '16', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', arg], { stdio: ['pipe', 'inherit', 'inherit'] });
+    '-vf', `scale=1080:${VH}:flags=lanczos`, '-c:v', 'libx264', '-preset', 'slow', '-crf', '16', '-profile:v', 'high', '-level', '5.2', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', arg], { stdio: ['pipe', 'inherit', 'inherit'] });
   const t0 = Date.now();
   for (let i = n0; i < n; i++) {
     await page.evaluate(t => window.render(t), i / fps);

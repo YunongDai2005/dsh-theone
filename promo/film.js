@@ -27,6 +27,7 @@ const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
 const I = window.DSH_ICONS; const ic = (n, cls = '') => `<span class="ico ${cls}">${I[n]}</span>`;
 
 /* ---------------------------------------------------------- beat grid */
+const SH = 2160, CYS = SH / 2;   // 9:18 stage (1080×2160); the 1080×1920 design sits in its middle
 const BEAT = 60 / 77, D = 20 * BEAT;            // drop = BGM 1:33.279
 const b = k => k * BEAT, r = k => D + k * BEAT;  // r(1), r(2.25), r(3) are the bar's hard hits
 const TOTAL = +(r(28.75) + 0.3).toFixed(3);
@@ -57,15 +58,15 @@ function sDesk(t, ov) {
   const c = deskCursor(t), cd = deskCursor(Math.max(0, t - .14));
   const z = track(t, [[0, 2.5], [CLICK0, 2.3], [b(1.6), 1.6, 'o']]);
   let cx = (cd[0] + ICON.x) / 2, cy = (cd[1] + ICON.y) / 2 - 40;
-  cx = clamp(cx, 540 / z, 1080 - 540 / z); cy = clamp(cy, 960 / z, 1920 - 960 / z);
+  cx = clamp(cx, 540 / z, 1080 - 540 / z); cy = clamp(cy, CYS / z, 1920 - CYS / z);
   Object.assign(DCAM, { x: cx, y: cy, z });
-  deskWorld.style.transform = `translate(540px,960px) scale(${z}) translate(${-cx}px,${-cy}px)`;
+  deskWorld.style.transform = `translate(540px,${CYS}px) scale(${z}) translate(${-cx}px,${-cy}px)`;
   deskWorld.style.filter = `blur(${4 * seg(t, CLICK0 + .1, b(1.5))}px) brightness(${1 - .15 * seg(t, CLICK0, b(1.5))})`;
   const pr = Math.abs(t - CLICK0) < .07 ? .92 : 1;
   const bounce = t > CLICK0 ? 1 - .1 * Math.sin(seg(t, CLICK0, CLICK0 + .35) * Math.PI) : 1;
   $('#dsh').style.transform = `scale(${pr}) translateY(${(1 - bounce) * 140}px)`;
   op($('#dshDot'), seg(t, CLICK0 + .1, CLICK0 + .2));
-  ov.desk = { x: (c[0] - cx) * z + 540, y: (c[1] - cy) * z + 960, s: z * 1.25, press: Math.abs(t - CLICK0) < .06, o: 1 - seg(t, CLICK0 + .15, CLICK0 + .3) };
+  ov.desk = { x: (c[0] - cx) * z + 540, y: (c[1] - cy) * z + CYS, s: z * 1.25, press: Math.abs(t - CLICK0) < .06, o: 1 - seg(t, CLICK0 + .15, CLICK0 + .3) };
 }
 const deskCur = h('div', 'cur'); deskCur.style.zIndex = 30; $('#stage').appendChild(deskCur);
 
@@ -215,7 +216,7 @@ envAt(envBody, ONE.x - 440, ONE.y - 280, 0);
 
 
 const ov = $('#ov');
-const beamSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); beamSvg.id = 'beams'; beamSvg.setAttribute('width', 1080); beamSvg.setAttribute('height', 1920);
+const beamSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); beamSvg.id = 'beams'; beamSvg.setAttribute('width', 1080); beamSvg.setAttribute('height', SH);
 beamSvg.innerHTML = '<defs><filter id="bg2" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="4"/></filter></defs>';
 ov.appendChild(beamSvg);
 const BEAMS = [];
@@ -234,7 +235,7 @@ const CHIP_CL = [0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3], SLOT = [5, 0, 9, 3, 11, 7,
 const SLOTS = CL.map(c => { const el = h('div', 'slot', `<div class="sl">${c.name}</div>`); ENV.appendChild(el); envAt(el, c.x - 185, c.y - 46, 2); return el; });
 const CHIPS = CHIP_T.map((tt, i) => { const r0 = rng(100 + i), sl = SLOT[i]; const el = h('div', 'chip3', esc(tt)); ENV.appendChild(el);
   return { el, i, x0: ONE.x - 330 + (sl % 4) * 220 + (r0() - .5) * 60, y0: ONE.y - 200 + Math.floor(sl / 4) * 160 + (r0() - .5) * 50, cl: CHIP_CL[i], k: i % 3, ph: r0() * 6 }; });
-const motes = []; { const r0 = rng(21); for (let i = 0; i < 40; i++) { const m = h('div'); m.style.cssText = 'position:absolute;left:0;top:0;width:6px;height:6px;border-radius:50%;background:#ffb066;box-shadow:0 0 12px 3px rgba(255,150,60,.55)'; ov.appendChild(m); motes.push({ el: m, x: r0() * 1080, y: r0() * 1920, sp: 20 + r0() * 70, ph: r0() * 6, s: .4 + r0() * 1.1 }); } }
+const motes = []; { const r0 = rng(21); for (let i = 0; i < 40; i++) { const m = h('div'); m.style.cssText = 'position:absolute;left:0;top:0;width:6px;height:6px;border-radius:50%;background:#ffb066;box-shadow:0 0 12px 3px rgba(255,150,60,.55)'; ov.appendChild(m); motes.push({ el: m, x: r0() * 1080, y: r0() * SH, sp: 20 + r0() * 70, ph: r0() * 6, s: .4 + r0() * 1.1 }); } }
 
 // post-drop cues on the bar's hard hits (r1, r2.25, r3 …)
 cue(r(1), 'layer'); cue(r(2.25), 'layer', { g: .9 }); cue(r(3), 'layer', { g: .8 });
@@ -244,14 +245,14 @@ cue(r(12), 'rise'); cue(r(13), 'snap'); cue(r(14.25), 'snap'); cue(r(15), 'snap'
 cue(r(17), 'deck'); cue(r(17.5), 'squeeze'); cue(r(18.25), 'rise'); cue(r(19), 'stack', { g: 1.2 }); cue(r(19), 'layer'); cue(r(20), 'swoosh2'); cue(r(21), 'end');
 
 let WM = new DOMMatrix();
-function proj(p) { const q = WM.transformPoint(new DOMPoint(p[0], p[1], p[2])); const k = 2200 / (2200 - q.z); return [540 + (q.x - 540) * k, 960 + (q.y - 960) * k, k]; }
+function proj(p) { const q = WM.transformPoint(new DOMPoint(p[0], p[1], p[2])); const k = 2200 / (2200 - q.z); return [540 + (q.x - 540) * k, CYS + (q.y - CYS) * k, k]; }
 const place = (el, x, y, z, w, hh, o, s = 1) => { el.style.transform = `translate3d(${x - w / 2}px,${y - hh / 2}px,${z}px) scale(${s})`; op(el, o); show(el, o > 0.001); };
 
 function camAt(t) {
   // pre-drop: close, three-quarter angle on the list → whoosh up → frontal on The One
   if (t < D) {
     const drift = seg(t, b(1.4), T_STOP);
-    const pre = { z: lerp(2.5, 2.68, E.io(drift)), cx: 200, cy: lerp(722, 712, drift), rx: 4, ry: 9, rz: 0, cz: 0 };
+    const pre = { z: lerp(2.5, 2.68, E.io(drift)), cx: 200, cy: lerp(714, 702, drift), rx: 4, ry: 9, rz: 0, cz: 0 };  // list framed clear of the notch
     // anger: hand-held shake that builds, then the slam jolts it
     const sh = (t > T_STOP && t < T_SLAM + .6) ? (E.io(seg(t, T_STOP, T_SLAM)) * 1 + 2.2 * Math.exp(-Math.max(0, t - T_SLAM) * 9) * (t > T_SLAM ? 1 : 0)) * (1 - seg(t, T_SLAM + .3, T_SLAM + .6)) : 0;
     const n1 = Math.sin(t * 61) * .6 + Math.sin(t * 37 + 1) * .4, n2 = Math.sin(t * 53 + 2) * .6 + Math.sin(t * 29) * .4;
@@ -287,15 +288,15 @@ function sApp(t, ovs) {
   const aw = $('#appwrap');
   if (t < b(1.7)) {
     const p = E.oe(seg(t, CLICK0 + .02, b(1.55)));
-    const ix = (ICON.x - DCAM.x) * DCAM.z + 540, iy = (ICON.y - DCAM.y) * DCAM.z + 960;
+    const ix = (ICON.x - DCAM.x) * DCAM.z + 540, iy = (ICON.y - DCAM.y) * DCAM.z + CYS;
     const s = lerp(.06, 1, p);
-    aw.style.transform = `translate(${lerp(ix, 540, p) - 540 * s}px,${lerp(iy, 960, p) - 960 * s}px) scale(${s})`;
+    aw.style.transform = `translate(${lerp(ix, 540, p) - 540 * s}px,${lerp(iy, CYS, p) - CYS * s}px) scale(${s})`;
     op(aw, seg(t, CLICK0, CLICK0 + .12)); aw.style.borderRadius = lerp(200, 0, p) + 'px'; aw.style.overflow = 'hidden';
   } else { aw.style.transform = 'none'; op(aw, 1); aw.style.overflow = ''; }
 
   const C = camAt(t);
-  w3.style.transform = `translate(540px,960px) rotateX(${C.rx}deg) rotateY(${C.ry}deg) rotateZ(${C.rz}deg) scale3d(${C.z},${C.z},${C.z}) translate3d(${-C.cx}px,${-C.cy}px,${-C.cz}px)`;
-  WM = new DOMMatrix().translate(540, 960).rotateAxisAngle(1, 0, 0, C.rx).rotateAxisAngle(0, 1, 0, C.ry).rotateAxisAngle(0, 0, 1, C.rz).scale(C.z, C.z, C.z).translate(-C.cx, -C.cy, -C.cz);
+  w3.style.transform = `translate(540px,${CYS}px) rotateX(${C.rx}deg) rotateY(${C.ry}deg) rotateZ(${C.rz}deg) scale3d(${C.z},${C.z},${C.z}) translate3d(${-C.cx}px,${-C.cy}px,${-C.cz}px)`;
+  WM = new DOMMatrix().translate(540, CYS).rotateAxisAngle(1, 0, 0, C.rx).rotateAxisAngle(0, 1, 0, C.ry).rotateAxisAngle(0, 0, 1, C.rz).scale(C.z, C.z, C.z).translate(-C.cx, -C.cy, -C.cz);
 
   // ---- the search
   const sc = t < T_SLAM ? listScroll(t) : listScroll(T_SLAM);
@@ -336,7 +337,7 @@ function sApp(t, ovs) {
   // ---- the reveal light
   const g = seg(t, T_UP1 - .3, b(17.3));
   op($('#dimW'), t < D ? .82 * E.io(g) : lerp(.82, 0, seg(t, D, r(1))));
-  op($('#rays'), t < D ? .35 * E.io(seg(t, b(16.6), b(18.6))) : 1 - seg(t, D, D + .25));
+  op($('#rays'), 0);
   $('#rays').style.transform = `rotate(${(t - b(16)) * 6}deg)`;
   op($('#halo'), 0);
   const one = $('#oneBtn'), gl = t > T_WH1 ? track(t, [[T_UP1, .2], [b(18.3), .65], [D, 1]]) + .06 * Math.sin(t * 3.4) : 0;
@@ -353,10 +354,13 @@ function sApp(t, ovs) {
       const g2 = Math.min(1.3, gl);
       if (!PREG) PREG = makeShapeGlow(preGlow, KEY_L, true);
       setShapeGlow(PREG, e => boxHull(186, 208.5, 168 - 14 + e, 45.5 - 14 + e, 0, 0), o2 * Math.min(1.4, .45 + .5 * g2), 14);
+      const ry0 = preRays; ry0.style.width = ry0.style.height = '2200px'; ry0.style.transform = `translate(${c[0] - 1100}px,${c[1] - 1100}px) rotate(${(t - b(16)) * 5}deg) scale(${Math.max(.7, L / 650)})`;
+      ry0.style.webkitMaskImage = `radial-gradient(ellipse ${L * .38}px ${W * .5}px at 1100px 1100px,transparent 0,transparent 70%,#000 100%),radial-gradient(circle at 1100px 1100px,#000 0,rgba(0,0,0,.5) 22%,transparent 50%)`;
+      ry0.style.webkitMaskComposite = 'source-in'; op(ry0, o2 * (.12 + .2 * g2));
     }
   }
   const mv = t > T_WH1 && t < D + .3 ? seg(t, T_UP1, b(17)) * (1 - seg(t, D, D + .3)) : 0;
-  motes.forEach(M => { if (!mv) { op(M.el, 0); return; } const y = ((M.y - (t - T_WH1) * M.sp) % 1920 + 1920) % 1920; M.el.style.transform = `translate(${M.x + 14 * Math.sin(t + M.ph)}px,${y}px) scale(${M.s})`; op(M.el, mv * (.35 + .65 * Math.abs(Math.sin(t * 1.7 + M.ph)))); });
+  motes.forEach(M => { if (!mv) { op(M.el, 0); return; } const y = ((M.y - (t - T_WH1) * M.sp) % SH + SH) % SH; M.el.style.transform = `translate(${M.x + 14 * Math.sin(t + M.ph)}px,${y}px) scale(${M.s})`; op(M.el, mv * (.35 + .65 * Math.abs(Math.sin(t * 1.7 + M.ph)))); });
 
   // ---- cursor (inside the window, so it shares the camera)
   let cx = 0, cy = 0, hand = false, press = false, co = 0;
@@ -465,16 +469,17 @@ function sApp(t, ovs) {
     el.querySelector('.sl').style.opacity = (.35 + .65 * seg(t, CL[i].t, CL[i].t + .15)) * (1 - seg(t, r(17.5), r(17.5) + .2));
   });
 }
-const preGlow = h('div', null); preGlow.style.cssText = 'position:absolute;left:0;top:0;width:1080px;height:1920px;pointer-events:none'; let PREG = null;
-const glowL = h('div', null); glowL.style.cssText = 'position:absolute;left:0;top:0;width:1080px;height:1920px;pointer-events:none'; $('#cam').insertBefore(glowL, w3); $('#cam').insertBefore(preGlow, $('#ov'));
-glowL.innerHTML = `<svg id="cone" width="1080" height="1920" style="position:absolute;left:0;top:0"><defs><linearGradient id="coneG" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="rgb(255,160,80)" stop-opacity="0"/><stop offset="0" stop-color="rgb(255,160,80)" stop-opacity="0"/><stop offset="0" stop-color="rgb(255,190,130)" stop-opacity="0"/><stop offset="0" stop-color="rgb(255,190,130)" stop-opacity="0"/></linearGradient><filter id="coneB" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="26"/></filter></defs><polygon id="coneP" fill="url(#coneG)" filter="url(#coneB)"/><linearGradient id="coneG2" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="rgb(255,160,80)" stop-opacity="0"/><stop offset="0" stop-color="rgb(255,160,80)" stop-opacity="0"/><stop offset="0" stop-color="rgb(255,190,130)" stop-opacity="0"/><stop offset="0" stop-color="rgb(255,190,130)" stop-opacity="0"/></linearGradient><polygon id="coneP2" fill="url(#coneG2)" filter="url(#coneB)"/></svg>
+const preGlow = h('div', null); preGlow.style.cssText = 'position:absolute;left:0;top:0;width:1080px;height:' + SH + 'px;pointer-events:none'; let PREG = null;
+const preRays = h('div', 'gl3 grays'); preGlow.appendChild(preRays);
+const glowL = h('div', null); glowL.style.cssText = 'position:absolute;left:0;top:0;width:1080px;height:' + SH + 'px;pointer-events:none'; $('#cam').insertBefore(glowL, w3); $('#cam').insertBefore(preGlow, $('#ov'));
+glowL.innerHTML = `<svg id="cone" width="1080" height="${SH}" style="position:absolute;left:0;top:0"><defs><linearGradient id="coneG" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="rgb(255,160,80)" stop-opacity="0"/><stop offset="0" stop-color="rgb(255,160,80)" stop-opacity="0"/><stop offset="0" stop-color="rgb(255,190,130)" stop-opacity="0"/><stop offset="0" stop-color="rgb(255,190,130)" stop-opacity="0"/></linearGradient><filter id="coneB" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="26"/></filter></defs><polygon id="coneP" fill="url(#coneG)" filter="url(#coneB)"/><linearGradient id="coneG2" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="rgb(255,160,80)" stop-opacity="0"/><stop offset="0" stop-color="rgb(255,160,80)" stop-opacity="0"/><stop offset="0" stop-color="rgb(255,190,130)" stop-opacity="0"/><stop offset="0" stop-color="rgb(255,190,130)" stop-opacity="0"/></linearGradient><polygon id="coneP2" fill="url(#coneG2)" filter="url(#coneB)"/></svg>
   <div class="gl3 grays"></div><div class="gl3 gstreak"></div><div class="gl3 gstreak2"></div>`;
 const hull = P => { P = P.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]); const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]); const lo = [], up = []; for (const p of P) { while (lo.length > 1 && cr(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop(); lo.push(p); } for (const p of P.reverse()) { while (up.length > 1 && cr(up[up.length - 2], up[up.length - 1], p) <= 0) up.pop(); up.push(p); } return lo.slice(0, -1).concat(up.slice(0, -1)); };
 // glow that follows an object's real projected outline: the hull of its box corners, rounded by a
 // round-joined stroke, drawn as three blurred layers (edge, bloom, haze) — no more screen ellipses
 const SVGNS = 'http://www.w3.org/2000/svg'; let glowSeq = 0;
 function makeShapeGlow(parent, layers, withMask) {
-  const svg = document.createElementNS(SVGNS, 'svg'); svg.setAttribute('width', 1080); svg.setAttribute('height', 1920); svg.style.cssText = 'position:absolute;left:0;top:0;overflow:visible';
+  const svg = document.createElementNS(SVGNS, 'svg'); svg.setAttribute('width', 1080); svg.setAttribute('height', SH); svg.style.cssText = 'position:absolute;left:0;top:0;overflow:visible';
   const id = 'sg' + (glowSeq++); let defs = '', body = '';
   layers.forEach((L, i) => { defs += `<filter id="${id}f${i}" filterUnits="userSpaceOnUse" x="-600" y="-600" width="2280" height="3120"><feGaussianBlur stdDeviation="1"/></filter>`; body += `<path class="L${i}" fill="${L.col}" stroke="${L.col}" stroke-linejoin="round" filter="url(#${id}f${i})"/>`; });
   if (withMask) defs += `<mask id="${id}m" maskUnits="userSpaceOnUse" x="-600" y="-600" width="2280" height="3120"><rect x="-600" y="-600" width="2280" height="3120" fill="#fff"/><path class="hole" fill="#000" stroke="#000" stroke-linejoin="round"/></mask>`;
@@ -537,7 +542,7 @@ function lastHit(t) { const k = Math.floor(((t - D) / BEAT - 1) / 4); return D +
 
 /* ---------------------------------------------------------- end card */
 const endEl = $('#end');
-endEl.innerHTML = `<div class="erays" id="erays"></div><div class="ehalo" id="ehalo"></div><div class="ewm" id="ewm"><span class="t">The</span><span class="o">One<span class="d"></span></span></div>
+endEl.innerHTML = `<div class="erays" id="erays"></div><div class="ewm ewg" id="ewg"><span class="t">The</span><span class="o">One<span class="d"></span></span></div><div class="ewm" id="ewm"><span class="t">The</span><span class="o">One<span class="d"></span></span></div>
   <div class="etag" id="etag">One chat. Every context.</div>
   <div class="eurl" id="eurl"><svg class="ghm" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg><span>YunongDai2005/dsh-theone</span></div>
   <div class="edisc" id="edisc">Community plugin for DSH · unofficial</div>`;
@@ -550,20 +555,16 @@ function sEnd(t) {
   $('#ewm').style.transform = `scale(${lerp(1.12, 1, E.oe(k)) * (1 + .02 * P)})`; op($('#ewm'), seg(t, r(21), r(21) + .15));
   const o = $('#ewm .o'); o.style.textShadow = `0 0 ${36 + 40 * P}px rgba(255,140,50,${.3 + .35 * P}),0 0 ${110 + 90 * P}px rgba(255,120,30,${.12 + .26 * P})`;
   $('#ewm .d').style.boxShadow = `0 0 ${20 + 30 * P}px rgba(255,140,50,${.55 + .4 * P})`;
-  const hv = seg(t, r(21), r(21) + .4); op($('#ehalo'), hv * (.45 + .55 * P)); $('#ehalo').style.transform = `translate(-50%,-50%) scale(${1 + .12 * P})`;
+  const hv = seg(t, r(21), r(21) + .4); const ewg = $('#ewg'); op(ewg, hv * (.35 + .5 * P)); ewg.style.transform = $('#ewm').style.transform; ewg.style.filter = `blur(${18 + 16 * P}px)`;
   op($('#erays'), hv * (.10 + .26 * P)); $('#erays').style.transform = `translate(-50%,-50%) rotate(${(t - r(21)) * 4}deg) scale(${1 + .06 * P})`;
   const up = (id, a) => { const el = $(id), p = seg(t, a, a + .4); op(el, p); el.style.transform = `translateY(${(1 - E.o(p)) * 24}px)`; };
   up('#etag', r(22.25)); up('#eurl', r(23)); up('#edisc', r(23.5));
 }
 
 /* ---------------------------------------------------------- global FX */
-const grain = $('#grain'), gctx = grain.getContext('2d');
-{ const img = gctx.createImageData(398, 608), r0 = rng(77); for (let i = 0; i < img.data.length; i += 4) { const v = r0() * 255; img.data[i] = img.data[i + 1] = img.data[i + 2] = v; img.data[i + 3] = 255; } gctx.putImageData(img, 0, 0);  }
 function sFX(t) {
   const f = Math.max(t >= D ? 1 - E.o(seg(t, D, D + .55)) : 0, t >= r(20.6) ? (t < r(21) ? .95 * E.ie(seg(t, r(20.6), r(21))) : .95 * (1 - E.o(seg(t, r(21), r(21) + .7)))) : 0);
   op($('#flash'), f);
-  const fr = Math.floor(t * 30), r0 = rng(fr + 1);
-  grain.style.transform = `translate(${Math.floor(r0() * 256)}px,${Math.floor(r0() * 256)}px) scale(2.6)`; grain.style.transformOrigin = '0 0';
   op($('#fade'), seg(t, TOTAL - .45, TOTAL));
 }
 function drawDeskCursor(o) {

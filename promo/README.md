@@ -1,8 +1,8 @@
 # TheOne — vertical film
 
-1080×1920, 30 fps, 38.3 s. Light theme, English only, almost no on-screen text. Every frame is a pure function of `t` in `film.js`; Playwright screenshots each frame and ffmpeg encodes. All sound effects are synthesized by `sfx.py`.
+1080×2160 (9:18), 60 fps, 38.3 s. Light theme, English only, almost no on-screen text. Every frame is a pure function of `t` in `film.js`; Playwright screenshots each frame and ffmpeg encodes. All sound effects are synthesized by `sfx.py`.
 
-The UI is a replica of the DSH web client built with DSH's own icons, whale mark and wordmark (`extract-icons.tsx` renders them from the `deepseek-harness` sources). The window is laid out at 2.8× resolution with CSS `zoom` and scaled back down, so text stays sharp under the 3D camera. The top 170 px stay background-only for the phone notch.
+The UI is a replica of the DSH web client built with DSH's own icons, whale mark and wordmark (`extract-icons.tsx` renders them from the `deepseek-harness` sources). The window is laid out at 2.8× resolution with CSS `zoom` and scaled back down, so text stays sharp under the 3D camera. The 1080×1920 design sits in the middle of a 1080×2160 (9:18) stage, so the extra 120 px top and bottom keep the notch, the rounded top corners and the platform UI clear of anything important.
 
 Video frames are rendered at 3× (`SS=3`) and downsampled with Lanczos, which keeps text sharp on oblique 3D planes. After the drop, The One key glows along its real projected outline (the hull of its box corners, rounded and drawn as blurred edge, bloom and haze layers), with the bloom and haze inflated in 3D before projection so their spread is foreshortened like the key itself; plus soft rays, an anamorphic streak, and a routing light that travels level by level, accelerating into each landing: key → router on r5 / r9 (the bar's strongest hit), router → session on r6¼ / r10¼; each level flares only when the light lands; it flares only on each bar's strongest hit (`r(4k+1)`). The 3D key's face is a pre-rendered 8× bitmap (`mkface.mjs`); whenever the key faces the camera it is swapped for a flat 2D copy fitted to its projected corners, because Chromium caps the raster resolution of 3D layers but not 2D ones. The pre-drop sidebar button, the router and the highlighted session cards use the same outline-following glow, so no glow is an ellipse or lies flat on a tilted plane.
 
@@ -50,8 +50,8 @@ echo '{"total":38.287}' > meta.json && python3 sfx.py          # → sfx.wav
 ffmpeg -i bgm.m4a -i sfx.wav -filter_complex \
   "[0:a]aresample=44100,atrim=start=77.6942:duration=38.287,asetpts=PTS-STARTPTS,afade=t=in:d=0.4,afade=t=out:st=37.09:d=1.2[m];[m][1:a]amix=inputs=2:normalize=0,alimiter=limit=0.95:level=false[a]" \
   -map "[a]" -c:a pcm_s16le mix.wav
-SS=3 node render.mjs video film_noaudio.mp4 30   # 3× supersampled, Lanczos down to 1080×1920
-ffmpeg -i film_noaudio.mp4 -i mix.wav -c:v copy -c:a aac -b:a 256k -shortest theone-film.mp4
+SS=3 node render.mjs video film_noaudio.mp4 60   # 60 fps, 3× supersampled, Lanczos down to 1080×2160
+ffmpeg -i film_noaudio.mp4 -i mix.wav -c:v copy -c:a aac -b:a 320k -shortest TheOne-9x18-60fps.mp4
 ```
 
 Render just one section with `START=27.2 END=32.6 SS=2 node render.mjs video part.mp4 30`. Preview frames with `node render.mjs stills 1.2,15.584,25 out/`. Opening `film.html` in a browser loops the film silently.
