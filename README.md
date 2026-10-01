@@ -20,7 +20,7 @@ Compatible with **DSH 0.2.0-rc.2** and **Node.js 24**.
 2. Open **Plugins → Add plugin**, paste `https://github.com/YunongDai2005/dsh-theone`, and install.
 3. Open **TheOne · Main chat** in the sidebar and start chatting.
 
-**v0.3.5 enables LLM routing by default and reuses DSH’s model calls and API credentials. No additional API key is needed.** Routing, topic workers, and the entry's context capacity follow the model selected in DSH before opening TheOne. To change models, select another regular chat model in DSH, then open TheOne again.
+**v0.3.6 enables LLM routing by default and reuses DSH’s model calls and API credentials. No additional API key is needed.** By default, routing, topic workers, and the entry's context capacity follow the model selected in DSH before opening TheOne. To change models, select another regular chat model in DSH, then open TheOne again.
 
 The public repository includes the compiled backend and web client. Installation needs no local build or lifecycle scripts. You can also use the DSH CLI:
 
@@ -34,9 +34,19 @@ The database defaults to `$DSH_HOME/theone/contexts.db`, or `~/.dsh/theone/conte
 
 ## English and Chinese UI
 
-The sidebar, catalog, buttons, and status messages follow DSH’s active language and update immediately when you switch it. DSH uses the system/browser language when no language is explicitly selected. Changing languages keeps the same main chat.
+The sidebar, settings, catalog, buttons, and status messages follow DSH’s active language and update immediately when you switch it. DSH uses the system/browser language when no language is explicitly selected. Changing languages keeps the same main chat.
 
 Historical topic titles, summaries, and original conversations stay in their original language.
+
+## Settings and entry interaction
+
+Right-click the fixed TheOne button and choose **Settings**. The page lists 14 runtime options; 11 can be edited through dropdowns and input fields. Database location, manual catalog file, and entry identifier remain read-only.
+
+**Save settings** persists the editable options in the existing TheOne database. Restart DSH to apply them; saved options take precedence over deployment defaults for those fields. The page shows unsaved changes and pending restart status. **Discard changes** restores the last saved form. Stale saves from another page are rejected rather than overwriting newer settings. API credentials remain managed by DSH or the configured environment variable; the settings page never returns a key value.
+
+Model dropdowns currently offer the known current model and **Follow DSH**. They do not yet enumerate the complete provider catalog. To follow a different DSH model, leave the fixed provider and model unset, then select that model in DSH and open TheOne.
+
+While main chat is open, the entry has a subtle glow that follows the pointer: orange in light mode and pale blue in dark mode. The glow fades when the pointer leaves the button.
 
 ## History catalog and topic workspaces
 

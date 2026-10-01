@@ -14,6 +14,8 @@ import { gatewayCheckpoint } from "./gateway-compaction.js";
 import { ContextStore } from "./store.js";
 import { resolveContext } from "./router.js";
 import { DeepSeekRouter, DshRouter, RouterFailure } from "./llm-router.js";
+import { EDITABLE_SETTINGS_KEYS } from "./settings-types.js";
+import { validateSettings } from "./settings.js";
 function redactDescriptor(text) {
     return text.replace(/\bsk-[a-zA-Z0-9_-]{16,}|\bBearer\s+\S+/gi, '[REDACTED]')
         .replace(/((?:api[_ -]?key|password|密码|密钥)\s*[:=：]\s*)\S+/gi, '$1[REDACTED]');
@@ -83,6 +85,16 @@ export default class TheOne extends Service {
         const descriptors = config.contextsPath ? readDescriptors(config.contextsPath) : [];
         const databasePath = config.databasePath || join(process.env.DSH_HOME || join(homedir(), '.dsh'), 'theone', 'contexts.db');
         this.store = new ContextStore(databasePath);
+        const saved = this.store.settings(config.gatewayKey);
+        if (saved) {
+            try {
+                const values = validateSettings(saved.values);
+                config = this.config = { ...config, ...values, workerProvider: values.workerProvider ?? undefined, workerModel: values.workerModel ?? undefined };
+            }
+            catch {
+                console.warn('TheOne saved settings are invalid; using deployment configuration.');
+            }
+        }
         this.gatewayDirectory = resolve(dirname(databasePath), 'gateway');
         ctx.effect(() => async () => {
             try {
@@ -231,6 +243,37 @@ export default class TheOne extends Service {
             const connection = child.get('connection');
             if (!connection?.fetch?.register)
                 return;
+            child.effect(() => connection.fetch.register({ path: '/api/theone/settings', methods: ['GET', 'PUT'], requestBody: 'buffered', fetch: async (request) => {
+                    if (request.method === 'GET')
+                        return Response.json(await this.settingsSnapshot(), { headers: { 'cache-control': 'no-store' } });
+                    let payload;
+                    try {
+                        const body = await request.text();
+                        if (body.length > 16000)
+                            throw new Error('INVALID_SETTINGS');
+                        payload = JSON.parse(body);
+                    }
+                    catch {
+                        return Response.json({ error: 'INVALID_SETTINGS' }, { status: 400 });
+                    }
+                    if (!payload || typeof payload !== 'object' || Array.isArray(payload) || Object.keys(payload).some(key => !['values', 'revision'].includes(key)))
+                        return Response.json({ error: 'INVALID_SETTINGS' }, { status: 400 });
+                    const row = payload;
+                    if (typeof row.revision !== 'number' || !Number.isSafeInteger(row.revision) || row.revision < 0)
+                        return Response.json({ error: 'INVALID_SETTINGS' }, { status: 400 });
+                    let values;
+                    try {
+                        values = validateSettings(row.values);
+                    }
+                    catch {
+                        return Response.json({ error: 'INVALID_SETTINGS' }, { status: 400 });
+                    }
+                    if (values.routerMode === 'llm' && values.routerTransport === 'legacy' && !process.env[values.routerApiKeyEnv])
+                        return Response.json({ error: 'LEGACY_KEY_MISSING' }, { status: 400 });
+                    if (!this.store.saveSettings(this.config.gatewayKey, values, row.revision))
+                        return Response.json({ error: 'SETTINGS_CONFLICT' }, { status: 409 });
+                    return Response.json(await this.settingsSnapshot(), { headers: { 'cache-control': 'no-store' } });
+                } }));
             child.inject(['workspaceRegistry'], scope => {
                 scope.effect(() => connection.fetch.register({ path: '/api/theone/gateway', methods: ['GET'], requestBody: 'buffered', fetch: async () => {
                         await mkdir(this.gatewayDirectory, { recursive: true });
@@ -293,6 +336,54 @@ export default class TheOne extends Service {
                     return Response.json({ mounted: true });
                 } }));
         });
+    }
+    /** Read only public options; never read or return the API key environment value. */
+    async settingsSnapshot() {
+        const c = this.config;
+        const saved = this.store.settings(c.gatewayKey);
+        const defaultSelection = this.ctx.agentDefaultModel.currentSelection();
+        const selection = c.workerProvider && c.workerModel
+            ? { provider: c.workerProvider, model: c.workerModel }
+            : defaultSelection.provider !== 'theone' ? defaultSelection : this.store.rememberedModel(c.gatewayKey);
+        let model = selection ? { provider: selection.provider, model: selection.model } : null;
+        let modelUnavailable = !model;
+        if (selection) {
+            try {
+                const info = await this.ctx.llm.resolveModelInfo(selection.provider, selection.model);
+                model = { provider: selection.provider, model: selection.model, contextWindow: info.context?.contextWindow, defaultMaxTokens: info.defaultMaxTokens };
+            }
+            catch {
+                modelUnavailable = true;
+            }
+        }
+        let baseUrl = '';
+        try {
+            const url = new URL(c.routerBaseUrl ?? 'https://api.deepseek.com');
+            url.username = '';
+            url.password = '';
+            url.search = '';
+            url.hash = '';
+            baseUrl = redactDescriptor(url.toString());
+        }
+        catch { /* Do not expose an invalid URL that may contain credentials. */ }
+        const values = {
+            historyCatalog: c.historyCatalog ?? true, catalogIntervalMs: c.catalogIntervalMs ?? 60000,
+            databasePath: redactDescriptor(c.databasePath || join(process.env.DSH_HOME || join(homedir(), '.dsh'), 'theone', 'contexts.db')),
+            contextsPath: c.contextsPath ? redactDescriptor(c.contextsPath) : null, gatewayKey: redactDescriptor(c.gatewayKey),
+            workerProvider: c.workerProvider ? redactDescriptor(c.workerProvider) : null, workerModel: c.workerModel ? redactDescriptor(c.workerModel) : null,
+            maxDescriptorChars: c.maxDescriptorChars, maxResponseChars: c.maxResponseChars,
+            routerMode: c.routerMode ?? 'llm', routerTransport: c.routerTransport ?? 'dsh',
+            routerBaseUrl: baseUrl, routerModel: redactDescriptor(c.routerModel ?? 'deepseek-flash'), routerApiKeyEnv: redactDescriptor(c.routerApiKeyEnv ?? 'THEONE_ROUTER_API_KEY'),
+        };
+        const activeEditable = Object.fromEntries(EDITABLE_SETTINGS_KEYS.map(key => [key, values[key]]));
+        let savedValues = activeEditable;
+        try {
+            if (saved)
+                savedValues = validateSettings(saved.values);
+        }
+        catch { /* Keep the current usable form. */ }
+        return { values, model, modelUnavailable, savedValues, revision: saved?.revision ?? 0,
+            restartRequired: EDITABLE_SETTINGS_KEYS.some(key => savedValues[key] !== activeEditable[key]) };
     }
     /** Capture before Web saves the gateway itself as DSH's new default. */
     captureDefaultModel() {

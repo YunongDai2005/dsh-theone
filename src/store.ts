@@ -35,6 +35,9 @@ export class ContextStore {
       CREATE TABLE IF NOT EXISTS model_binding (
         gateway_key TEXT PRIMARY KEY, selection TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS plugin_settings (
+        gateway_key TEXT PRIMARY KEY, settings TEXT NOT NULL, revision INTEGER NOT NULL
+      );
       PRAGMA busy_timeout = 5000;
       CREATE TABLE IF NOT EXISTS contexts (
         id TEXT PRIMARY KEY, descriptor TEXT NOT NULL, working_session_id TEXT NOT NULL UNIQUE
@@ -71,6 +74,22 @@ export class ContextStore {
         PRIMARY KEY(gateway_key, gateway_id)
       );
     `)
+  }
+
+  settings(gatewayKey: string): { values: unknown; revision: number } | undefined {
+    const row = this.db.prepare('SELECT settings, revision FROM plugin_settings WHERE gateway_key = ?').get(gatewayKey) as { settings: string; revision: number } | undefined
+    if (!row) return
+    let values: unknown
+    try { values = JSON.parse(row.settings) } catch { /* A fresh save can repair malformed preferences. */ }
+    return { values, revision: row.revision }
+  }
+
+  saveSettings(gatewayKey: string, values: unknown, revision: number): boolean {
+    const result = this.db.prepare(`INSERT INTO plugin_settings(gateway_key, settings, revision)
+      SELECT ?, ?, 1 WHERE ? = 0 OR EXISTS(SELECT 1 FROM plugin_settings WHERE gateway_key = ? AND revision = ?)
+      ON CONFLICT(gateway_key) DO UPDATE SET settings = excluded.settings, revision = plugin_settings.revision + 1
+      WHERE plugin_settings.revision = ?`).run(gatewayKey, JSON.stringify(values), revision, gatewayKey, revision, revision)
+    return result.changes === 1
   }
 
   /** Only model identity is persisted. API credentials remain owned by DSH. */

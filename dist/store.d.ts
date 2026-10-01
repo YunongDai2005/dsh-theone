@@ -5,6 +5,11 @@ import type { ContextDescriptor, ContextUsage, Decision, RouteRecord, StoredCont
 export declare class ContextStore {
     private readonly db;
     constructor(path: string);
+    settings(gatewayKey: string): {
+        values: unknown;
+        revision: number;
+    } | undefined;
+    saveSettings(gatewayKey: string, values: unknown, revision: number): boolean;
     /** Only model identity is persisted. API credentials remain owned by DSH. */
     rememberModel(gatewayKey: string, selection: ModelSelection): void;
     rememberedModel(gatewayKey: string): ModelSelection | undefined;

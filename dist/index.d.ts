@@ -5,6 +5,7 @@ import type { SessionEventWindow } from '@deepseek-ai/dsh-session-query';
 import { HistoryCatalog } from './history-catalog.ts';
 import { ContextStore } from './store.ts';
 import type { RouterReceipt } from './llm-router.ts';
+import { type SettingsSnapshot } from './settings-types.ts';
 export interface Config {
     databasePath?: string;
     contextsPath?: string;
@@ -57,6 +58,8 @@ export default class TheOne extends Service {
     constructor(ctx: Context, config: Config);
     /** DSH Connection protects plugin routes inside its authenticated /api fence. */
     private registerCatalogChannel;
+    /** Read only public options; never read or return the API key environment value. */
+    settingsSnapshot(): Promise<SettingsSnapshot>;
     /** Capture before Web saves the gateway itself as DSH's new default. */
     captureDefaultModel(): void;
     private backingModel;
