@@ -63,7 +63,7 @@ test('global Gateway migration detaches only its own Session, persists, and unar
     assert.equal(cwd, join(root, 'gateway'))
     const freshId = SessionId(randomUUID())
     const fresh = await app.ctx.agents.create({ sessionId: freshId, meta: { cwd }, agentOptions: { provider: 'theone', model: 'gateway' } })
-    fresh.agent.session.append('session/title', { title: 'TheOne · 主聊天', messageSeqs: [], source: { kind: 'user' } })
+    fresh.agent.session.append('session/title', { title: 'TheOne · Main chat', messageSeqs: [], source: { kind: 'user' } })
     assert.equal((await app.prepare(freshId)).status, 200)
     assert.ok(app.ctx.workspaceRegistry.list().every(w => !w.sessionIds.includes(freshId)))
     await app.close()

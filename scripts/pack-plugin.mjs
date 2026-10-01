@@ -13,7 +13,7 @@ export async function packPlugin(target = join(root, '.dsh-test')) {
   try {
     // npm implicitly includes all Readme.* files even with a files allowlist.
     // Stage the deliverable so the user's original Readme.txt stays out of the archive.
-    for (const path of ['package.json', 'dist', 'cordis.patch.yml', 'README.md', 'docs/plugin-v0.1.md', 'docs/plugin-v0.2.md']) {
+    for (const path of ['package.json', 'dist', 'cordis.patch.yml', 'README.md', 'README.zh.md', 'docs/plugin-v0.1.md', 'docs/plugin-v0.1.zh.md', 'docs/plugin-v0.2.md', 'docs/plugin-v0.2.zh.md']) {
       const destination = join(stage, path)
       if (path.startsWith('docs/')) await mkdir(join(stage, 'docs'), { recursive: true })
       await cp(join(root, path), destination, { recursive: true })
@@ -23,7 +23,7 @@ export async function packPlugin(target = join(root, '.dsh-test')) {
     delete env.DEEPSEEK_API_KEY
     const { stdout } = await promisify(execFile)('npm', ['pack', '--json', '--pack-destination', target], { cwd: stage, env })
     const [result] = JSON.parse(stdout)
-    const forbidden = result.files.filter(file => !['package.json', 'cordis.patch.yml', 'README.md', 'docs/plugin-v0.1.md', 'docs/plugin-v0.2.md'].includes(file.path) && !/^dist\/[\w-]+\.(?:js|d\.ts)$/.test(file.path))
+    const forbidden = result.files.filter(file => !['package.json', 'cordis.patch.yml', 'README.md', 'README.zh.md', 'docs/plugin-v0.1.md', 'docs/plugin-v0.1.zh.md', 'docs/plugin-v0.2.md', 'docs/plugin-v0.2.zh.md'].includes(file.path) && !/^dist\/[\w-]+\.(?:js|d\.ts)$/.test(file.path))
     if (forbidden.length) throw new Error('Unexpected private/test data in plugin archive')
     return { ...result, archive: join(target, result.filename) }
   } finally { await rm(stage, { recursive: true, force: true }) }

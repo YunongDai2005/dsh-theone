@@ -1,6 +1,6 @@
 {
   "name": "dsh-theone",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "private": false,
   "type": "module",
   "description": "Automatic context routing for DeepSeek Harness",
@@ -22,8 +22,11 @@
     "dist",
     "cordis.patch.yml",
     "README.md",
+    "README.zh.md",
     "docs/plugin-v0.1.md",
-    "docs/plugin-v0.2.md"
+    "docs/plugin-v0.2.md",
+    "docs/plugin-v0.1.zh.md",
+    "docs/plugin-v0.2.zh.md"
   ],
   "dsh": {
     "bundle": {
@@ -37,7 +40,8 @@
         "@deepseek-ai/dsh-client-ui-layout",
         "@deepseek-ai/dsh-client-ui-workspace",
         "@deepseek-ai/dsh-client-ui-model-selection",
-        "@deepseek-ai/dsh-api-session-controller"
+        "@deepseek-ai/dsh-api-session-controller",
+        "@deepseek-ai/dsh-client-locale"
       ]
     }
   },
@@ -72,6 +76,7 @@
     "@deepseek-ai/dsh-api-remotes": "^0.2.0-rc.2",
     "@deepseek-ai/dsh-api-session-controller": "^0.2.0-rc.2",
     "@deepseek-ai/dsh-api-workspace-controller": "^0.2.0-rc.2",
+    "@deepseek-ai/dsh-client-locale": "0.2.0-rc.2",
     "@deepseek-ai/dsh-client-ui-layout": "^0.2.0-rc.2",
     "@deepseek-ai/dsh-client-ui-model-selection": "^0.2.0-rc.2",
     "@deepseek-ai/dsh-client-ui-renderer": "^0.2.0-rc.2",

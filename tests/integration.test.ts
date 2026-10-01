@@ -32,7 +32,7 @@ test('Gateway is advertised in the DSH model catalog used by Web selection',asyn
   const root=await mkdtemp(join(tmpdir(),'theone-catalog-'))
   const app=await harness(root)
   try {
-    assert.deepEqual(await app.ctx.llm.listModels('theone'),[{provider:'theone',id:'gateway',name:'TheOne 主聊天',inputModalities:['text']}])
+    assert.deepEqual(await app.ctx.llm.listModels('theone'),[{provider:'theone',id:'gateway',name:'TheOne',inputModalities:['text']}])
     assert.ok(app.ctx.llm.listProviders().some(provider=>provider.id==='theone' && provider.name==='TheOne'))
   } finally {await app.close();await rm(root,{recursive:true,force:true})}
 })

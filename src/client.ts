@@ -7,23 +7,30 @@ import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type {} from '@deepseek-ai/dsh-client-ui-model-selection/client'
 import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import type {} from '@deepseek-ai/dsh-api-workspace-controller/client'
+import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { MainPanelId, PanelInfo } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { CatalogSnapshot } from './catalog-types.ts'
 import { GatewayNavigation } from './client-navigation.ts'
+import { zh, en, type TheOneLocaleKey } from './client-locales.ts'
 
 // ui-workspace retains the selected conversation with this public source label.
 declare module '@deepseek-ai/dsh-api-session-controller/client' {
   interface SessionReferenceSourceMap { mainView: unknown }
 }
 
-export const inject = ['slots', 'sessions', 'workspaces', 'layout', 'uiWorkspace', 'modelDirectories', 'remote.session']
+export const inject = ['slots', 'locale', 'sessions', 'workspaces', 'layout', 'uiWorkspace', 'modelDirectories', 'remote.session']
 const panelId = 'theone-gateway' as MainPanelId
 const catalogPanelId = 'theone-catalog' as MainPanelId
 
 export function apply(ctx: Context) {
   const lifetime = new AbortController()
+  ctx.effect(() => ctx.locale.register('theone', { zh, en }))
+  const t = ctx.locale.bind('theone')
+  const subscribeLocale = ctx.locale.subscribe.bind(ctx.locale)
+  const localeSnapshot = ctx.locale.getSnapshot.bind(ctx.locale)
+  function useText() { useSyncExternalStore(subscribeLocale, localeSnapshot); return t }
   async function createGateway(id: string) {
     const response = await fetch('/api/theone/gateway', { signal: lifetime.signal, cache: 'no-store' })
     if (!response.ok) throw new Error('Global gateway directory unavailable')
@@ -44,7 +51,7 @@ export function apply(ctx: Context) {
         lifetime.signal.throwIfAborted()
         const selected = await ctx.modelDirectories.directoryFor(target).select({provider:'theone',model:'gateway'})
         if (!selected.ok) throw selected.error
-        const renamed = await reference.binding.session.rename('TheOne · 主聊天')
+        const renamed = await reference.binding.session.rename(t('gateway.title'))
         if (!renamed.ok) throw renamed.error
       })
       const prepared = await fetch('/api/theone/gateway/prepare', { method: 'POST',
@@ -57,41 +64,65 @@ export function apply(ctx: Context) {
     beginNavigation() { return AbortSignal.any([ctx.layout.beginNavigation(),lifetime.signal]) },
   }, window.localStorage, `dsh-theone.gateway.v1:${location.pathname}`, () => crypto.randomUUID())
 
+  ctx.effect(() => {
+    let active = localeSnapshot().active
+    let pending = Promise.resolve()
+    return subscribeLocale(() => {
+      if (active === localeSnapshot().active) return
+      active = localeSnapshot().active
+      // Change the display title without navigating or creating a new Session.
+      pending = pending.catch(() => {}).then(async () => {
+        const id = navigation.getSnapshot() as SessionId | null
+        if (!id || lifetime.signal.aborted || !ctx.sessions.list.getSnapshot().byId[id]) return
+        await ctx.sessions.using(id, { source: 'controllerOperation', signal: lifetime.signal }, async reference => {
+          await reference.ready
+          lifetime.signal.throwIfAborted()
+          const result = await reference.binding.session.rename(t('gateway.title'))
+          if (!result.ok) throw result.error
+        })
+      })
+      void pending.catch(() => {})
+    })
+  })
+
   function SidebarEntry({size}: PropsRuntime<'sidebar.panellist'>) {
+    const t = useText()
     const id = useSyncExternalStore(navigation.subscribe,navigation.getSnapshot)
     const sessions = useSyncExternalStore<SessionListState>(ctx.sessions.list.subscribe,ctx.sessions.list.getSnapshot)
     const panel = useSyncExternalStore<PanelInfo>(ctx.layout.panelInfo.subscribe,ctx.layout.panelInfo.getSnapshot)
     const active = panel.activePanelId === panelId || (panel.activePanelId === null && !!id && !!sessions.byId[id as SessionId]?.retainedBy.mainView)
-    return h('span',{className:'theone-nav','data-wide':size === 16,'data-active':active},
+    return h('span',{className:'theone-nav',translate:'no','data-wide':size === 16,'data-active':active},
       h('span',{className:'theone-symbol'}),
       size === 16 && h('span',{className:'theone-entry-copy'},
         h('span',{className:'theone-entry-title'},
           h('span',{className:'theone-wordmark',translate:'no'},h('span',{className:'theone-word-the'},'The'),
             h('span',{className:'theone-word-one'},'One',h('span',{className:'theone-word-dot'}))),
-          h('span',{className:'theone-entry-label'},'主聊天')),
-        h('span',{className:'theone-entry-sub'},'从这里继续聊')))
+          h('span',{className:'theone-entry-label'},t('gateway.label'))),
+        h('span',{className:'theone-entry-sub'},t('gateway.subtitle'))))
   }
 
   function GatewayPanel() {
-    const [error,setError] = useState<string>()
+    const t = useText()
+    const [error,setError] = useState<TheOneLocaleKey>()
     const [attempt,setAttempt] = useState(0)
     useEffect(() => {
       let mounted = true
       setError(undefined)
       void navigation.open().catch(error => {
         console.warn('TheOne gateway navigation failed:', error instanceof Error ? error.message : 'Unknown navigation error')
-        if (mounted) setError('主聊天暂时无法打开，请检查 DSH 连接和 TheOne 插件状态。')
+        if (mounted) setError('gateway.error')
       })
       return () => { mounted = false }
     },[attempt])
     return h('section',{className:'theone-opening','aria-live':'polite'},
-      h('p',null,error ?? '正在打开 TheOne 主聊天…'),
-      error && h('button',{type:'button',onClick:()=>setAttempt(value=>value+1)},'重试'))
+      h('p',null,t(error ?? 'gateway.opening')),
+      error && h('button',{type:'button',onClick:()=>setAttempt(value=>value+1)},t('retry')))
   }
 
   function CatalogPanel() {
+    const t = useText()
     const [snapshot, setSnapshot] = useState<CatalogSnapshot>()
-    const [error, setError] = useState<string>()
+    const [error, setError] = useState<TheOneLocaleKey>()
     const [busy, setBusy] = useState<string>()
     useEffect(() => {
       const controller = new AbortController()
@@ -105,7 +136,7 @@ export function apply(ctx: Context) {
           if (!response.ok) throw new Error('Catalog unavailable')
           const value = await response.json() as CatalogSnapshot
           if (!signal.aborted) { setSnapshot(value); setError(undefined) }
-        } catch { if (!signal.aborted) setError('暂时无法读取话题，请检查 DSH 连接。') }
+        } catch { if (!signal.aborted) setError('catalog.loadError') }
         finally { reading = false }
       }
       void load()
@@ -119,7 +150,7 @@ export function apply(ctx: Context) {
           headers: { 'content-type': 'application/json' }, body: JSON.stringify({ contextId }), signal: lifetime.signal })
         if (!response.ok) throw new Error('Mount unavailable')
         await navigation.open()
-      } catch { setError('暂时无法继续这个话题，请等当前聊天结束后重试。') }
+      } catch { setError('catalog.continueError') }
       finally { setBusy(undefined) }
     }
     async function refresh() {
@@ -127,23 +158,23 @@ export function apply(ctx: Context) {
       try {
         const response = await fetch('/api/theone/catalog/refresh', { method: 'POST', signal: lifetime.signal })
         if (!response.ok) throw new Error('Refresh unavailable')
-      } catch { setError('暂时无法整理历史，请检查 DSH 模型配置。') }
+      } catch { setError('catalog.refreshError') }
       finally { setBusy(undefined) }
     }
     const assigned = new Set(snapshot?.groups.flatMap(group => group.contextIds) ?? [])
-    const groups = [...snapshot?.groups ?? [], ...(snapshot?.contexts.some(c => !assigned.has(c.id)) ? [{ id: 'pending', title: '待整理', summary: '这些话题还在等待自动归类。', contextIds: snapshot.contexts.filter(c => !assigned.has(c.id)).map(c => c.id) }] : [])]
+    const groups = [...snapshot?.groups ?? [], ...(snapshot?.contexts.some(c => !assigned.has(c.id)) ? [{ id: 'pending', title: t('catalog.unassigned'), summary: t('catalog.unassignedSummary'), contextIds: snapshot.contexts.filter(c => !assigned.has(c.id)).map(c => c.id) }] : [])]
     const status = snapshot?.status
     return h('section', { className: 'theone-catalog', translate: 'no' },
       h('header', { className: 'theone-catalog-header' },
-        h('div', null, h('h1', null, '话题工作区'), h('p', null, '相关的事情放在一起，随时回到主聊天继续。')),
-        h('button', { type: 'button', onClick: refresh, disabled: !!busy || status?.running }, '整理历史')),
+        h('div', null, h('h1', null, t('catalog.title')), h('p', null, t('catalog.subtitle'))),
+        h('button', { type: 'button', onClick: refresh, disabled: !!busy || status?.running }, t('catalog.refresh'))),
       h('p', { className: 'theone-catalog-status', role: 'status' }, snapshot
-        ? `${snapshot.contexts.length} 个话题 · ${snapshot.groups.length} 个分组` + (status?.running ? ' · 正在整理历史…' : status?.pending ? ` · 还有 ${status.pending} 个会话待整理` : ' · 历史目录已更新')
-        : '正在读取话题…'),
-      status?.failed ? h('p', { className: 'theone-catalog-warning' }, `${status.failed} 个会话暂时未能整理，稍后会重试。已有话题仍可查看。`) : null,
-      status?.searchUnavailable ? h('p', { className: 'theone-catalog-warning' }, '部分历史暂时无法检索，仍可从话题目录继续聊天。') : null,
-      error ? h('p', { role: 'alert', className: 'theone-catalog-warning' }, error) : null,
-      snapshot && !snapshot.contexts.length ? h('p', { className: 'theone-catalog-empty' }, status?.running ? '正在从以前的聊天中整理话题。你也可以先回到主聊天。' : '目前还没有整理出话题。开始聊天后，它们会自动出现在这里。') : null,
+        ? t('catalog.counts', { topics: snapshot.contexts.length, groups: snapshot.groups.length, topicSuffix: snapshot.contexts.length === 1 ? '' : 's', groupSuffix: snapshot.groups.length === 1 ? '' : 's' }) + ' · ' + (status?.running ? t('catalog.indexing') : status?.pending ? t('catalog.pending', { count: status.pending, sessionSuffix: status.pending === 1 ? '' : 's' }) : t('catalog.updated'))
+        : t('catalog.reading')),
+      status?.failed ? h('p', { className: 'theone-catalog-warning' }, t('catalog.failed', { count: status.failed, sessionSuffix: status.failed === 1 ? '' : 's' })) : null,
+      status?.searchUnavailable ? h('p', { className: 'theone-catalog-warning' }, t('catalog.searchUnavailable')) : null,
+      error ? h('p', { role: 'alert', className: 'theone-catalog-warning' }, t(error)) : null,
+      snapshot && !snapshot.contexts.length ? h('p', { className: 'theone-catalog-empty' }, t(status?.running ? 'catalog.emptyIndexing' : 'catalog.empty')) : null,
       h('div', { className: 'theone-catalog-groups' }, ...groups.map(group =>
         h('section', { key: group.id, className: 'theone-topic-group' },
           h('h2', null, group.title, h('span', null, ` ${group.contextIds.length}`)),
@@ -154,9 +185,9 @@ export function apply(ctx: Context) {
             return [h('article', { key: id, className: 'theone-topic-card' },
               h('h3', null, topic.title), h('p', null, topic.summary),
               h('div', { className: 'theone-topic-actions' },
-                h('button', { type: 'button', disabled: !!busy, onClick: () => { void continueTopic(id) } }, busy === id ? '正在打开…' : '继续聊天'),
+                h('button', { type: 'button', disabled: !!busy, onClick: () => { void continueTopic(id) } }, t(busy === id ? 'topic.opening' : 'topic.continue')),
                 ...topic.sourceSessionIds.slice(0, 3).map((sessionId, i) => h('button', { key: sessionId, type: 'button', className: 'theone-source-link',
-                  onClick: () => { ctx.layout.beginNavigation(); ctx.uiWorkspace.openSession(sessionId as SessionId) } }, `查看原会话${topic.sourceSessionIds.length > 1 ? ' ' + (i + 1) : ''}`))))]
+                  onClick: () => { ctx.layout.beginNavigation(); ctx.uiWorkspace.openSession(sessionId as SessionId) } }, t('topic.source') + (topic.sourceSessionIds.length > 1 ? ' ' + (i + 1) : '')))))]
           }))))
     )
   }
@@ -191,9 +222,11 @@ export function apply(ctx: Context) {
     ctx.slots.register({name:'main',key:catalogPanelId},CatalogPanel),
   ])
   ctx.slots.inject('sidebar.panellist', () => [
-    ctx.slots.register({name:'sidebar.panellist',id:panelId,order:-1000,label:'TheOne · 主聊天'},SidebarEntry),
-    ctx.slots.register({name:'sidebar.panellist',id:catalogPanelId,order:-999,label:'话题工作区'}, ({size}: PropsRuntime<'sidebar.panellist'>) =>
-      h('span',{className:'theone-catalog-entry'},h('span',null,'▦'),size === 16 ? h('span',null,'话题工作区') : null)),
+    ctx.slots.register({name:'sidebar.panellist',id:panelId,order:-1000,label:()=>t('gateway.title')},SidebarEntry),
+    ctx.slots.register({name:'sidebar.panellist',id:catalogPanelId,order:-999,label:()=>t('catalog.title')}, ({size}: PropsRuntime<'sidebar.panellist'>) => {
+      const t = useText()
+      return h('span',{className:'theone-catalog-entry',translate:'no'},h('span',null,'▦'),size === 16 ? h('span',null,t('catalog.title')) : null)
+    }),
   ])
 }
 

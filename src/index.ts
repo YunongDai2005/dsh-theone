@@ -59,7 +59,7 @@ declare module '@deepseek-ai/dsh-llm' {
 class GatewayAdapter extends LlmAdapter {
   constructor(private readonly service: TheOne) { super() }
   override providerInfo(provider: string) { return { id: provider, name: 'TheOne' } }
-  override async listModels(provider: string) { return [{ provider, id: 'gateway', name: 'TheOne 主聊天', inputModalities: ['text' as const] }] }
+  override async listModels(provider: string) { return [{ provider, id: 'gateway', name: 'TheOne', inputModalities: ['text' as const] }] }
   override resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
     if (model !== 'gateway') throw new Error('TheOne only exposes the gateway model')
     this.service.captureDefaultModel()
@@ -252,7 +252,7 @@ export default class TheOne extends Service {
             // and has no ordinary-model request history.
             const title = await this.ctx.sessionQuery.readTitle(id)
             const log = await this.ctx.sessionQuery.readSession(id)
-            if (title?.title !== 'TheOne · 主聊天' || log.events.some(event => event.type === 'request/header' && event.data.header.config.provider !== 'theone'))
+            if (!['TheOne · 主聊天', 'TheOne · Main chat'].includes(title?.title ?? '') || log.events.some(event => event.type === 'request/header' && event.data.header.config.provider !== 'theone'))
               return Response.json({ error: 'NOT_GATEWAY' }, { status: 400 })
           }
           for (const workspace of scope.workspaceRegistry.list()) {

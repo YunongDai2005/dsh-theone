@@ -1,51 +1,49 @@
-# TheOne v0.1 插件验收
+# TheOne v0.1 acceptance report
 
-日期：2026-09-30。目标是完成可安装、可运行的 DSH 插件。AI Box 接入作为后续工作。
+English | [简体中文](./plugin-v0.1.zh.md)
 
-## 交付
+September 30, 2026. This release delivered an installable DSH plugin. AI Box integration remained future work. This report describes v0.1; see the [current README](../README.md) for later changes.
 
-`dsh-theone@0.1.0` 提供 Cordis Service、`theone/gateway` provider，以及标准 `dsh.bundle.patch` 元数据。安装包位于项目 `.dsh-test/dsh-theone-0.1.0.tgz`。DSH `0.2.0-rc.2` 的 `plugin add` 可安装并启用该 bundle。
+## Delivery
 
-运行路径：Gateway 输入 → 规则 / DeepSeek Flash 分类 → 校验及 SQLite 规划 → 所属 Context 的独立 DSH Worker → 模型和工具循环 → 已提交的文字回答返回 Gateway。
+`dsh-theone@0.1.0` provides a Cordis service, the `theone/gateway` provider, and standard `dsh.bundle.patch` metadata. DSH 0.2.0-rc.2 can install and activate the bundle from `.dsh-test/dsh-theone-0.1.0.tgz` through `plugin add`.
 
-不提供预置真实聊天目录。省略 `THEONE_CONTEXTS_PATH` 时从空目录开始；首次明确的新话题创建 Context 和专用 Worker。
+Execution: gateway input → rules / DeepSeek Flash classification → validation and SQLite planning → the context’s dedicated DSH worker → model and tool loop → committed text reply returned to the gateway.
 
-## 本次补齐
+The package includes no real conversation catalog. Without `THEONE_CONTEXTS_PATH`, it starts empty; an explicit first new topic creates a context and worker.
 
-1. 原生 bundle 元数据、安装配置、独立测试 profile 和打包检查。
-2. `theone_search_history`：只注册到所属 Worker，目标由调用身份绑定，不接受模型选择其他项目。DSH 完整日志先做文本投影，再输出审核范围内的窗口，避免非连续窗口投影错误。
-3. `theone_update_state`：保存简短进展与事件引用，保持项目身份。拒绝过长状态及常见凭据格式。
-4. 成功 compaction 的短摘要复用：使用 DSH 已生成的摘要，保留 summary/end seq，脱敏并限制长度。同一 checkpoint 不重复更新，进展状态独立保留。
-5. Gateway 重建后的近期消息恢复：SQLite 只保存入口引用，从 DSH 查询最近的已完成 Gateway，不复制完整聊天。
-6. Worker 创建 / 恢复时初始化 DSH 模型选择，并继承入口的工作目录元数据。这修复了真实 CLI 中 `{{cwd}}` 无法组装的问题。
-7. API 失败冷却和路由调用元数据：记录模型、耗时、Token 数及错误码，持续不可用时暂停重复分类请求。
+## Implemented
 
-## 验证结果
+1. Native bundle metadata, installation settings, isolated test profile, and packaging checks.
+2. `theone_search_history`, registered only for its worker. Caller identity binds the target; the model cannot select another project. Full DSH logs are projected to text before returning approved windows, including non-contiguous ranges.
+3. `theone_update_state`, storing short progress notes and event references while preserving project identity. Oversized notes and common credential patterns are rejected.
+4. Reuse of successful DSH compaction summaries, retaining summary/end sequence numbers with redaction and length limits. Each checkpoint is applied once; progress notes remain separate.
+5. Recent gateway messages recover after reconstruction by querying DSH. SQLite stores gateway references without duplicating full conversations.
+6. Worker creation/restoration initializes DSH model selection and inherits the gateway’s working-directory metadata. This fixes real CLI prompt assembly with `{{cwd}}`.
+7. API failure cooldown and routing metadata, including model, duration, token counts, and error codes.
 
-- `npm run typecheck`：通过。
-- `npm run build`：通过。
-- `npm test`：41 项通过，0 失败。
-- 原生安装：通过 DSH `plugin add` / pnpm 安装本地 tgz，自动启用 bundle；没有版本豁免或手工改写安装依赖。
-- 真实模型：路由为 DeepSeek Flash Chat Completions，Worker 为 DSH 自带 `deepseek-official/deepseek-flash` Messages adapter。
+## Validation
 
-| 真实 CLI 场景 | 结果 |
+Type checking and builds passed. All 41 tests passed. Native `plugin add` / pnpm installation activated the local archive without dependency overrides. Real-model tests used DeepSeek Flash Chat Completions for routing and DSH’s `deepseek-official/deepseek-flash` Messages adapter for workers.
+
+| Real CLI scenario | Result |
 | --- | --- |
-| 初次挂载显卡项目并保存测试代号 | MOUNT，完成 |
-| 切到论文项目，使用不同测试代号 | SWAP，完成 |
-| 切回显卡项目，找回原代号 | SWAP，完成；回答未包含论文代号 |
-| 调用历史工具查阅显卡项目 | KEEP，完成；工具结果按 callId 配对确认成功，来源隔离 |
-| 创建盆栽项目 | CREATE，完成 |
-| 新进程恢复同一个 Gateway，继续盆栽项目 | KEEP，完成 |
-| 不加载任何目录文件，首次创建英语项目 | CREATE，完成 |
+| Mount a GPU project and save a test marker | MOUNT, completed |
+| Switch to a paper project with another marker | SWAP, completed |
+| Return to the GPU project and recall its marker | SWAP, completed; no paper marker in the reply |
+| Search GPU project history through the tool | KEEP, completed; paired tool calls/results verified source isolation |
+| Create a houseplant project | CREATE, completed |
+| Restore the same gateway in a new process and continue houseplants | KEEP, completed |
+| Start an English-learning project with no catalog file | CREATE, completed |
 
-这些调用在私有 DSH home 和空工作目录运行。只允许两个 TheOne 元数据工具；核对日志确认没有执行其他工具。原 DSH profile、凭据文件和历史不被修改。CLI 测试每轮启动新进程，也验证了 Worker 的持久化恢复。
+These calls ran in a private DSH home and empty working directory, with only two TheOne metadata tools allowed. Logs confirmed no other tool execution. The original DSH profile, credential files, and history were unchanged. Each CLI turn used a new process, also testing persistent worker recovery.
 
-工具与 compaction 测试额外覆盖：Gateway 看不到 Worker 的专属工具；其他项目无法通过附加 contextId 参数读取本项目；范围边界、坏来源、中文匹配、摘录限长；进度重启恢复及证据引用；真实 DSH compaction 引擎生成摘要后的复用、脱敏和幂等。
+Additional tests covered worker-only tools; rejection of attempts to access another context through an extra context ID; range boundaries, broken sources, Chinese matching, excerpt limits; progress recovery and evidence references; and reuse, redaction, and idempotency after real DSH compaction.
 
-验证中曾误用不存在的 `toolName` 字段判断工具结果，现已改为按 `toolCallId` 与 `tool/call` 配对。工具实际成功；已重新读取原始测试日志确认，不仅依据模型最终回答判断。
+An initial tool-result check incorrectly used a nonexistent `toolName` field. Verification was corrected to pair `toolCallId` with `tool/call`, and original test logs confirmed successful execution independently of the model’s final reply.
 
-## 范围
+## Scope at v0.1
 
-这是 v0.1 的文字 CLI 验收。Web UI、工具审批交互与卡片转发、实时 token 流、图片输出、自动历史导入、MULTI-MOUNT 和自动 Worker ROLLOVER 仍待实现。进度更新由模型按需调用，不保证每轮执行。
+This was text CLI acceptance. Web UI, tool approvals/cards, live token streaming, images, automatic history import, multi-mount, and automatic worker rollover were pending. The model updates progress on demand; it is not guaranteed each turn.
 
-之前 AI Box 79 条真实历史的 94.9% 是人工目录下的回顾式路由评估。本次验证了新的插件功能，没有重新测定线上路由准确率。TheOne 尚未部署到 AI Box。
+The earlier 94.9% AI Box result came from retrospective routing over 79 real history samples with a manual catalog. This release tested plugin behavior without remeasuring live routing accuracy. TheOne had not been deployed to AI Box.
