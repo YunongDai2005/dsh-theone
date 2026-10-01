@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { D, E, b, r, lerp, rng, seg, track } from '../lib/timeline';
-import { ROWS, LIST, REST, T_STOP, T_SLAM, T_UP1, CLICK_DSH, WIN_OPEN, listScroll, searchCursor, openedRow, hoveredRow, type Row } from '../lib/story';
+import { ROWS, LIST, REST, T_STOP, T_SLAM, T_UP1, CLICK_DSH, WIN_OPEN, POOL, listScroll, searchCursor, openedRow, hoveredRow, type Row } from '../lib/story';
 import { cssCamera, cssObject, makeCamera, type Shot } from '../lib/camera';
 import { accent, css, type Theme } from '../lib/theme';
 import { Ico, ARROW, HAND } from './icons';
@@ -17,6 +17,11 @@ const OPENED: Msg[][] = [
 const IDLE: Msg[] = [['u', 'Download https://www.bilibili.com/video/BV1mSffBFE4A at the highest bitrate'], ['s', 'Done in 3s'], ['a', 'Saved to Desktop as 320 kbps M4A.']];
 const FALL = new Map<number, { sgn: number; jit: number; spin: number; dx: number }>();
 { const r0 = rng(31); [...ROWS.map(row => row.id), ...[0, 1, 2, 3].map(i => 1000 + i)].forEach(id => FALL.set(id, { sgn: r0() < .5 ? -1 : 1, jit: r0(), spin: .6 + r0() * .8, dx: r0() })); }
+// a wall of every other conversation, far behind the window: it fills the margins and moves with parallax
+const WALL = (() => { const r0 = rng(404); const out: { x: number; y: number; text: string }[] = [];
+  for (let row = 0; row < 24; row++) for (let colN = 0; colN < 13; colN++) out.push({ x: colN * 430 + (row % 2) * 215 + (r0() - .5) * 60, y: row * 142 + (r0() - .5) * 30, text: POOL[Math.floor(r0() * POOL.length)] });
+  return out; })();
+const WALL_M = new THREE.Matrix4().makeTranslation(0, 0, -900);
 const fallPlan = (() => { const s = listScroll(T_SLAM); return ROWS.map(row => [row, LIST.top + row.top - s] as [Row, number]).filter(([, y]) => y > 420 && y < 1000).sort((a, c) => c[1] - a[1]); })();
 const fallIdx = new Map(fallPlan.map(([row], j) => [row.id, j]));
 /** a book tipping off the shelf: a short tip, then gravity and spin */
@@ -80,6 +85,9 @@ export function WindowLayer({ t, shot, theme }: { t: number; shot: Shot; theme: 
   return (
     <div className="viewer" style={{ perspective: `${cc.perspective}px`, transform: open2d, opacity: openOp * winOp, borderRadius: radius }}>
       <div className="camera" style={{ transform: cc.transform }}>
+        <div className="wallobj" style={{ transform: cssObject(WALL_M), opacity: seg(t, CLICK_DSH, WIN_OPEN + .4) * .9 }}>
+          {WALL.map((c, i) => <div key={i} className="wchip" style={{ left: c.x, top: c.y }}>{c.text}</div>)}
+        </div>
         <div className="winobj" style={{ transform: cssObject(new THREE.Matrix4()) }}>
           <div className="winz" style={{ zoom: WZ, transform: `scale(${1 / WZ})` } as React.CSSProperties}>
             <div className="win">

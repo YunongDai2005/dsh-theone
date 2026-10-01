@@ -7,6 +7,7 @@ import { D, seg } from '../lib/timeline';
 import { makeCamera, VW, VH, type Shot } from '../lib/camera';
 import type { Theme } from '../lib/theme';
 import { World } from './World';
+import { Atmosphere } from './Atmosphere';
 import { Post } from './Post';
 
 function Rig({ shot }: { shot: Shot }) {
@@ -28,6 +29,7 @@ export function Scene3D({ t, shot, theme }: { t: number; shot: Shot; theme: Them
     <ThreeCanvas width={VW} height={VH} style={{ position: 'absolute', inset: 0, opacity: seg(t, D - .01, D) }} gl={{ alpha: true, antialias: false, premultipliedAlpha: true }}
       camera={{ fov: shot.fov, near: 10, far: 40000, position: shot.pos }}>
       <Rig shot={shot} />
+      <Atmosphere t={t} theme={theme} camQ={camQ} />
       <World t={t} theme={theme} camQ={camQ} />
       <Post dark={theme === 'dark'} multisampling={MSAA} />
     </ThreeCanvas>

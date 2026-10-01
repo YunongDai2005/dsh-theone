@@ -8,7 +8,7 @@ export const ONE = { x: 186, y: 208.5, w: 336, h: 91 };
 export const ONE_W = W2(ONE.x, ONE.y);
 export const LIST = { top: 452, h: 535 };
 
-const POOL = ['Hello', 'Untitled', 'New session', 'Untitled', 'Q3 budget draft', 'Weekly report', 'Fix flaky CI test', 'SQL index help', 'Landing page copy',
+export const POOL = ['Hello', 'Untitled', 'New session', 'Untitled', 'Q3 budget draft', 'Weekly report', 'Fix flaky CI test', 'SQL index help', 'Landing page copy',
   'Bug in CSV export', 'Interview questions', 'Release notes', 'Refactor auth flow', 'Habit tracker app', 'Cycling route, Sunday', 'Balcony herbs', 'Rust lifetimes',
   'Docker won’t start', 'Name ideas', 'Paper notes: RAG', 'Translate this email', 'Kyoto day plan', 'Recipe: tomato & egg', 'Cat on my keyboard', 'Is 77 BPM slow?',
   'Summarize this PDF', 'Meeting notes', 'Fix the chart colors', 'Rewrite intro', 'Pricing page ideas', 'Explain this regex', 'Trip budget', 'Email to landlord',
@@ -99,6 +99,13 @@ export const CARD_T = ['Trip to Kyoto', 'Q3 budget', 'Habit tracker', 'Cycling r
 const cell = (i: number) => [CC[0] + ((i % 3) - 1) * 250, CC[1] - (Math.floor(i / 3) - 1) * 158, CC[2]] as [number, number, number];
 export const CARDS = CARD_T.map((title, i) => ({ title, p: cell(i) }));
 export const NEWC = { title: 'Cat feeder', p: cell(8) };
+// the burst: four more requests reach the router at once (land r11) and fan out to their sessions (land r11.6)
+export const BURST = [
+  { text: 'Budget v3?', card: 1, from: [ROUTER.p[0] - 820, ROUTER.p[1] + 440, 260] },
+  { text: 'That bug again', card: 6, from: [ROUTER.p[0] + 900, ROUTER.p[1] + 470, 120] },
+  { text: 'Weekend ride?', card: 3, from: [ROUTER.p[0] - 900, ROUTER.p[1] - 400, 220] },
+  { text: 'Paper notes?', card: 7, from: [ROUTER.p[0] + 960, ROUTER.p[1] - 430, 60] },
+] as { text: string; card: number; from: [number, number, number] }[];
 export const HIST = { p: [ONE_W[0] + 3350, ONE_W[1] - 30, -200] as [number, number, number], w: 1700, h: 620 };
 export const CL = [
   { name: 'PROJECT A', t: r(13) }, { name: 'PROJECT B', t: r(14.25) }, { name: 'TRAVEL', t: r(15) }, { name: 'HOME', t: r(15.5) },
@@ -123,7 +130,7 @@ export const CUES: Cue[] = (() => {
   cue(D, 'click', { g: 1.1 }); cue(D, 'impact');
   cue(r(1), 'layer'); cue(r(2.25), 'layer', { g: .9 }); cue(r(3), 'layer', { g: .8 });
   cue(r(4), 'type'); cue(r(5), 'route', { n: 'G5' }); cue(r(6.25), 'hit', { n: 'C6' }); cue(r(7), 'route', { n: 'E5', g: .7 });
-  cue(r(8), 'type'); cue(r(9), 'route', { n: 'A5' }); cue(r(10.25), 'create'); cue(r(11), 'route', { n: 'C6', g: .6 });
+  cue(r(8), 'type'); cue(r(9), 'route', { n: 'A5' }); cue(r(10.25), 'create'); cue(r(10.55), 'type', { g: .7 }); cue(r(11), 'route', { n: 'C6', g: .8 }); cue(r(11.6), 'hit', { n: 'E6', g: .55 });
   cue(r(12), 'rise'); cue(r(13), 'snap'); cue(r(14.25), 'snap'); cue(r(15), 'snap'); cue(r(15.5), 'snap', { g: .8 });
   cue(r(17), 'deck'); cue(r(17.5), 'squeeze'); cue(r(18.25), 'rise'); cue(r(19), 'stack', { g: 1.2 }); cue(r(19), 'layer');
   cue(r(21), 'hit', { n: 'G5', g: .6 }); cue(r(24), 'swoosh2'); cue(r(27.4), 'swell', { dur: 1.6 }); cue(r(29), 'end');

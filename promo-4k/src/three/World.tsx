@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { useEffect, useMemo } from 'react';
 import { D, E, r, lerp, seg, pulse, land, lastHit, rng, clamp } from '../lib/timeline';
-import { KEY, KEY_Z, S_KEY, ONE, ONE_W, ROUTER, CARDS, CARD, NEWC, HIST, CL, SLOT, CHIP_T, CHIP_CL } from '../lib/story';
+import { KEY, KEY_Z, S_KEY, ONE, ONE_W, ROUTER, CARDS, CARD, NEWC, HIST, CL, SLOT, CHIP_T, CHIP_CL, BURST } from '../lib/story';
 import { accent, PAL, type Theme } from '../lib/theme';
 import { Key } from './Key';
 import { SText, FONT, col, hdr, panelGeo, ringGeo, roundedRect, Shadow } from './util';
@@ -60,15 +60,21 @@ export function World({ t, theme, camQ }: { t: number; theme: Theme; camQ: THREE
   const RR = { p: ROUTER.p, w: ROUTER.w, h: ROUTER.h };
   const C0 = { p: CARDS[0].p, w: CARD.w, h: CARD.h }, CN = { p: NEWC.p, w: CARD.w, h: CARD.h };
   const LEGS: [number, number, typeof KR, typeof KR, boolean][] = [[r(4.4), r(5), KR, RR, true], [r(5.15), r(6.25), RR, C0, true], [r(6.4), r(7), C0, KR, false], [r(8.4), r(9), KR, RR, true], [r(9.15), r(10.25), RR, CN, true]];
-  const waves: { p: V3; w: number; h: number; o: number }[] = []; let orb: V3 | null = null;
+  const waves: { p: V3; w: number; h: number; o: number }[] = [], orbs: V3[] = [];
   for (const [a0, a1, Sx, Tx, wave] of LEGS) {
-    if (t >= a0 && t <= a1 + .05) { const k = E.iq(seg(t, a0, a1)); orb = L3(Sx.p, Tx.p, k); }
+    if (t >= a0 && t <= a1 + .05) { const k = E.iq(seg(t, a0, a1)); orbs.push(L3(Sx.p, Tx.p, k)); }
     if (wave && t >= a0 - .05 && t <= a1 + .35) {
       const sw = seg(t, a0 - .05, a0 + .1) * (1 - seg(t, a1 + .05, a1 + .35)), uu = lerp(.05, 1, E.iq(seg(t, a0, a1)));
       for (let i = 0; i < 3; i++) { const u = uu - i * .075; if (u < 0) continue; waves.push({ p: L3(Sx.p, Tx.p, u), w: lerp(Sx.w, Tx.w, u), h: lerp(Sx.h, Tx.h, u), o: sw * (.75 - i * .25) }); }
     }
   }
-  const hotR = Math.max(land(t, r(5)) * (1 - seg(t, r(5.6), r(6))), land(t, r(9)) * (1 - seg(t, r(9.6), r(10))));
+  // the burst: requests from every side reach the router together, then fan out to their sessions
+  BURST.forEach(q => {
+    if (t >= r(10.6) && t <= r(11) + .05) orbs.push(L3(q.from, ROUTER.p, E.iq(seg(t, r(10.6), r(11)))));
+    if (t >= r(11.15) && t <= r(11.6) + .05) orbs.push(L3(ROUTER.p, CARDS[q.card].p, E.iq(seg(t, r(11.15), r(11.6)))));
+  });
+  const burstHot = (i: number) => BURST.some(q => q.card === i) ? land(t, r(11.6), .45) * (1 - seg(t, r(12), r(12.4))) * (t > r(11.4) ? 1 : 0) : 0;
+  const hotR = Math.max(land(t, r(11)) * (1 - seg(t, r(11.5), r(11.9))), land(t, r(5)) * (1 - seg(t, r(5.6), r(6))), land(t, r(9)) * (1 - seg(t, r(9.6), r(10))));
   const hC0 = land(t, r(6.25), .55) * (1 - seg(t, r(7.8), r(8.2))), hC1 = land(t, r(10.25), .55) * (1 - seg(t, r(11.6), r(12)));
   const bo = post ? seg(t, r(3.2), r(4)) * (1 - seg(t, r(11.6), r(12.2))) : 0;
   const warm = A(255, 150, 60), beamC = col(P.beam), hotBeam = hdr(warm, 1.3);
@@ -103,7 +109,7 @@ export function World({ t, theme, camQ }: { t: number; theme: Theme; camQ: THREE
       </Panel></group>}
       {/* sessions */}
       {CARDS.map((c, i) => {
-        const ca = app(r(2.25) + (i % 3) * .03 + Math.floor(i / 3) * .03), o = ca * dimC, hot = i === 0 ? hC0 : 0;
+        const ca = app(r(2.25) + (i % 3) * .03 + Math.floor(i / 3) * .03), o = ca * dimC, hot = Math.max(i === 0 ? hC0 : 0, burstHot(i));
         if (o <= .002) return null;
         return <group key={i} position={L3(ROUTER.p, c.p, ca)}><Panel w={CARD.w} h={CARD.h} rad={16} theme={theme} o={o} edge={i === 0 && hot0 ? col(`rgb(${A(255, 176, 112).join(',')})`) : undefined}>
           <SText font={FONT.sb} fontSize={22} color={P.ink} anchorX="left" anchorY="top" position={[-CARD.w / 2 + 20, CARD.h / 2 - 18, 0]} fillOpacity={o}>{c.title}</SText>
@@ -124,10 +130,22 @@ export function World({ t, theme, camQ }: { t: number; theme: Theme; camQ: THREE
       {CARDS.map((c, i) => <Beam key={i} a={ROUTER.p} b={c.p} color={i === 0 && hot0 ? hotBeam : beamC} o={bo * (i === 0 && hot0 ? 1 : .35) * dimC} />)}
       <Beam a={ROUTER.p} b={NEWC.p} color={hot1 ? hotBeam : beamC} o={post ? bo * Math.min(1, nk * 2) * (hot1 ? 1 : .35) * dimC : 0} />
       {waves.map((w, i) => <Wave key={i} p={w.p} w={w.w} h={w.h} color={hdr(A(255, 170, 95), 2.2)} o={w.o * .55} />)}
-      {orb && <group position={orb}>
+      {orbs.map((p, i) => <group key={i} position={p}>
         <mesh><sphereGeometry args={[9, 24, 16]} /><meshBasicMaterial color={hdr([255, 250, 240], 6)} toneMapped={false} /></mesh>
         <mesh><sphereGeometry args={[14, 24, 16]} /><meshBasicMaterial color={hdr(A(255, 138, 42), 3)} toneMapped={false} transparent opacity={.5} depthWrite={false} /></mesh>
-      </group>}
+      </group>)}
+      {/* the burst's beams light up while its light fans out */}
+      {BURST.map((q, i) => <Beam key={'bb' + i} a={ROUTER.p} b={CARDS[q.card].p} color={hotBeam} o={seg(t, r(11.1), r(11.2)) * (1 - seg(t, r(11.8), r(12.2))) * dimC} rad={1.6} />)}
+      {/* the burst's requests, each facing the camera where it comes from */}
+      {BURST.map((q, i) => {
+        const t0 = r(10.45) + i * .06, o = seg(t, t0, t0 + .08) * (1 - seg(t, r(10.95), r(11.05))); if (o <= .002) return null;
+        const w = q.text.length * 16 + 52;
+        return <group key={'bq' + i} position={[q.from[0], q.from[1] + 60, q.from[2]]} quaternion={camQ} scale={lerp(.7, 1, E.ob(seg(t, t0, t0 + .25)))}>
+          <Shadow w={w} h={62} o={o * (dark ? .5 : .16)} dy={-8} />
+          <mesh geometry={panelGeo(w, 62, 24)}><meshBasicMaterial color={col(dark ? '#2c2c2e' : '#ffffff')} transparent opacity={o} depthTest={false} /></mesh>
+          <SText font={FONT.m} fontSize={31} color={dark ? '#f0f2f5' : '#111111'} anchorX="center" anchorY="middle" position={[0, 0, .5]} fillOpacity={o} material-depthTest={false}>{q.text}</SText>
+        </group>;
+      })}
       {/* chat bubbles over the key, always facing the camera */}
       {bub.map(([t0, t1, text, reply], i) => {
         const o = seg(t, t0, t0 + .08) * (1 - seg(t, t1 - .12, t1)); if (o <= .002) return null;

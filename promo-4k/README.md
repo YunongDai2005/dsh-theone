@@ -4,6 +4,10 @@ The landscape cut of the TheOne film: 3840×2160, 60 fps, about 51 s. Same story
 
 - The search shows the whole DSH window: each session the cursor opens fills the chat pane, and none is the right one. Three loops, each more frantic.
 - After the click the structure reads left to right: The One key → router → a grid of sessions with one empty slot, which CREATE fills. History sorts into four topic slots in a row.
+- The 3D section cuts on the beats: close on the key as a message arrives, over the router as the light lands, beside the cards, a top-down view of the grid filling its empty slot, close on the history slots, and two hero angles on the finished key.
+- Then four more requests reach the router at once and fan out to their sessions: one entry point for everything.
+- Depth fills the 16:9 frame: a wall of every other conversation behind the window, a cloud of session cards and a dot-grid floor behind the 3D structure, and soft light shafts that swell on the bar's strongest hit.
+- A few big words land on the beats ("223 chats.", "Not this one.", "Which one?" falling with the books, "Just one.", "Sorted.").
 - The BGM starts at bar -7 (71.46 s), so the click on DSH lands as the bass enters and the click on The One still lands on the drop at 1:33.279. Two bars after the drop are added: a hero orbit around the finished key, then the key turns face-on through the BGM's quiet bar and blooms into the logo on the next strong hit.
 
 ## How it is built
