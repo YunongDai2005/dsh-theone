@@ -9,7 +9,7 @@ const E = {
   l: x => x, i: x => x * x * x, o: x => 1 - Math.pow(1 - x, 3), io: x => x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2,
   oe: x => x >= 1 ? 1 : 1 - Math.pow(2, -10 * x), ie: x => x <= 0 ? 0 : Math.pow(2, 10 * x - 10),
   ioe: x => x <= 0 ? 0 : x >= 1 ? 1 : x < .5 ? Math.pow(2, 20 * x - 10) / 2 : (2 - Math.pow(2, -20 * x + 10)) / 2,
-  ioq: x => x < .5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2, oq: x => 1 - (1 - x) * (1 - x),
+  ioq: x => x < .5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2, oq: x => 1 - (1 - x) * (1 - x), iq: x => x * x,
   ob: x => { const c1 = 1.4, c3 = c1 + 1; return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); },
 };
 function track(t, keys) {
@@ -415,8 +415,9 @@ function sApp(t, ovs) {
   const tag = t > r(9) ? 'CREATE' : t > r(5) ? 'SWAP' : ''; const rt = $('#rtag'); rt.textContent = tag;
   op(rt, tag ? (t > r(9) ? seg(t, r(9), r(9) + .1) : seg(t, r(5), r(5) + .1)) * (1 - seg(t, r(11.5), r(12))) : 0);
   router.style.boxShadow = '';
-  const hotR = Math.max(Math.exp(-Math.abs(t - r(5)) * 6), Math.exp(-Math.abs(t - r(9)) * 6));
-  const hC0 = (t > r(6.25) - .1 ? seg(t, r(6.25) - .1, r(6.25) + .1) : 0) * (1 - seg(t, r(7.8), r(8.2))), hC1 = (t > r(10.25) - .1 ? seg(t, r(10.25) - .1, r(10.25) + .1) : 0) * (1 - seg(t, r(11.6), r(12)));
+  const land = (t0, hold = 0) => t < t0 ? seg(t, t0 - .04, t0) : hold + (1 - hold) * Math.exp(-(t - t0) * 3.5);
+  const hotR = Math.max(land(r(5)) * (1 - seg(t, r(5.6), r(6))), land(r(9)) * (1 - seg(t, r(9.6), r(10))));
+  const hC0 = land(r(6.25), .55) * (1 - seg(t, r(7.8), r(8.2))), hC1 = land(r(10.25), .55) * (1 - seg(t, r(11.6), r(12)));
   drawHalo('hR', [ONE.x, ONE.y, Z.router], 260, 150, post ? hotR * ra * dimC : 0, 22);
   drawHalo('hC0', [CARDS[0].x, CARDS[0].y, Z.cards], 115, 68, post ? hC0 * dimC * (1 + .4 * pulse(t)) : 0, 16);
   drawHalo('hC1', [NEWP.x, NEWP.y, Z.cards], 115, 68, post ? hC1 * dimC * (1 + .4 * pulse(t)) : 0, 16);
@@ -430,7 +431,7 @@ function sApp(t, ovs) {
   const P_ONE = [ONE.x, ONE.y, Z.lift], P_R = [ONE.x, ONE.y, Z.router], P_C0 = [CARDS[0].x, CARDS[0].y, Z.cards], P_N = [NEWP.x, NEWP.y, Z.cards];
   const flights = [[r(4.4), r(5), P_ONE, P_R], [r(5.15), r(6.25), P_R, P_C0], [r(6.4), r(7), P_C0, P_ONE], [r(8.4), r(9), P_ONE, P_R], [r(9.15), r(10.25), P_R, P_N]];
   let op0 = 0, pp = null;
-  for (const [a, bb, p, q] of flights) if (t >= a && t <= bb + .05) { const k = E.io(seg(t, a, bb)); pp = proj([lerp(p[0], q[0], k), lerp(p[1], q[1], k), lerp(p[2], q[2], k)]); op0 = 1; }
+  for (const [a, bb, p, q] of flights) if (t >= a && t <= bb + .05) { const k = E.iq(seg(t, a, bb)); pp = proj([lerp(p[0], q[0], k), lerp(p[1], q[1], k), lerp(p[2], q[2], k)]); op0 = 1; }
   if (pp) { orb.style.transform = `translate(${pp[0]}px,${pp[1]}px)`; } op(orb, op0);
   const bubs = [[r(4), r(5.2), 'Kyoto, day 3?', 0], [r(7), r(8), 'Arashiyama at 9 am.', 1], [r(8), r(9.2), 'New topic: a cat feeder', 0]];
   let bb0 = null; for (const x of bubs) if (t >= x[0] && t < x[1]) bb0 = x;
@@ -466,7 +467,7 @@ function sApp(t, ovs) {
 }
 const preGlow = h('div', null); preGlow.style.cssText = 'position:absolute;left:0;top:0;width:1080px;height:1920px;pointer-events:none'; let PREG = null;
 const glowL = h('div', null); glowL.style.cssText = 'position:absolute;left:0;top:0;width:1080px;height:1920px;pointer-events:none'; $('#cam').insertBefore(glowL, w3); $('#cam').insertBefore(preGlow, $('#ov'));
-glowL.innerHTML = `<svg id="cone" width="1080" height="1920" style="position:absolute;left:0;top:0"><defs><linearGradient id="coneG" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="rgb(255,160,80)" stop-opacity="0"/><stop offset="0" stop-color="rgb(255,160,80)" stop-opacity="0"/><stop offset="0" stop-color="rgb(255,190,130)" stop-opacity="0"/><stop offset="0" stop-color="rgb(255,190,130)" stop-opacity="0"/></linearGradient><filter id="coneB" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="26"/></filter></defs><polygon id="coneP" fill="url(#coneG)" filter="url(#coneB)"/></svg>
+glowL.innerHTML = `<svg id="cone" width="1080" height="1920" style="position:absolute;left:0;top:0"><defs><linearGradient id="coneG" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="rgb(255,160,80)" stop-opacity="0"/><stop offset="0" stop-color="rgb(255,160,80)" stop-opacity="0"/><stop offset="0" stop-color="rgb(255,190,130)" stop-opacity="0"/><stop offset="0" stop-color="rgb(255,190,130)" stop-opacity="0"/></linearGradient><filter id="coneB" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="26"/></filter></defs><polygon id="coneP" fill="url(#coneG)" filter="url(#coneB)"/><linearGradient id="coneG2" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="rgb(255,160,80)" stop-opacity="0"/><stop offset="0" stop-color="rgb(255,160,80)" stop-opacity="0"/><stop offset="0" stop-color="rgb(255,190,130)" stop-opacity="0"/><stop offset="0" stop-color="rgb(255,190,130)" stop-opacity="0"/></linearGradient><polygon id="coneP2" fill="url(#coneG2)" filter="url(#coneB)"/></svg>
   <div class="gl3 grays"></div><div class="gl3 gstreak"></div><div class="gl3 gstreak2"></div>`;
 const hull = P => { P = P.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]); const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]); const lo = [], up = []; for (const p of P) { while (lo.length > 1 && cr(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop(); lo.push(p); } for (const p of P.reverse()) { while (up.length > 1 && cr(up[up.length - 2], up[up.length - 1], p) <= 0) up.pop(); up.push(p); } return lo.slice(0, -1).concat(up.slice(0, -1)); };
 // glow that follows an object's real projected outline: the hull of its box corners, rounded by a
@@ -512,16 +513,24 @@ function drawGlow(t, post, z, S, TH, o, gI, flare, coneO) {
   at('grays', 1900, 1900, (t - D) * 4, o * Math.min(.5, .16 + .22 * gI), Math.max(.6, L / 700));
   at('gstreak', L * 3.4, 6, ang, o * Math.min(1, .25 + .9 * (pulse(t) + flare)));
   at('gstreak2', L * 1.9, 26, ang, o * Math.min(.8, .12 + .5 * (pulse(t) + flare)));
-  // volumetric cone from the key down to the router
-  const P0 = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([sx, sy]) => proj([ONE.x + sx * 168 * S, ONE.y + sy * 45.5 * S, z]));
-  const P1 = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([sx, sy]) => proj([ONE.x + sx * 260, ONE.y + sy * 150, Z.router]));
-  const H = hull([...P0, ...P1].map(p => [p[0], p[1]])), rc = proj([ONE.x, ONE.y, Z.router]);
-  let sw = 0, su = 0;
-  for (const [a0, a1] of [[r(4.4), r(5)], [r(8.4), r(9)]]) if (t > a0 - .05 && t < a1 + .35) { su = clamp((t - a0) / (a1 - a0)); sw = Math.max(sw, seg(t, a0 - .05, a0 + .1) * (1 - seg(t, a1 + .05, a1 + .35))); }
-  const cp = $('#coneP'); cp.setAttribute('points', H.map(p => p.join(',')).join(' ')); cp.style.opacity = coneO * sw;
-  const st0 = $('#coneG').querySelectorAll('stop'), uu = lerp(.05, 1, E.io(su));
-  [[Math.max(0, uu - .28), 0], [Math.max(0, uu - .07), .15], [Math.min(1, uu + .01), .22], [Math.min(1, uu + .07), 0]].forEach(([off, a], i) => { st0[i].setAttribute('offset', off); st0[i].setAttribute('stop-opacity', a); });
-  const g0 = $('#coneG'); g0.setAttribute('x1', c[0]); g0.setAttribute('y1', c[1]); g0.setAttribute('x2', rc[0]); g0.setAttribute('y2', rc[1]);
+  // the routing light travels level by level: key → router (lands on r5 / r9), router → session (lands on r6¼ / r10¼)
+  const KEY = [ONE.x, ONE.y, 168 * S, 45.5 * S, z], RT = [ONE.x, ONE.y, 260, 150, Z.router];
+  const LEGS = [[r(4.4), r(5), KEY, RT], [r(5.15), r(6.25), RT, [CARDS[0].x, CARDS[0].y, 115, 68, Z.cards]], [r(8.4), r(9), KEY, RT], [r(9.15), r(10.25), RT, [NEWP.x, NEWP.y, 115, 68, Z.cards]]];
+  [['#coneP', '#coneG'], ['#coneP2', '#coneG2']].forEach(([pid, gid], slot) => {
+    const cp = $(pid); let on = false;
+    LEGS.forEach(([a0, a1, A, B], li) => {
+      if (li % 2 !== slot || t < a0 - .05 || t > a1 + .35) return;
+      on = true;
+      const su = clamp((t - a0) / (a1 - a0)), sw = seg(t, a0 - .05, a0 + .1) * (1 - seg(t, a1 + .05, a1 + .35));
+      const corners = R0 => [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([sx, sy]) => proj([R0[0] + sx * R0[2], R0[1] + sy * R0[3], R0[4]]));
+      const H = hull([...corners(A), ...corners(B)].map(p => [p[0], p[1]])), ca = proj([A[0], A[1], A[4]]), cb = proj([B[0], B[1], B[4]]);
+      cp.setAttribute('points', H.map(p => p.join(',')).join(' ')); cp.style.opacity = coneO * sw;
+      const g0 = $(gid); g0.setAttribute('x1', ca[0]); g0.setAttribute('y1', ca[1]); g0.setAttribute('x2', cb[0]); g0.setAttribute('y2', cb[1]);
+      const uu = lerp(.05, 1, E.iq(su));
+      [[Math.max(0, uu - .28), 0], [Math.max(0, uu - .07), .15], [Math.min(1, uu + .01), .22], [Math.min(1, uu + .07), 0]].forEach(([off, a], i) => { const st = g0.querySelectorAll('stop')[i]; st.setAttribute('offset', off); st.setAttribute('stop-opacity', a); });
+    });
+    if (!on) cp.style.opacity = 0;
+  });
 }
 function pulse(t) { if (t < D) return 0; const x = ((t - D) / BEAT) % 4, d = x - 1; return d >= 0 ? Math.exp(-d * 3.2) : 0; }
 function lastHit(t) { const k = Math.floor(((t - D) / BEAT - 1) / 4); return D + (4 * k + 1) * BEAT; }
