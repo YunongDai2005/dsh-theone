@@ -483,7 +483,7 @@ function sApp(t, ovs) {
 const preGlow = h('div', null); preGlow.style.cssText = 'position:absolute;left:0;top:0;width:1080px;height:' + SH + 'px;pointer-events:none'; let PREG = null;
 const preRays = h('div', 'gl3 grays'); preGlow.appendChild(preRays);
 const glowL = h('div', null); glowL.style.cssText = 'position:absolute;left:0;top:0;width:1080px;height:' + SH + 'px;pointer-events:none'; $('#cam').insertBefore(glowL, w3); $('#cam').insertBefore(preGlow, $('#ov'));
-glowL.innerHTML = `<svg id="cone" width="1080" height="${SH}" style="position:absolute;left:0;top:0"><defs><linearGradient id="coneG" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="rgb(${W(255, 160, 80)})" stop-opacity="0"/><stop offset="0" stop-color="rgb(${W(255, 160, 80)})" stop-opacity="0"/><stop offset="0" stop-color="rgb(${W(255, 190, 130)})" stop-opacity="0"/><stop offset="0" stop-color="rgb(${W(255, 190, 130)})" stop-opacity="0"/></linearGradient><filter id="coneB" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="26"/></filter></defs><polygon id="coneP" fill="url(#coneG)" filter="url(#coneB)"/><linearGradient id="coneG2" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="rgb(${W(255, 160, 80)})" stop-opacity="0"/><stop offset="0" stop-color="rgb(${W(255, 160, 80)})" stop-opacity="0"/><stop offset="0" stop-color="rgb(${W(255, 190, 130)})" stop-opacity="0"/><stop offset="0" stop-color="rgb(${W(255, 190, 130)})" stop-opacity="0"/></linearGradient><polygon id="coneP2" fill="url(#coneG2)" filter="url(#coneB)"/></svg>
+glowL.innerHTML = `<svg id="cone" width="1080" height="${SH}" style="position:absolute;left:0;top:0;overflow:visible"><defs><filter id="coneB" filterUnits="userSpaceOnUse" x="-600" y="-600" width="2280" height="3360"><feGaussianBlur stdDeviation="7"/></filter></defs><g id="coneP" filter="url(#coneB)"></g><g id="coneP2" filter="url(#coneB)"></g></svg>
   <div class="gl3 grays"></div><div class="gl3 gstreak"></div><div class="gl3 gstreak2"></div>`;
 const hull = P => { P = P.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]); const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]); const lo = [], up = []; for (const p of P) { while (lo.length > 1 && cr(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop(); lo.push(p); } for (const p of P.reverse()) { while (up.length > 1 && cr(up[up.length - 2], up[up.length - 1], p) <= 0) up.pop(); up.push(p); } return lo.slice(0, -1).concat(up.slice(0, -1)); };
 // glow that follows an object's real projected outline: the hull of its box corners, rounded by a
@@ -513,6 +513,7 @@ function setShapeGlow(G, mk, o, rad, k = 1) {
 const KEY_L = [{ col: `rgb(${W(255, 150, 60)})`, e: 5, b: 5, o: DARK ? .55 : .6 }, { col: `rgb(${W(255, 160, 80)})`, e: 24, b: 12, o: DARK ? .34 : .4 }, { col: `rgb(${W(255, 180, 118)})`, e: 70, b: 28, o: DARK ? .12 : .15 }];
 const HALO_L = [{ col: `rgb(${W(255, 150, 60)})`, e: 4, b: 4, o: DARK ? .5 : .6 }, { col: `rgb(${W(255, 165, 85)})`, e: 18, b: 9, o: DARK ? .32 : .38 }, { col: `rgb(${W(255, 182, 120)})`, e: 54, b: 22, o: DARK ? .11 : .14 }];
 const HALOS = {};
+const CONE_F = `rgb(${W(255, 190, 130)})`, CONE_S = `rgb(${W(255, 170, 95)})`;
 function drawHalo(id, P, hw, hh, o, rad = 18) {
   if (!HALOS[id]) HALOS[id] = makeShapeGlow(glowL, HALO_L, false);
   setShapeGlow(HALOS[id], e => boxHull(P[0], P[1], hw - rad + e, hh - rad + e, P[2], P[2]), o, rad);
@@ -532,18 +533,26 @@ function drawGlow(t, post, z, S, TH, o, gI, flare, coneO) {
   // the routing light travels level by level: key → router (lands on r5 / r9), router → session (lands on r6¼ / r10¼)
   const KEY = [ONE.x, ONE.y, 168 * S, 45.5 * S, z], RT = [ONE.x, ONE.y, 260, 150, Z.router];
   const LEGS = [[r(4.4), r(5), KEY, RT], [r(5.15), r(6.25), RT, [CARDS[0].x, CARDS[0].y, 115, 68, Z.cards]], [r(8.4), r(9), KEY, RT], [r(9.15), r(10.25), RT, [NEWP.x, NEWP.y, 115, 68, Z.cards]]];
-  [['#coneP', '#coneG'], ['#coneP2', '#coneG2']].forEach(([pid, gid], slot) => {
+  // the wave is the key's rectangle carried down through 3D space into the target's rectangle, so every
+  // wavefront has the same angle and perspective as the planes it travels between
+  ['#coneP', '#coneP2'].forEach((pid, slot) => {
     const cp = $(pid); let on = false;
+    if (!cp.children.length) cp.innerHTML = [0, 1, 2].map(() => `<polygon fill="${CONE_F}" stroke="${CONE_S}" stroke-linejoin="round"/>`).join('');
     LEGS.forEach(([a0, a1, A, B], li) => {
       if (li % 2 !== slot || t < a0 - .05 || t > a1 + .35) return;
       on = true;
       const su = clamp((t - a0) / (a1 - a0)), sw = seg(t, a0 - .05, a0 + .1) * (1 - seg(t, a1 + .05, a1 + .35));
-      const corners = R0 => [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([sx, sy]) => proj([R0[0] + sx * R0[2], R0[1] + sy * R0[3], R0[4]]));
-      const H = hull([...corners(A), ...corners(B)].map(p => [p[0], p[1]])), ca = proj([A[0], A[1], A[4]]), cb = proj([B[0], B[1], B[4]]);
-      cp.setAttribute('points', H.map(p => p.join(',')).join(' ')); cp.style.opacity = coneO * sw;
-      const g0 = $(gid); g0.setAttribute('x1', ca[0]); g0.setAttribute('y1', ca[1]); g0.setAttribute('x2', cb[0]); g0.setAttribute('y2', cb[1]);
       const uu = lerp(.05, 1, E.iq(su));
-      [[Math.max(0, uu - .28), 0], [Math.max(0, uu - .07), .15], [Math.min(1, uu + .01), .22], [Math.min(1, uu + .07), 0]].forEach(([off, a], i) => { const st = g0.querySelectorAll('stop')[i]; st.setAttribute('offset', off); st.setAttribute('stop-opacity', a); });
+      [...cp.children].forEach((pg, i) => {
+        const u = uu - i * .075; if (u < 0) { pg.style.opacity = 0; return; }
+        const R = A.map((v, j) => lerp(v, B[j], u)), rad = 14;
+        const pts = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([sx, sy]) => proj([R[0] + sx * (R[2] - rad), R[1] + sy * (R[3] - rad), R[4]]));
+        const k = proj([R[0], R[1], R[4]])[2] || 1;
+        pg.setAttribute('points', pts.map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' '));
+        pg.setAttribute('stroke-width', Math.max(2, 2 * rad * k).toFixed(1));
+        pg.style.opacity = 1; pg.style.fillOpacity = (.07 * (1 - i * .4)).toFixed(3); pg.style.strokeOpacity = (.3 * (1 - i * .38)).toFixed(3);
+      });
+      cp.style.opacity = coneO * sw;
     });
     if (!on) cp.style.opacity = 0;
   });
