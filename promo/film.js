@@ -29,7 +29,7 @@ const I = window.DSH_ICONS; const ic = (n, cls = '') => `<span class="ico ${cls}
 /* ---------------------------------------------------------- beat grid */
 const BEAT = 60 / 77, D = 20 * BEAT;            // drop = BGM 1:33.279
 const b = k => k * BEAT, r = k => D + k * BEAT;  // r(1), r(2.25), r(3) are the bar's hard hits
-const TOTAL = +(r(20) + 0.6).toFixed(3);
+const TOTAL = +(r(24) + 0.3).toFixed(3);
 const CUES = []; const cue = (t, type, o = {}) => CUES.push({ t: +t.toFixed(4), type, ...o });
 window.CUES = CUES; window.TOTAL = TOTAL; window.DROP = D;
 
@@ -228,6 +228,7 @@ const CL = [{ name: 'PROJECT A', x: ONE.x - 215, y: ONE.y - 215, t: r(13) }, { n
 const CHIP_CL = [0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3], SLOT = [5, 0, 9, 3, 11, 7, 1, 10, 4, 8, 2, 6];
 const CHIPS = CHIP_T.map((tt, i) => { const r0 = rng(100 + i), sl = SLOT[i]; const el = h('div', 'chip', esc(tt)); ov.appendChild(el);
   return { el, i, x0: ONE.x - 330 + (sl % 4) * 220 + (r0() - .5) * 60, y0: ONE.y - 200 + Math.floor(sl / 4) * 160 + (r0() - .5) * 50, cl: CHIP_CL[i], k: i % 3, ph: r0() * 6 }; });
+const GCARDS = CL.map(c => { const el = h('div', 'gcard2', `<div class="gl">${c.name}</div><div class="gx" style="width:78%"></div><div class="gx" style="width:58%"></div><div class="gx" style="width:68%"></div>`); ov.appendChild(el); op(el, 0); return el; });
 const CLAB = CL.map(c => { const el = h('div', 'clab', c.name); ov.appendChild(el); return el; });
 const motes = []; { const r0 = rng(21); for (let i = 0; i < 40; i++) { const m = h('div'); m.style.cssText = 'position:absolute;left:0;top:0;width:6px;height:6px;border-radius:50%;background:#ffb066;box-shadow:0 0 12px 3px rgba(255,150,60,.55)'; ov.appendChild(m); motes.push({ el: m, x: r0() * 1080, y: r0() * 1920, sp: 20 + r0() * 70, ph: r0() * 6, s: .4 + r0() * 1.1 }); } }
 
@@ -236,7 +237,7 @@ cue(r(1), 'layer'); cue(r(2.25), 'layer', { g: .9 }); cue(r(3), 'layer', { g: .8
 cue(r(4), 'type'); cue(r(5), 'route', { n: 'G5' }); cue(r(6.25), 'hit', { n: 'C6' }); cue(r(7), 'route', { n: 'E5', g: .7 });
 cue(r(8), 'type'); cue(r(9), 'route', { n: 'A5' }); cue(r(10.25), 'create'); cue(r(11), 'route', { n: 'C6', g: .6 });
 cue(r(12), 'rise'); cue(r(13), 'snap'); cue(r(14.25), 'snap'); cue(r(15), 'snap'); cue(r(15.5), 'snap', { g: .8 });
-cue(r(17), 'end');
+cue(r(17), 'fold'); cue(r(17.35), 'rise'); [0, 1, 2, 3].forEach(i => cue(r(18.25) + (i - 3) * .08, 'stack', { g: i === 3 ? 1.2 : .7 })); cue(r(18.25), 'layer'); cue(r(19), 'swoosh2'); cue(r(20), 'end');
 
 let WM = new DOMMatrix();
 function proj(p) { const q = WM.transformPoint(new DOMPoint(p[0], p[1], p[2])); const k = 2200 / (2200 - q.z); return [540 + (q.x - 540) * k, 960 + (q.y - 960) * k, k]; }
@@ -263,11 +264,18 @@ function camAt(t) {
   // shot C: dive to the history layer
   const k = E.io(seg(t, r(11.6), r(12.8)));
   c.cz = lerp(c.cz, Z.hist, k); c.z = lerp(c.z, 1.3, k); c.rx = lerp(c.rx, 22, k); c.rz = lerp(c.rz, 0, k); c.cy = lerp(c.cy, ONE.y + 20, k);
+  // converge: pull back up to The One key
+  const k2 = E.io(seg(t, r(17.2), r(18.2)));
+  c.cz = lerp(c.cz, Z.lift - 60, k2); c.z = lerp(c.z, 1.45, k2); c.rx = lerp(c.rx, 42, k2); c.rz = lerp(c.rz, -10, k2); c.cy = lerp(c.cy, ONE.y + 30, k2);
+  // face-on and push into the word "One"
+  const k3 = E.io(seg(t, r(18.9), r(20)));
+  c.cz = lerp(c.cz, Z.lift, k3); c.z = lerp(c.z, 4.2, E.ie(seg(t, r(18.9), r(20))) * .6 + k3 * .4); c.rx = lerp(c.rx, 0, k3); c.rz = lerp(c.rz, 0, k3);
+  c.cx = lerp(c.cx, ONE.x - 72, k3); c.cy = lerp(c.cy, ONE.y - 12, k3);
   return c;
 }
 
 function sApp(t, ovs) {
-  const vis = t >= b(1) && t < r(17.4); show($('#appwrap'), vis); if (!vis) return;
+  const vis = t >= b(1) && t < r(20.4); show($('#appwrap'), vis); if (!vis) return;
   // window-open from the dock icon
   const aw = $('#appwrap');
   if (t < b(1.7)) {
@@ -351,15 +359,16 @@ function sApp(t, ovs) {
   const post = t >= D;
   op(win, post ? lerp(1, .07, E.io(seg(t, D, r(1.4)))) * (1 - seg(t, r(11.6), r(12.4))) : 1);
   const dimC = 1 - E.io(seg(t, r(11.6), r(12.3)));
-  place(lift, ONE.x, ONE.y, post ? lerp(0, Z.lift, E.oe(seg(t, D, r(1.2)))) : 0, 336, 91, post ? dimC : 0, post ? lerp(1, 1.5, E.oe(seg(t, D, r(1.4)))) : 1);
-  const TH = 28 * E.oe(seg(t, D, r(1)));
+  place(lift, ONE.x, ONE.y, post ? lerp(0, Z.lift, E.oe(seg(t, D, r(1.2)))) : 0, 336, 91, post ? Math.max(dimC, E.io(seg(t, r(17.2), r(17.8)))) : 0, post ? lerp(1, 1.5, E.oe(seg(t, D, r(1.4)))) : 1);
+  const TH = 28 * E.oe(seg(t, D, r(1))) * (1 - E.io(seg(t, r(19.1), r(19.8))));
   $('#lfT').style.transform = `translateZ(${TH}px)`;
-  $('#lfT').style.boxShadow = `0 0 ${50 + 30 * pulse(t)}px ${8 + 8 * pulse(t)}px rgba(255,140,40,${.35 + .2 * pulse(t)})`;
+  const flare = t > r(18.25) - .3 ? Math.max(Math.exp(-Math.max(0, t - r(18.25)) * 4) * (t > r(18.25) ? 1 : seg(t, r(18.25) - .3, r(18.25))), E.ie(seg(t, r(19.3), r(20)))) : 0;
+  $('#lfT').style.boxShadow = `0 0 ${50 + 30 * pulse(t) + 90 * flare}px ${8 + 8 * pulse(t) + 26 * flare}px rgba(255,140,40,${.35 + .2 * pulse(t) + .4 * flare})`;
   lift.querySelectorAll('.slice').forEach(el => { el.style.transform = `translateZ(${(+el.dataset.i / (SLICES - 1) * (TH - .6)).toFixed(2)}px)`; el.style.display = TH > .5 ? '' : 'none'; });
   const app = (t0, z0, z1) => [E.oe(seg(t, t0 - .08, t0 + .4)), lerp(z0, z1, E.oe(seg(t, t0 - .08, t0 + .4)))];
   const [ra, rz0] = app(r(1), 0, Z.router); place(router, ONE.x, ONE.y, rz0, 520, 300, post ? ra * dimC : 0);
   CARDS.forEach((c, i) => { const [ca, cz0] = app(r(2.25) + (i % 3) * .03 + Math.floor(i / 3) * .03, Z.router, Z.cards); place(c.el, c.x, c.y, cz0, 230, 136, post ? ca * dimC : 0); });
-  const [ha, hz0] = app(r(3), Z.cards, Z.hist); place(hist, ONE.x, ONE.y, hz0, 880, 560, post ? ha : 0);
+  const [ha, hz0] = app(r(3), Z.cards, Z.hist); place(hist, ONE.x, ONE.y, hz0, 880, 560, post ? ha * (1 - E.io(seg(t, r(17.6), r(18.4)))) : 0);
   const nk = seg(t, r(10.25) - .1, r(10.25) + .35); place(NEWC, NEWP.x, NEWP.y, Z.cards, 230, 136, post ? Math.min(1, nk * 3) * dimC : 0, lerp(.6, 1, E.ob(nk)));
   // card highlight
   const hot0 = t > r(6.25) && t < r(8), hot1 = t > r(10.25) && t < r(12);
@@ -386,7 +395,7 @@ function sApp(t, ovs) {
   if (bb0) { const p = proj([ONE.x, ONE.y - 30, Z.lift + 10]); bub.textContent = bb0[2]; bub.className = 'bub' + (bb0[3] ? ' r' : ''); const k = E.ob(seg(t, bb0[0], bb0[0] + .25)); bub.style.transform = `translate(${p[0]}px,${p[1]}px) translate(-50%,-160%) scale(${lerp(.7, 1, k)})`; op(bub, seg(t, bb0[0], bb0[0] + .08) * (1 - seg(t, bb0[1] - .12, bb0[1]))); } else op(bub, 0);
   CHIPS.forEach(c => {
     if (t <= r(11.6)) { op(c.el, 0); return; }
-    const Cc = CL[c.cl], k = E.oe(seg(t, Cc.t - .1, Cc.t + .3));
+    const Cc = CL[c.cl], k = E.oe(seg(t, Cc.t - .1, Cc.t + .3)), fold = E.i(seg(t, r(17) - .12, r(17) + .14));
     // chaos: fly in from outside, then swirl and tumble over each other at different depths
     const tin = E.o(seg(t, r(11.6) + c.i * .03, r(12.3) + c.i * .03));
     const th = c.ph + (t - r(11.6)) * (1.1 + (c.i % 4) * .35) * (c.i % 2 ? 1 : -1);
@@ -394,13 +403,17 @@ function sApp(t, ovs) {
     const fx = ONE.x + Math.cos(th) * rad, fy = ONE.y - 60 + Math.sin(th) * rad * .75;
     const fz = Z.hist + 60 + 140 * Math.sin(t * 1.7 + c.ph * 2);
     const tx = Cc.x, ty = Cc.y + 34 + c.k * 52;
-    const p = proj([lerp(fx, tx, k), lerp(fy, ty, k), lerp(fz, Z.hist + 8, k)]);
+    const p = proj([lerp(lerp(fx, tx, k), Cc.x, fold), lerp(lerp(fy, ty, k), Cc.y + 60, fold), lerp(fz, Z.hist + 8, k)]);
     const rot = (1 - k) * (28 * Math.sin(t * 2.3 + c.ph * 3) + (c.i % 2 ? 14 : -14));
-    c.el.style.transform = `translate(${p[0]}px,${p[1]}px) translate(-50%,-50%) rotate(${rot}deg) scale(${.92 * p[2]})`;
+    c.el.style.transform = `translate(${p[0]}px,${p[1]}px) translate(-50%,-50%) rotate(${rot}deg) scale(${.92 * p[2] * lerp(1, .55, fold)})`;
     c.el.style.zIndex = k > .5 ? 2 : 1;
-    op(c.el, seg(t, r(11.6), r(11.9)) * (1 - seg(t, r(16.8), r(17.2))));
+    op(c.el, seg(t, r(11.6), r(11.9)) * (1 - seg(t, r(17) + .05, r(17) + .16)));
   });
-  CL.forEach((c, i) => { const p = proj([c.x, c.y - 14, Z.hist + 8]); CLAB[i].style.transform = `translate(${p[0]}px,${p[1]}px) translate(-50%,-50%)`; op(CLAB[i], seg(t, c.t, c.t + .15) * (1 - seg(t, r(16.8), r(17.2)))); });
+  CL.forEach((c, i) => { const p = proj([c.x, c.y - 14, Z.hist + 8]); CLAB[i].style.transform = `translate(${p[0]}px,${p[1]}px) translate(-50%,-50%)`; op(CLAB[i], seg(t, c.t, c.t + .15) * (1 - seg(t, r(17) - .05, r(17) + .1)));
+    const G4 = GCARDS[i], land = r(18.25) + (i - 3) * .08, k4 = E.ie(seg(t, r(17.35) + i * .05, land));
+    const gp = proj([lerp(c.x, ONE.x, k4), lerp(c.y + 60, ONE.y, k4), lerp(Z.hist + 10, Z.lift + 30, k4)]);
+    G4.style.transform = `translate(${gp[0]}px,${gp[1]}px) translate(-50%,-50%) scale(${gp[2] * lerp(1, .55, E.i(seg(t, land - .2, land))) * lerp(.7, 1, E.ob(seg(t, r(17), r(17) + .25)))})`;
+    op(G4, seg(t, r(17) + .02, r(17) + .14) * (1 - seg(t, land - .03, land))); });
 }
 function pulse(t) { if (t < D) return 0; const x = ((t - D) / BEAT) % 4; let p = 0; for (const a of [0, 1, 2.25, 3]) { const d = x - a; if (d >= 0) p = Math.max(p, Math.exp(-d * 5)); } return p; }
 
@@ -411,19 +424,19 @@ endEl.innerHTML = `<div class="ewm" id="ewm"><span class="t">The</span><span cla
   <div class="eurl" id="eurl">github.com/YunongDai2005/dsh-theone</div>
   <div class="edisc" id="edisc">Community plugin for DSH · unofficial</div>`;
 function sEnd(t) {
-  const vis = t >= r(16.9); show(endEl, vis); if (!vis) return;
-  op(endEl, seg(t, r(16.9), r(17.05)));
-  const k = seg(t, r(17), r(17) + .5);
-  $('#ewm').style.transform = `scale(${lerp(1.12, 1, E.oe(k)) * (1 + .015 * pulse(t))})`; op($('#ewm'), seg(t, r(17), r(17) + .12));
+  const vis = t >= r(19.85); show(endEl, vis); if (!vis) return;
+  op(endEl, seg(t, r(19.85), r(20.05)));
+  const k = seg(t, r(20), r(20) + .6);
+  $('#ewm').style.transform = `scale(${lerp(1.12, 1, E.oe(k)) * (1 + .015 * pulse(t))})`; op($('#ewm'), seg(t, r(20), r(20) + .15));
   const up = (id, a) => { const el = $(id), p = seg(t, a, a + .4); op(el, p); el.style.transform = `translateY(${(1 - E.o(p)) * 24}px)`; };
-  up('#etag', r(18.25)); up('#eurl', r(19)); up('#edisc', r(19.5));
+  up('#etag', r(21)); up('#eurl', r(22.25)); up('#edisc', r(23));
 }
 
 /* ---------------------------------------------------------- global FX */
 const grain = $('#grain'), gctx = grain.getContext('2d');
 { const img = gctx.createImageData(398, 608), r0 = rng(77); for (let i = 0; i < img.data.length; i += 4) { const v = r0() * 255; img.data[i] = img.data[i + 1] = img.data[i + 2] = v; img.data[i + 3] = 255; } gctx.putImageData(img, 0, 0);  }
 function sFX(t) {
-  const f = Math.max(t >= D ? 1 - E.o(seg(t, D, D + .55)) : 0, t >= r(17) ? .5 * (1 - E.o(seg(t, r(17), r(17) + .4))) : 0);
+  const f = Math.max(t >= D ? 1 - E.o(seg(t, D, D + .55)) : 0, t >= r(19.6) ? (t < r(20) ? .95 * E.ie(seg(t, r(19.6), r(20))) : .95 * (1 - E.o(seg(t, r(20), r(20) + .7)))) : 0);
   op($('#flash'), f);
   const fr = Math.floor(t * 30), r0 = rng(fr + 1);
   grain.style.transform = `translate(${Math.floor(r0() * 256)}px,${Math.floor(r0() * 256)}px) scale(2.6)`; grain.style.transformOrigin = '0 0';
