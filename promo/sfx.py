@@ -135,7 +135,15 @@ def paper():
 def unfold(): return crinkle(.5,160,rnd.integers(1e6))*.7+swish(.5,900,5000)*.25
 def seal():
     n=int(.4*SR); return osc(np.linspace(120,60,n),n)*env(n,.001,.06)*.8+lp(rnd.standard_normal(n),1800)*env(n,.0005,.012)*.5
-GAIN={'paper':.6,'unfold':.5,'seal':.6,'fold':.5,'stack':.55,'swoosh2':.35,'flapk':.5,'hov':.4,'swipe':.35,'growl':.6,'slam':.85,'book':.5,'flap':.55,'folder':.6,'click':.55,'whoosh':.55,'settle':.35,'pad':.55,'swell':.35,'impact':.8,'layer':.55,'type':.35,'route':.45,'hit':.5,'create':.45,'rise':.3,'snap':.5,'end':.45}
+def deck():
+    out=swish(.3,700,5000)*.45; out=np.pad(out,(0,int(.3*SR)))
+    for j in range(4):
+        c=clack(.9)*(.6+.15*j); i=int((.16+j*.045)*SR); out[i:i+len(c)]+=c[:len(out)-i]
+    return out
+def squeeze():
+    n=int(.45*SR); u=np.linspace(0,1,n); air=lp(rnd.standard_normal(n),1200)*np.sin(np.pi*u**.5)**2*.6
+    return air+osc(np.linspace(140,70,n),n)*env(n,.02,.12)*.5
+GAIN={'deck':.6,'squeeze':.5,'paper':.6,'unfold':.5,'seal':.6,'fold':.5,'stack':.55,'swoosh2':.35,'flapk':.5,'hov':.4,'swipe':.35,'growl':.6,'slam':.85,'book':.5,'flap':.55,'folder':.6,'click':.55,'whoosh':.55,'settle':.35,'pad':.55,'swell':.35,'impact':.8,'layer':.55,'type':.35,'route':.45,'hit':.5,'create':.45,'rise':.3,'snap':.5,'end':.45}
 for c in cues:
     t=c['t']; ty=c['type']; g=GAIN.get(ty,.4)*c.get('g',1)
     if ty=='flap': put(t-.04,flap(),g,rnd.uniform(-.35,.35),.08)
@@ -151,6 +159,8 @@ for c in cues:
     elif ty=='paper': put(t-.22,paper(),g,rnd.uniform(-.25,.25),.12)
     elif ty=='unfold': put(t-.1,unfold(),g,0,.12)
     elif ty=='seal': put(t,seal(),g,0,.2)
+    elif ty=='deck': put(t-.16,deck(),g,0,.12)
+    elif ty=='squeeze': put(t-.05,squeeze(),g,0,.15)
     elif ty=='folder': put(t-.04,flap(),g); put(t,swish(.25,600,3000)*.5,g,0,.1)
     elif ty=='click': put(t,click(),g)
     elif ty=='whoosh': put(t,whoosh(c['dur']),g,0,.12)

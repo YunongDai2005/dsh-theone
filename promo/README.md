@@ -4,7 +4,7 @@
 
 The UI is a replica of the DSH web client built with DSH's own icons, whale mark and wordmark (`extract-icons.tsx` renders them from the `deepseek-harness` sources). The window is laid out at 2.8× resolution with CSS `zoom` and scaled back down, so text stays sharp under the 3D camera. The top 170 px stay background-only for the phone notch.
 
-Video frames are rendered at 2× (`SS=2`) and downsampled with Lanczos, which keeps text sharp on oblique 3D planes. After the drop, The One key carries a screen-space volumetric glow (halo shaped to its projection, soft rays, an anamorphic streak and a light cone down to the router); it flares only on each bar's strongest hit (`r(4k+1)`).
+Video frames are rendered at 2× (`SS=2`) and downsampled with Lanczos, which keeps text sharp on oblique 3D planes. After the drop, The One key carries a screen-space volumetric glow (halo shaped to its projection, soft rays, an anamorphic streak and a light cone down to the router); it flares only on each bar's strongest hit (`r(4k+1)`). The pre-drop sidebar button, the router and the highlighted session cards use the same screen-space halos, so no glow lies flat on a tilted plane.
 
 ## Beat map
 
@@ -30,9 +30,9 @@ Video frames are rendered at 2× (`SS=2`) and downsampled with Lanczos, which ke
 | r4–r8 | "Kyoto, day 3?" → router `SWAP` → *Trip to Kyoto* lights up → reply comes back | Blips |
 | r8–r12 | "New topic: a cat feeder" → `CREATE` → a new session appears | Sparkle |
 | r12–r15½ | The history sheet shows four topic slots (PROJECT A / PROJECT B / TRAVEL / HOME); old titles tumble in 3D, then drop into the slots on r13, r14¼, r15, r15½ | Snaps |
-| r16½ | The sheet becomes an envelope: four flaps unfold from under it | Paper rustle |
-| r17 / r17½ / r18 | Side flaps, bottom flap, then the top flap fold in; an orange One seal stamps on | Paper folds, seal |
-| r18¼–r19 | The sealed envelope lifts into the 3D key and lands on r19 | Rise, landing thock |
+| r17 | The four topic cards slide together and square up into a deck | Card slide and taps |
+| r17½ | The deck flattens to the key's footprint and takes on its warm slice colours | Soft compress |
+| r18¼–r19 | The deck rises and docks under the 3D key on r19, becoming part of its thickness | Rise, docking thock |
 | r20–r21 | The key turns face-on, flattens, and the camera pushes into "One" until it blooms | Swoosh |
 | r21–r24¾ | **The One** forms out of the light · One chat. Every context. (r22¼) · github.com/YunongDai2005/dsh-theone (r23) | Shimmer |
 
