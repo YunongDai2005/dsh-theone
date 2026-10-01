@@ -2,7 +2,8 @@ import type { ModelSelection } from '@deepseek-ai/dsh-agent'
 import { DatabaseSync } from 'node:sqlite'
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
-import { randomUUID } from 'node:crypto'
+import { randomUUID, createHash } from 'node:crypto'
+import type { ExtractedTopic, HistoryPart, TopicGroup } from './catalog-types.ts'
 import type { ContextDescriptor, Decision, RouteRecord, StoredContext, SourceRange } from './types.ts'
 
 /** Stores descriptors and routing metadata. Original conversation stays in DSH. */
@@ -14,6 +15,23 @@ export class ContextStore {
     this.db = new DatabaseSync(path)
     this.db.exec(`
       PRAGMA foreign_keys = ON;
+      CREATE TABLE IF NOT EXISTS topic_groups (
+        id TEXT PRIMARY KEY, title TEXT NOT NULL, summary TEXT NOT NULL, normalized_title TEXT NOT NULL UNIQUE
+      );
+      CREATE TABLE IF NOT EXISTS topic_group_members (
+        context_id TEXT PRIMARY KEY REFERENCES contexts(id), group_id TEXT NOT NULL REFERENCES topic_groups(id)
+      );
+      CREATE TABLE IF NOT EXISTS history_index (
+        session_id TEXT PRIMARY KEY, through_seq INTEGER NOT NULL, status TEXT NOT NULL, error_code TEXT
+      );
+      CREATE TABLE IF NOT EXISTS history_turns (
+        session_id TEXT NOT NULL, user_seq INTEGER NOT NULL, end_seq INTEGER NOT NULL,
+        fingerprint TEXT NOT NULL, context_id TEXT NOT NULL REFERENCES contexts(id),
+        PRIMARY KEY(session_id, user_seq)
+      );
+      CREATE TABLE IF NOT EXISTS context_origins (
+        context_id TEXT PRIMARY KEY REFERENCES contexts(id), session_id TEXT NOT NULL, cwd TEXT
+      );
       CREATE TABLE IF NOT EXISTS model_binding (
         gateway_key TEXT PRIMARY KEY, selection TEXT NOT NULL
       );
@@ -85,6 +103,81 @@ export class ContextStore {
   current(gatewayKey: string): string | undefined {
     const row = this.db.prepare('SELECT context_id FROM gateway_state WHERE gateway_key = ?').get(gatewayKey)
     return row ? String(row.context_id) : undefined
+  }
+
+  groups(): TopicGroup[] {
+    return this.db.prepare('SELECT * FROM topic_groups ORDER BY title').all().map(row => ({
+      id: String(row.id), title: String(row.title), summary: String(row.summary),
+      contextIds: this.db.prepare('SELECT context_id FROM topic_group_members WHERE group_id = ? ORDER BY context_id').all(String(row.id)).map(r => String(r.context_id)),
+    })).filter(group => group.contextIds.length > 0)
+  }
+
+  isGateway(sessionId: string): boolean {
+    return !!this.db.prepare('SELECT 1 FROM gateway_sessions WHERE gateway_id = ? LIMIT 1').get(sessionId)
+  }
+
+  origin(contextId: string): { sessionId: string; cwd?: string } | undefined {
+    const row = this.db.prepare('SELECT * FROM context_origins WHERE context_id = ?').get(contextId)
+    return row ? { sessionId: String(row.session_id), ...(row.cwd ? { cwd: String(row.cwd) } : {}) } : undefined
+  }
+
+  indexState(sessionId: string): { throughSeq: number; status: string } | undefined {
+    const row = this.db.prepare('SELECT * FROM history_index WHERE session_id = ?').get(sessionId)
+    return row ? { throughSeq: Number(row.through_seq), status: String(row.status) } : undefined
+  }
+
+  markIndex(sessionId: string, throughSeq: number, status: 'ready' | 'failed' | 'skipped', errorCode?: string): void {
+    this.db.prepare('INSERT OR REPLACE INTO history_index VALUES (?, ?, ?, ?)').run(sessionId, throughSeq, status, errorCode ?? null)
+  }
+
+  indexedTurn(sessionId: string, seq: number): { fingerprint: string; contextId: string } | undefined {
+    const row = this.db.prepare('SELECT fingerprint, context_id FROM history_turns WHERE session_id = ? AND user_seq = ?').get(sessionId, seq)
+    return row ? { fingerprint: String(row.fingerprint), contextId: String(row.context_id) } : undefined
+  }
+
+  /** One validated batch commits descriptors, groups and exact source ranges atomically. */
+  importTopics(sessionId: string, cwd: string | undefined, parts: HistoryPart[], topics: ExtractedTopic[]): void {
+    this.db.exec('BEGIN IMMEDIATE')
+    try {
+      for (const topic of topics) {
+        const id = topic.contextId ?? randomUUID()
+        const existing = this.contexts().find(context => context.id === id)
+        const descriptor: ContextDescriptor = { id, title: existing?.title ?? topic.title,
+          summary: topic.summary, entities: topic.entities, keywords: topic.keywords, lastState: topic.lastState }
+        if (existing) this.db.prepare('UPDATE contexts SET descriptor = ? WHERE id = ?').run(JSON.stringify(descriptor), id)
+        else {
+          this.seed([descriptor])
+          this.db.prepare('INSERT INTO context_origins VALUES (?, ?, ?)').run(id, sessionId, cwd ?? null)
+        }
+        let groupId = topic.groupId
+        if (!groupId) {
+          const title = topic.groupTitle || '待归类'
+          const normalized = title.normalize('NFKC').toLowerCase().replace(/\s+/g, '')
+          groupId = 'group-' + createHash('sha256').update(normalized).digest('hex').slice(0, 20)
+          this.db.prepare('INSERT OR IGNORE INTO topic_groups VALUES (?, ?, ?, ?)').run(groupId, title, topic.groupSummary, normalized)
+        }
+        this.db.prepare('INSERT OR REPLACE INTO topic_group_members VALUES (?, ?)').run(id, groupId)
+        for (const seq of topic.turns) {
+          const part = parts.find(part => part.seq === seq)!
+          const old = this.db.prepare('SELECT * FROM history_turns WHERE session_id = ? AND user_seq = ?').get(sessionId, seq)
+          if (old) this.db.prepare('DELETE FROM context_source_ranges WHERE context_id = ? AND session_id = ? AND start_seq = ? AND end_seq = ?')
+            .run(String(old.context_id), sessionId, seq, Number(old.end_seq))
+          this.addSource(id, sessionId, { startSeq: seq, endSeq: part.endSeq })
+          this.db.prepare('INSERT OR REPLACE INTO history_turns VALUES (?, ?, ?, ?, ?)').run(sessionId, seq, part.endSeq, part.fingerprint, id)
+        }
+      }
+      this.db.exec('COMMIT')
+    } catch (error) { this.db.exec('ROLLBACK'); throw error }
+  }
+
+  mount(gatewayKey: string, contextId: string): void {
+    if (!this.contexts().some(context => context.id === contextId)) throw new Error('Unknown Context')
+    this.db.prepare('INSERT INTO gateway_state VALUES (?, ?) ON CONFLICT(gateway_key) DO UPDATE SET context_id = excluded.context_id').run(gatewayKey, contextId)
+  }
+
+  contextsForSessions(sessionIds: string[]): string[] {
+    const wanted = new Set(sessionIds)
+    return this.contexts().filter(context => wanted.has(context.workingSessionId) || this.sources(context.id).some(id => wanted.has(id))).map(context => context.id)
   }
 
   /** Model-maintained progress is bounded and auditable; stable project identity remains unchanged. */

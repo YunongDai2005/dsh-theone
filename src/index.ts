@@ -14,6 +14,7 @@ import type {} from '@deepseek-ai/dsh-compaction/types'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
 import { buildSessionEventSearchDocuments, filterSessionEventDocuments } from '@deepseek-ai/dsh-session-query'
 import type { SessionEventWindow } from '@deepseek-ai/dsh-session-query'
+import { HistoryCatalog } from './history-catalog.ts'
 import { ContextStore } from './store.ts'
 import { resolveContext } from './router.ts'
 import { DeepSeekRouter, DshRouter, RouterFailure } from './llm-router.ts'
@@ -35,6 +36,8 @@ export interface Config {
   maxResponseChars: number
   routerMode?: 'rules' | 'llm'
   routerTransport?: 'dsh' | 'legacy'
+  historyCatalog?: boolean
+  catalogIntervalMs?: number
   routerBaseUrl?: string
   routerModel?: string
   routerApiKeyEnv?: string
@@ -82,6 +85,8 @@ function readDescriptors(path: string): ContextDescriptor[] {
 export default class TheOne extends Service {
   static inject = ['agents', 'llm', 'sessionQuery', 'tools', 'agentDefaultModel']
   static Config: z<Config> = z.object({
+    historyCatalog: z.boolean().default(true),
+    catalogIntervalMs: z.number().step(1).min(10000).default(60000),
     databasePath: z.string(), contextsPath: z.string(),
     gatewayKey: z.string().default('default'),
     workerProvider: z.string(), workerModel: z.string(),
@@ -94,6 +99,7 @@ export default class TheOne extends Service {
     routerApiKeyEnv: z.string().default('THEONE_ROUTER_API_KEY'),
   })
   readonly store: ContextStore
+  readonly catalog?: HistoryCatalog
   private readonly workers = new Map<string, AgentHandle>()
   private readonly router?: RoutingRouter
   private readonly workerSelections = new Map<string, ModelSelectionRef>()
@@ -107,7 +113,7 @@ export default class TheOne extends Service {
     this.store = new ContextStore(config.databasePath || join(process.env.DSH_HOME || join(homedir(), '.dsh'), 'theone', 'contexts.db'))
     ctx.effect(() => async () => {
       try { await Promise.all([...this.workers.values()].map(handle => handle.dispose())) }
-      finally { this.store.close() }
+      finally { await this.catalog?.close(); this.store.close() }
     })
     this.store.seed(descriptors)
     if (!!config.workerProvider !== !!config.workerModel) throw new Error('Set both workerProvider and workerModel, or neither')
@@ -115,9 +121,17 @@ export default class TheOne extends Service {
     if ((config.routerMode ?? 'llm') === 'llm') this.router = config.routerTransport === 'legacy'
       ? new DeepSeekRouter({ apiKey: process.env[config.routerApiKeyEnv ?? 'THEONE_ROUTER_API_KEY'] ?? '', baseUrl: config.routerBaseUrl, model: config.routerModel })
       : new DshRouter(ctx.llm, () => this.backingModel())
+    if (config.historyCatalog ?? true) {
+      this.catalog = new HistoryCatalog(ctx, this.store, () => this.backingModel(), config.catalogIntervalMs)
+      this.catalog.start()
+    }
+    this.registerCatalogChannel()
     ctx.llm.registerAdapter(['theone'], new GatewayAdapter(this))
     ctx.on('session/event', (session, event) => {
-      if (event.type === 'turn/end' && session.id === this.reservedGateway) this.reservedGateway = undefined
+      if (event.type === 'turn/end') {
+        if (session.id === this.reservedGateway) this.reservedGateway = undefined
+        this.catalog?.requestRefresh()
+      }
     })
     // Web selection overrides AgentOptions during assembly; use that turn's selection.
     // Ignore preview assemblies so they cannot replace a running turn's route.
@@ -146,14 +160,41 @@ export default class TheOne extends Service {
       let route
       const receipt: RouterReceipt = {mode:this.router?'llm':'rules'}
       try {
-        const contexts = this.store.contexts()
         const currentId = this.store.current(config.gatewayKey)
+        let contexts = this.store.contexts()
+        let searchFailed = false
+        if (this.catalog) {
+          try { contexts = await this.catalog.candidates(text, currentId, signal) }
+          catch { signal.throwIfAborted(); searchFailed = true }
+        }
         let proposed
-        if (this.router) {
+        if (searchFailed) {
+          receipt.errorCode = 'HISTORY_SEARCH_UNAVAILABLE'
+          proposed = { action: 'CLARIFY' as const, reason: 'HISTORY_SEARCH_UNAVAILABLE', question: '历史检索暂时不可用，请稍后再试。' }
+        } else if (this.router) {
           const recent = await this.recentMessages(agent, input.id, signal)
           try {
             const result = await this.router.decide({text,contexts,currentId,recent},signal)
             proposed = result.decision
+            // A miss in a short candidate list is not proof that the whole catalog has no match.
+            if (proposed.action === 'CREATE' && this.catalog && !this.catalog.incomplete && !/^新话题[：:]/.test(text.trim())) {
+              const seen = new Set(contexts.map(context => context.id))
+              const remaining = this.store.contexts().filter(context => !seen.has(context.id))
+              const current = this.store.contexts().find(context => context.id === currentId)
+              const pageSize = current ? 15 : 16
+              let checked = 0
+              for (let offset = 0; offset < remaining.length && checked < 3; offset += pageSize, checked++) {
+                const page = [...(current ? [current] : []), ...remaining.slice(offset, offset + pageSize)]
+                const review = await this.router.decide({text,contexts:page,currentId,recent},signal)
+                result.elapsedMs += review.elapsedMs
+                if (review.usage) result.usage = { prompt_tokens: (result.usage?.prompt_tokens ?? 0) + review.usage.prompt_tokens,
+                  completion_tokens: (result.usage?.completion_tokens ?? 0) + review.usage.completion_tokens,
+                  total_tokens: (result.usage?.total_tokens ?? 0) + review.usage.total_tokens }
+                if (review.decision.action !== 'CREATE') { proposed = review.decision; break }
+              }
+              if (proposed.action === 'CREATE' && remaining.length > checked * pageSize)
+                proposed = { action: 'CLARIFY' as const, reason: 'CATALOG_REVIEW_LIMIT', question: '暂时没有找到明确相关的旧话题。你是在说一件新的事情吗？' }
+            }
             Object.assign(receipt,{model:result.model,elapsedMs:result.elapsedMs,
               promptTokens:result.usage?.prompt_tokens,completionTokens:result.usage?.completion_tokens})
           } catch (error) {
@@ -164,6 +205,8 @@ export default class TheOne extends Service {
             proposed = {action:'CLARIFY' as const,reason:error.code,question:error.code === 'ROUTER_MODEL_MISSING' ? '请先在 DSH 中选择一个已配置的聊天模型，再打开 TheOne。无需另配 API Key。' : '话题判断暂时不可用，请稍后重试。'}
           }
         } else proposed = resolveContext(text,contexts,currentId)
+        if (proposed.action === 'CREATE' && this.catalog?.incomplete && !/^新话题[：:]/.test(text.trim()))
+          proposed = { action: 'CLARIFY' as const, reason: 'CATALOG_NOT_READY', question: '我还在整理以前的聊天，暂时不能确认这是不是新的事情，请稍后再试。' }
         signal.throwIfAborted()
         route = this.store.plan(input.id,agent.id,config.gatewayKey,proposed)
       } catch (error) {
@@ -176,6 +219,34 @@ export default class TheOne extends Service {
         source: { kind: 'theone-route', form: 'notice', summary, messageId: input.id, router: Object.fromEntries(Object.entries(receipt).filter(([, value]) => value !== undefined)) as unknown as RouterReceipt },
         content: [{ type: 'text', text: summary }],
       })] }
+    })
+  }
+
+  /** DSH Connection protects plugin routes inside its authenticated /api fence. */
+  private registerCatalogChannel(): void {
+    this.ctx.inject(['connection'], child => {
+      const connection = child.get('connection') as { fetch?: { register: (route: {
+        path: string; methods: string[]; requestBody?: string; fetch: (request: Request) => Promise<Response>
+      }) => () => void } } | undefined
+      if (!connection?.fetch?.register) return
+      child.effect(() => connection.fetch!.register({ path: '/api/theone/catalog', methods: ['GET'], requestBody: 'buffered', fetch: async () =>
+        Response.json(this.catalog?.snapshot() ?? { groups: this.store.groups(), contexts: this.store.contexts().map(c => ({ ...c, sourceSessionIds: this.store.sources(c.id) })),
+          status: { running: false, scanned: 0, indexed: 0, skipped: 0, failed: 0, pending: 0 } }, { headers: { 'cache-control': 'no-store' } }) }))
+      child.effect(() => connection.fetch!.register({ path: '/api/theone/catalog/refresh', methods: ['POST'], requestBody: 'buffered', fetch: async () => {
+        if (!this.catalog) return Response.json({ error: 'CATALOG_DISABLED' }, { status: 409 })
+        void this.catalog.refresh().catch(() => {})
+        return Response.json({ accepted: true }, { status: 202 })
+      } }))
+      child.effect(() => connection.fetch!.register({ path: '/api/theone/context/mount', methods: ['POST'], requestBody: 'buffered', fetch: async request => {
+        if (this.active || this.reservedGateway) return Response.json({ error: 'GATEWAY_BUSY' }, { status: 409 })
+        let value: unknown
+        try { value = await request.json() } catch { return Response.json({ error: 'INVALID_INPUT' }, { status: 400 }) }
+        if (!value || typeof value !== 'object' || !('contextId' in value) || typeof value.contextId !== 'string' || !this.store.contexts().some(c => c.id === value.contextId))
+          return Response.json({ error: 'UNKNOWN_CONTEXT' }, { status: 400 })
+        if (this.active || this.reservedGateway) return Response.json({ error: 'GATEWAY_BUSY' }, { status: 409 })
+        this.store.mount(this.config.gatewayKey, value.contextId)
+        return Response.json({ mounted: true })
+      } }))
     })
   }
 
@@ -287,7 +358,7 @@ export default class TheOne extends Service {
       this.refreshCompactionSummary(existing.agent, context.id); return existing.agent
     }
     const sessionId = SessionId(context.workingSessionId)
-    const cwd = this.ctx.agents.get(SessionId(gatewayId))?.session.header.cwd ?? process.cwd()
+    const cwd = this.store.origin(context.id)?.cwd ?? this.ctx.agents.get(SessionId(gatewayId))?.session.header.cwd ?? process.cwd()
     const setup = (agentCtx: Context, agent: Agent) => {
       const selection = { current: agentOptions, assembled: undefined }
       this.workerSelections.set(context.id, selection)

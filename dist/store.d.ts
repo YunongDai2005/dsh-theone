@@ -1,4 +1,5 @@
 import type { ModelSelection } from '@deepseek-ai/dsh-agent';
+import type { ExtractedTopic, HistoryPart, TopicGroup } from './catalog-types.ts';
 import type { ContextDescriptor, Decision, RouteRecord, StoredContext, SourceRange } from './types.ts';
 /** Stores descriptors and routing metadata. Original conversation stays in DSH. */
 export declare class ContextStore {
@@ -10,6 +11,25 @@ export declare class ContextStore {
     seed(contexts: ContextDescriptor[]): void;
     contexts(): StoredContext[];
     current(gatewayKey: string): string | undefined;
+    groups(): TopicGroup[];
+    isGateway(sessionId: string): boolean;
+    origin(contextId: string): {
+        sessionId: string;
+        cwd?: string;
+    } | undefined;
+    indexState(sessionId: string): {
+        throughSeq: number;
+        status: string;
+    } | undefined;
+    markIndex(sessionId: string, throughSeq: number, status: 'ready' | 'failed' | 'skipped', errorCode?: string): void;
+    indexedTurn(sessionId: string, seq: number): {
+        fingerprint: string;
+        contextId: string;
+    } | undefined;
+    /** One validated batch commits descriptors, groups and exact source ranges atomically. */
+    importTopics(sessionId: string, cwd: string | undefined, parts: HistoryPart[], topics: ExtractedTopic[]): void;
+    mount(gatewayKey: string, contextId: string): void;
+    contextsForSessions(sessionIds: string[]): string[];
     /** Model-maintained progress is bounded and auditable; stable project identity remains unchanged. */
     updateState(contextId: string, state: string, sessionId: string, throughSeq: number): void;
     stateUpdates(contextId: string): Record<string, import("node:sqlite").SQLOutputValue>[];

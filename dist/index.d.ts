@@ -2,6 +2,7 @@ import { Context, Service } from '@deepseek-ai/cordis';
 import z from '@deepseek-ai/schemastery';
 import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm';
 import type { SessionEventWindow } from '@deepseek-ai/dsh-session-query';
+import { HistoryCatalog } from './history-catalog.ts';
 import { ContextStore } from './store.ts';
 import type { RouterReceipt } from './llm-router.ts';
 export interface Config {
@@ -14,6 +15,8 @@ export interface Config {
     maxResponseChars: number;
     routerMode?: 'rules' | 'llm';
     routerTransport?: 'dsh' | 'legacy';
+    historyCatalog?: boolean;
+    catalogIntervalMs?: number;
     routerBaseUrl?: string;
     routerModel?: string;
     routerApiKeyEnv?: string;
@@ -44,12 +47,15 @@ export default class TheOne extends Service {
     static inject: string[];
     static Config: z<Config>;
     readonly store: ContextStore;
+    readonly catalog?: HistoryCatalog;
     private readonly workers;
     private readonly router?;
     private readonly workerSelections;
     private active;
     private reservedGateway;
     constructor(ctx: Context, config: Config);
+    /** DSH Connection protects plugin routes inside its authenticated /api fence. */
+    private registerCatalogChannel;
     /** Capture before Web saves the gateway itself as DSH's new default. */
     captureDefaultModel(): void;
     private backingModel;

@@ -3,6 +3,7 @@
     - id: theone
       name: dsh-theone
       config:
+        historyCatalog: !!js process.env.THEONE_HISTORY_CATALOG !== 'false'
         databasePath: !!js process.env.THEONE_DATABASE_PATH
         contextsPath: !!js process.env.THEONE_CONTEXTS_PATH
         gatewayKey: !!js process.env.THEONE_GATEWAY_KEY || 'default'
