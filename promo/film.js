@@ -29,7 +29,7 @@ const I = window.DSH_ICONS; const ic = (n, cls = '') => `<span class="ico ${cls}
 /* ---------------------------------------------------------- beat grid */
 const BEAT = 60 / 77, D = 20 * BEAT;            // drop = BGM 1:33.279
 const b = k => k * BEAT, r = k => D + k * BEAT;  // r(1), r(2.25), r(3) are the bar's hard hits
-const TOTAL = +(r(24.75) + 0.3).toFixed(3);
+const TOTAL = +(r(28.75) + 0.3).toFixed(3);
 const CUES = []; const cue = (t, type, o = {}) => CUES.push({ t: +t.toFixed(4), type, ...o });
 window.CUES = CUES; window.TOTAL = TOTAL; window.DROP = D;
 
@@ -505,15 +505,21 @@ function lastHit(t) { const k = Math.floor(((t - D) / BEAT - 1) / 4); return D +
 
 /* ---------------------------------------------------------- end card */
 const endEl = $('#end');
-endEl.innerHTML = `<div class="ewm" id="ewm"><span class="t">The</span><span class="o">One<span class="d"></span></span></div>
+endEl.innerHTML = `<div class="erays" id="erays"></div><div class="ehalo" id="ehalo"></div><div class="ewm" id="ewm"><span class="t">The</span><span class="o">One<span class="d"></span></span></div>
   <div class="etag" id="etag">One chat. Every context.</div>
-  <div class="eurl" id="eurl">github.com/YunongDai2005/dsh-theone</div>
+  <div class="eurl" id="eurl"><svg class="ghm" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg><span>YunongDai2005/dsh-theone</span></div>
   <div class="edisc" id="edisc">Community plugin for DSH · unofficial</div>`;
 function sEnd(t) {
   const vis = t >= r(20.85); show(endEl, vis); if (!vis) return;
   op(endEl, seg(t, r(20.85), r(21.05)));
   const k = seg(t, r(21), r(21) + .6);
-  $('#ewm').style.transform = `scale(${lerp(1.12, 1, E.oe(k)) * (1 + .015 * pulse(t))})`; op($('#ewm'), seg(t, r(21), r(21) + .15));
+  // the logo's light swells on each bar's strongest hit (plus its own entrance)
+  const P = Math.max(pulse(t), Math.exp(-Math.max(0, t - r(21)) * 3) * (t >= r(21) ? 1 : 0));
+  $('#ewm').style.transform = `scale(${lerp(1.12, 1, E.oe(k)) * (1 + .02 * P)})`; op($('#ewm'), seg(t, r(21), r(21) + .15));
+  const o = $('#ewm .o'); o.style.textShadow = `0 0 ${36 + 40 * P}px rgba(255,140,50,${.3 + .35 * P}),0 0 ${110 + 90 * P}px rgba(255,120,30,${.12 + .26 * P})`;
+  $('#ewm .d').style.boxShadow = `0 0 ${20 + 30 * P}px rgba(255,140,50,${.55 + .4 * P})`;
+  const hv = seg(t, r(21), r(21) + .4); op($('#ehalo'), hv * (.45 + .55 * P)); $('#ehalo').style.transform = `translate(-50%,-50%) scale(${1 + .12 * P})`;
+  op($('#erays'), hv * (.10 + .26 * P)); $('#erays').style.transform = `translate(-50%,-50%) rotate(${(t - r(21)) * 4}deg) scale(${1 + .06 * P})`;
   const up = (id, a) => { const el = $(id), p = seg(t, a, a + .4); op(el, p); el.style.transform = `translateY(${(1 - E.o(p)) * 24}px)`; };
   up('#etag', r(22.25)); up('#eurl', r(23)); up('#edisc', r(23.5));
 }

@@ -1,6 +1,6 @@
 # TheOne — vertical film
 
-1080×1920, 30 fps, 35.2 s. Light theme, English only, almost no on-screen text. Every frame is a pure function of `t` in `film.js`; Playwright screenshots each frame and ffmpeg encodes. All sound effects are synthesized by `sfx.py`.
+1080×1920, 30 fps, 38.3 s. Light theme, English only, almost no on-screen text. Every frame is a pure function of `t` in `film.js`; Playwright screenshots each frame and ffmpeg encodes. All sound effects are synthesized by `sfx.py`.
 
 The UI is a replica of the DSH web client built with DSH's own icons, whale mark and wordmark (`extract-icons.tsx` renders them from the `deepseek-harness` sources). The window is laid out at 2.8× resolution with CSS `zoom` and scaled back down, so text stays sharp under the 3D camera. The top 170 px stay background-only for the phone notch.
 
@@ -34,7 +34,7 @@ Video frames are rendered at 3× (`SS=3`) and downsampled with Lanczos, which ke
 | r17½ | The deck flattens to the key's footprint and takes on its warm slice colours | Soft compress |
 | r18¼–r19 | The deck rises and docks under the 3D key on r19, becoming part of its thickness | Rise, docking thock |
 | r20–r21 | The key turns face-on, flattens, and the camera pushes into "One" until it blooms | Swoosh |
-| r21–r24¾ | **The One** forms out of the light · One chat. Every context. (r22¼) · github.com/YunongDai2005/dsh-theone (r23) | Shimmer |
+| r21–r28¾ | **The One** forms out of the light · One chat. Every context. (r22¼) · GitHub mark + YunongDai2005/dsh-theone (r23); the logo's halo and rays swell on each bar's strongest hit, then a 3-second hold before the fade | Shimmer |
 
 ## Build
 
@@ -46,9 +46,9 @@ npx esbuild extract-icons.tsx --bundle --platform=node --format=esm --jsx=automa
   --external:react --external:react-dom --external:react/jsx-runtime --outfile=.extract.mjs && node .extract.mjs
 node mkface.mjs                  # The One key face as an 8× bitmap (face.png)
 node render.mjs cues cues.json
-echo '{"total":35.171}' > meta.json && python3 sfx.py          # → sfx.wav
+echo '{"total":38.287}' > meta.json && python3 sfx.py          # → sfx.wav
 ffmpeg -i bgm.m4a -i sfx.wav -filter_complex \
-  "[0:a]aresample=44100,atrim=start=77.6942:duration=35.171,asetpts=PTS-STARTPTS,afade=t=in:d=0.4,afade=t=out:st=34.17:d=1.0[m];[m][1:a]amix=inputs=2:normalize=0,alimiter=limit=0.95:level=false[a]" \
+  "[0:a]aresample=44100,atrim=start=77.6942:duration=38.287,asetpts=PTS-STARTPTS,afade=t=in:d=0.4,afade=t=out:st=37.09:d=1.2[m];[m][1:a]amix=inputs=2:normalize=0,alimiter=limit=0.95:level=false[a]" \
   -map "[a]" -c:a pcm_s16le mix.wav
 SS=3 node render.mjs video film_noaudio.mp4 30   # 3× supersampled, Lanczos down to 1080×1920
 ffmpeg -i film_noaudio.mp4 -i mix.wav -c:v copy -c:a aac -b:a 256k -shortest theone-film.mp4
