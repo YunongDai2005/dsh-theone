@@ -8,7 +8,8 @@ export const FONT = {
   r: staticFile('fonts/inter-latin-400-normal.woff'), m: staticFile('fonts/inter-latin-500-normal.woff'), sb: staticFile('fonts/inter-latin-600-normal.woff'),
   one: staticFile('fonts/nunito-latin-700-normal.woff'), mono: staticFile('fonts/jetbrains-mono-latin-500-normal.woff'),
 };
-export const col = (c: string | [number, number, number]) => (typeof c === 'string' ? new THREE.Color(c) : new THREE.Color(...c));
+/** a display colour: CSS string, or [r, g, b] in 0–255 sRGB (never HDR; use hdr() for bloom sources) */
+export const col = (c: string | [number, number, number]) => new THREE.Color(typeof c === 'string' ? c : `rgb(${c.map(Math.round).join(',')})`);
 /** HDR colour (linear, may exceed 1) for bloom sources. */
 export const hdr = (rgb255: [number, number, number], gain: number) => new THREE.Color(...rgb255.map(v => Math.pow(v / 255, 2.2) * gain) as [number, number, number]);
 

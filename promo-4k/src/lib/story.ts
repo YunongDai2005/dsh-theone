@@ -91,12 +91,12 @@ export function hoveredRow(t: number): Row | null {
 export const S_KEY = 1.5;                                    // the key grows as it lifts out
 export const KEY_Z = 170;
 export const KEY = [ONE_W[0], ONE_W[1], KEY_Z] as const;     // lifted key, straight out of the button
-export const ROUTER = { p: [ONE_W[0] + 760, ONE_W[1] - 10, -40] as [number, number, number], w: 520, h: 300 };
-const CC = [ONE_W[0] + 1590, ONE_W[1] - 10, -150];
+export const ROUTER = { p: [ONE_W[0] + 690, ONE_W[1] - 10, -40] as [number, number, number], w: 520, h: 300 };
+const CC = [ONE_W[0] + 1400, ONE_W[1] - 10, -150];
 export const CARD = { w: 230, h: 136 };
 // eight sessions in a 3×3 grid; the ninth slot stays empty until CREATE fills it
 export const CARD_T = ['Trip to Kyoto', 'Q3 budget', 'Habit tracker', 'Cycling route', 'Weekly report', 'Balcony herbs', 'Auth refactor', 'Paper notes'];
-const cell = (i: number) => [CC[0] + ((i % 3) - 1) * 262, CC[1] - (Math.floor(i / 3) - 1) * 166, CC[2]] as [number, number, number];
+const cell = (i: number) => [CC[0] + ((i % 3) - 1) * 250, CC[1] - (Math.floor(i / 3) - 1) * 158, CC[2]] as [number, number, number];
 export const CARDS = CARD_T.map((title, i) => ({ title, p: cell(i) }));
 export const NEWC = { title: 'Cat feeder', p: cell(8) };
 export const HIST = { p: [ONE_W[0] + 3350, ONE_W[1] - 30, -200] as [number, number, number], w: 1700, h: 620 };
