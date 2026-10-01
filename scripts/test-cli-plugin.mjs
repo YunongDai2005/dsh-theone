@@ -30,7 +30,7 @@ await writeFile(join(profile, 'package.json'), JSON.stringify({ private: true, t
 await exec(process.execPath, [cli, 'plugin', '--profile', 'theone-test', 'add', archive, '--ignore-scripts'], { cwd: workspace, env: { ...npmEnv, DSH_HOME: home }, timeout: 180000, maxBuffer: 4 * 1024 * 1024 })
 await writeFile(join(profile, 'cordis.yml'), '[]\n')
 await writeFile(join(root, 'test-safety.mjs'), `export const inject = ['tools']; export function apply(ctx) { ctx.tools.guard(exec => ['theone_search_history','theone_update_state'].includes(exec.name) ? undefined : 'Only TheOne metadata tools are permitted in this integration check.'); }\n`)
-await writeFile(join(profile, 'cordis.patch.yml'), `- id: llm-deepseek\n  config:\n    apiKeyEnv: THEONE_ROUTER_API_KEY\n    thinking: disabled\n    maxTokens: 4096\n    retryPolicy:\n      mode: normal\n      maxRetries: 0\n- insert:\n    - id: cli-test-safety\n      name: ${JSON.stringify(join(root, 'test-safety.mjs'))}\n`)
+await writeFile(join(profile, 'cordis.patch.yml'), `- id: agent-default-model\n  config:\n    provider: theone\n    model: gateway\n- id: llm-deepseek\n  config:\n    apiKeyEnv: THEONE_ROUTER_API_KEY\n    thinking: disabled\n    maxTokens: 4096\n    retryPolicy:\n      mode: normal\n      maxRetries: 0\n- insert:\n    - id: cli-test-safety\n      name: ${JSON.stringify(join(root, 'test-safety.mjs'))}\n`)
 const catalog = [
   { id: 'gpu', title: 'Qwen 显卡部署', summary: 'Qwen 模型在显卡上的部署项目。', entities: ['Qwen', 'ROCm'], keywords: ['显卡', '模型部署'], lastState: '测试项目，尚无进展。' },
   { id: 'paper', title: '视频注意力论文', summary: '视频注意力论文写作项目。', entities: ['论文', '注意力'], keywords: ['写作', '视频'], lastState: '测试项目，尚无进展。' },
@@ -55,7 +55,7 @@ try {
   for (const [index, check] of checks.entries()) {
     const activeDatabase = check.empty ? join(root, 'empty-contexts.db') : database
     if (check.empty) { env.THEONE_DATABASE_PATH = activeDatabase; delete env.THEONE_CONTEXTS_PATH }
-    const args = [cli, '--profile', 'theone-test', '--provider', 'theone', '--model', 'gateway', '--json']
+    const args = [cli, '--profile', 'theone-test', '--json']
     if (check.resume) args.push('--session-id', previousId)
     args.push(check.prompt)
     let run
