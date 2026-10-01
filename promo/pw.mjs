@@ -9,9 +9,13 @@ try { pw = await import('playwright'); } catch {
 }
 const chromium = pw.chromium || pw.default.chromium;
 export const GPU = process.env.GPU === '1';
+// EXTRA_ARGS passes more Chromium switches, space-separated. With the GPU, the tile budget is raised: when Chrome
+// runs out of tile memory it skips layers silently ("tile memory limits exceeded, some content may not draw").
+const EXTRA = (process.env.EXTRA_ARGS || '').split(' ').filter(Boolean);
 export function launch() {
-  if (!GPU) return chromium.launch();
-  const args = ['--enable-gpu', '--ignore-gpu-blocklist', '--enable-gpu-rasterization', '--enable-zero-copy'];
+  if (!GPU) return chromium.launch({ args: EXTRA });
+  const args = ['--enable-gpu', '--ignore-gpu-blocklist', '--enable-gpu-rasterization', '--enable-zero-copy',
+    `--force-gpu-mem-available-mb=${process.env.GPU_MEM_MB || 8192}`, ...EXTRA];
   if (process.platform === 'win32') args.push('--use-angle=d3d11');
   return chromium.launch({ channel: 'chromium', args });
 }

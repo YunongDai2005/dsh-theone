@@ -391,6 +391,9 @@ function sApp(t, ovs) {
   // ---- behind the button
   const post = t >= D;
   op(win, post ? lerp(1, .07, E.io(seg(t, D, r(1.4)))) * (1 - seg(t, r(11.6), r(12.4))) : 1);
+  // once the window has faded into the backdrop, drop its 3.3× layout zoom: at SS=3 that layer alone is the largest
+  // raster on the page, and when Chrome runs out of tile memory it silently skips other layers on some frames
+  const lowres = post && t > r(1.4); if (win.dataset.lowres !== String(lowres)) { win.dataset.lowres = String(lowres); win.style.zoom = lowres ? '1' : ''; win.style.transform = lowres ? 'none' : ''; }
   const dimC = 1 - E.io(seg(t, r(11.6), r(12.3)));
     const app = (t0, z0, z1) => [E.oe(seg(t, t0 - .08, t0 + .4)), lerp(z0, z1, E.oe(seg(t, t0 - .08, t0 + .4)))];
   const [ra, rz0] = app(r(1), 0, Z.router); place(router, ONE.x, ONE.y, rz0, 520, 300, post ? ra * dimC : 0);
