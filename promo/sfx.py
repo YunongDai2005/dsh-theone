@@ -91,10 +91,41 @@ def typing():
 def snap():
     n=int(.12*SR); return hp(rnd.standard_normal(n),1500)*env(n,.0002,.003)*.9+osc(np.linspace(220,90,n),n)*env(n,.001,.03)*.8
 
-GAIN={'flap':.55,'folder':.6,'click':.55,'whoosh':.55,'settle':.35,'pad':.55,'swell':.35,'impact':.8,'layer':.55,'type':.35,'route':.45,'hit':.5,'create':.45,'rise':.3,'snap':.5,'end':.45}
+
+def flapk():
+    out=np.zeros(int(.06*SR)); tt=0
+    for j in range(rnd.integers(2,4)):
+        c=clack(.5+.5*(j>0))*(.55+.45*j); i=int(tt*SR); out[i:i+len(c)]+=c[:len(out)-i]; tt+=.007+.004*rnd.random()
+    return out
+def hov():
+    n=int(.02*SR); return hp(rnd.standard_normal(n),4000)*env(n,.0002,.001)*.25+osc(2600,n)*env(n,.0001,.0015)*.12
+def swipe():
+    n=int(.22*SR); x=bp(rnd.standard_normal(n),1800,9000); u=np.linspace(0,1,n); return x*np.sin(np.pi*u**.6)**2*.35
+def growl(dur):
+    n=int(dur*SR); t=T(n); u=t/dur
+    f=52+10*u+3*np.sin(2*np.pi*5*t)
+    x=osc(f,n,'saw')+.6*osc(f*1.5,n,'saw')+.4*lp(np.random.default_rng(21).standard_normal(n),300)*3
+    x=np.tanh(lp(x,700)*2.5)*(.55+.45*np.sin(2*np.pi*(9+8*u)*t)**2)
+    e=np.minimum(1,u/.15)*(0.35+0.65*u**1.4); e*=np.minimum(1,(n-np.arange(n))/(.03*SR))
+    return x*e*.8
+def slam():
+    n=int(1.0*SR); x=osc(np.linspace(95,40,n),n)*env(n,.001,.16)*1.2+lp(rnd.standard_normal(n),2500)*env(n,.0005,.03)*.9
+    for f in (430,710,1230): x+=osc(f,n)*env(n,.001,.05)*.12
+    return x
+def book():
+    n=int(.35*SR); f0=140+rnd.random()*120
+    return osc(np.linspace(f0,f0*.55,n),n)*env(n,.001,.05)*.8+bp(rnd.standard_normal(n),700,4500)*env(n,.0005,.015)*.6
+
+GAIN={'flapk':.5,'hov':.4,'swipe':.35,'growl':.6,'slam':.85,'book':.5,'flap':.55,'folder':.6,'click':.55,'whoosh':.55,'settle':.35,'pad':.55,'swell':.35,'impact':.8,'layer':.55,'type':.35,'route':.45,'hit':.5,'create':.45,'rise':.3,'snap':.5,'end':.45}
 for c in cues:
     t=c['t']; ty=c['type']; g=GAIN.get(ty,.4)*c.get('g',1)
     if ty=='flap': put(t-.04,flap(),g,rnd.uniform(-.35,.35),.08)
+    elif ty=='flapk': put(t-.01,flapk(),g,rnd.uniform(-.3,.3),.06)
+    elif ty=='hov': put(t,hov(),g)
+    elif ty=='swipe': put(t,swipe(),g,0,.05)
+    elif ty=='growl': put(t,growl(c['dur']),g,0,.12)
+    elif ty=='slam': put(t,slam(),g,0,.25)
+    elif ty=='book': put(t,book(),g,rnd.uniform(-.5,.5),.15)
     elif ty=='folder': put(t-.04,flap(),g); put(t,swish(.25,600,3000)*.5,g,0,.1)
     elif ty=='click': put(t,click(),g)
     elif ty=='whoosh': put(t,whoosh(c['dur']),g,0,.12)
