@@ -29,7 +29,7 @@ const I = window.DSH_ICONS; const ic = (n, cls = '') => `<span class="ico ${cls}
 /* ---------------------------------------------------------- beat grid */
 const BEAT = 60 / 77, D = 20 * BEAT;            // drop = BGM 1:33.279
 const b = k => k * BEAT, r = k => D + k * BEAT;  // r(1), r(2.25), r(3) are the bar's hard hits
-const TOTAL = +(r(24) + 0.3).toFixed(3);
+const TOTAL = +(r(24.75) + 0.3).toFixed(3);
 const CUES = []; const cue = (t, type, o = {}) => CUES.push({ t: +t.toFixed(4), type, ...o });
 window.CUES = CUES; window.TOTAL = TOTAL; window.DROP = D;
 
@@ -206,10 +206,21 @@ const CARDS = CARD_T.map((tt, i) => {
 const NEWC = h('div', 'lay glass card', `<div class="ct">Cat feeder</div><div class="cl" style="width:60%"></div><div class="cl" style="width:40%"></div><div class="cm">new session</div>`);
 Object.assign(NEWC.style, { width: '230px', height: '136px' }); w3.appendChild(NEWC);
 const NEWP = { x: ONE.x + 2 * 252, y: ONE.y };
-const hist = h('div', 'lay glass hist', `<div class="rlab">HISTORY</div>`);
-Object.assign(hist.style, { width: '880px', height: '560px' }); w3.appendChild(hist);
-{ const r0 = rng(9); for (let i = 0; i < 34; i++) { const l = h('div', 'hl'); l.style.cssText = `left:${40 + (i % 2) * 420}px;top:${70 + Math.floor(i / 2) * 28}px;width:${120 + r0() * 240}px`; hist.appendChild(l); } }
 const Z = { lift: 160, router: -250, cards: -560, hist: -880 };
+// the history sheet is the body of an envelope: four topic slots, four flaps, a One seal
+const ENV = h('div', 'lay'); ENV.style.width = ENV.style.height = '0px'; w3.appendChild(ENV);
+const envAt = (el, x, y, z, extra = '') => { el.style.transform = `translate3d(${x}px,${y}px,${z}px) ${extra}`; };
+const envBody = h('div', 'envp', `<div class="rlab">HISTORY</div>`); Object.assign(envBody.style, { width: '880px', height: '560px' }); ENV.appendChild(envBody);
+envAt(envBody, ONE.x - 440, ONE.y - 280, 0);
+const FLAPS = [
+  { id: 'L', w: 300, h: 560, x: ONE.x - 740, y: ONE.y - 280, z: 12, o: '100% 50%', clip: 'polygon(100% 0,3% 46%,0 50%,3% 54%,100% 100%)', rot: f => `rotateY(${f}deg)`, t: 'r17' },
+  { id: 'R', w: 300, h: 560, x: ONE.x + 440, y: ONE.y - 280, z: 13, o: '0 50%', clip: 'polygon(0 0,97% 46%,100% 50%,97% 54%,0 100%)', rot: f => `rotateY(${-f}deg)`, t: 'r17' },
+  { id: 'B', w: 880, h: 330, x: ONE.x - 440, y: ONE.y + 280, z: 14, o: '50% 0', clip: 'polygon(0 0,48% 96%,50% 100%,52% 96%,100% 0)', rot: f => `rotateX(${f}deg)`, t: 'r17.5' },
+  { id: 'T', w: 880, h: 330, x: ONE.x - 440, y: ONE.y - 610, z: 15, o: '50% 100%', clip: 'polygon(0 100%,47% 5%,50% 0,53% 5%,100% 100%)', rot: f => `rotateX(${-f}deg)`, t: 'r18' },
+];
+FLAPS.forEach(F => { F.el = h('div', 'envf'); Object.assign(F.el.style, { width: F.w + 'px', height: F.h + 'px', transformOrigin: F.o, clipPath: F.clip }); ENV.appendChild(F.el); });
+const seal = h('div', 'seal', '<span class="osym"></span>'); FLAPS[3].el.appendChild(seal);
+
 
 const ov = $('#ov');
 const beamSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); beamSvg.id = 'beams'; beamSvg.setAttribute('width', 1080); beamSvg.setAttribute('height', 1920);
@@ -226,10 +237,9 @@ const CHIP_T = ['Q3 budget draft', 'Weekly report', 'Refactor auth flow', 'Habit
 const CL = [{ name: 'PROJECT A', x: ONE.x - 215, y: ONE.y - 215, t: r(13) }, { name: 'PROJECT B', x: ONE.x + 215, y: ONE.y - 215, t: r(14.25) },
   { name: 'TRAVEL', x: ONE.x - 215, y: ONE.y + 35, t: r(15) }, { name: 'HOME', x: ONE.x + 215, y: ONE.y + 35, t: r(15.5) }];
 const CHIP_CL = [0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3], SLOT = [5, 0, 9, 3, 11, 7, 1, 10, 4, 8, 2, 6];
-const CHIPS = CHIP_T.map((tt, i) => { const r0 = rng(100 + i), sl = SLOT[i]; const el = h('div', 'chip', esc(tt)); ov.appendChild(el);
+const SLOTS = CL.map(c => { const el = h('div', 'slot', `<div class="sl">${c.name}</div>`); ENV.appendChild(el); envAt(el, c.x - 185, c.y - 46, 2); return el; });
+const CHIPS = CHIP_T.map((tt, i) => { const r0 = rng(100 + i), sl = SLOT[i]; const el = h('div', 'chip3', esc(tt)); ENV.appendChild(el);
   return { el, i, x0: ONE.x - 330 + (sl % 4) * 220 + (r0() - .5) * 60, y0: ONE.y - 200 + Math.floor(sl / 4) * 160 + (r0() - .5) * 50, cl: CHIP_CL[i], k: i % 3, ph: r0() * 6 }; });
-const GCARDS = CL.map(c => { const el = h('div', 'gcard2', `<div class="gl">${c.name}</div><div class="gx" style="width:78%"></div><div class="gx" style="width:58%"></div><div class="gx" style="width:68%"></div>`); ov.appendChild(el); op(el, 0); return el; });
-const CLAB = CL.map(c => { const el = h('div', 'clab', c.name); ov.appendChild(el); return el; });
 const motes = []; { const r0 = rng(21); for (let i = 0; i < 40; i++) { const m = h('div'); m.style.cssText = 'position:absolute;left:0;top:0;width:6px;height:6px;border-radius:50%;background:#ffb066;box-shadow:0 0 12px 3px rgba(255,150,60,.55)'; ov.appendChild(m); motes.push({ el: m, x: r0() * 1080, y: r0() * 1920, sp: 20 + r0() * 70, ph: r0() * 6, s: .4 + r0() * 1.1 }); } }
 
 // post-drop cues on the bar's hard hits (r1, r2.25, r3 …)
@@ -237,7 +247,7 @@ cue(r(1), 'layer'); cue(r(2.25), 'layer', { g: .9 }); cue(r(3), 'layer', { g: .8
 cue(r(4), 'type'); cue(r(5), 'route', { n: 'G5' }); cue(r(6.25), 'hit', { n: 'C6' }); cue(r(7), 'route', { n: 'E5', g: .7 });
 cue(r(8), 'type'); cue(r(9), 'route', { n: 'A5' }); cue(r(10.25), 'create'); cue(r(11), 'route', { n: 'C6', g: .6 });
 cue(r(12), 'rise'); cue(r(13), 'snap'); cue(r(14.25), 'snap'); cue(r(15), 'snap'); cue(r(15.5), 'snap', { g: .8 });
-cue(r(17), 'fold'); cue(r(17.35), 'rise'); [0, 1, 2, 3].forEach(i => cue(r(18.25) + (i - 3) * .08, 'stack', { g: i === 3 ? 1.2 : .7 })); cue(r(18.25), 'layer'); cue(r(19), 'swoosh2'); cue(r(20), 'end');
+cue(r(16.5), 'unfold'); cue(r(17), 'paper'); cue(r(17.5), 'paper', { g: .9 }); cue(r(18), 'paper'); cue(r(18) + .3, 'seal'); cue(r(18.25), 'rise'); cue(r(19), 'stack', { g: 1.2 }); cue(r(19), 'layer'); cue(r(20), 'swoosh2'); cue(r(21), 'end');
 
 let WM = new DOMMatrix();
 function proj(p) { const q = WM.transformPoint(new DOMPoint(p[0], p[1], p[2])); const k = 2200 / (2200 - q.z); return [540 + (q.x - 540) * k, 960 + (q.y - 960) * k, k]; }
@@ -265,17 +275,20 @@ function camAt(t) {
   const k = E.io(seg(t, r(11.6), r(12.8)));
   c.cz = lerp(c.cz, Z.hist, k); c.z = lerp(c.z, 1.3, k); c.rx = lerp(c.rx, 22, k); c.rz = lerp(c.rz, 0, k); c.cy = lerp(c.cy, ONE.y + 20, k);
   // converge: pull back up to The One key
-  const k2 = E.io(seg(t, r(17.2), r(18.2)));
+  // back off to see the whole envelope while it folds
+  const kE = E.io(seg(t, r(16.3), r(16.95))), kE2 = E.io(seg(t, r(16.95), r(18.2)));
+  c.z = lerp(c.z, .8, kE) + .1 * kE2; c.rx = lerp(c.rx, 38, kE); c.rz = lerp(c.rz, -10, kE); c.cy = lerp(c.cy, ONE.y + 30, kE);
+  const k2 = E.io(seg(t, r(18.25), r(19)));
   c.cz = lerp(c.cz, Z.lift - 60, k2); c.z = lerp(c.z, 1.45, k2); c.rx = lerp(c.rx, 42, k2); c.rz = lerp(c.rz, -10, k2); c.cy = lerp(c.cy, ONE.y + 30, k2);
   // face-on and push into the word "One"
-  const k3 = E.io(seg(t, r(18.9), r(20)));
-  c.cz = lerp(c.cz, Z.lift, k3); c.z = lerp(c.z, 4.2, E.ie(seg(t, r(18.9), r(20))) * .6 + k3 * .4); c.rx = lerp(c.rx, 0, k3); c.rz = lerp(c.rz, 0, k3);
+  const k3 = E.io(seg(t, r(19.9), r(21)));
+  c.cz = lerp(c.cz, Z.lift, k3); c.z = lerp(c.z, 4.2, E.ie(seg(t, r(19.9), r(21))) * .6 + k3 * .4); c.rx = lerp(c.rx, 0, k3); c.rz = lerp(c.rz, 0, k3);
   c.cx = lerp(c.cx, ONE.x - 72, k3); c.cy = lerp(c.cy, ONE.y - 12, k3);
   return c;
 }
 
 function sApp(t, ovs) {
-  const vis = t >= b(1) && t < r(20.4); show($('#appwrap'), vis); if (!vis) return;
+  const vis = t >= b(1) && t < r(21.4); show($('#appwrap'), vis); if (!vis) return;
   // window-open from the dock icon
   const aw = $('#appwrap');
   if (t < b(1.7)) {
@@ -362,18 +375,33 @@ function sApp(t, ovs) {
     const app = (t0, z0, z1) => [E.oe(seg(t, t0 - .08, t0 + .4)), lerp(z0, z1, E.oe(seg(t, t0 - .08, t0 + .4)))];
   const [ra, rz0] = app(r(1), 0, Z.router); place(router, ONE.x, ONE.y, rz0, 520, 300, post ? ra * dimC : 0);
   const liftZ = post ? lerp(0, Z.lift, E.oe(seg(t, D, r(1.2)))) : 0, liftS = post ? lerp(1, 1.5, E.oe(seg(t, D, r(1.4)))) : 1;
-  place(lift, ONE.x, ONE.y, liftZ, 336, 91, post ? Math.max(dimC, E.io(seg(t, r(17.2), r(17.8)))) : 0, liftS);
-  const TH = 28 * E.oe(seg(t, D, r(1))) * (1 - E.io(seg(t, r(19.1), r(19.8))));
+  place(lift, ONE.x, ONE.y, liftZ, 336, 91, post ? Math.max(dimC, E.io(seg(t, r(18.2), r(18.8)))) : 0, liftS);
+  const TH = 28 * E.oe(seg(t, D, r(1))) * (1 - E.io(seg(t, r(20.1), r(20.8))));
   $('#lfT').style.transform = `translateZ(${TH}px)`;
-  const flare = t > r(18.25) - .3 ? Math.max(Math.exp(-Math.max(0, t - r(18.25)) * 4) * (t > r(18.25) ? 1 : seg(t, r(18.25) - .3, r(18.25))), E.ie(seg(t, r(19.3), r(20)))) : 0;
+  const flare = t > r(19) - .3 ? Math.max(Math.exp(-Math.max(0, t - r(19)) * 4) * (t > r(19) ? 1 : seg(t, r(19) - .3, r(19))), E.ie(seg(t, r(20.3), r(21)))) : 0;
   const gI = Math.min(1.6, .55 + .5 * pulse(t) + flare);
   $('#lfT').style.boxShadow = `inset 0 0 0 1.5px rgba(255,196,140,${.55 + .3 * gI}),inset 0 0 ${14 + 18 * gI}px rgba(255,165,85,${.18 + .22 * gI})`;
   const hit0 = lastHit(t), su = (t - hit0) / .6; $('#lfS').style.backgroundPosition = `${lerp(130, -40, E.io(clamp(su)))}% 0`; op($('#lfS'), su >= 0 && su <= 1 ? Math.sin(Math.PI * su) : 0);
   lift.querySelectorAll('.slice').forEach(el => { const k0 = +el.dataset.i / (SLICES - 1), e0 = 26 * Math.min(1, pulse(t) + flare) * k0; el.style.background = `rgb(${Math.round(Math.min(255, lerp(196, 244, k0) + e0))},${Math.round(lerp(112, 178, k0) + e0)},${Math.round(lerp(52, 120, k0) + e0 * .6)})`; });
-  drawGlow(t, post, liftZ, liftS, TH, Math.max(dimC, E.io(seg(t, r(17.2), r(17.8)))) * (t >= D ? 1 : 0), gI, flare, ra * dimC);
+  drawGlow(t, post, liftZ, liftS, TH, Math.max(dimC, E.io(seg(t, r(18.2), r(18.8)))) * (t >= D ? 1 : 0), gI, flare, ra * dimC);
   lift.querySelectorAll('.slice').forEach(el => { el.style.transform = `translateZ(${(+el.dataset.i / (SLICES - 1) * (TH - .6)).toFixed(2)}px)`; el.style.display = TH > .5 ? '' : 'none'; });
   CARDS.forEach((c, i) => { const [ca, cz0] = app(r(2.25) + (i % 3) * .03 + Math.floor(i / 3) * .03, Z.router, Z.cards); place(c.el, c.x, c.y, cz0, 230, 136, post ? ca * dimC : 0); });
-  const [ha, hz0] = app(r(3), Z.cards, Z.hist); place(hist, ONE.x, ONE.y, hz0, 880, 560, post ? ha * (1 - E.io(seg(t, r(17.6), r(18.4)))) : 0);
+  const [ha, hz0] = app(r(3), Z.cards, Z.hist);
+  // the envelope lifts into the key on r19
+  const kl = E.ie(seg(t, r(18.25), r(19))), envS = lerp(1, .2, E.io(seg(t, r(18.25), r(19)))), envO = 1 - seg(t, r(19) - .06, r(19));
+  show(ENV, post && ha > 0 && t < r(19));
+  ENV.style.transform = `translate3d(${ONE.x}px,${ONE.y}px,${lerp(hz0, Z.lift + 30, kl)}px) rotateZ(${8 * kl}deg) scale3d(${envS},${envS},${envS}) translate3d(${-ONE.x}px,${-ONE.y}px,0)`;
+  op(envBody, ha * envO * (1 - .55 * seg(t, r(4), r(5)) * (1 - seg(t, r(11), r(11.8)))));
+  // flaps: tucked under → out (r16.5) → folded over on r17 / r17.5 / r18
+  FLAPS.forEach(F => {
+    const tf = { r17: r(17), 'r17.5': r(17.5), r18: r(18) }[F.t];
+    const out = E.o(seg(t, r(16.5), r(16.95))), fold = E.io(seg(t, tf - .04, tf + .3));
+    const phi = -90 * (1 - out) + 178 * fold;
+    envAt(F.el, F.x, F.y, F.z, F.rot(phi));
+    F.el.style.filter = `brightness(${(1 - .16 * Math.sin(Math.max(0, phi) * Math.PI / 180)).toFixed(3)})`;
+    op(F.el, t > r(16.45) ? envO : 0);
+  });
+  const st = seg(t, r(18) + .28, r(18) + .5); seal.style.transform = `translateX(-50%) scale(${t > r(18) + .28 ? lerp(1.5, 1, E.o(st)) : 1})`;
   const nk = seg(t, r(10.25) - .1, r(10.25) + .35); place(NEWC, NEWP.x, NEWP.y, Z.cards, 230, 136, post ? Math.min(1, nk * 3) * dimC : 0, lerp(.6, 1, E.ob(nk)));
   // card highlight
   const hot0 = t > r(6.25) && t < r(8), hot1 = t > r(10.25) && t < r(12);
@@ -399,26 +427,18 @@ function sApp(t, ovs) {
   let bb0 = null; for (const x of bubs) if (t >= x[0] && t < x[1]) bb0 = x;
   if (bb0) { const p = proj([ONE.x, ONE.y - 30, Z.lift + 10]); bub.textContent = bb0[2]; bub.className = 'bub' + (bb0[3] ? ' r' : ''); const k = E.ob(seg(t, bb0[0], bb0[0] + .25)); bub.style.transform = `translate(${p[0]}px,${p[1]}px) translate(-50%,-160%) scale(${lerp(.7, 1, k)})`; op(bub, seg(t, bb0[0], bb0[0] + .08) * (1 - seg(t, bb0[1] - .12, bb0[1]))); } else op(bub, 0);
   CHIPS.forEach(c => {
-    if (t <= r(11.6)) { op(c.el, 0); return; }
-    const Cc = CL[c.cl], k = E.oe(seg(t, Cc.t - .1, Cc.t + .3)), fold = E.i(seg(t, r(17) - .12, r(17) + .14));
-    // chaos: fly in from outside, then swirl and tumble over each other at different depths
+    if (t <= r(11.6) || t >= r(19)) { op(c.el, 0); return; }
+    const Cc = CL[c.cl], k = E.oe(seg(t, Cc.t - .1, Cc.t + .3));
     const tin = E.o(seg(t, r(11.6) + c.i * .03, r(12.3) + c.i * .03));
     const th = c.ph + (t - r(11.6)) * (1.1 + (c.i % 4) * .35) * (c.i % 2 ? 1 : -1);
     const rad = lerp(900, 150 + (c.i % 5) * 45, tin) + 30 * Math.sin(t * 3 + c.ph);
-    const fx = ONE.x + Math.cos(th) * rad, fy = ONE.y - 60 + Math.sin(th) * rad * .75;
-    const fz = Z.hist + 60 + 140 * Math.sin(t * 1.7 + c.ph * 2);
+    const fx = ONE.x + Math.cos(th) * rad, fy = ONE.y - 60 + Math.sin(th) * rad * .75, fz = 110 + 80 * Math.sin(t * 1.7 + c.ph * 2);
     const tx = Cc.x, ty = Cc.y + 34 + c.k * 52;
-    const p = proj([lerp(lerp(fx, tx, k), Cc.x, fold), lerp(lerp(fy, ty, k), Cc.y + 60, fold), lerp(fz, Z.hist + 8, k)]);
-    const rot = (1 - k) * (28 * Math.sin(t * 2.3 + c.ph * 3) + (c.i % 2 ? 14 : -14));
-    c.el.style.transform = `translate(${p[0]}px,${p[1]}px) translate(-50%,-50%) rotate(${rot}deg) scale(${.92 * p[2] * lerp(1, .55, fold)})`;
-    c.el.style.zIndex = k > .5 ? 2 : 1;
-    op(c.el, seg(t, r(11.6), r(11.9)) * (1 - seg(t, r(17) + .05, r(17) + .16)));
+    const q = 1 - k, rz = q * (28 * Math.sin(t * 2.3 + c.ph * 3) + (c.i % 2 ? 14 : -14)), rx = q * 70 * Math.sin(t * 1.9 + c.ph), ry = q * 55 * Math.cos(t * 1.3 + c.ph * 2);
+    c.el.style.transform = `translate3d(${lerp(fx, tx, k)}px,${lerp(fy, ty, k)}px,${lerp(fz, 8, k)}px) translate(-50%,-50%) rotateZ(${rz}deg) rotateX(${rx}deg) rotateY(${ry}deg)`;
+    op(c.el, seg(t, r(11.6), r(11.9)));
   });
-  CL.forEach((c, i) => { const p = proj([c.x, c.y - 14, Z.hist + 8]); CLAB[i].style.transform = `translate(${p[0]}px,${p[1]}px) translate(-50%,-50%)`; op(CLAB[i], seg(t, c.t, c.t + .15) * (1 - seg(t, r(17) - .05, r(17) + .1)));
-    const G4 = GCARDS[i], land = r(18.25) + (i - 3) * .08, k4 = E.ie(seg(t, r(17.35) + i * .05, land));
-    const gp = proj([lerp(c.x, ONE.x, k4), lerp(c.y + 60, ONE.y, k4), lerp(Z.hist + 10, Z.lift + 30, k4)]);
-    G4.style.transform = `translate(${gp[0]}px,${gp[1]}px) translate(-50%,-50%) scale(${gp[2] * lerp(1, .55, E.i(seg(t, land - .2, land))) * lerp(.7, 1, E.ob(seg(t, r(17), r(17) + .25)))})`;
-    op(G4, seg(t, r(17) + .02, r(17) + .14) * (1 - seg(t, land - .03, land))); });
+  SLOTS.forEach((el, i) => { op(el, seg(t, r(11.7), r(12.2)) * (1 - seg(t, r(19) - .06, r(19)))); el.querySelector('.sl').style.opacity = .35 + .65 * seg(t, CL[i].t, CL[i].t + .15); });
 }
 const glowL = h('div', null); glowL.style.cssText = 'position:absolute;left:0;top:0;width:1080px;height:1920px;pointer-events:none'; $('#cam').insertBefore(glowL, w3);
 glowL.innerHTML = `<svg id="cone" width="1080" height="1920" style="position:absolute;left:0;top:0"><defs><linearGradient id="coneG" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="rgb(255,150,60)" stop-opacity=".30"/><stop offset=".55" stop-color="rgb(255,170,90)" stop-opacity=".10"/><stop offset="1" stop-color="rgb(255,190,120)" stop-opacity="0"/></linearGradient><filter id="coneB"><feGaussianBlur stdDeviation="10"/></filter></defs><polygon id="coneP" fill="url(#coneG)" filter="url(#coneB)"/></svg>
@@ -452,19 +472,19 @@ endEl.innerHTML = `<div class="ewm" id="ewm"><span class="t">The</span><span cla
   <div class="eurl" id="eurl">github.com/YunongDai2005/dsh-theone</div>
   <div class="edisc" id="edisc">Community plugin for DSH · unofficial</div>`;
 function sEnd(t) {
-  const vis = t >= r(19.85); show(endEl, vis); if (!vis) return;
-  op(endEl, seg(t, r(19.85), r(20.05)));
-  const k = seg(t, r(20), r(20) + .6);
-  $('#ewm').style.transform = `scale(${lerp(1.12, 1, E.oe(k)) * (1 + .015 * pulse(t))})`; op($('#ewm'), seg(t, r(20), r(20) + .15));
+  const vis = t >= r(20.85); show(endEl, vis); if (!vis) return;
+  op(endEl, seg(t, r(20.85), r(21.05)));
+  const k = seg(t, r(21), r(21) + .6);
+  $('#ewm').style.transform = `scale(${lerp(1.12, 1, E.oe(k)) * (1 + .015 * pulse(t))})`; op($('#ewm'), seg(t, r(21), r(21) + .15));
   const up = (id, a) => { const el = $(id), p = seg(t, a, a + .4); op(el, p); el.style.transform = `translateY(${(1 - E.o(p)) * 24}px)`; };
-  up('#etag', r(21)); up('#eurl', r(22.25)); up('#edisc', r(23));
+  up('#etag', r(22.25)); up('#eurl', r(23)); up('#edisc', r(23.5));
 }
 
 /* ---------------------------------------------------------- global FX */
 const grain = $('#grain'), gctx = grain.getContext('2d');
 { const img = gctx.createImageData(398, 608), r0 = rng(77); for (let i = 0; i < img.data.length; i += 4) { const v = r0() * 255; img.data[i] = img.data[i + 1] = img.data[i + 2] = v; img.data[i + 3] = 255; } gctx.putImageData(img, 0, 0);  }
 function sFX(t) {
-  const f = Math.max(t >= D ? 1 - E.o(seg(t, D, D + .55)) : 0, t >= r(19.6) ? (t < r(20) ? .95 * E.ie(seg(t, r(19.6), r(20))) : .95 * (1 - E.o(seg(t, r(20), r(20) + .7)))) : 0);
+  const f = Math.max(t >= D ? 1 - E.o(seg(t, D, D + .55)) : 0, t >= r(20.6) ? (t < r(21) ? .95 * E.ie(seg(t, r(20.6), r(21))) : .95 * (1 - E.o(seg(t, r(21), r(21) + .7)))) : 0);
   op($('#flash'), f);
   const fr = Math.floor(t * 30), r0 = rng(fr + 1);
   grain.style.transform = `translate(${Math.floor(r0() * 256)}px,${Math.floor(r0() * 256)}px) scale(2.6)`; grain.style.transformOrigin = '0 0';

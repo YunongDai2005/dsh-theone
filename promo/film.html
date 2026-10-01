@@ -8,6 +8,7 @@
 <link rel="stylesheet" href="node_modules/@fontsource/nunito/700.css">
 <link rel="stylesheet" href="node_modules/@fontsource/jetbrains-mono/500.css">
 <style>
+:root{--dsw-alias-label-primary:rgb(15,17,21);--dsw-alias-label-primary-inverted:rgb(255,255,255)}
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{width:1080px;height:1920px;overflow:hidden;background:#fff}
 body{font-family:'Inter',-apple-system,sans-serif;-webkit-font-smoothing:antialiased;color:rgb(15,17,21)}
@@ -133,6 +134,14 @@ svg{display:block}
   border:1px solid rgba(30,45,80,.12);color:#16181c;box-shadow:0 6px 18px rgba(30,45,90,.10)}
 .clab{position:absolute;left:0;top:0;font-family:'JetBrains Mono',monospace;font-size:32px;font-weight:500;letter-spacing:3px;color:#d8681a;white-space:nowrap}
 #beams{position:absolute;left:0;top:0}
+.envp{position:absolute;left:0;top:0;border-radius:6px;background:linear-gradient(160deg,#fffdf9,#f7f3ec);box-shadow:0 30px 70px rgba(60,50,30,.14),0 0 0 1px rgba(80,60,30,.08)}
+.envf{position:absolute;left:0;top:0;background:linear-gradient(160deg,#fffcf6,#f3ede3)}
+.seal{position:absolute;left:50%;top:22px;width:76px;height:76px;margin-left:0;border-radius:50%;background:radial-gradient(circle at 35% 30%,#ffb066,#e8761f 60%,#c95f12);box-shadow:0 4px 10px rgba(150,70,10,.35),inset 0 0 0 4px rgba(255,255,255,.18);display:flex;align-items:center;justify-content:center;color:#fff}
+.seal .osym{width:36px;height:36px;border-width:3px;margin:0}
+.seal .osym:after{width:9px;height:9px}
+.slot{position:absolute;left:0;top:0;width:370px;height:232px;border-radius:18px;background:rgba(255,255,255,.85);border:1.5px dashed rgba(200,120,50,.35)}
+.slot .sl{position:absolute;left:0;right:0;top:14px;text-align:center;font-family:'JetBrains Mono',monospace;font-size:28px;font-weight:500;letter-spacing:3px;color:#d8681a}
+.chip3{position:absolute;left:0;top:0;white-space:nowrap;font-size:25px;padding:8px 15px;border-radius:12px;background:#fff;border:1px solid rgba(30,45,80,.12);color:#16181c;box-shadow:0 6px 16px rgba(30,45,90,.10);backface-visibility:visible}
 .gcard2{position:absolute;left:0;top:0;width:250px;padding:18px 20px 20px;border-radius:18px;background:#fff;border:1px solid rgba(30,45,80,.1);box-shadow:0 14px 34px rgba(30,45,90,.16);opacity:0}
 .gcard2 .gl{font-family:'JetBrains Mono',monospace;font-size:24px;font-weight:500;letter-spacing:3px;color:#d8681a;white-space:nowrap}
 .gcard2 .gx{height:9px;border-radius:5px;background:rgba(30,45,80,.09);margin-top:12px}

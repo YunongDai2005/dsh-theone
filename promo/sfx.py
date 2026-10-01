@@ -123,7 +123,19 @@ def fold():
     return out+swish(.25,2000,8000)*.4
 def stack():
     n=int(.3*SR); return osc(np.linspace(260,150,n),n)*env(n,.001,.04)*.7+bp(rnd.standard_normal(n),1500,6000)*env(n,.0005,.008)*.5
-GAIN={'fold':.5,'stack':.55,'swoosh2':.35,'flapk':.5,'hov':.4,'swipe':.35,'growl':.6,'slam':.85,'book':.5,'flap':.55,'folder':.6,'click':.55,'whoosh':.55,'settle':.35,'pad':.55,'swell':.35,'impact':.8,'layer':.55,'type':.35,'route':.45,'hit':.5,'create':.45,'rise':.3,'snap':.5,'end':.45}
+def crinkle(dur,dens,seed):
+    r=np.random.default_rng(seed); n=int(dur*SR); out=np.zeros(n); u=np.linspace(0,1,n)
+    for _ in range(int(dens*dur)):
+        i=r.integers(0,n-200); m=int(r.uniform(.0015,.006)*SR); c=r.standard_normal(m)*np.exp(-np.arange(m)/(m/3))*r.uniform(.3,1); out[i:i+m]+=c[:n-i]
+    return bp(out,1800,11000)*np.sin(np.pi*u)**.7
+def paper():
+    x=crinkle(.32,260,rnd.integers(1e6))*.9
+    n=int(.12*SR); crease=osc(np.linspace(210,120,n),n)*env(n,.001,.025)*.5+hp(rnd.standard_normal(n),2500)*env(n,.0003,.004)*.6
+    j=int(.24*SR); x[j:j+n]+=crease[:len(x)-j]; return x
+def unfold(): return crinkle(.5,160,rnd.integers(1e6))*.7+swish(.5,900,5000)*.25
+def seal():
+    n=int(.4*SR); return osc(np.linspace(120,60,n),n)*env(n,.001,.06)*.8+lp(rnd.standard_normal(n),1800)*env(n,.0005,.012)*.5
+GAIN={'paper':.6,'unfold':.5,'seal':.6,'fold':.5,'stack':.55,'swoosh2':.35,'flapk':.5,'hov':.4,'swipe':.35,'growl':.6,'slam':.85,'book':.5,'flap':.55,'folder':.6,'click':.55,'whoosh':.55,'settle':.35,'pad':.55,'swell':.35,'impact':.8,'layer':.55,'type':.35,'route':.45,'hit':.5,'create':.45,'rise':.3,'snap':.5,'end':.45}
 for c in cues:
     t=c['t']; ty=c['type']; g=GAIN.get(ty,.4)*c.get('g',1)
     if ty=='flap': put(t-.04,flap(),g,rnd.uniform(-.35,.35),.08)
@@ -136,6 +148,9 @@ for c in cues:
     elif ty=='fold': put(t-.03,fold(),g,0,.1)
     elif ty=='stack': put(t,stack(),g,0,.2)
     elif ty=='swoosh2': put(t,swish(.7,300,4000),g,0,.2)
+    elif ty=='paper': put(t-.22,paper(),g,rnd.uniform(-.25,.25),.12)
+    elif ty=='unfold': put(t-.1,unfold(),g,0,.12)
+    elif ty=='seal': put(t,seal(),g,0,.2)
     elif ty=='folder': put(t-.04,flap(),g); put(t,swish(.25,600,3000)*.5,g,0,.1)
     elif ty=='click': put(t,click(),g)
     elif ty=='whoosh': put(t,whoosh(c['dur']),g,0,.12)
