@@ -8,7 +8,7 @@ import '@fontsource/nunito/700.css';
 import '@fontsource/jetbrains-mono/500.css';
 import './dom/film.css';
 import { D, E, FPS, TOTAL, r, seg } from './lib/timeline';
-import { WIN_OPEN } from './lib/story';
+import { WIN_OPEN, CLICK_DSH } from './lib/story';
 import { shotAt } from './lib/shots';
 import type { Theme } from './lib/theme';
 import { Desktop } from './dom/Desktop';
@@ -29,12 +29,13 @@ export const Film: React.FC<FilmProps> = ({ theme, audio = true }) => {
     <AbsoluteFill className="film" data-theme={theme}>
       {audio && <Audio src={staticFile('mix.wav')} />}
       <div className="backdrop" />
-      {t >= WIN_OPEN - .9 && t < r(12.5) && <WindowLayer t={t} shot={shot} theme={theme} />}
-      {t >= D - .3 && t < END_IN + .5 && <Scene3D t={t} shot={shot} theme={theme} />}
-      <Motes t={t} theme={theme} />
+      {/* one window layer, always above the desktop; heavy layers mount early (still transparent) so that no
+          scene change waits on a first render: a late mount shows as a flash at the cut */}
       {t < WIN_OPEN + .1 && <Desktop t={t} />}
-      {t >= WIN_OPEN - .9 && t < WIN_OPEN && <WindowLayer t={t} shot={shot} theme={theme} />}
-      {t >= END_IN && <EndCard t={t} theme={theme} />}
+      {t >= CLICK_DSH - .5 && t < r(12.5) && <WindowLayer t={t} shot={shot} theme={theme} />}
+      {t >= D - 3 && t < END_IN + .5 && <Scene3D t={t} shot={shot} theme={theme} />}
+      <Motes t={t} theme={theme} />
+      {t >= END_IN - .5 && <EndCard t={t} theme={theme} />}
       <div className="flash" style={{ opacity: flash }} />
       <div className="vig" />
       <div className="fade" style={{ opacity: seg(t, TOTAL - .45, TOTAL) }} />
