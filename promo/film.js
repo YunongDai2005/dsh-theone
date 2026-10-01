@@ -208,7 +208,7 @@ const lift = h('div', 'lay', Array.from({ length: SLICES }, (_, i) => `<div clas
 Object.assign(lift.style, { width: '336px', height: '91px', borderRadius: '0' }); w3.appendChild(lift);
 lift.querySelectorAll('.slice').forEach(el => { const k = +el.dataset.i / (SLICES - 1); el.style.background = sliceCol(k, 0); });
 const router = h('div', 'lay glass', `<div class="rlab">ROUTER</div><svg class="ring" width="180" height="180" viewBox="0 0 180 180"><circle cx="90" cy="90" r="82" fill="none" stroke="${DARK ? 'rgba(200,215,240,.16)' : 'rgba(40,60,110,.16)'}" stroke-width="1.5"/><circle cx="90" cy="90" r="56" fill="none" stroke="${DARK ? 'rgba(200,215,240,.3)' : 'rgba(40,60,110,.28)'}" stroke-width="1.5" stroke-dasharray="4 7"/><circle cx="90" cy="90" r="9" fill="rgb(${W(255, 138, 42)})"/></svg><div class="rtag" id="rtag"></div>`);
-Object.assign(router.style, { width: '520px', height: '300px' }); w3.appendChild(router);
+Object.assign(router.style, { width: '520px', height: '300px', background: DARK ? 'rgba(32,34,40,.7)' : 'rgba(255,255,255,.68)' }); w3.appendChild(router);  // frosted, so the routing light shows through it on its way down
 const CARD_T = ['Trip to Kyoto', 'Q3 budget', 'Habit tracker', 'Cycling route', 'Weekly report', 'Balcony herbs', 'Auth refactor', 'Paper notes', 'Landing page'];
 const CARDS = CARD_T.map((tt, i) => {
   const c = h('div', 'lay glass card', `<div class="ct">${tt}</div><div class="cl" style="width:${70 + (i * 37) % 25}%"></div><div class="cl" style="width:${45 + (i * 53) % 35}%"></div><div class="cm">session ${String(i + 1).padStart(2, '0')}</div>`);
@@ -543,9 +543,7 @@ function drawGlow(t, post, z, S, TH, o, gI, flare, coneO) {
   at('gstreak2', L * 1.9, 26, ang, o * Math.min(.8, .12 + .5 * (pulse(t) + flare)));
   // the routing light travels level by level: key → router (lands on r5 / r9), router → session (lands on r6¼ / r10¼)
   const KEY = [ONE.x, ONE.y, 168 * S, 45.5 * S, z], RT = [ONE.x, ONE.y, 260, 150, Z.router];
-  // wavefronts only where the next level sits straight below (key → router); a session card is off to the side, so a
-  // wave morphing into it would sweep across the other cards; there the light travels as the orb alone
-  const LEGS = [[r(4.4), r(5), KEY, RT], [r(8.4), r(9), KEY, RT]];
+  const LEGS = [[r(4.4), r(5), KEY, RT], [r(5.15), r(6.25), RT, [CARDS[0].x, CARDS[0].y, 115, 68, Z.cards]], [r(8.4), r(9), KEY, RT], [r(9.15), r(10.25), RT, [NEWP.x, NEWP.y, 115, 68, Z.cards]]];
   // the wave is the key's rectangle carried down through 3D space into the target's rectangle, so every
   // wavefront has the same angle and perspective as the planes it travels between
   WAVES.forEach((rings, slot) => {
