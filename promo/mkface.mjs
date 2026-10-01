@@ -1,11 +1,12 @@
 // Pre-render The One key face as a high-resolution bitmap (face.png) with a transparent outside.
-import { createRequire } from 'module'; import path from 'path';
-const require = createRequire('/opt/node-tools/node_modules/'); const { chromium } = require('playwright');
-const here = path.dirname(new URL(import.meta.url).pathname);
+import path from 'path';
+import { fileURLToPath, pathToFileURL } from 'url';
+import { launch } from './pw.mjs';
+const here = path.dirname(fileURLToPath(import.meta.url));
 const SCALE = +(process.env.FACE_SCALE || 8);
-const b = await chromium.launch(); const p = await b.newPage({ viewport: { width: 400, height: 140 }, deviceScaleFactor: SCALE });
+const b = await launch(); const p = await b.newPage({ viewport: { width: 400, height: 140 }, deviceScaleFactor: SCALE });
 const THEME = process.env.THEME || 'light';
-await p.goto('file://' + path.join(here, 'film.html') + (THEME === 'dark' ? '?theme=dark' : ''));
+await p.goto(pathToFileURL(path.join(here, 'film.html')).href + (THEME === 'dark' ? '?theme=dark' : ''));
 await p.evaluate(() => window.warm());
 await p.evaluate(() => {
   document.head.insertAdjacentHTML('beforeend', document.documentElement.dataset.theme === 'dark' ? '<style>#face .osub{font-weight:500;color:rgb(190,195,202)} #face .othe{font-weight:500;color:rgb(190,195,202)} #face .zin{color:#93c8f3}</style>' : '<style>#face .osub{font-weight:500;color:rgb(80,84,90)} #face .othe{font-weight:500}</style>');
