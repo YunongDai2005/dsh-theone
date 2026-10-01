@@ -34,7 +34,7 @@ if (mode === 'cues') {
   const t0 = Date.now();
   for (let i = 0; i < n; i++) {
     await page.evaluate(t => window.render(t), i / fps);
-    const buf = await page.screenshot({ type: 'jpeg', quality: 93 });
+    const buf = await page.screenshot({ type: 'jpeg', quality: 97 });
     if (!ff.stdin.write(buf)) await new Promise(r => ff.stdin.once('drain', r));
     if (i % 150 === 0) console.log(`frame ${i}/${n}  ${((Date.now() - t0) / 1000).toFixed(0)}s`);
   }
