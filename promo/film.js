@@ -615,6 +615,8 @@ async function bakeCardCopy() {
   await document.fonts.load('600 22px Inter');
   await document.fonts.load('500 13px "JetBrains Mono"');
   for (const el of [...CARDS.map(c => c.el), NEWC]) {
+    // the new-session card is still hidden at the warm-up time; a hidden card measures as 0 × 0
+    const display = el.style.display; el.style.display = '';
     const canvas = document.createElement('canvas');
     const scale = 4;
     canvas.width = 230 * scale; canvas.height = 136 * scale;
@@ -638,6 +640,7 @@ async function bakeCardCopy() {
     el.style.backgroundSize = '100% 100%'; el.style.backgroundOrigin = 'border-box';
     el.style.backgroundRepeat = 'no-repeat';
     for (const child of el.children) child.style.visibility = 'hidden';
+    el.style.display = display;
   }
   cardCopyReady = true;
 }
