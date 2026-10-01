@@ -1,6 +1,6 @@
 # TheOne — vertical film
 
-1080×1920, 30 fps, 31.8 s. Light theme, English only, almost no on-screen text. Every frame is a pure function of `t` in `film.js`; Playwright screenshots each frame and ffmpeg encodes. All sound effects are synthesized by `sfx.py`.
+1080×1920, 30 fps, 34.6 s. Light theme, English only, almost no on-screen text. Every frame is a pure function of `t` in `film.js`; Playwright screenshots each frame and ffmpeg encodes. All sound effects are synthesized by `sfx.py`.
 
 The UI is a replica of the DSH web client built with DSH's own icons, whale mark and wordmark (`extract-icons.tsx` renders them from the `deepseek-harness` sources). The window is laid out at 2.8× resolution with CSS `zoom` and scaled back down, so text stays sharp under the 3D camera. The top 170 px stay background-only for the phone notch.
 
@@ -28,7 +28,10 @@ The UI is a replica of the DSH web client built with DSH's own icons, whale mark
 | r4–r8 | "Kyoto, day 3?" → router `SWAP` → *Trip to Kyoto* lights up → reply comes back | Blips |
 | r8–r12 | "New topic: a cat feeder" → `CREATE` → a new session appears | Sparkle |
 | r12–r17 | Old titles tumble chaotically, snap into PROJECT A / PROJECT B / TRAVEL / HOME, then hold | Snaps |
-| r17–r20 | **The One** · One chat. Every context. · github.com/YunongDai2005/dsh-theone | Shimmer |
+| r17 | Each group folds its titles into one card | Fold |
+| r17–r18¼ | The camera pulls back up to the 3D key; the four cards rise after it and land in it on r18¼ | Rise, stacking thocks |
+| r19–r20 | The key turns face-on, its thickness folds away, and the camera pushes into "One" until it blooms | Swoosh |
+| r20–r24 | **The One** forms out of the light · One chat. Every context. (r21) · github.com/YunongDai2005/dsh-theone (r22¼) | Shimmer |
 
 ## Build
 
@@ -39,9 +42,9 @@ git clone --depth 1 https://github.com/deepseek-ai/deepseek-harness.git ../.dsh
 npx esbuild extract-icons.tsx --bundle --platform=node --format=esm --jsx=automatic \
   --external:react --external:react-dom --external:react/jsx-runtime --outfile=.extract.mjs && node .extract.mjs
 node render.mjs cues cues.json
-echo '{"total":31.769}' > meta.json && python3 sfx.py          # → sfx.wav
+echo '{"total":34.586}' > meta.json && python3 sfx.py          # → sfx.wav
 ffmpeg -i bgm.m4a -i sfx.wav -filter_complex \
-  "[0:a]aresample=44100,atrim=start=77.6942:duration=31.769,asetpts=PTS-STARTPTS,afade=t=in:d=0.4,afade=t=out:st=30.77:d=1.0[m];[m][1:a]amix=inputs=2:normalize=0,alimiter=limit=0.95:level=false[a]" \
+  "[0:a]aresample=44100,atrim=start=77.6942:duration=34.586,asetpts=PTS-STARTPTS,afade=t=in:d=0.4,afade=t=out:st=33.59:d=1.0[m];[m][1:a]amix=inputs=2:normalize=0,alimiter=limit=0.95:level=false[a]" \
   -map "[a]" -c:a pcm_s16le mix.wav
 node render.mjs video film_noaudio.mp4 30
 ffmpeg -i film_noaudio.mp4 -i mix.wav -c:v copy -c:a aac -b:a 256k -shortest theone-film.mp4

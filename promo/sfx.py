@@ -116,7 +116,14 @@ def book():
     n=int(.35*SR); f0=140+rnd.random()*120
     return osc(np.linspace(f0,f0*.55,n),n)*env(n,.001,.05)*.8+bp(rnd.standard_normal(n),700,4500)*env(n,.0005,.015)*.6
 
-GAIN={'flapk':.5,'hov':.4,'swipe':.35,'growl':.6,'slam':.85,'book':.5,'flap':.55,'folder':.6,'click':.55,'whoosh':.55,'settle':.35,'pad':.55,'swell':.35,'impact':.8,'layer':.55,'type':.35,'route':.45,'hit':.5,'create':.45,'rise':.3,'snap':.5,'end':.45}
+def fold():
+    out=np.zeros(int(.25*SR))
+    for j in range(3):
+        c=clack(.8)*.8; i=int(j*.03*SR); out[i:i+len(c)]+=c
+    return out+swish(.25,2000,8000)*.4
+def stack():
+    n=int(.3*SR); return osc(np.linspace(260,150,n),n)*env(n,.001,.04)*.7+bp(rnd.standard_normal(n),1500,6000)*env(n,.0005,.008)*.5
+GAIN={'fold':.5,'stack':.55,'swoosh2':.35,'flapk':.5,'hov':.4,'swipe':.35,'growl':.6,'slam':.85,'book':.5,'flap':.55,'folder':.6,'click':.55,'whoosh':.55,'settle':.35,'pad':.55,'swell':.35,'impact':.8,'layer':.55,'type':.35,'route':.45,'hit':.5,'create':.45,'rise':.3,'snap':.5,'end':.45}
 for c in cues:
     t=c['t']; ty=c['type']; g=GAIN.get(ty,.4)*c.get('g',1)
     if ty=='flap': put(t-.04,flap(),g,rnd.uniform(-.35,.35),.08)
@@ -126,6 +133,9 @@ for c in cues:
     elif ty=='growl': put(t,growl(c['dur']),g,0,.12)
     elif ty=='slam': put(t,slam(),g,0,.25)
     elif ty=='book': put(t,book(),g,rnd.uniform(-.5,.5),.15)
+    elif ty=='fold': put(t-.03,fold(),g,0,.1)
+    elif ty=='stack': put(t,stack(),g,0,.2)
+    elif ty=='swoosh2': put(t,swish(.7,300,4000),g,0,.2)
     elif ty=='folder': put(t-.04,flap(),g); put(t,swish(.25,600,3000)*.5,g,0,.1)
     elif ty=='click': put(t,click(),g)
     elif ty=='whoosh': put(t,whoosh(c['dur']),g,0,.12)
