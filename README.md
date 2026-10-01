@@ -4,6 +4,10 @@ English | [简体中文](./README.zh.md)
 
 > Unofficial community project, independently maintained. Not affiliated with or endorsed by DeepSeek.
 
+<p align="center"><img src="docs/images/theone-film-preview.webp" alt="TheOne film: the One button lifts out as a 3D key and routes each message to the right session" width="100%"></p>
+
+*From the TheOne promo film (night version).*
+
 **One main chat for your projects and past conversations.** TheOne routes each message to the relevant topic, mounts a short summary, and runs it in a dedicated DSH working session. DSH stores the original conversations and runs models and tools; TheOne stores the topic catalog, summaries, and routing state.
 
 The **TheOne · Main chat** entry stays at the top of the sidebar, with a soft orange glow in light mode and pale blue in dark mode. It belongs to no project workspace and is hidden from the ordinary session list. Upgrading detaches older main chats from workspaces while preserving their logs. New main chats use a dedicated directory under the DSH data directory; existing topics keep their original working directories.
