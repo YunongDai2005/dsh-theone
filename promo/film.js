@@ -27,9 +27,9 @@ const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
 const I = window.DSH_ICONS; const ic = (n, cls = '') => `<span class="ico ${cls}">${I[n]}</span>`;
 
 /* ---------------------------------------------------------- beat grid */
-const BEAT = 60 / 77, D = 16 * BEAT;            // drop = BGM 1:33.279
+const BEAT = 60 / 77, D = 13 * BEAT;            // drop = BGM 1:33.279
 const b = k => k * BEAT, r = k => D + k * BEAT;  // r(1), r(2.25), r(3) are the bar's hard hits
-const TOTAL = +(r(20) + 0.85).toFixed(3);
+const TOTAL = +(r(19) + 0.75).toFixed(3);
 const CUES = []; const cue = (t, type, o = {}) => CUES.push({ t: +t.toFixed(4), type, ...o });
 window.CUES = CUES; window.TOTAL = TOTAL; window.DROP = D;
 
@@ -53,14 +53,14 @@ function deskCursor(t) {
 }
 const DCAM = { x: 540, y: 960, z: 1 };
 function sDesk(t, ov) {
-  const vis = t < b(2.2); show($('#desk'), vis); if (!vis) return;
+  const vis = t < b(1.7); show($('#desk'), vis); if (!vis) return;
   const c = deskCursor(t), cd = deskCursor(Math.max(0, t - .14));
-  const z = track(t, [[0, 2.5], [CLICK0, 2.3], [b(2), 1.6, 'o']]);
+  const z = track(t, [[0, 2.5], [CLICK0, 2.3], [b(1.6), 1.6, 'o']]);
   let cx = (cd[0] + ICON.x) / 2, cy = (cd[1] + ICON.y) / 2 - 40;
   cx = clamp(cx, 540 / z, 1080 - 540 / z); cy = clamp(cy, 960 / z, 1920 - 960 / z);
   Object.assign(DCAM, { x: cx, y: cy, z });
   deskWorld.style.transform = `translate(540px,960px) scale(${z}) translate(${-cx}px,${-cy}px)`;
-  deskWorld.style.filter = `blur(${4 * seg(t, CLICK0 + .1, b(2))}px) brightness(${1 - .5 * seg(t, CLICK0, b(2))})`;
+  deskWorld.style.filter = `blur(${4 * seg(t, CLICK0 + .1, b(1.5))}px) brightness(${1 - .15 * seg(t, CLICK0, b(1.5))})`;
   const pr = Math.abs(t - CLICK0) < .07 ? .92 : 1;
   const bounce = t > CLICK0 ? 1 - .1 * Math.sin(seg(t, CLICK0, CLICK0 + .35) * Math.PI) : 1;
   $('#dsh').style.transform = `scale(${pr}) translateY(${(1 - bounce) * 140}px)`;
@@ -99,9 +99,9 @@ const ARROW = '<svg width="28" height="42" viewBox="0 0 24 36"><path d="M2 2 L2 
 const HAND = '<svg width="34" height="38" viewBox="0 0 32 36"><path d="M11 17V4.5a3 3 0 0 1 6 0V14a3 3 0 0 1 5.2 1.2 3 3 0 0 1 5 1.6 3 3 0 0 1 4 2.2V26c0 5.2-4 9-9 9h-5c-3.6 0-5.6-1.6-7.6-4.6L4.4 23a2.7 2.7 0 0 1 4.2-3.3z" fill="#fff" stroke="#111" stroke-width="1.8" stroke-linejoin="round"/></svg>';
 const lin = $('#lin');
 const FOLDERS = [
-  ['Inbox', true, [['Download this video at max bitrate', '4m', 1], ['Hello', '8d'], ['Can you control my computer?', '8d'], ['Hello', '10d'], ['archify-dsh plugin installed', '11d']]],
-  ['Work', true, [['TheOne native API check', '2h'], ['Q3 budget draft', '1d'], ['Weekly report', '2d'], ['Refactor auth flow', '3d'], ['Fix flaky CI test', '4d'], ['SQL index help', '5d'], ['Landing page copy', '6d'], ['Bug in CSV export', '6d'], ['Interview questions', '1w'], ['Release notes v0.3', '1w'], ['Untitled', '1w']]],
-  ['Side projects', true, [['Habit tracker app', '1w'], ['Cycling route, Sunday', '2w'], ['Balcony herbs', '2w'], ['Rust lifetimes', '2w'], ['Docker won’t start', '3w'], ['Name ideas', '3w'], ['Paper notes: RAG', '3w'], ['Untitled', '3w'], ['Translate this email', '1mo']], 'S'],
+  ['Inbox', true, [['Download this video at max bitrate', '4m', 1], ['Hello', '8d'], ['Can you control my computer?', '8d'], ['Hello', '10d'], ['archify-dsh plugin installed', '11d']], 'I'],
+  ['Project A', true, [['TheOne native API check', '2h'], ['Q3 budget draft', '1d'], ['Weekly report', '2d'], ['Refactor auth flow', '3d'], ['Fix flaky CI test', '4d'], ['SQL index help', '5d'], ['Landing page copy', '6d'], ['Bug in CSV export', '6d'], ['Interview questions', '1w'], ['Release notes v0.3', '1w'], ['Untitled', '1w']], 'W'],
+  ['Project B', true, [['Habit tracker app', '1w'], ['Cycling route, Sunday', '2w'], ['Balcony herbs', '2w'], ['Rust lifetimes', '2w'], ['Docker won’t start', '3w'], ['Name ideas', '3w'], ['Paper notes: RAG', '3w'], ['Untitled', '3w'], ['Translate this email', '1mo']], 'S'],
   ['Archive', false, [['Kyoto day plan', '2mo'], ['Kyoto day plan (2)', '2mo'], ['Untitled', '2mo'], ['Untitled', '2mo']], 'A'],
   ['Unsorted', true, [['New session', '1mo'], ['Untitled', '1mo'], ['Recipe: tomato & egg', '1mo'], ['Untitled', '2mo'], ['Cat on my keyboard', '2mo'], ['Is 77 BPM slow?', '2mo'], ['Untitled', '2mo'], ['Untitled', '3mo'], ['New session', '3mo'], ['Untitled', '3mo']], 'U'],
 ];
@@ -111,7 +111,7 @@ FOLDERS.forEach(([name, open, ss, pre]) => {
   if (pre) ROWS['F' + pre] = f;
   const kids = h('div', 'kids'); lin.appendChild(kids); if (pre) ROWS['K' + pre] = kids;
   ss.forEach(([tt, mt, dot], i) => { const r0 = h('div', 'srow', `${dot ? '<span class="gd"></span>' : ''}<span class="tt">${esc(tt)}</span><span class="mt">${mt}</span>`); r0.dataset.title = tt; kids.appendChild(r0); if (pre) ROWS[pre + i] = r0; });
-  if (!open) [...kids.children].forEach(c => { c.style.height = '0px'; c.style.overflow = 'hidden'; c.style.opacity = 0; });
+  if (!open) kids.style.display = 'none';
 });
 const cur = $('#cur');
 
@@ -134,33 +134,42 @@ function setMain(title, k) {
 }
 
 /* ---------------------------------------------------------- the search (pre-drop) */
-const STEPS = [
-  { t: b(2), id: 'U8' }, { t: b(3), id: 'U4' }, { t: b(4), id: 'FA', folder: true }, { t: b(5), id: 'A0' }, { t: b(6), id: 'A1' }, { t: b(7), id: 'A3' },
-  { t: b(8), id: 'S8' }, { t: b(8.5), id: 'S6' }, { t: b(9), id: 'S5' }, { t: b(9.25), id: 'S4' }, { t: b(9.5), id: 'S3' }, { t: b(9.75), id: 'S2' }, { t: b(10), id: 'S1' },
-];
-STEPS.forEach(s => cue(s.t, s.folder ? 'folder' : 'flap', { g: s.t >= b(8) ? 1.1 : 1 }));
-const T_WH0 = b(10.5), T_WH1 = b(11.6);
-cue(T_WH0 - .05, 'whoosh', { dur: 1.35 }); cue(T_WH1, 'settle');
-cue(b(11.7), 'pad', { dur: D - b(11.7) }); cue(D - 1.6, 'swell', { dur: 1.6 });
+const SEQ_IDS = [];
+[['U', 10], ['S', 9], ['W', 11], ['I', 5]].forEach(([p0, n]) => { for (let i = n - 1; i >= 0; i--) SEQ_IDS.push(p0 + i); });
+const STEP_T = [];
+for (let k = 0; k < 6; k++) STEP_T.push(b(2 + k * .5));      // 8ths while the pad plays
+for (let k = 0; k < 8; k++) STEP_T.push(b(5 + k * .25));     // 16ths: the silence starts
+for (let k = 0; k < 12; k++) STEP_T.push(b(7 + k * .125));   // 32nds: key held down
+const STEPS = STEP_T.map((t0, i) => ({ t: t0, id: SEQ_IDS[i + 1] }));
+STEPS.forEach((st0, i) => cue(st0.t, 'flap', { g: i < 6 ? 1 : i < 14 ? 1.05 : 1.12 }));
+const T_WH0 = b(8.5), T_WH1 = b(9.4);
+cue(T_WH0 - .05, 'whoosh', { dur: 1.2 }); cue(T_WH1, 'settle');
+cue(b(9.5), 'pad', { dur: D - b(9.5) }); cue(D - 1.6, 'swell', { dur: 1.6 });
 cue(D, 'click', { g: 1.1 }); cue(D, 'impact');
 
 const G = {}; // geometry cache
 function rowTop(el) { let y = 0, e = el; while (e && e !== lin) { y += e.offsetTop; e = e.offsetParent; } return y; }
 function stepAt(t) { let s = null; for (const x of STEPS) if (t >= x.t) s = x; return s; }
-function scrollFor(id) { return clamp(rowTop(ROWS[id]) - 290, 0, G.maxScroll()); }
+function scrollFor(id) { return clamp(rowTop(ROWS[id]) - 300, 0, G.maxScroll()); }
 function listScroll(t) {
   if (t >= T_WH0) return lerp(G.sLast, 0, E.ioe(seg(t, T_WH0, T_WH1 - .1)));
-  let prev = scrollFor(STEPS[0].id), val = prev;
-  for (const s of STEPS) { const tg = scrollFor(s.id); if (t >= s.t - .2) { val = lerp(prev, tg, E.io(seg(t, s.t - .2, s.t + .02))); } prev = tg; if (t < s.t) break; }
+  let val = scrollFor(SEQ_IDS[0]), prevId = SEQ_IDS[0];
+  for (let i = 0; i < STEPS.length; i++) {
+    const st0 = STEPS[i]; if (t < st0.t) break;
+    const gap = (STEPS[i + 1] ? STEPS[i + 1].t : T_WH0) - st0.t;
+    val = lerp(scrollFor(prevId), scrollFor(st0.id), E.o(seg(t, st0.t, st0.t + Math.min(.16, gap * .9))));
+    prevId = st0.id;
+  }
   return val;
 }
 let lastRender = { scroll: 0 };
 
 /* ---------------------------------------------------------- 3D: what is behind the button */
 const ONE = { x: 186, y: 208 };
-const lift = h('div', 'lay lift', `<span class="osym"></span><span class="ocopy"><span class="otitle"><span class="owm"><span class="othe">The</span><span class="oone">One<span class="odot"></span></span></span><span class="olab">Main chat</span></span><span class="osub">Pick up the conversation</span></span>`);
-Object.assign(lift.style, { width: '336px', height: '91px', borderRadius: '14px' }); w3.appendChild(lift);
-const router = h('div', 'lay glass', `<div class="rlab">ROUTER</div><svg class="ring" width="180" height="180" viewBox="0 0 180 180"><circle cx="90" cy="90" r="82" fill="none" stroke="rgba(200,212,240,.35)" stroke-width="1.5"/><circle cx="90" cy="90" r="56" fill="none" stroke="rgba(200,212,240,.5)" stroke-width="1.5" stroke-dasharray="4 7"/><circle cx="90" cy="90" r="9" fill="#ffc58a"/></svg><div class="rtag" id="rtag"></div>`);
+const ONE_HTML = `<span class="osym"></span><span class="ocopy"><span class="otitle"><span class="owm"><span class="othe">The</span><span class="oone">One<span class="odot"></span></span></span><span class="olab">Main chat</span></span><span class="osub">Pick up the conversation</span></span>`;
+const lift = h('div', 'lay', `<div class="lf sd" id="lfF"></div><div class="lf sr" id="lfR"></div><div class="lf top" id="lfT"><div class="zin">${ONE_HTML}</div></div>`);
+Object.assign(lift.style, { width: '336px', height: '91px', borderRadius: '0' }); w3.appendChild(lift);
+const router = h('div', 'lay glass', `<div class="rlab">ROUTER</div><svg class="ring" width="180" height="180" viewBox="0 0 180 180"><circle cx="90" cy="90" r="82" fill="none" stroke="rgba(40,60,110,.16)" stroke-width="1.5"/><circle cx="90" cy="90" r="56" fill="none" stroke="rgba(40,60,110,.28)" stroke-width="1.5" stroke-dasharray="4 7"/><circle cx="90" cy="90" r="9" fill="#ff8a2a"/></svg><div class="rtag" id="rtag"></div>`);
 Object.assign(router.style, { width: '520px', height: '300px' }); w3.appendChild(router);
 const CARD_T = ['Trip to Kyoto', 'Q3 budget', 'Habit tracker', 'Cycling route', 'Weekly report', 'Balcony herbs', 'Auth refactor', 'Paper notes', 'Landing page'];
 const CARDS = CARD_T.map((tt, i) => {
@@ -181,24 +190,26 @@ const beamSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); b
 beamSvg.innerHTML = '<defs><filter id="bg2" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="4"/></filter></defs>';
 ov.appendChild(beamSvg);
 const BEAMS = [];
-function beam(a, bb, hot) { const g = document.createElementNS('http://www.w3.org/2000/svg', 'g'); g.innerHTML = `<line stroke="${hot ? 'rgba(255,170,90,.9)' : 'rgba(150,180,240,.7)'}" stroke-width="8" filter="url(#bg2)"/><line stroke="${hot ? '#ffe2c2' : 'rgba(210,225,255,.85)'}" stroke-width="1.6"/>`; beamSvg.appendChild(g); const B = { g, a, b: bb }; BEAMS.push(B); return B; }
+function beam(a, bb, hot) { const g = document.createElementNS('http://www.w3.org/2000/svg', 'g'); g.innerHTML = `<line stroke="${hot ? 'rgba(255,140,40,.55)' : 'rgba(110,140,210,.22)'}" stroke-width="8" filter="url(#bg2)"/><line stroke="${hot ? '#ff8a2a' : 'rgba(80,110,180,.5)'}" stroke-width="2"/>`; beamSvg.appendChild(g); const B = { g, a, b: bb }; BEAMS.push(B); return B; }
 const B0 = beam([ONE.x, ONE.y + 46, Z.lift], [ONE.x, ONE.y, Z.router], true);
 const BC = CARDS.map(c => beam([ONE.x, ONE.y, Z.router], [c.x, c.y, Z.cards]));
 const BN = beam([ONE.x, ONE.y, Z.router], [NEWP.x, NEWP.y, Z.cards]);
 const orb = h('div', 'orb'); ov.appendChild(orb);
 const bub = h('div', 'bub'); ov.appendChild(bub);
-const CHIP_T = ['Kyoto day plan', 'Kyoto day plan (2)', 'Trip budget', 'Q3 budget draft', 'Weekly report', 'Fix flaky CI test', 'Refactor auth flow', 'Balcony herbs', 'Recipe: tomato & egg', 'Cat on my keyboard', 'Cycling route', 'Habit tracker app', 'Untitled', 'Untitled', 'New session'];
-const CL = [{ name: 'TRAVEL', x: ONE.x - 290, y: ONE.y - 150, t: r(13) }, { name: 'WORK', x: ONE.x, y: ONE.y - 150, t: r(14.25) }, { name: 'HOME', x: ONE.x + 290, y: ONE.y - 150, t: r(15) }];
-const CHIP_CL = [0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 2, 1, 2, 0];
-const CHIPS = CHIP_T.map((tt, i) => { const r0 = rng(100 + i); const el = h('div', 'chip', esc(tt)); ov.appendChild(el); return { el, i, x0: ONE.x - 300 + (i % 3) * 300 + (r0() - .5) * 120, y0: ONE.y - 190 + Math.floor(i / 3) * 95 + (r0() - .5) * 40, cl: CHIP_CL[i], k: CHIP_CL.slice(0, i).filter(c => c === CHIP_CL[i]).length, ph: r0() * 6 }; });
+const CHIP_T = ['Q3 budget draft', 'Weekly report', 'Refactor auth flow', 'Habit tracker app', 'Paper notes: RAG', 'Rust lifetimes', 'Kyoto day plan', 'Kyoto day plan (2)', 'Trip budget', 'Balcony herbs', 'Recipe: tomato & egg', 'Cat on my keyboard'];
+const CL = [{ name: 'PROJECT A', x: ONE.x - 215, y: ONE.y - 215, t: r(13) }, { name: 'PROJECT B', x: ONE.x + 215, y: ONE.y - 215, t: r(14.25) },
+  { name: 'TRAVEL', x: ONE.x - 215, y: ONE.y + 35, t: r(15) }, { name: 'HOME', x: ONE.x + 215, y: ONE.y + 35, t: r(15.5) }];
+const CHIP_CL = [0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3], SLOT = [5, 0, 9, 3, 11, 7, 1, 10, 4, 8, 2, 6];
+const CHIPS = CHIP_T.map((tt, i) => { const r0 = rng(100 + i), sl = SLOT[i]; const el = h('div', 'chip', esc(tt)); ov.appendChild(el);
+  return { el, i, x0: ONE.x - 330 + (sl % 4) * 220 + (r0() - .5) * 60, y0: ONE.y - 200 + Math.floor(sl / 4) * 160 + (r0() - .5) * 50, cl: CHIP_CL[i], k: i % 3, ph: r0() * 6 }; });
 const CLAB = CL.map(c => { const el = h('div', 'clab', c.name); ov.appendChild(el); return el; });
-const motes = []; { const r0 = rng(21); for (let i = 0; i < 40; i++) { const m = h('div'); m.style.cssText = 'position:absolute;left:0;top:0;width:6px;height:6px;border-radius:50%;background:#ffe8c8;box-shadow:0 0 12px 3px rgba(255,190,120,.7)'; ov.appendChild(m); motes.push({ el: m, x: r0() * 1080, y: r0() * 1920, sp: 20 + r0() * 70, ph: r0() * 6, s: .4 + r0() * 1.1 }); } }
+const motes = []; { const r0 = rng(21); for (let i = 0; i < 40; i++) { const m = h('div'); m.style.cssText = 'position:absolute;left:0;top:0;width:6px;height:6px;border-radius:50%;background:#ffb066;box-shadow:0 0 12px 3px rgba(255,150,60,.55)'; ov.appendChild(m); motes.push({ el: m, x: r0() * 1080, y: r0() * 1920, sp: 20 + r0() * 70, ph: r0() * 6, s: .4 + r0() * 1.1 }); } }
 
 // post-drop cues on the bar's hard hits (r1, r2.25, r3 …)
 cue(r(1), 'layer'); cue(r(2.25), 'layer', { g: .9 }); cue(r(3), 'layer', { g: .8 });
 cue(r(4), 'type'); cue(r(5), 'route', { n: 'G5' }); cue(r(6.25), 'hit', { n: 'C6' }); cue(r(7), 'route', { n: 'E5', g: .7 });
 cue(r(8), 'type'); cue(r(9), 'route', { n: 'A5' }); cue(r(10.25), 'create'); cue(r(11), 'route', { n: 'C6', g: .6 });
-cue(r(12), 'rise'); cue(r(13), 'snap'); cue(r(14.25), 'snap'); cue(r(15), 'snap');
+cue(r(12), 'rise'); cue(r(13), 'snap'); cue(r(14.25), 'snap'); cue(r(15), 'snap'); cue(r(15.5), 'snap', { g: .8 });
 cue(r(16), 'end');
 
 let WM = new DOMMatrix();
@@ -217,11 +228,11 @@ function camAt(t) {
     return o;
   }
   const a = E.oe(seg(t, D, r(1.6)));
-  const c = { z: lerp(3.15, 1.08, a), cx: ONE.x, cy: ONE.y + 20 * a, rx: lerp(0, 56, E.io(seg(t, D, r(1.6)))), ry: 0, rz: lerp(0, -24, E.io(seg(t, D, r(2)))), cz: lerp(0, -420, a) };
+  const c = { z: lerp(3.15, 1.18, a), cx: ONE.x, cy: ONE.y - 40 * a, rx: lerp(0, 56, E.io(seg(t, D, r(1.6)))), ry: 0, rz: lerp(0, -24, E.io(seg(t, D, r(2)))), cz: lerp(0, -420, a) };
   c.rz += -10 * E.ioq(seg(t, r(2), r(12)));
   // shot C: dive to the history layer
   const k = E.io(seg(t, r(11.6), r(12.8)));
-  c.cz = lerp(c.cz, Z.hist, k); c.z = lerp(c.z, 1.12, k); c.rx = lerp(c.rx, 28, k); c.rz = lerp(c.rz, 0, k); c.cy = lerp(c.cy, ONE.y + 20, k);
+  c.cz = lerp(c.cz, Z.hist, k); c.z = lerp(c.z, 1.3, k); c.rx = lerp(c.rx, 22, k); c.rz = lerp(c.rz, 0, k); c.cy = lerp(c.cy, ONE.y + 20, k);
   return c;
 }
 
@@ -229,8 +240,8 @@ function sApp(t, ovs) {
   const vis = t >= b(1) && t < r(16.4); show($('#appwrap'), vis); if (!vis) return;
   // window-open from the dock icon
   const aw = $('#appwrap');
-  if (t < b(2.2)) {
-    const p = E.oe(seg(t, CLICK0 + .02, b(1.95)));
+  if (t < b(1.7)) {
+    const p = E.oe(seg(t, CLICK0 + .02, b(1.55)));
     const ix = (ICON.x - DCAM.x) * DCAM.z + 540, iy = (ICON.y - DCAM.y) * DCAM.z + 960;
     const s = lerp(.06, 1, p);
     aw.style.transform = `translate(${lerp(ix, 540, p) - 540 * s}px,${lerp(iy, 960, p) - 960 * s}px) scale(${s})`;
@@ -243,15 +254,12 @@ function sApp(t, ovs) {
 
   // ---- the search
   const st = stepAt(t);
-  [...ROWS.KA.children].forEach((c, i) => { const k = E.o(seg(t, b(4) + .03 + i * .04, b(4) + .3 + i * .04)); c.style.height = (45 * k).toFixed(2) + 'px'; c.style.opacity = k; });
-  if (t >= b(4) && !ROWS.FA.dataset.o) { ROWS.FA.dataset.o = 1; ROWS.FA.firstElementChild.innerHTML = I.FolderOpen; }
-  if (t < b(4) && ROWS.FA.dataset.o) { delete ROWS.FA.dataset.o; ROWS.FA.firstElementChild.innerHTML = I.FolderClose; }
   const sc = t < D ? listScroll(t) : 0;
   lin.style.transform = `translateY(${-sc}px)`;
-  const selId = st && !st.folder ? st.id : (st && st.folder ? 'A_none' : 'U9');
+  const selId = st ? st.id : SEQ_IDS[0];
   let selTitle = 'TheOne · Main chat';
   for (const k in ROWS) if (ROWS[k].classList.contains('srow')) { const on = k === (t >= T_WH0 ? '__' : selId); ROWS[k].classList.toggle('sel', on); if (on) selTitle = ROWS[k].dataset.title; }
-  if (t < T_WH0 && st) setMain(selTitle, STEPS.indexOf(st)); else if (t < T_WH0) setMain('Untitled', 99); else setMain('TheOne · Main chat', 0);
+  if (t < T_WH0) setMain(selTitle, st ? STEPS.indexOf(st) : 99); else setMain('TheOne · Main chat', 0);
   // motion blur from camera + list velocity
   const C2 = camAt(t - 1 / 60), vel = Math.hypot((C.cy - C2.cy) * C.z, (C.z - C2.z) * 600) * 60 + Math.abs(sc - (t - 1 / 60 < D ? listScroll(t - 1 / 60) : 0)) * 60 * C.z;
   const bl = t > T_WH0 - .1 && t < T_WH1 + .1 ? Math.min(60, vel / 260) : 0;
@@ -260,41 +268,26 @@ function sApp(t, ovs) {
   $('#main').style.filter = C.ry > 2 ? `blur(${(C.ry / 9 * 2).toFixed(2)}px)` : '';
 
   // ---- the reveal light
-  const g = seg(t, T_WH1 - .1, b(13));
-  op($('#dimW'), t < D ? .9 * E.io(g) : lerp(.9, 0, seg(t, D, r(1))));
-  op($('#rays'), t < D ? .9 * E.io(seg(t, b(12.2), b(14.6))) : 1 - seg(t, D, D + .25));
-  $('#rays').style.transform = `rotate(${(t - b(11)) * 5}deg)`;
-  op($('#halo'), t < D ? E.io(seg(t, T_WH1, b(13.5))) * (.8 + .2 * Math.sin(t * 2.2)) : 1 - seg(t, D, D + .3));
-  const one = $('#oneBtn'), gl = t > T_WH1 ? track(t, [[T_WH1, .2], [b(14), .65], [D, 1]]) + .06 * Math.sin(t * 3.4) : 0;
+  const g = seg(t, T_WH1 - .1, b(10.4));
+  op($('#dimW'), t < D ? .82 * E.io(g) : lerp(.82, 0, seg(t, D, r(1))));
+  op($('#rays'), t < D ? .9 * E.io(seg(t, b(9.9), b(11.8))) : 1 - seg(t, D, D + .25));
+  $('#rays').style.transform = `rotate(${(t - b(8.8)) * 6}deg)`;
+  op($('#halo'), t < D ? E.io(seg(t, T_WH1, b(11))) * (.8 + .2 * Math.sin(t * 2.2)) : 1 - seg(t, D, D + .3));
+  const one = $('#oneBtn'), gl = t > T_WH1 ? track(t, [[T_WH1, .2], [b(11.4), .65], [D, 1]]) + .06 * Math.sin(t * 3.4) : 0;
   one.style.boxShadow = gl ? `0 0 ${30 + 90 * gl}px ${4 + 26 * gl}px rgba(255,${140 + 40 * gl | 0},60,${.2 + .45 * gl}),0 0 ${10 + 20 * gl}px ${1 + 5 * gl}px rgba(255,236,210,${.35 * gl})` : '';
   one.style.borderColor = gl > .3 ? '#f5b680' : '#eed3bb';
-  one.style.transform = `scale(${(t > b(15) && t < D ? 1.02 : 1) * (t > D - .09 && t < D + .05 ? .975 : 1)})`;
+  one.style.transform = `scale(${(t > b(12.2) && t < D ? 1.02 : 1) * (t > D - .09 && t < D + .05 ? .975 : 1)})`;
   one.style.visibility = t >= D ? 'hidden' : 'visible';
-  const mv = t > T_WH1 && t < D + .3 ? seg(t, T_WH1, b(12.6)) * (1 - seg(t, D, D + .3)) : 0;
+  const mv = t > T_WH1 && t < D + .3 ? seg(t, T_WH1, b(10.2)) * (1 - seg(t, D, D + .3)) : 0;
   motes.forEach(M => { if (!mv) { op(M.el, 0); return; } const y = ((M.y - (t - T_WH1) * M.sp) % 1920 + 1920) % 1920; M.el.style.transform = `translate(${M.x + 14 * Math.sin(t + M.ph)}px,${y}px) scale(${M.s})`; op(M.el, mv * (.35 + .65 * Math.abs(Math.sin(t * 1.7 + M.ph)))); });
 
   // ---- cursor (inside the window, so it shares the camera)
   let cx = 0, cy = 0, hand = false, press = false, co = 0;
-  if (t < D + .1) {
-    co = seg(t, b(1.7), b(1.95)) * (1 - seg(t, D + .02, D + .1));
-    const rowY = id => 452 + rowTop(ROWS[id]) - sc + 22;
-    if (t < T_WH0) {
-      let prev = null, cur0 = STEPS[0];
-      for (const s of STEPS) { if (t < s.t - .26) { cur0 = s; break; } prev = s; cur0 = s; }
-      const tgt = s => s.folder ? [118, rowY(s.id) + 2] : [206 + (STEPS.indexOf(s) * 23) % 40, rowY(s.id) + 4];
-      const nxt = STEPS.find(s => s.t - .26 > t) || STEPS[STEPS.length - 1];
-      const last = [...STEPS].reverse().find(s => s.t - .26 <= t) || STEPS[0];
-      const a0 = tgt(last), a1 = tgt(nxt);
-      const k = nxt === last ? 1 : E.io(seg(t, nxt.t - .26, nxt.t - .04));
-      [cx, cy] = t < STEPS[0].t - .26 ? [250, 900] : [lerp(a0[0], a1[0], k), lerp(a0[1], a1[1], k)];
-      if (t < STEPS[0].t - .26) { const k0 = E.io(seg(t, b(1.7), STEPS[0].t - .04)); cx = lerp(250, a1[0], k0); cy = lerp(900, a1[1], k0); }
-      hand = true; press = STEPS.some(s => t > s.t - .03 && t < s.t + .06);
-    } else {
-      const sy = lerp(rowY('S1'), 330, E.ioe(seg(t, T_WH0, T_WH1)));
-      cx = track(t, [[T_WH1, 230], [b(13), 250, 'io'], [b(14.8), 214, 'io']]);
-      cy = t < T_WH1 ? sy : track(t, [[T_WH1, 330], [b(13), 300, 'io'], [b(14.8), 222, 'io']]);
-      hand = t > b(14.7); press = t > D - .07 && t < D + .06;
-    }
+  if (t >= b(9.8) && t < D + .1) {
+    co = seg(t, b(9.8), b(10.2)) * (1 - seg(t, D + .02, D + .1));
+    cx = track(t, [[b(9.8), 262], [b(11), 248, 'io'], [b(12.2), 214, 'io']]);
+    cy = track(t, [[b(9.8), 430], [b(11), 300, 'io'], [b(12.2), 222, 'io']]);
+    hand = t > b(12.1); press = t > D - .07 && t < D + .06;
   }
   show(cur, co > 0); op(cur, co);
   const shape = hand ? 'h' : 'a'; if (cur.dataset.s !== shape) { cur.innerHTML = hand ? HAND : ARROW; cur.dataset.s = shape; }
@@ -304,8 +297,11 @@ function sApp(t, ovs) {
   const post = t >= D;
   op(win, post ? lerp(1, .07, E.io(seg(t, D, r(1.4)))) * (1 - seg(t, r(11.6), r(12.4))) : 1);
   const dimC = 1 - E.io(seg(t, r(11.6), r(12.3)));
-  place(lift, ONE.x, ONE.y, post ? lerp(0, Z.lift, E.oe(seg(t, D, r(1.2)))) : 0, 336, 91, post ? dimC : 0);
-  lift.style.boxShadow = `0 0 ${70 + 30 * pulse(t)}px ${16 + 8 * pulse(t)}px rgba(255,140,40,${.45 + .2 * pulse(t)})`;
+  place(lift, ONE.x, ONE.y, post ? lerp(0, Z.lift, E.oe(seg(t, D, r(1.2)))) : 0, 336, 91, post ? dimC : 0, post ? lerp(1, 1.5, E.oe(seg(t, D, r(1.4)))) : 1);
+  const TH = 28 * E.oe(seg(t, D, r(1)));
+  $('#lfT').style.transform = `translateZ(${TH}px)`;
+  $('#lfT').style.boxShadow = `0 0 ${50 + 30 * pulse(t)}px ${8 + 8 * pulse(t)}px rgba(255,140,40,${.35 + .2 * pulse(t)})`;
+  for (const [id, css] of [['lfF', `left:0;top:91px;width:336px;height:${TH}px;transform-origin:50% 0;transform:rotateX(90deg)`], ['lfR', `left:336px;top:0;width:${TH}px;height:91px;transform-origin:0 50%;transform:rotateY(-90deg)`]]) $('#' + id).style.cssText = css;
   const app = (t0, z0, z1) => [E.oe(seg(t, t0 - .08, t0 + .4)), lerp(z0, z1, E.oe(seg(t, t0 - .08, t0 + .4)))];
   const [ra, rz0] = app(r(1), 0, Z.router); place(router, ONE.x, ONE.y, rz0, 520, 300, post ? ra * dimC : 0);
   CARDS.forEach((c, i) => { const [ca, cz0] = app(r(2.25) + (i % 3) * .03 + Math.floor(i / 3) * .03, Z.router, Z.cards); place(c.el, c.x, c.y, cz0, 230, 136, post ? ca * dimC : 0); });
@@ -313,12 +309,12 @@ function sApp(t, ovs) {
   const nk = seg(t, r(10.25) - .1, r(10.25) + .35); place(NEWC, NEWP.x, NEWP.y, Z.cards, 230, 136, post ? Math.min(1, nk * 3) * dimC : 0, lerp(.6, 1, E.ob(nk)));
   // card highlight
   const hot0 = t > r(6.25) && t < r(8), hot1 = t > r(10.25) && t < r(12);
-  CARDS[0].el.style.borderColor = hot0 ? '#ffb070' : ''; CARDS[0].el.style.boxShadow = hot0 ? '0 0 70px 12px rgba(255,140,40,.55)' : '';
-  NEWC.style.borderColor = hot1 ? '#ffb070' : ''; NEWC.style.boxShadow = hot1 ? '0 0 70px 12px rgba(255,140,40,.55)' : '';
+  CARDS[0].el.style.borderColor = hot0 ? '#ffb070' : ''; CARDS[0].el.style.boxShadow = hot0 ? '0 0 60px 8px rgba(255,140,40,.4)' : '';
+  NEWC.style.borderColor = hot1 ? '#ffb070' : ''; NEWC.style.boxShadow = hot1 ? '0 0 60px 8px rgba(255,140,40,.4)' : '';
   // router tag
   const tag = t > r(9) ? 'CREATE' : t > r(5) ? 'SWAP' : ''; const rt = $('#rtag'); rt.textContent = tag;
   op(rt, tag ? (t > r(9) ? seg(t, r(9), r(9) + .1) : seg(t, r(5), r(5) + .1)) * (1 - seg(t, r(11.5), r(12))) : 0);
-  router.style.boxShadow = (Math.abs(t - r(5)) < .35 || Math.abs(t - r(9)) < .35) ? '0 0 90px 14px rgba(255,170,90,.45)' : '';
+  router.style.boxShadow = (Math.abs(t - r(5)) < .35 || Math.abs(t - r(9)) < .35) ? '0 0 80px 10px rgba(255,150,60,.35)' : '';
 
   // overlay: beams, orb, bubble, chips
   show(ov, true);
@@ -335,16 +331,22 @@ function sApp(t, ovs) {
   let bb0 = null; for (const x of bubs) if (t >= x[0] && t < x[1]) bb0 = x;
   if (bb0) { const p = proj([ONE.x, ONE.y - 30, Z.lift + 10]); bub.textContent = bb0[2]; bub.className = 'bub' + (bb0[3] ? ' r' : ''); const k = E.ob(seg(t, bb0[0], bb0[0] + .25)); bub.style.transform = `translate(${p[0]}px,${p[1]}px) translate(-50%,-160%) scale(${lerp(.7, 1, k)})`; op(bub, seg(t, bb0[0], bb0[0] + .08) * (1 - seg(t, bb0[1] - .12, bb0[1]))); } else op(bub, 0);
   CHIPS.forEach(c => {
-    const vis2 = t > r(11.8);
-    if (!vis2) { op(c.el, 0); return; }
-    const Cc = CL[c.cl], k = E.oe(seg(t, Cc.t - .12, Cc.t + .25));
-    const fx = c.x0 + 18 * Math.sin(t * 1.1 + c.ph), fy = c.y0 + 14 * Math.cos(t * .9 + c.ph);
-    const tx = Cc.x, ty = Cc.y + 20 + c.k * 62;
-    const p = proj([lerp(fx, tx, k), lerp(fy, ty, k), Z.hist + lerp(30, 8, k)]);
-    c.el.style.transform = `translate(${p[0]}px,${p[1]}px) translate(-50%,-50%) scale(${.92 * p[2]})`;
-    op(c.el, seg(t, r(11.8), r(12.3)) * (1 - seg(t, r(15.8), r(16.2))));
+    if (t <= r(11.6)) { op(c.el, 0); return; }
+    const Cc = CL[c.cl], k = E.oe(seg(t, Cc.t - .1, Cc.t + .3));
+    // chaos: fly in from outside, then swirl and tumble over each other at different depths
+    const tin = E.o(seg(t, r(11.6) + c.i * .03, r(12.3) + c.i * .03));
+    const th = c.ph + (t - r(11.6)) * (1.1 + (c.i % 4) * .35) * (c.i % 2 ? 1 : -1);
+    const rad = lerp(900, 150 + (c.i % 5) * 45, tin) + 30 * Math.sin(t * 3 + c.ph);
+    const fx = ONE.x + Math.cos(th) * rad, fy = ONE.y - 60 + Math.sin(th) * rad * .75;
+    const fz = Z.hist + 60 + 140 * Math.sin(t * 1.7 + c.ph * 2);
+    const tx = Cc.x, ty = Cc.y + 34 + c.k * 52;
+    const p = proj([lerp(fx, tx, k), lerp(fy, ty, k), lerp(fz, Z.hist + 8, k)]);
+    const rot = (1 - k) * (28 * Math.sin(t * 2.3 + c.ph * 3) + (c.i % 2 ? 14 : -14));
+    c.el.style.transform = `translate(${p[0]}px,${p[1]}px) translate(-50%,-50%) rotate(${rot}deg) scale(${.92 * p[2]})`;
+    c.el.style.zIndex = k > .5 ? 2 : 1;
+    op(c.el, seg(t, r(11.6), r(11.9)) * (1 - seg(t, r(15.8), r(16.2))));
   });
-  CL.forEach((c, i) => { const p = proj([c.x, c.y - 40, Z.hist + 8]); CLAB[i].style.transform = `translate(${p[0]}px,${p[1]}px) translate(-50%,-50%)`; op(CLAB[i], seg(t, c.t, c.t + .15) * (1 - seg(t, r(15.8), r(16.2)))); });
+  CL.forEach((c, i) => { const p = proj([c.x, c.y - 14, Z.hist + 8]); CLAB[i].style.transform = `translate(${p[0]}px,${p[1]}px) translate(-50%,-50%)`; op(CLAB[i], seg(t, c.t, c.t + .15) * (1 - seg(t, r(15.8), r(16.2)))); });
 }
 function pulse(t) { if (t < D) return 0; const x = ((t - D) / BEAT) % 4; let p = 0; for (const a of [0, 1, 2.25, 3]) { const d = x - a; if (d >= 0) p = Math.max(p, Math.exp(-d * 5)); } return p; }
 
@@ -360,7 +362,7 @@ function sEnd(t) {
   const k = seg(t, r(16), r(16) + .5);
   $('#ewm').style.transform = `scale(${lerp(1.12, 1, E.oe(k)) * (1 + .015 * pulse(t))})`; op($('#ewm'), seg(t, r(16), r(16) + .12));
   const up = (id, a) => { const el = $(id), p = seg(t, a, a + .4); op(el, p); el.style.transform = `translateY(${(1 - E.o(p)) * 24}px)`; };
-  up('#etag', r(17)); up('#eurl', r(18.25)); up('#edisc', r(19));
+  up('#etag', r(17)); up('#eurl', r(18.25)); up('#edisc', r(18.6));
 }
 
 /* ---------------------------------------------------------- global FX */
