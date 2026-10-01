@@ -2,9 +2,15 @@
 
 [English](./README.md) | 简体中文
 
+> 非官方社区项目，由社区成员独立维护，与 DeepSeek 不存在隶属或背书关系。
+
 用户始终在一个主聊天入口里聊天。TheOne 判断所属项目，挂载项目摘要，再交给该项目独立的 DSH Worker 执行。DSH 保存原始对话、运行模型与工具；TheOne 保存项目目录、摘要和路由记录。
 
 左侧固定 **TheOne · 主聊天**：浅色主题为淡橙色外光晕，深色主题为淡蓝色。兼容 DSH `0.2.0-rc.2`、Node.js 24。主聊天作为全局入口，不挂到任何项目工作区，也不显示在普通会话列表中。升级时自动解除旧主聊天的工作区关联，保留原始聊天记录。新的主聊天使用 DSH 数据目录中的独立目录；历史话题的文件执行目录保留。
+
+![TheOne 主聊天与话题工作区](https://raw.githubusercontent.com/YunongDai2005/dsh-theone/main/docs/images/theone-topic-workspaces-en.png)
+
+*截图使用独立 DSH profile 和虚构话题示例。*
 
 ## 安装并使用
 
