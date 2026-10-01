@@ -352,7 +352,7 @@ function sApp(t, ovs) {
       const L = Math.hypot(pb[0] - pa[0], pb[1] - pa[1]), W = Math.hypot(pd[0] - pc[0], pd[1] - pc[1]), ang = Math.atan2(pb[1] - pa[1], pb[0] - pa[0]) * 180 / Math.PI;
       const g2 = Math.min(1.3, gl);
       if (!PREG) PREG = makeShapeGlow(preGlow, KEY_L, true);
-      setShapeGlow(PREG, boxHull(186, 208.5, 168 - 14, 45.5 - 14, 0, 0), o2 * Math.min(1.4, .45 + .5 * g2), 14);
+      setShapeGlow(PREG, e => boxHull(186, 208.5, 168 - 14 + e, 45.5 - 14 + e, 0, 0), o2 * Math.min(1.4, .45 + .5 * g2), 14);
     }
   }
   const mv = t > T_WH1 && t < D + .3 ? seg(t, T_UP1, b(17)) * (1 - seg(t, D, D + .3)) : 0;
@@ -466,7 +466,7 @@ function sApp(t, ovs) {
 }
 const preGlow = h('div', null); preGlow.style.cssText = 'position:absolute;left:0;top:0;width:1080px;height:1920px;pointer-events:none'; let PREG = null;
 const glowL = h('div', null); glowL.style.cssText = 'position:absolute;left:0;top:0;width:1080px;height:1920px;pointer-events:none'; $('#cam').insertBefore(glowL, w3); $('#cam').insertBefore(preGlow, $('#ov'));
-glowL.innerHTML = `<svg id="cone" width="1080" height="1920" style="position:absolute;left:0;top:0"><defs><linearGradient id="coneG" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="rgb(255,150,60)" stop-opacity=".30"/><stop offset=".55" stop-color="rgb(255,170,90)" stop-opacity=".10"/><stop offset="1" stop-color="rgb(255,190,120)" stop-opacity="0"/></linearGradient><filter id="coneB"><feGaussianBlur stdDeviation="10"/></filter></defs><polygon id="coneP" fill="url(#coneG)" filter="url(#coneB)"/></svg>
+glowL.innerHTML = `<svg id="cone" width="1080" height="1920" style="position:absolute;left:0;top:0"><defs><linearGradient id="coneG" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="rgb(255,160,80)" stop-opacity="0"/><stop offset="0" stop-color="rgb(255,160,80)" stop-opacity="0"/><stop offset="0" stop-color="rgb(255,190,130)" stop-opacity="0"/><stop offset="0" stop-color="rgb(255,190,130)" stop-opacity="0"/></linearGradient><filter id="coneB" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="26"/></filter></defs><polygon id="coneP" fill="url(#coneG)" filter="url(#coneB)"/></svg>
   <div class="gl3 grays"></div><div class="gl3 gstreak"></div><div class="gl3 gstreak2"></div>`;
 const hull = P => { P = P.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]); const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]); const lo = [], up = []; for (const p of P) { while (lo.length > 1 && cr(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop(); lo.push(p); } for (const p of P.reverse()) { while (up.length > 1 && cr(up[up.length - 2], up[up.length - 1], p) <= 0) up.pop(); up.push(p); } return lo.slice(0, -1).concat(up.slice(0, -1)); };
 // glow that follows an object's real projected outline: the hull of its box corners, rounded by a
@@ -486,17 +486,19 @@ function boxHull(cx, cy, hw, hh, z0, z1) {
   const H = hull(pts), a = proj([cx - hw, cy, z1]), b0 = proj([cx + hw, cy, z1]);
   return { d: 'M' + H.map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join('L') + 'Z', s: Math.hypot(b0[0] - a[0], b0[1] - a[1]) / (2 * hw) };
 }
-function setShapeGlow(G, shape, o, rad) {
+// mk(e) returns the projected hull of the object's rectangle inflated by e world px, so the spread is
+// foreshortened by perspective exactly like the object itself
+function setShapeGlow(G, mk, o, rad, k = 1) {
   const on = o > .005; G.svg.style.display = on ? '' : 'none'; if (!on) return;
-  G.layers.forEach((L, i) => { const p0 = G.paths[i]; p0.setAttribute('d', shape.d); p0.setAttribute('stroke-width', Math.max(1, (2 * rad + L.w) * shape.s).toFixed(1)); p0.style.opacity = Math.min(1, o * L.o).toFixed(3); G.blurs[i].setAttribute('stdDeviation', Math.max(.5, L.b * shape.s).toFixed(1)); });
-  if (G.hole) { G.hole.setAttribute('d', shape.d); G.hole.setAttribute('stroke-width', Math.max(1, 2 * rad * shape.s - 2).toFixed(1)); }
+  G.layers.forEach((L, i) => { const sh = mk(L.e * k), p0 = G.paths[i]; p0.setAttribute('d', sh.d); p0.setAttribute('stroke-width', Math.max(1, 2 * rad * sh.s).toFixed(1)); p0.style.opacity = Math.min(1, o * L.o).toFixed(3); G.blurs[i].setAttribute('stdDeviation', Math.max(.5, L.b * k * sh.s).toFixed(1)); });
+  if (G.hole) { const sh = mk(0); G.hole.setAttribute('d', sh.d); G.hole.setAttribute('stroke-width', Math.max(1, 2 * rad * sh.s - 2).toFixed(1)); }
 }
-const KEY_L = [{ col: 'rgb(255,150,60)', w: 12, b: 6, o: .62 }, { col: 'rgb(255,160,80)', w: 56, b: 22, o: .42 }, { col: 'rgb(255,180,118)', w: 180, b: 64, o: .24 }];
-const HALO_L = [{ col: 'rgb(255,150,60)', w: 10, b: 5, o: .6 }, { col: 'rgb(255,165,85)', w: 46, b: 18, o: .4 }, { col: 'rgb(255,182,120)', w: 140, b: 50, o: .2 }];
+const KEY_L = [{ col: 'rgb(255,150,60)', e: 5, b: 5, o: .6 }, { col: 'rgb(255,160,80)', e: 24, b: 12, o: .4 }, { col: 'rgb(255,180,118)', e: 70, b: 28, o: .15 }];
+const HALO_L = [{ col: 'rgb(255,150,60)', e: 4, b: 4, o: .6 }, { col: 'rgb(255,165,85)', e: 18, b: 9, o: .38 }, { col: 'rgb(255,182,120)', e: 54, b: 22, o: .14 }];
 const HALOS = {};
 function drawHalo(id, P, hw, hh, o, rad = 18) {
   if (!HALOS[id]) HALOS[id] = makeShapeGlow(glowL, HALO_L, false);
-  setShapeGlow(HALOS[id], o > .005 ? boxHull(P[0], P[1], hw - rad, hh - rad, P[2], P[2]) : null, o, rad);
+  setShapeGlow(HALOS[id], e => boxHull(P[0], P[1], hw - rad + e, hh - rad + e, P[2], P[2]), o, rad);
 }
 let KEYG = null;
 function drawGlow(t, post, z, S, TH, o, gI, flare, coneO) {
@@ -506,7 +508,7 @@ function drawGlow(t, post, z, S, TH, o, gI, flare, coneO) {
   const L = Math.hypot(pb[0] - pa[0], pb[1] - pa[1]), W = Math.max(30, Math.hypot(pd[0] - pc[0], pd[1] - pc[1]) + TH * S * c[2]), ang = Math.atan2(pb[1] - pa[1], pb[0] - pa[0]) * 180 / Math.PI;
   const at = (cls, w, hh, rot, opv, sc = 1) => { const el = glowL.querySelector('.' + cls); el.style.width = w + 'px'; el.style.height = hh + 'px'; el.style.transform = `translate(${c[0] - w / 2}px,${c[1] - hh / 2}px) rotate(${rot}deg) scale(${sc})`; op(el, opv); };
   if (!KEYG) KEYG = makeShapeGlow(glowL, KEY_L, false);
-  setShapeGlow(KEYG, boxHull(ONE.x, ONE.y, (168 - 12) * S, (45.5 - 12) * S, z, z + TH), o * Math.min(1.5, .55 + .5 * gI), 12 * S);
+  setShapeGlow(KEYG, e => boxHull(ONE.x, ONE.y, (168 - 12) * S + e, (45.5 - 12) * S + e, z, z + TH), o * Math.min(1.5, .55 + .5 * gI), 12 * S, S);
   at('grays', 1900, 1900, (t - D) * 4, o * Math.min(.5, .16 + .22 * gI), Math.max(.6, L / 700));
   at('gstreak', L * 3.4, 6, ang, o * Math.min(1, .25 + .9 * (pulse(t) + flare)));
   at('gstreak2', L * 1.9, 26, ang, o * Math.min(.8, .12 + .5 * (pulse(t) + flare)));
@@ -514,7 +516,11 @@ function drawGlow(t, post, z, S, TH, o, gI, flare, coneO) {
   const P0 = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([sx, sy]) => proj([ONE.x + sx * 168 * S, ONE.y + sy * 45.5 * S, z]));
   const P1 = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([sx, sy]) => proj([ONE.x + sx * 260, ONE.y + sy * 150, Z.router]));
   const H = hull([...P0, ...P1].map(p => [p[0], p[1]])), rc = proj([ONE.x, ONE.y, Z.router]);
-  const cp = $('#coneP'); cp.setAttribute('points', H.map(p => p.join(',')).join(' ')); cp.style.opacity = coneO * (.65 + .35 * pulse(t));
+  let sw = 0, su = 0;
+  for (const [a0, a1] of [[r(4.4), r(5)], [r(8.4), r(9)]]) if (t > a0 - .05 && t < a1 + .35) { su = clamp((t - a0) / (a1 - a0)); sw = Math.max(sw, seg(t, a0 - .05, a0 + .1) * (1 - seg(t, a1 + .05, a1 + .35))); }
+  const cp = $('#coneP'); cp.setAttribute('points', H.map(p => p.join(',')).join(' ')); cp.style.opacity = coneO * sw;
+  const st0 = $('#coneG').querySelectorAll('stop'), uu = lerp(.05, 1, E.io(su));
+  [[Math.max(0, uu - .28), 0], [Math.max(0, uu - .07), .15], [Math.min(1, uu + .01), .22], [Math.min(1, uu + .07), 0]].forEach(([off, a], i) => { st0[i].setAttribute('offset', off); st0[i].setAttribute('stop-opacity', a); });
   const g0 = $('#coneG'); g0.setAttribute('x1', c[0]); g0.setAttribute('y1', c[1]); g0.setAttribute('x2', rc[0]); g0.setAttribute('y2', rc[1]);
 }
 function pulse(t) { if (t < D) return 0; const x = ((t - D) / BEAT) % 4, d = x - 1; return d >= 0 ? Math.exp(-d * 3.2) : 0; }
