@@ -71,6 +71,10 @@ class GatewayAdapter extends LlmAdapter {
   override stream(options: GenerateOptions): AsyncIterable<StreamChunk> { return this.service.answer(options) }
 }
 
+function legacyRouter(config: Config): DeepSeekRouter {
+  return new DeepSeekRouter({ apiKey: process.env[config.routerApiKeyEnv ?? 'THEONE_ROUTER_API_KEY'] ?? '', baseUrl: config.routerBaseUrl, model: config.routerModel })
+}
+
 function readDescriptors(path: string): ContextDescriptor[] {
   const value: unknown = JSON.parse(readFileSync(path, 'utf8'))
   if (!Array.isArray(value)) throw new Error('contextsPath must contain a JSON array')
@@ -121,7 +125,11 @@ export default class TheOne extends Service {
     if (saved) {
       try {
         const values = validateSettings(saved.values)
-        config = this.config = { ...config, ...values, workerProvider: values.workerProvider ?? undefined, workerModel: values.workerModel ?? undefined }
+        const merged = { ...config, ...values, workerProvider: values.workerProvider ?? undefined, workerModel: values.workerModel ?? undefined }
+        // A saved legacy router that can no longer start (its key was removed) falls back to the deployment
+        // configuration instead of taking down the plugin and the settings page that could fix it.
+        if (merged.routerMode === 'llm' && merged.routerTransport === 'legacy') legacyRouter(merged)
+        config = this.config = merged
       } catch { console.warn('TheOne saved settings are invalid; using deployment configuration.') }
     }
     this.gatewayDirectory = resolve(dirname(databasePath), 'gateway')
@@ -133,7 +141,7 @@ export default class TheOne extends Service {
     if (!!config.workerProvider !== !!config.workerModel) throw new Error('Set both workerProvider and workerModel, or neither')
     this.captureDefaultModel()
     if ((config.routerMode ?? 'llm') === 'llm') this.router = config.routerTransport === 'legacy'
-      ? new DeepSeekRouter({ apiKey: process.env[config.routerApiKeyEnv ?? 'THEONE_ROUTER_API_KEY'] ?? '', baseUrl: config.routerBaseUrl, model: config.routerModel })
+      ? legacyRouter(config)
       : new DshRouter(ctx.llm, () => this.backingModel())
     if (config.historyCatalog ?? true) {
       this.catalog = new HistoryCatalog(ctx, this.store, () => this.backingModel(), config.catalogIntervalMs)

@@ -30,3 +30,22 @@ test('legacy whole-session mappings are blocked until ranges are supplied', () =
     } finally { migrated.close() }
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
+
+test('catalog re-extraction keeps the Worker progress note and compaction summary', () => {
+  const store = new ContextStore(':memory:')
+  try {
+    const parts = (fingerprint: string) => [{ seq: 0, endSeq: 4, text: '', fingerprint }]
+    const topic = (contextId: string | null, summary: string, lastState: string) => ({ contextId, title: '论文', summary, entities: [], keywords: [],
+      lastState, turns: [0], groupId: null, groupTitle: '研究', groupSummary: '' })
+    store.importTopics('source', '/tmp', parts('a'), [topic(null, '目录摘要', '目录状态')])
+    const context = store.contexts()[0]
+    store.importTopics('source', '/tmp', parts('b'), [topic(context.id, '新目录摘要', '新目录状态')])
+    assert.equal(store.contexts()[0].lastState, '新目录状态')
+    store.updateState(context.id, 'Worker 进度', context.workingSessionId, 3)
+    store.updateSummary(context.id, '压缩摘要', context.workingSessionId, 5, 6)
+    store.importTopics('source', '/tmp', parts('c'), [topic(context.id, '再次目录摘要', '再次目录状态')])
+    const after = store.contexts()[0]
+    assert.equal(after.lastState, 'Worker 进度')
+    assert.equal(after.summary, '压缩摘要')
+  } finally { store.close() }
+})

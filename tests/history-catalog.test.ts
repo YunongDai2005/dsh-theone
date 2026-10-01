@@ -354,3 +354,57 @@ test('large-catalog review limits do not stop standalone tasks or bypass unresol
     assert.equal(app.ctx.theone.store.contexts().length,count+1)
   } finally { await app.close(); await rm(root,{recursive:true,force:true}) }
 })
+
+test('catalog offers same-directory and newest topics, not an arbitrary slice by id', { timeout: 30000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'theone-catalog-offer-'))
+  const model = fixture()
+  const original = model.behavior!
+  let offered: string[] = []
+  model.behavior = async function* (options) {
+    if (options.system === CATALOG_PROMPT)
+      offered = JSON.parse(options.messages[0].content.filter(b => b.type === 'text').map(b => b.text).join('')).contexts.map((c: { id: string }) => c.id)
+    yield* original(options)
+  }
+  const app = await harness(root, model)
+  const catalog = new HistoryCatalog(app.ctx, app.ctx.theone.store, () => ({ provider: 'fixture', model: 'fixture' }))
+  try {
+    const store = app.ctx.theone.store
+    store.importTopics('elsewhere', root, [{ seq: 0, endSeq: 1, text: '', fingerprint: 'x' }], [{ contextId: null, title: '同目录旧项目', summary: '旧项目',
+      entities: [], keywords: [], lastState: '待续', turns: [0], groupId: null, groupTitle: '研究', groupSummary: '' }])
+    const sameDirectory = store.contexts().find(c => c.title === '同目录旧项目')!.id
+    store.seed(Array.from({ length: 30 }, (_, i) => ({ id: 'old-' + String(i).padStart(3, '0'), title: '独立事项' + i, summary: '历史', entities: [], keywords: [], lastState: '待续' })))
+    store.seed([{ id: 'a-newest', title: '最新项目', summary: '刚创建', entities: [], keywords: [], lastState: '待续' }])
+    await source(app, root, '论文方法：新的资料')
+    await catalog.refresh()
+    assert.equal(offered.length, 24)
+    assert.ok(offered.includes(sameDirectory))
+    assert.ok(offered.includes('a-newest'))
+  } finally { await catalog.close(); await app.close(); await rm(root, { recursive: true, force: true }) }
+})
+
+test('a scan in progress does not make an indexed catalog incomplete', { timeout: 30000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'theone-catalog-settled-'))
+  const model = fixture()
+  const app = await harness(root, model)
+  const catalog = new HistoryCatalog(app.ctx, app.ctx.theone.store, () => ({ provider: 'fixture', model: 'fixture' }))
+  try {
+    const history = await source(app, root, '论文方法：资料')
+    await catalog.refresh()
+    assert.equal(catalog.incomplete, false)
+    await ask(history, '论文方法：新的进展')
+    const original = model.behavior!
+    let entered!: () => void, release!: () => void
+    const started = new Promise<void>(resolve => { entered = resolve })
+    const gate = new Promise<void>(resolve => { release = resolve })
+    model.behavior = async function* (options) {
+      if (options.system === CATALOG_PROMPT) { entered(); await gate }
+      yield* original(options)
+    }
+    const running = catalog.refresh()
+    await started
+    assert.equal(catalog.snapshot().status.running, true)
+    assert.equal(catalog.incomplete, false)
+    release(); await running
+    assert.equal(catalog.incomplete, false)
+  } finally { await catalog.close(); await app.close(); await rm(root, { recursive: true, force: true }) }
+})

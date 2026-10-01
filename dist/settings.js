@@ -34,7 +34,8 @@ export function validateSettings(value) {
     catch {
         return fail();
     }
-    if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password || url.search || url.hash)
+    // The legacy router only sends its key over HTTPS; accepting http here would save a config it refuses at startup.
+    if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash)
         return fail();
     const routerApiKeyEnv = text('routerApiKeyEnv', 128);
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(routerApiKeyEnv))

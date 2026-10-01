@@ -83,6 +83,8 @@ export class HistoryCatalog {
   private timer?: ReturnType<typeof setTimeout>
   private dirty = false
   private status: CatalogStatus = { running: false, scanned: 0, indexed: 0, skipped: 0, failed: 0, pending: 0 }
+  /** Sessions the last finished scan could not index; a scan in progress doesn't make the catalog incomplete. */
+  private settledPending?: number
   constructor(private readonly ctx: Context, private readonly store: ContextStore,
     private readonly selection: () => ModelSelection, private readonly intervalMs = 60000,
     private readonly batchBudget = 64) {}
@@ -100,7 +102,7 @@ export class HistoryCatalog {
     return { status: { ...this.status }, groups: this.store.groups(),
       contexts: this.store.contexts().map(context => ({ ...context, sourceSessionIds: this.store.sources(context.id) })) }
   }
-  get incomplete(): boolean { return this.status.running || this.status.pending > 0 || !!this.status.searchUnavailable || !this.status.lastCompletedAt }
+  get incomplete(): boolean { return !this.status.lastCompletedAt || (this.settledPending ?? 1) > 0 || !!this.status.searchUnavailable }
 
   refresh(): Promise<void> {
     if (this.abort.signal.aborted) return Promise.resolve()
@@ -116,7 +118,7 @@ export class HistoryCatalog {
     const signal = this.abort.signal
     let records
     try { records = await this.ctx.sessionQuery.listSessions(signal) }
-    catch { signal.throwIfAborted(); this.status.failed = 1; this.status.pending = 1; return }
+    catch { signal.throwIfAborted(); this.status.failed = 1; this.status.pending = 1; this.settledPending = 1; return }
     this.status.pending = records.length
     let budget = this.batchBudget
     for (const record of records) {
@@ -126,7 +128,11 @@ export class HistoryCatalog {
         this.status.skipped++; this.status.pending--; continue
       }
       const live = this.ctx.agents.get(sessionId)
-      if (live && live.status !== 'idle') continue
+      if (live && live.status !== 'idle') {
+        // Its turn in progress is indexed once it settles; what was already indexed stays usable meanwhile.
+        if (this.store.indexState(sessionId)?.status === 'ready') { this.status.indexed++; this.status.pending-- }
+        continue
+      }
       if (budget <= 0) continue
       try {
         const log = await this.ctx.sessionQuery.readSession(sessionId)
@@ -150,7 +156,13 @@ export class HistoryCatalog {
           const knownIds = new Set(batch.flatMap(p => this.store.indexedTurn(sessionId, p.seq)?.contextId ?? []))
           if (owned) knownIds.add(owned.id)
           const all = this.store.contexts()
-          const contexts = [...all.filter(c => knownIds.has(c.id)), ...all.filter(c => !knownIds.has(c.id)).slice(-(24 - knownIds.size))]
+          // Offer the topics most likely to continue here: same project directory first, then the newest.
+          const recency = new Map(this.store.contextIdsByRecency().map((id, i) => [id, i]))
+          const cwd = log.session.cwd
+          const others = all.filter(c => !knownIds.has(c.id))
+          const near = new Set(cwd ? others.filter(c => this.store.origin(c.id)?.cwd === cwd).map(c => c.id) : [])
+          others.sort((a, b) => Number(near.has(b.id)) - Number(near.has(a.id)) || recency.get(a.id)! - recency.get(b.id)!)
+          const contexts = [...all.filter(c => knownIds.has(c.id)), ...others.slice(0, Math.max(0, 24 - knownIds.size))]
             .map(c => ({ id: c.id, title: c.title, summary: clean(c.summary, 240), lastState: clean(c.lastState, 120) }))
           const groups = this.store.groups().slice(-24).map(({ id, title, summary }) => ({ id, title, summary: clean(summary, 120) }))
           budget--
@@ -172,6 +184,7 @@ export class HistoryCatalog {
         // One bad source cannot prevent the remaining sessions from being indexed.
       }
     }
+    this.settledPending = this.status.pending
     this.status.lastCompletedAt = Date.now()
   }
 

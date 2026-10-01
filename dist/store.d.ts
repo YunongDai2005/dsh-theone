@@ -15,6 +15,8 @@ export declare class ContextStore {
     rememberedModel(gatewayKey: string): ModelSelection | undefined;
     seed(contexts: ContextDescriptor[]): void;
     contexts(): StoredContext[];
+    /** Context ids, newest first. contexts() is ordered by id, and generated ids are random. */
+    contextIdsByRecency(): string[];
     current(gatewayKey: string): string | undefined;
     /** Successful uses only: retries, failed work and clarification never heat a topic. */
     contextUsage(gatewayKey: string, now?: number): ContextUsage[];
