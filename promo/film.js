@@ -27,6 +27,16 @@ const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
 const I = window.DSH_ICONS; const ic = (n, cls = '') => `<span class="ico ${cls}">${I[n]}</span>`;
 
 /* ---------------------------------------------------------- beat grid */
+// theme: film.html?theme=dark renders the night version (DSH dark theme, the plugin's pale-blue accent)
+const DARK = new URLSearchParams(location.search).get('theme') === 'dark';
+if (DARK) document.documentElement.dataset.theme = 'dark';
+// W(r,g,b): a warm accent colour by day; at night the same light mapped into the plugin's pale blue (#93c8f3)
+function W(r, g, b) { if (!DARK) return `${r},${g},${b}`; const m = [b, g, r], t0 = [147, 200, 243]; return m.map((v, i) => Math.round(v * .45 + t0[i] * .55)).join(','); }
+function sliceCol(k0, e0) {
+  if (DARK) return `rgb(${Math.round(lerp(26, 64, k0) + e0 * .45)},${Math.round(lerp(40, 100, k0) + e0 * .75)},${Math.round(lerp(56, 134, k0) + e0)})`;
+  return `rgb(${Math.round(Math.min(255, lerp(196, 244, k0) + e0))},${Math.round(lerp(112, 178, k0) + e0)},${Math.round(lerp(52, 120, k0) + e0 * .6)})`;
+}
+const FACE = DARK ? 'face_dark.png' : 'face.png';
 const SH = 2160, CYS = SH / 2;   // 9:18 stage (1080×2160); the 1080×1920 design sits in its middle
 const BEAT = 60 / 77, D = 20 * BEAT;            // drop = BGM 1:33.279
 const b = k => k * BEAT, r = k => D + k * BEAT;  // r(1), r(2.25), r(3) are the bar's hard hits
@@ -193,10 +203,10 @@ const ONE = { x: 186, y: 208 };
 const ONE_HTML = `<span class="osym"></span><span class="ocopy"><span class="otitle"><span class="owm"><span class="othe">The</span><span class="oone">One<span class="odot"></span></span></span><span class="olab">Main chat</span></span><span class="osub">Pick up the conversation</span></span>`;
 // a rounded slab: thin rounded-rect slices stacked in z form the body, the face sits on top
 const SLICES = 30;
-const lift = h('div', 'lay', Array.from({ length: SLICES }, (_, i) => `<div class="lf slice" data-i="${i}"></div>`).join('') + `<div class="lf top" id="lfT"><img class="facebm" src="face.png" alt=""><div class="rim" id="lfRim"></div><div class="sheen" id="lfS"></div></div>`);
+const lift = h('div', 'lay', Array.from({ length: SLICES }, (_, i) => `<div class="lf slice" data-i="${i}"></div>`).join('') + `<div class="lf top" id="lfT"><img class="facebm" src="${FACE}" alt=""><div class="rim" id="lfRim"></div><div class="sheen" id="lfS"></div></div>`);
 Object.assign(lift.style, { width: '336px', height: '91px', borderRadius: '0' }); w3.appendChild(lift);
-lift.querySelectorAll('.slice').forEach(el => { const k = +el.dataset.i / (SLICES - 1); el.style.background = `rgb(${Math.round(lerp(196, 244, k))},${Math.round(lerp(112, 178, k))},${Math.round(lerp(52, 120, k))})`; });
-const router = h('div', 'lay glass', `<div class="rlab">ROUTER</div><svg class="ring" width="180" height="180" viewBox="0 0 180 180"><circle cx="90" cy="90" r="82" fill="none" stroke="rgba(40,60,110,.16)" stroke-width="1.5"/><circle cx="90" cy="90" r="56" fill="none" stroke="rgba(40,60,110,.28)" stroke-width="1.5" stroke-dasharray="4 7"/><circle cx="90" cy="90" r="9" fill="#ff8a2a"/></svg><div class="rtag" id="rtag"></div>`);
+lift.querySelectorAll('.slice').forEach(el => { const k = +el.dataset.i / (SLICES - 1); el.style.background = sliceCol(k, 0); });
+const router = h('div', 'lay glass', `<div class="rlab">ROUTER</div><svg class="ring" width="180" height="180" viewBox="0 0 180 180"><circle cx="90" cy="90" r="82" fill="none" stroke="${DARK ? 'rgba(200,215,240,.16)' : 'rgba(40,60,110,.16)'}" stroke-width="1.5"/><circle cx="90" cy="90" r="56" fill="none" stroke="${DARK ? 'rgba(200,215,240,.3)' : 'rgba(40,60,110,.28)'}" stroke-width="1.5" stroke-dasharray="4 7"/><circle cx="90" cy="90" r="9" fill="rgb(${W(255, 138, 42)})"/></svg><div class="rtag" id="rtag"></div>`);
 Object.assign(router.style, { width: '520px', height: '300px' }); w3.appendChild(router);
 const CARD_T = ['Trip to Kyoto', 'Q3 budget', 'Habit tracker', 'Cycling route', 'Weekly report', 'Balcony herbs', 'Auth refactor', 'Paper notes', 'Landing page'];
 const CARDS = CARD_T.map((tt, i) => {
@@ -220,13 +230,13 @@ const beamSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); b
 beamSvg.innerHTML = '<defs><filter id="bg2" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="4"/></filter></defs>';
 ov.appendChild(beamSvg);
 const BEAMS = [];
-function beam(a, bb, hot) { const g = document.createElementNS('http://www.w3.org/2000/svg', 'g'); g.innerHTML = `<line stroke="${hot ? 'rgba(255,140,40,.55)' : 'rgba(110,140,210,.22)'}" stroke-width="8" filter="url(#bg2)"/><line stroke="${hot ? '#ff8a2a' : 'rgba(80,110,180,.5)'}" stroke-width="2"/>`; beamSvg.appendChild(g); const B = { g, a, b: bb }; BEAMS.push(B); return B; }
+function beam(a, bb, hot) { const g = document.createElementNS('http://www.w3.org/2000/svg', 'g'); g.innerHTML = `<line stroke="${hot ? `rgba(${W(255, 140, 40)},.55)` : (DARK ? 'rgba(150,175,220,.16)' : 'rgba(110,140,210,.22)')}" stroke-width="8" filter="url(#bg2)"/><line stroke="${hot ? `rgb(${W(255, 138, 42)})` : DARK ? 'rgba(160,185,230,.4)' : 'rgba(80,110,180,.5)'}" stroke-width="2"/>`; beamSvg.appendChild(g); const B = { g, a, b: bb }; BEAMS.push(B); return B; }
 const B0 = beam([ONE.x, ONE.y + 46, Z.lift], [ONE.x, ONE.y, Z.router], true);
 const BC = CARDS.map(c => beam([ONE.x, ONE.y, Z.router], [c.x, c.y, Z.cards]));
 const BN = beam([ONE.x, ONE.y, Z.router], [NEWP.x, NEWP.y, Z.cards]);
 const orb = h('div', 'orb'); ov.appendChild(orb);
 // face-on, the key's face is drawn as a flat 2D bitmap fitted to its projected corners: 3D layers are raster-capped, 2D ones are not
-const face2d = h('div', 'face2d', '<img src="face.png" alt=""><div class="rim2"></div>'); ov.insertBefore(face2d, ov.firstChild);
+const face2d = h('div', 'face2d', `<img src="${FACE}" alt=""><div class="rim2"></div>`); ov.insertBefore(face2d, ov.firstChild);
 const bub = h('div', 'bub'); ov.appendChild(bub);
 const CHIP_T = ['Q3 budget draft', 'Weekly report', 'Refactor auth flow', 'Habit tracker app', 'Paper notes: RAG', 'Rust lifetimes', 'Kyoto day plan', 'Kyoto day plan (2)', 'Trip budget', 'Balcony herbs', 'Recipe: tomato & egg', 'Cat on my keyboard'];
 const CL = [{ name: 'PROJECT A', x: ONE.x - 215, y: ONE.y - 215, t: r(13) }, { name: 'PROJECT B', x: ONE.x + 215, y: ONE.y - 215, t: r(14.25) },
@@ -235,7 +245,7 @@ const CHIP_CL = [0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3], SLOT = [5, 0, 9, 3, 11, 7,
 const SLOTS = CL.map(c => { const el = h('div', 'slot', `<div class="sl">${c.name}</div>`); ENV.appendChild(el); envAt(el, c.x - 185, c.y - 46, 2); return el; });
 const CHIPS = CHIP_T.map((tt, i) => { const r0 = rng(100 + i), sl = SLOT[i]; const el = h('div', 'chip3', esc(tt)); ENV.appendChild(el);
   return { el, i, x0: ONE.x - 330 + (sl % 4) * 220 + (r0() - .5) * 60, y0: ONE.y - 200 + Math.floor(sl / 4) * 160 + (r0() - .5) * 50, cl: CHIP_CL[i], k: i % 3, ph: r0() * 6 }; });
-const motes = []; { const r0 = rng(21); for (let i = 0; i < 40; i++) { const m = h('div'); m.style.cssText = 'position:absolute;left:0;top:0;width:6px;height:6px;border-radius:50%;background:#ffb066;box-shadow:0 0 12px 3px rgba(255,150,60,.55)'; ov.appendChild(m); motes.push({ el: m, x: r0() * 1080, y: r0() * SH, sp: 20 + r0() * 70, ph: r0() * 6, s: .4 + r0() * 1.1 }); } }
+const motes = []; { const r0 = rng(21); for (let i = 0; i < 40; i++) { const m = h('div'); m.style.cssText = 'position:absolute;left:0;top:0;width:6px;height:6px;border-radius:50%;background:rgb(' + W(255, 176, 102) + ');box-shadow:0 0 12px 3px rgba(' + W(255, 150, 60) + ',.55)'; ov.appendChild(m); motes.push({ el: m, x: r0() * 1080, y: r0() * SH, sp: 20 + r0() * 70, ph: r0() * 6, s: .4 + r0() * 1.1 }); } }
 
 // post-drop cues on the bar's hard hits (r1, r2.25, r3 …)
 cue(r(1), 'layer'); cue(r(2.25), 'layer', { g: .9 }); cue(r(3), 'layer', { g: .8 });
@@ -320,7 +330,7 @@ function sApp(t, ovs) {
       el.style.transform = `translate(${F.sgn * F.dx * 120 * Math.max(0, tau - .1)}px,${fy}px) rotate(${ang}deg)`;
       el.style.position = 'relative'; el.style.zIndex = 3;
       const card = tip;  // the row detaches as a solid card, like a book leaving the shelf
-      el.style.background = card > 0 ? `rgba(255,255,255,${card})` : ''; el.style.boxShadow = card > 0 ? `0 ${6 * card}px ${18 * card}px rgba(30,45,90,${.16 * card}),0 0 0 1px rgba(30,45,90,${.08 * card})` : '';
+      el.style.background = card > 0 ? (DARK ? `rgba(38,39,43,${card})` : `rgba(255,255,255,${card})`) : ''; el.style.boxShadow = card > 0 ? (DARK ? `0 ${6 * card}px ${18 * card}px rgba(0,0,0,${.45 * card}),0 0 0 1px rgba(255,255,255,${.08 * card})` : `0 ${6 * card}px ${18 * card}px rgba(30,45,90,${.16 * card}),0 0 0 1px rgba(30,45,90,${.08 * card})`) : '';
     });
     ALLROWS.forEach(el => { if (el.dataset.vis === '0') el.style.visibility = 'hidden'; });
   } else {
@@ -341,8 +351,8 @@ function sApp(t, ovs) {
   $('#rays').style.transform = `rotate(${(t - b(16)) * 6}deg)`;
   op($('#halo'), 0);
   const one = $('#oneBtn'), gl = t > T_WH1 ? track(t, [[T_UP1, .2], [b(18.3), .65], [D, 1]]) + .06 * Math.sin(t * 3.4) : 0;
-  one.style.boxShadow = gl ? `0 0 ${30 + 90 * gl}px ${4 + 26 * gl}px rgba(255,${140 + 40 * gl | 0},60,${.2 + .45 * gl}),0 0 ${10 + 20 * gl}px ${1 + 5 * gl}px rgba(255,236,210,${.35 * gl})` : '';
-  one.style.borderColor = gl > .3 ? '#f5b680' : '#eed3bb';
+  one.style.boxShadow = gl ? `0 0 ${30 + 90 * gl}px ${4 + 26 * gl}px rgba(${W(255, 140 + 40 * gl | 0, 60)},${.2 + .45 * gl}),0 0 ${10 + 20 * gl}px ${1 + 5 * gl}px rgba(${W(255, 236, 210)},${.35 * gl})` : '';
+  one.style.borderColor = gl > .3 ? (DARK ? '#5f8fb8' : '#f5b680') : (DARK ? '#344d64' : '#eed3bb');
   one.style.transform = `scale(${(t > b(19.2) && t < D ? 1.02 : 1) * (t > D - .09 && t < D + .05 ? .975 : 1)})`;
   one.style.visibility = t >= D ? 'hidden' : 'visible';
   {
@@ -389,9 +399,9 @@ function sApp(t, ovs) {
   $('#lfT').style.transform = `translateZ(${TH}px)`;
   const flare = t > r(19) - .3 ? Math.max(Math.exp(-Math.max(0, t - r(19)) * 4) * (t > r(19) ? 1 : seg(t, r(19) - .3, r(19))), E.ie(seg(t, r(20.3), r(21)))) : 0;
   const gI = Math.min(1.6, .55 + .5 * pulse(t) + flare);
-  $('#lfRim').style.boxShadow = `inset 0 0 0 1.5px rgba(255,196,140,${.55 + .3 * gI}),inset 0 0 ${14 + 18 * gI}px rgba(255,165,85,${.18 + .22 * gI})`;
+  $('#lfRim').style.boxShadow = `inset 0 0 0 1.5px rgba(${W(255, 196, 140)},${.55 + .3 * gI}),inset 0 0 ${14 + 18 * gI}px rgba(${W(255, 165, 85)},${.18 + .22 * gI})`;
   const hit0 = lastHit(t), su = (t - hit0) / .6; $('#lfS').style.backgroundPosition = `${lerp(130, -40, E.io(clamp(su)))}% 0`; op($('#lfS'), su >= 0 && su <= 1 ? Math.sin(Math.PI * su) : 0);
-  lift.querySelectorAll('.slice').forEach(el => { const k0 = +el.dataset.i / (SLICES - 1), e0 = 26 * Math.min(1, pulse(t) + flare) * k0; el.style.background = `rgb(${Math.round(Math.min(255, lerp(196, 244, k0) + e0))},${Math.round(lerp(112, 178, k0) + e0)},${Math.round(lerp(52, 120, k0) + e0 * .6)})`; });
+  lift.querySelectorAll('.slice').forEach(el => { const k0 = +el.dataset.i / (SLICES - 1), e0 = 26 * Math.min(1, pulse(t) + flare) * k0; el.style.background = sliceCol(k0, e0); });
   {
     const zf = liftZ + TH, S = liftS;
     const tl = proj([ONE.x - 168 * S, ONE.y - 45.5 * S, zf]), tr = proj([ONE.x + 168 * S, ONE.y - 45.5 * S, zf]), bl = proj([ONE.x - 168 * S, ONE.y + 45.5 * S, zf]);
@@ -413,8 +423,8 @@ function sApp(t, ovs) {
   const nk = seg(t, r(10.25) - .1, r(10.25) + .35); place(NEWC, NEWP.x, NEWP.y, Z.cards, 230, 136, post ? Math.min(1, nk * 3) * dimC : 0, lerp(.6, 1, E.ob(nk)));
   // card highlight
   const hot0 = t > r(6.25) && t < r(8), hot1 = t > r(10.25) && t < r(12);
-  CARDS[0].el.style.borderColor = hot0 ? '#ffb070' : ''; CARDS[0].el.style.boxShadow = '';
-  NEWC.style.borderColor = hot1 ? '#ffb070' : ''; NEWC.style.boxShadow = '';
+  CARDS[0].el.style.borderColor = hot0 ? `rgb(${W(255, 176, 112)})` : ''; CARDS[0].el.style.boxShadow = '';
+  NEWC.style.borderColor = hot1 ? `rgb(${W(255, 176, 112)})` : ''; NEWC.style.boxShadow = '';
   // router tag
   const tag = t > r(9) ? 'CREATE' : t > r(5) ? 'SWAP' : ''; const rt = $('#rtag'); rt.textContent = tag;
   op(rt, tag ? (t > r(9) ? seg(t, r(9), r(9) + .1) : seg(t, r(5), r(5) + .1)) * (1 - seg(t, r(11.5), r(12))) : 0);
@@ -462,9 +472,10 @@ function sApp(t, ovs) {
     const d0 = deckOf(i), sq = d0.sq;
     el.style.transform = `translate3d(${d0.cx - 185}px,${d0.cy - 116}px,${d0.z}px) rotateZ(${d0.rot}deg) scale(${d0.sx},${d0.sy})`;
     const k0 = .25 + .1 * i;  // the cards take on the key's warm slice colours as they squeeze
+    if (DARK) el.style.background = `linear-gradient(180deg,rgba(${lerp(32, lerp(40, 64, k0), sq) | 0},${lerp(34, lerp(62, 100, k0), sq) | 0},${lerp(40, lerp(86, 134, k0), sq) | 0},${lerp(.85, 1, sq)}),rgba(${lerp(32, 30, sq) | 0},${lerp(34, 48, sq) | 0},${lerp(40, 66, sq) | 0},${lerp(.85, 1, sq)}))`; else
     el.style.background = `linear-gradient(180deg,rgba(${lerp(255, lerp(214, 236, k0), sq) | 0},${lerp(255, lerp(132, 160, k0), sq) | 0},${lerp(255, lerp(70, 100, k0), sq) | 0},${lerp(.85, 1, sq)}),rgba(${lerp(255, 205, sq) | 0},${lerp(255, 120, sq) | 0},${lerp(255, 58, sq) | 0},${lerp(.85, 1, sq)}))`;
-    el.style.borderStyle = sq > .3 ? 'solid' : 'dashed'; el.style.borderColor = `rgba(${lerp(200, 230, sq) | 0},${lerp(120, 140, sq) | 0},50,${lerp(.35, .5, sq)})`;
-    el.style.boxShadow = d0.g > 0 ? `0 ${8 * d0.g}px ${20 * d0.g}px rgba(120,70,20,${.12 * d0.g})` : '';
+    el.style.borderStyle = sq > .3 ? 'solid' : 'dashed'; el.style.borderColor = DARK ? `rgba(147,200,243,${lerp(.35, .5, sq)})` : `rgba(${lerp(200, 230, sq) | 0},${lerp(120, 140, sq) | 0},50,${lerp(.35, .5, sq)})`;
+    el.style.boxShadow = d0.g > 0 ? `0 ${8 * d0.g}px ${20 * d0.g}px rgba(${DARK ? '0,0,0' : '120,70,20'},${(DARK ? .4 : .12) * d0.g})` : '';
     op(el, seg(t, r(11.7), r(12.2)) * (1 - seg(t, r(20.1), r(20.6))));
     el.querySelector('.sl').style.opacity = (.35 + .65 * seg(t, CL[i].t, CL[i].t + .15)) * (1 - seg(t, r(17.5), r(17.5) + .2));
   });
@@ -472,7 +483,7 @@ function sApp(t, ovs) {
 const preGlow = h('div', null); preGlow.style.cssText = 'position:absolute;left:0;top:0;width:1080px;height:' + SH + 'px;pointer-events:none'; let PREG = null;
 const preRays = h('div', 'gl3 grays'); preGlow.appendChild(preRays);
 const glowL = h('div', null); glowL.style.cssText = 'position:absolute;left:0;top:0;width:1080px;height:' + SH + 'px;pointer-events:none'; $('#cam').insertBefore(glowL, w3); $('#cam').insertBefore(preGlow, $('#ov'));
-glowL.innerHTML = `<svg id="cone" width="1080" height="${SH}" style="position:absolute;left:0;top:0"><defs><linearGradient id="coneG" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="rgb(255,160,80)" stop-opacity="0"/><stop offset="0" stop-color="rgb(255,160,80)" stop-opacity="0"/><stop offset="0" stop-color="rgb(255,190,130)" stop-opacity="0"/><stop offset="0" stop-color="rgb(255,190,130)" stop-opacity="0"/></linearGradient><filter id="coneB" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="26"/></filter></defs><polygon id="coneP" fill="url(#coneG)" filter="url(#coneB)"/><linearGradient id="coneG2" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="rgb(255,160,80)" stop-opacity="0"/><stop offset="0" stop-color="rgb(255,160,80)" stop-opacity="0"/><stop offset="0" stop-color="rgb(255,190,130)" stop-opacity="0"/><stop offset="0" stop-color="rgb(255,190,130)" stop-opacity="0"/></linearGradient><polygon id="coneP2" fill="url(#coneG2)" filter="url(#coneB)"/></svg>
+glowL.innerHTML = `<svg id="cone" width="1080" height="${SH}" style="position:absolute;left:0;top:0"><defs><linearGradient id="coneG" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="rgb(${W(255, 160, 80)})" stop-opacity="0"/><stop offset="0" stop-color="rgb(${W(255, 160, 80)})" stop-opacity="0"/><stop offset="0" stop-color="rgb(${W(255, 190, 130)})" stop-opacity="0"/><stop offset="0" stop-color="rgb(${W(255, 190, 130)})" stop-opacity="0"/></linearGradient><filter id="coneB" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="26"/></filter></defs><polygon id="coneP" fill="url(#coneG)" filter="url(#coneB)"/><linearGradient id="coneG2" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="rgb(${W(255, 160, 80)})" stop-opacity="0"/><stop offset="0" stop-color="rgb(${W(255, 160, 80)})" stop-opacity="0"/><stop offset="0" stop-color="rgb(${W(255, 190, 130)})" stop-opacity="0"/><stop offset="0" stop-color="rgb(${W(255, 190, 130)})" stop-opacity="0"/></linearGradient><polygon id="coneP2" fill="url(#coneG2)" filter="url(#coneB)"/></svg>
   <div class="gl3 grays"></div><div class="gl3 gstreak"></div><div class="gl3 gstreak2"></div>`;
 const hull = P => { P = P.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]); const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]); const lo = [], up = []; for (const p of P) { while (lo.length > 1 && cr(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop(); lo.push(p); } for (const p of P.reverse()) { while (up.length > 1 && cr(up[up.length - 2], up[up.length - 1], p) <= 0) up.pop(); up.push(p); } return lo.slice(0, -1).concat(up.slice(0, -1)); };
 // glow that follows an object's real projected outline: the hull of its box corners, rounded by a
@@ -499,8 +510,8 @@ function setShapeGlow(G, mk, o, rad, k = 1) {
   G.layers.forEach((L, i) => { const sh = mk(L.e * k), p0 = G.paths[i]; p0.setAttribute('d', sh.d); p0.setAttribute('stroke-width', Math.max(1, 2 * rad * sh.s).toFixed(1)); p0.style.opacity = Math.min(1, o * L.o).toFixed(3); G.blurs[i].setAttribute('stdDeviation', Math.max(.5, L.b * k * sh.s).toFixed(1)); });
   if (G.hole) { const sh = mk(0); G.hole.setAttribute('d', sh.d); G.hole.setAttribute('stroke-width', Math.max(1, 2 * rad * sh.s - 2).toFixed(1)); }
 }
-const KEY_L = [{ col: 'rgb(255,150,60)', e: 5, b: 5, o: .6 }, { col: 'rgb(255,160,80)', e: 24, b: 12, o: .4 }, { col: 'rgb(255,180,118)', e: 70, b: 28, o: .15 }];
-const HALO_L = [{ col: 'rgb(255,150,60)', e: 4, b: 4, o: .6 }, { col: 'rgb(255,165,85)', e: 18, b: 9, o: .38 }, { col: 'rgb(255,182,120)', e: 54, b: 22, o: .14 }];
+const KEY_L = [{ col: `rgb(${W(255, 150, 60)})`, e: 5, b: 5, o: DARK ? .55 : .6 }, { col: `rgb(${W(255, 160, 80)})`, e: 24, b: 12, o: DARK ? .34 : .4 }, { col: `rgb(${W(255, 180, 118)})`, e: 70, b: 28, o: DARK ? .12 : .15 }];
+const HALO_L = [{ col: `rgb(${W(255, 150, 60)})`, e: 4, b: 4, o: DARK ? .5 : .6 }, { col: `rgb(${W(255, 165, 85)})`, e: 18, b: 9, o: DARK ? .32 : .38 }, { col: `rgb(${W(255, 182, 120)})`, e: 54, b: 22, o: DARK ? .11 : .14 }];
 const HALOS = {};
 function drawHalo(id, P, hw, hh, o, rad = 18) {
   if (!HALOS[id]) HALOS[id] = makeShapeGlow(glowL, HALO_L, false);
@@ -553,8 +564,8 @@ function sEnd(t) {
   // the logo's light swells on each bar's strongest hit (plus its own entrance)
   const P = Math.max(pulse(t), Math.exp(-Math.max(0, t - r(21)) * 3) * (t >= r(21) ? 1 : 0));
   $('#ewm').style.transform = `scale(${lerp(1.12, 1, E.oe(k)) * (1 + .02 * P)})`; op($('#ewm'), seg(t, r(21), r(21) + .15));
-  const o = $('#ewm .o'); o.style.textShadow = `0 0 ${36 + 40 * P}px rgba(255,140,50,${.3 + .35 * P}),0 0 ${110 + 90 * P}px rgba(255,120,30,${.12 + .26 * P})`;
-  $('#ewm .d').style.boxShadow = `0 0 ${20 + 30 * P}px rgba(255,140,50,${.55 + .4 * P})`;
+  const o = $('#ewm .o'); o.style.textShadow = `0 0 ${36 + 40 * P}px rgba(${W(255, 140, 50)},${.3 + .35 * P}),0 0 ${110 + 90 * P}px rgba(${W(255, 120, 30)},${.12 + .26 * P})`;
+  $('#ewm .d').style.boxShadow = `0 0 ${20 + 30 * P}px rgba(${W(255, 140, 50)},${.55 + .4 * P})`;
   const hv = seg(t, r(21), r(21) + .4); const ewg = $('#ewg'); op(ewg, hv * (.35 + .5 * P)); ewg.style.transform = $('#ewm').style.transform; ewg.style.filter = `blur(${18 + 16 * P}px)`;
   op($('#erays'), hv * (.10 + .26 * P)); $('#erays').style.transform = `translate(-50%,-50%) rotate(${(t - r(21)) * 4}deg) scale(${1 + .06 * P})`;
   const up = (id, a) => { const el = $(id), p = seg(t, a, a + .4); op(el, p); el.style.transform = `translateY(${(1 - E.o(p)) * 24}px)`; };

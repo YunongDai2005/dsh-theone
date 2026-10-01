@@ -35,7 +35,7 @@ if (mode === 'cues') {
   const t0s = +(process.env.START || 0), t1s = +(process.env.END || TOTAL); // render only a section when START/END are set
   const n0 = Math.round(t0s * fps), n = Math.round(t1s * fps);
   const ff = spawn('ffmpeg', ['-y', '-v', 'error', '-f', 'image2pipe', '-framerate', String(fps), '-c:v', 'mjpeg', '-i', '-',
-    '-vf', `scale=1080:${VH}:flags=lanczos`, '-c:v', 'libx264', '-preset', 'slow', '-crf', '16', '-profile:v', 'high', '-level', '5.2', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', arg], { stdio: ['pipe', 'inherit', 'inherit'] });
+    '-vf', `scale=1080:${VH}:flags=lanczos`, '-c:v', 'libx264', '-preset', process.env.PRESET || 'slow', '-crf', process.env.CRF || '16', '-profile:v', 'high', '-level', '5.2', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', arg], { stdio: ['pipe', 'inherit', 'inherit'] });
   const t0 = Date.now();
   for (let i = n0; i < n; i++) {
     await page.evaluate(t => window.render(t), i / fps);
