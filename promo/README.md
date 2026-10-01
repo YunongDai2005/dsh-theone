@@ -8,7 +8,7 @@ Video frames are rendered at 3× (`SS=3`) and downsampled with Lanczos, which ke
 
 ## Night version
 
-`film.html?theme=dark` renders the night version from the same timeline: DSH's own dark theme for the interface, and the plugin's dark One button (#1d2a37 / #344d64 / #93c8f3). Every warm accent (glows, routing light, key thickness, deck, end logo) maps into the same pale blue. Build its face bitmap with `THEME=dark node mkface.mjs` and render with `PAGE="film.html?theme=dark"`. `CRF` and `PRESET` override the encoder for quick previews.
+`film.html?theme=dark` renders the night version from the same timeline: DSH's own dark theme for the interface, and the plugin's dark One button (#1d2a37 / #344d64 / #93c8f3). Every warm accent (glows, routing light, key thickness, deck, end logo) maps into the same pale blue. `node build.mjs dark` builds it.
 
 ## Beat map
 
@@ -42,21 +42,20 @@ Video frames are rendered at 3× (`SS=3`) and downsampled with Lanczos, which ke
 
 ## Build
 
+Save the BGM as `promo/bgm.m4a`, then one command does everything (Windows, macOS or Linux): installs Playwright and Chromium, clones `deepseek-harness` next to the repo and extracts its artwork, builds the key face bitmap, synthesizes the sound effects from the film's own cue list, mixes them with the BGM, renders and muxes.
+
 ```sh
 cd promo
-npm install && pip install numpy scipy
-git clone --depth 1 https://github.com/deepseek-ai/deepseek-harness.git ../.dsh
-npx esbuild extract-icons.tsx --bundle --platform=node --format=esm --jsx=automatic \
-  --external:react --external:react-dom --external:react/jsx-runtime --outfile=.extract.mjs && node .extract.mjs
-node mkface.mjs                  # The One key face as an 8× bitmap (face.png)
-node render.mjs cues cues.json
-echo '{"total":38.287}' > meta.json && python3 sfx.py          # → sfx.wav
-ffmpeg -i bgm.m4a -i sfx.wav -filter_complex \
-  "[0:a]aresample=44100,atrim=start=77.6942:duration=38.287,asetpts=PTS-STARTPTS,afade=t=in:d=0.4,afade=t=out:st=37.09:d=1.2[m];[m][1:a]amix=inputs=2:normalize=0,alimiter=limit=0.95:level=false[a]" \
-  -map "[a]" -c:a pcm_s16le mix.wav
-SS=3 node render.mjs video film_noaudio.mp4 60   # 60 fps, 3× supersampled, Lanczos down to 1080×2160
-ffmpeg -i film_noaudio.mp4 -i mix.wav -c:v copy -c:a aac -b:a 320k -shortest TheOne-9x18-60fps.mp4
+pip install numpy scipy          # plus Node 18+, ffmpeg and git on PATH
+node build.mjs                   # light: 60 fps, 3× supersampled → TheOne-light-9x18-60fps.mp4
+node build.mjs dark              # night version                → TheOne-dark-9x18-60fps.mp4
+node build.mjs dark 30 1         # quick preview: 30 fps, no supersampling
 ```
+
+- `WORKERS=n` sets how many browsers render frames in parallel (default: half the CPU cores, up to 8). Every frame is a pure function of `t`, so the output is identical to a single-browser render.
+- `GPU=1` renders with the graphics card: full Chromium in new headless mode, with D3D11 on Windows. The log prints the renderer it got; `SwiftShader` there means it fell back to software.
+- `CRF` and `PRESET` override the x264 settings (default 16 / slow), e.g. `CRF=28 PRESET=veryfast` for a small preview.
+- On Windows PowerShell, set variables first: `$env:GPU=1; $env:WORKERS=8; node build.mjs dark`.
 
 Render just one section with `START=27.2 END=32.6 SS=2 node render.mjs video part.mp4 30`. Preview frames with `node render.mjs stills 1.2,15.584,25 out/`. Opening `film.html` in a browser loops the film silently.
 
