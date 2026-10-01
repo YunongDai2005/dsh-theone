@@ -21,7 +21,8 @@ ${process.env.THEONE_CONTEXTS_PATH ? `        contextsPath: ${quote(process.env.
         gatewayKey: local-prototype
         workerProvider: ${quote(process.env.THEONE_WORKER_PROVIDER ?? 'deepseek-official')}
         workerModel: ${quote(process.env.THEONE_WORKER_MODEL ?? 'deepseek-flash')}
-        routerMode: ${quote(process.env.THEONE_ROUTER_MODE ?? 'rules')}
+        routerMode: ${quote(process.env.THEONE_ROUTER_MODE ?? 'llm')}
+        routerTransport: dsh
         routerBaseUrl: ${quote(process.env.THEONE_ROUTER_BASE_URL ?? 'https://api.deepseek.com')}
         routerModel: ${quote(process.env.THEONE_ROUTER_MODEL ?? 'deepseek-flash')}
         routerApiKeyEnv: THEONE_ROUTER_API_KEY

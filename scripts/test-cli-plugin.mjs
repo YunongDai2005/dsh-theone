@@ -55,7 +55,7 @@ try {
   for (const [index, check] of checks.entries()) {
     const activeDatabase = check.empty ? join(root, 'empty-contexts.db') : database
     if (check.empty) { env.THEONE_DATABASE_PATH = activeDatabase; delete env.THEONE_CONTEXTS_PATH }
-    const args = [cli, '--profile', 'theone-test', '--json']
+    const args = [cli, '--profile', 'theone-test', '--provider', 'theone', '--model', 'gateway', '--json']
     if (check.resume) args.push('--session-id', previousId)
     args.push(check.prompt)
     let run

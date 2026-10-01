@@ -10,7 +10,7 @@ import { SessionId } from '@deepseek-ai/dsh-session';
 import { buildSessionEventSearchDocuments, filterSessionEventDocuments } from '@deepseek-ai/dsh-session-query';
 import { ContextStore } from "./store.js";
 import { resolveContext } from "./router.js";
-import { DeepSeekRouter, RouterFailure } from "./llm-router.js";
+import { DeepSeekRouter, DshRouter, RouterFailure } from "./llm-router.js";
 function redactDescriptor(text) {
     return text.replace(/\bsk-[a-zA-Z0-9_-]{16,}|\bBearer\s+\S+/gi, '[REDACTED]')
         .replace(/((?:api[_ -]?key|password|密码|密钥)\s*[:=：]\s*)\S+/gi, '$1[REDACTED]');
@@ -27,6 +27,7 @@ class GatewayAdapter extends LlmAdapter {
     resolveModel(provider, model) {
         if (model !== 'gateway')
             throw new Error('TheOne only exposes the gateway model');
+        this.service.captureDefaultModel();
         return Promise.resolve({ provider, id: model, name: 'TheOne Gateway' });
     }
     providerRetryPolicy() { return resolveRetryPolicy({ mode: 'normal', maxRetries: 0 }, 'theone.retry'); }
@@ -49,14 +50,15 @@ function readDescriptors(path) {
 }
 export default class TheOne extends Service {
     config;
-    static inject = ['agents', 'llm', 'sessionQuery', 'tools'];
+    static inject = ['agents', 'llm', 'sessionQuery', 'tools', 'agentDefaultModel'];
     static Config = z.object({
         databasePath: z.string(), contextsPath: z.string(),
         gatewayKey: z.string().default('default'),
-        workerProvider: z.string().required(), workerModel: z.string().required(),
+        workerProvider: z.string(), workerModel: z.string(),
         maxDescriptorChars: z.number().step(1).min(128).default(4000),
         maxResponseChars: z.number().step(1).min(128).default(100000),
-        routerMode: z.union([z.const('rules'), z.const('llm')]).default('rules'),
+        routerMode: z.union([z.const('rules'), z.const('llm')]).default('llm'),
+        routerTransport: z.union([z.const('dsh'), z.const('legacy')]).default('dsh'),
         routerBaseUrl: z.string().default('https://api.deepseek.com'),
         routerModel: z.string().default('deepseek-flash'),
         routerApiKeyEnv: z.string().default('THEONE_ROUTER_API_KEY'),
@@ -64,6 +66,7 @@ export default class TheOne extends Service {
     store;
     workers = new Map();
     router;
+    workerSelections = new Map();
     active = false;
     reservedGateway;
     constructor(ctx, config) {
@@ -72,8 +75,6 @@ export default class TheOne extends Service {
         if (config.workerProvider === 'theone')
             throw new Error('Worker cannot use the gateway provider');
         const descriptors = config.contextsPath ? readDescriptors(config.contextsPath) : [];
-        if (config.routerMode === 'llm')
-            this.router = new DeepSeekRouter({ apiKey: process.env[config.routerApiKeyEnv ?? 'THEONE_ROUTER_API_KEY'] ?? '', baseUrl: config.routerBaseUrl, model: config.routerModel });
         this.store = new ContextStore(config.databasePath || join(process.env.DSH_HOME || join(homedir(), '.dsh'), 'theone', 'contexts.db'));
         ctx.effect(() => async () => {
             try {
@@ -84,6 +85,13 @@ export default class TheOne extends Service {
             }
         });
         this.store.seed(descriptors);
+        if (!!config.workerProvider !== !!config.workerModel)
+            throw new Error('Set both workerProvider and workerModel, or neither');
+        this.captureDefaultModel();
+        if ((config.routerMode ?? 'llm') === 'llm')
+            this.router = config.routerTransport === 'legacy'
+                ? new DeepSeekRouter({ apiKey: process.env[config.routerApiKeyEnv ?? 'THEONE_ROUTER_API_KEY'] ?? '', baseUrl: config.routerBaseUrl, model: config.routerModel })
+                : new DshRouter(ctx.llm, () => this.backingModel());
         ctx.llm.registerAdapter(['theone'], new GatewayAdapter(this));
         ctx.on('session/event', (session, event) => {
             if (event.type === 'turn/end' && session.id === this.reservedGateway)
@@ -135,9 +143,9 @@ export default class TheOne extends Service {
                         signal.throwIfAborted();
                         if (!(error instanceof RouterFailure))
                             throw error;
-                        Object.assign(receipt, { model: config.routerModel ?? 'deepseek-flash', errorCode: error.code, elapsedMs: error.meta?.elapsedMs,
+                        Object.assign(receipt, { model: config.routerTransport === 'legacy' ? config.routerModel : undefined, errorCode: error.code, elapsedMs: error.meta?.elapsedMs,
                             promptTokens: error.meta?.usage?.prompt_tokens, completionTokens: error.meta?.usage?.completion_tokens });
-                        proposed = { action: 'CLARIFY', reason: error.code, question: '话题判断暂时不可用，请稍后重试。' };
+                        proposed = { action: 'CLARIFY', reason: error.code, question: error.code === 'ROUTER_MODEL_MISSING' ? '请先在 DSH 中选择一个已配置的聊天模型，再打开 TheOne。无需另配 API Key。' : '话题判断暂时不可用，请稍后重试。' };
                     }
                 }
                 else
@@ -153,10 +161,25 @@ export default class TheOne extends Service {
             const title = this.store.contexts().find(context => context.id === route.decision.contextId)?.title;
             const summary = `${route.decision.action}: ${title ?? '请补充话题'}`.slice(0, 120);
             return { ...decision, messages: [...decision.messages, createUserMessage({
-                        source: { kind: 'theone-route', form: 'notice', summary, messageId: input.id, router: receipt },
+                        source: { kind: 'theone-route', form: 'notice', summary, messageId: input.id, router: Object.fromEntries(Object.entries(receipt).filter(([, value]) => value !== undefined)) },
                         content: [{ type: 'text', text: summary }],
                     })] };
         });
+    }
+    /** Capture before Web saves the gateway itself as DSH's new default. */
+    captureDefaultModel() {
+        const selection = this.ctx.agentDefaultModel.currentSelection();
+        if (selection.provider && selection.model && selection.provider !== 'theone')
+            this.store.rememberModel(this.config.gatewayKey, selection);
+    }
+    backingModel() {
+        if (this.config.workerProvider && this.config.workerModel)
+            return { provider: this.config.workerProvider, model: this.config.workerModel };
+        this.captureDefaultModel();
+        const selection = this.store.rememberedModel(this.config.gatewayKey);
+        if (!selection)
+            throw new RouterFailure('ROUTER_MODEL_MISSING');
+        return selection;
     }
     /** Recover bounded routing context from DSH references after the Gateway is rebuilt. */
     async recentMessages(agent, inputId, signal) {
@@ -252,15 +275,18 @@ export default class TheOne extends Service {
     }
     async worker(context, gatewayId, signal) {
         const existing = this.workers.get(context.id);
+        const agentOptions = this.backingModel();
         if (existing) {
+            this.workerSelections.get(context.id).current = agentOptions;
             this.refreshCompactionSummary(existing.agent, context.id);
             return existing.agent;
         }
         const sessionId = SessionId(context.workingSessionId);
-        const agentOptions = { provider: this.config.workerProvider, model: this.config.workerModel };
         const cwd = this.ctx.agents.get(SessionId(gatewayId))?.session.header.cwd ?? process.cwd();
         const setup = (agentCtx, agent) => {
-            installModelSelection(agentCtx, { current: agentOptions, assembled: undefined });
+            const selection = { current: agentOptions, assembled: undefined };
+            this.workerSelections.set(context.id, selection);
+            installModelSelection(agentCtx, selection);
             this.registerWorkerTools(agentCtx, agent, context.id);
         };
         const sessions = await this.ctx.sessionQuery.listSessions(signal);

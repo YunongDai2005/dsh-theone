@@ -8,11 +8,12 @@ export interface Config {
     databasePath?: string;
     contextsPath?: string;
     gatewayKey: string;
-    workerProvider: string;
-    workerModel: string;
+    workerProvider?: string;
+    workerModel?: string;
     maxDescriptorChars: number;
     maxResponseChars: number;
     routerMode?: 'rules' | 'llm';
+    routerTransport?: 'dsh' | 'legacy';
     routerBaseUrl?: string;
     routerModel?: string;
     routerApiKeyEnv?: string;
@@ -45,9 +46,13 @@ export default class TheOne extends Service {
     readonly store: ContextStore;
     private readonly workers;
     private readonly router?;
+    private readonly workerSelections;
     private active;
     private reservedGateway;
     constructor(ctx: Context, config: Config);
+    /** Capture before Web saves the gateway itself as DSH's new default. */
+    captureDefaultModel(): void;
+    private backingModel;
     /** Recover bounded routing context from DSH references after the Gateway is rebuilt. */
     private recentMessages;
     /** Literal Unicode search over reviewed ranges; failures are isolated per source. */

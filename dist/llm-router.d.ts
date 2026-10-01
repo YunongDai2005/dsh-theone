@@ -1,3 +1,5 @@
+import type LlmRuntime from '@deepseek-ai/dsh-llm';
+import type { ModelSelection } from '@deepseek-ai/dsh-agent';
 import type { ContextDescriptor, Decision } from './types.ts';
 export interface RecentMessage {
     role: 'user' | 'assistant';
@@ -66,5 +68,19 @@ export declare class DeepSeekRouter {
         model?: string;
         timeoutMs?: number;
     }, transport?: typeof fetch, now?: () => number);
+    decide(input: RoutingInput, signal?: AbortSignal): Promise<RoutingResult>;
+}
+export interface RoutingRouter {
+    decide(input: RoutingInput, signal?: AbortSignal): Promise<RoutingResult>;
+}
+/** Uses the host's configured adapter; credentials never enter this plugin. */
+export declare class DshRouter implements RoutingRouter {
+    private readonly llm;
+    private readonly selection;
+    private readonly timeoutMs;
+    private readonly now;
+    private failures;
+    private blockedUntil;
+    constructor(llm: Pick<LlmRuntime, 'prepareCall'>, selection: () => ModelSelection, timeoutMs?: number, now?: () => number);
     decide(input: RoutingInput, signal?: AbortSignal): Promise<RoutingResult>;
 }

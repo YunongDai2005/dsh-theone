@@ -1,124 +1,72 @@
 # TheOne：DSH 会话路由插件
 
-用户始终在一个 Gateway 里聊天。TheOne 判断所属项目，挂载对应 Context，再交给该项目独立的 DSH Worker 执行。DSH 保存原始对话、运行模型与工具；TheOne 保存项目目录、摘要和路由记录。
+用户始终在一个主聊天入口里聊天。TheOne 判断所属项目，挂载项目摘要，再交给该项目独立的 DSH Worker 执行。DSH 保存原始对话、运行模型与工具；TheOne 保存项目目录、摘要和路由记录。
 
-**v0.2 增加 Web 侧栏固定主聊天入口。** 浅色主题使用鲜亮、低透明度的橙色外光晕，深色主题使用淡蓝色光晕；TheOne 字标带小光点。兼容 DSH `0.2.0-rc.2`、Node.js 24；类型检查、构建和 49 项测试通过。原 CLI / DeepSeek Worker 验收见 [v0.1 记录](./docs/plugin-v0.1.md)。
+左侧固定 **TheOne · 主聊天**：浅色主题为淡橙色外光晕，深色主题为淡蓝色。兼容 DSH `0.2.0-rc.2`、Node.js 24。
 
-## 从 DSH 插件页安装
+## 安装并使用
 
-在插件页使用 GitHub 地址 `YunongDai2005/dsh-theone` 安装。v0.2.1 起仓库包含编译后的后端和 Web 客户端，不需要安装脚本或本机编译。默认目录数据库保存在 `$DSH_HOME/theone/contexts.db`（未设置 DSH_HOME 时为 `~/.dsh/theone/contexts.db`）；可通过 `THEONE_DATABASE_PATH` 覆盖。一个数据库同时运行一个 profile 进程。
+1. 先在 DSH 中配置好 API，并选择一个能正常聊天的模型。
+2. 打开 **插件 → 添加插件**，粘贴 `https://github.com/YunongDai2005/dsh-theone`，点击安装。
+3. 点击左侧 **TheOne · 主聊天**，直接开始聊天。
 
-默认路由模式为 `rules`。使用 LLM 路由仍需配置 `THEONE_ROUTER_MODE=llm` 和 `THEONE_ROUTER_API_KEY`，Worker 使用 DSH 已配置的模型凭据。
+**v0.2.2 默认开启 LLM 路由，复用 DSH 的模型调用和 API 凭据，无需再填一个 API Key。** 路由和项目 Worker 使用打开 TheOne 前 DSH 选中的模型。改模型时，先在 DSH 选好新的普通聊天模型，再打开 TheOne。
 
-## 本地试用 Web 版
-
-需要 Node.js 24，以及已登录 GitHub 的 `gh`。本仓库是独立的 DSH 插件。
-
-```sh
-gh repo clone YunongDai2005/dsh-theone
-cd dsh-theone
-npm install -g @deepseek-ai/dsh@0.2.0-rc.2
-npm ci --ignore-scripts
-cp .env.example .env
-```
-
-编辑 `.env`，填写 `THEONE_ROUTER_API_KEY`，然后：
+仓库公开，包含编译后的后端和 Web 客户端，安装不需要本机编译或安装脚本。也可以用 DSH CLI：
 
 ```sh
-npm run install:local
-npm run start:local
+dsh plugin --profile web add github:YunongDai2005/dsh-theone --ignore-scripts
 ```
 
-打开 DSH 在终端输出的本地链接，点击左侧固定的 **TheOne · 主聊天**。首次点击创建主聊天，以后点击或刷新继续复用它。主聊天直接使用 `theone/gateway`，路由和 Worker 默认都使用 DeepSeek Flash。
+DSH 当前没有插件自动更新；旧版用户按 DSH 插件页提示卸载后重新安装。升级后若默认模型已是 `theone/gateway`，先在 DSH 选择一次已配置的普通模型，再打开 TheOne。插件记住模型名称，重启后继续复用；凭据仍由 DSH 管理。
 
-安装脚本使用 `~/.dsh-theone/home` 下的独立 Web profile；原来的 DSH profile 不受影响。聊天和数据库保存在本机 `~/.dsh-theone` 中，`.env` 不提交到 GitHub。端口默认 `3018`，可用 `THEONE_WEB_PORT` 修改。用 `THEONE_LOCAL_ROOT` 可更换保存目录；请使用支持 pnpm 锁文件操作的本机磁盘。
-
-若 DSH 没有加入 PATH，可在 `.env` 中设置 `DSH_BIN=/absolute/path/to/dsh/lib/bin.js`。脚本会用当前 Node 运行该入口。构建后也可从 GitHub Release 下载 tgz，按下文原生 `plugin add` 安装到自己的 Web profile。
+数据库默认保存在 `$DSH_HOME/theone/contexts.db`，未设置 DSH_HOME 时为 `~/.dsh/theone/contexts.db`。卸载重装应保留这个目录以继续原话题。每个数据库同时运行一个 profile 进程。
 
 ## 当前功能
 
-- `KEEP / MOUNT / SWAP / CREATE / CLARIFY`。LLM 选择已有话题、新话题或澄清，代码计算挂载动作并校验目标。
-- 每个 Context 一个独立、可恢复的 Working Session。切回项目时继续该 Worker，Gateway 的混合历史不会作为 Worker 的执行历史。
-- DeepSeek Flash 路由读取短目录、当前项目和最多 12 条近期文字。重建 Gateway 时，从 DSH 历史引用恢复近期消息。
-- 路由失败会澄清并保留挂载状态。权限/限流错误，以及连续三次其他错误，会暂停分类请求 60 秒。
-- Worker 的 `theone_search_history` 工具按需检索自己的专用 Worker 和手工审核的历史事件范围；最多 10 个窗口、8000 字符摘录。
-- Worker 的 `theone_update_state` 工具保存最多 800 字符的进展、疑问和下一步。项目标题保持不变，更新保留 Worker / 事件引用。
-- 自动复用 Worker 已成功完成的 DSH compaction 摘要，保留摘要和完成事件引用，脱敏后截取最多 1200 字符；不额外调用模型重写整段历史。
-- SQLite 保存目录、挂载、来源范围与执行状态；DSH 日志保存原始输入、工具结果和回答。历史资料作为参考，不能代替本轮用户授权。
-- 取消会传给 Worker；同一实例的并发入口会明确拒绝。已开始的输入不会自动重放，避免重复工具副作用。
+- LLM 选择已有话题、新话题或澄清；代码校验目标，并计算 `KEEP / MOUNT / SWAP / CREATE / CLARIFY`。
+- 每个项目有一个独立、可恢复的 DSH Working Session；切回项目时继续该 Worker。
+- 路由通过 `ctx.llm.prepareCall()` 调用已配置的 DSH provider。只发送短目录、本轮输入和最多 12 条近期文字，不带工具或完整历史。
+- 路由每轮额外调用一次模型，会使用用户已有 API 的额度；最大输出 2048 tokens，30 秒超时。它与正式回答分开调用。
+- 失败、无效 JSON、未知话题 ID、截断或取消均不会直接切换项目或启动 Worker。权限/限流错误、连续三次其他错误会暂停路由 60 秒。
+- Worker 的 `theone_search_history` 按需检索自己专用的 Worker 和人工审核的历史事件范围；最多 10 个窗口、8000 字符摘录。
+- `theone_update_state` 保存最多 800 字符的项目进展。自动复用 Worker 完成的 DSH compaction 摘要，脱敏后最多 1200 字符，不重新总结整个会话。
+- SQLite 保存目录、来源范围、挂载和执行状态；原始输入、工具结果与回答保存在 DSH 日志。历史指令仅作为参考。
+- 主聊天同时接受一个运行中的请求，取消传给路由和 Worker，不自动重放执行中的输入。
+
+## 配置（可选）
+
+正常安装不需要这些变量。
+
+| 变量 | 用途 / 默认值 |
+| --- | --- |
+| `THEONE_DATABASE_PATH` | 覆盖默认目录数据库位置 |
+| `THEONE_CONTEXTS_PATH` | 人工目录 JSON；省略时从空目录开始 |
+| `THEONE_GATEWAY_KEY` | 入口标识，默认 `default` |
+| `THEONE_ROUTER_MODE` | `llm`（默认）或 `rules` |
+| `THEONE_ROUTER_TRANSPORT` | `dsh`（默认）；`legacy` 为旧的直接 DeepSeek 调用 |
+| `THEONE_WORKER_PROVIDER` / `THEONE_WORKER_MODEL` | 固定模型覆盖，必须一起设置；默认跟随 DSH 选择 |
+
+旧的直接路由仅在 `THEONE_ROUTER_TRANSPORT=legacy` 时使用 `THEONE_ROUTER_API_KEY`、`THEONE_ROUTER_BASE_URL` 和 `THEONE_ROUTER_MODEL`。默认不读取这把 key。
+
+人工目录为 `ContextDescriptor[]`：`id / title / summary / entities / keywords / lastState`，只在首次初始化插入。Worker 不能使用 `theone` provider。
 
 ## 开发和测试
 
 ```sh
+git clone https://github.com/YunongDai2005/dsh-theone.git
+cd dsh-theone
 npm ci --ignore-scripts
 npm run typecheck
 npm test
-npm run build
-npm run demo
 npm run pack:plugin
 ```
 
-普通测试使用真实 DSH 服务、AgentLoop、Session、SQLite Query、JSONL 持久化和 compaction。模型被模拟，不调用外部 API。演示目录中的 Qwen / 论文项目是虚构资料。
+测试使用真实 DSH 服务、AgentLoop、Session、SQLite Query、JSONL 持久化和 compaction；模型被模拟，不调用外部 API。演示目录为虚构资料。
 
-打包生成 `.dsh-test/dsh-theone-0.2.0.tgz`，包含后端、Web 客户端、bundle 配置和说明。包中不包含 `.env`、聊天快照、数据库或演示目录。
+打包生成 `.dsh-test/dsh-theone-0.2.2.tgz`，包含后端、Web 客户端和配置，不包含 API Key、聊天快照或数据库。
 
-## 安装到独立 DSH profile
-
-前提：`dsh --version` 为 `0.2.0-rc.2`，实际启动 DSH 的 Node 为 24。API Key 保留在被忽略的 `.env` 或已有 DSH 凭据中。
-
-使用本项目 `.env` 时：
-
-```sh
-set -a
-source .env
-set +a
-export THEONE_DATABASE_PATH="$PWD/.dsh-test/contexts.db"
-export THEONE_ROUTER_MODE=llm
-export DEEPSEEK_API_KEY="$THEONE_ROUTER_API_KEY"
-```
-
-最后一行让 DSH 自带的 `deepseek-official` Worker 使用同一个 Key。也可独立配置 Worker 的凭据和 provider。
-
-创建专用 headless profile，再通过 DSH 自带插件管理安装：
-
-```sh
-DSH_HOME="$PWD/.dsh-test/home" dsh --profile one \
-  --from-default-profile headless --help
-
-DSH_HOME="$PWD/.dsh-test/home" dsh plugin --profile one \
-  add "$PWD/.dsh-test/dsh-theone-0.2.0.tgz" --ignore-scripts
-
-DSH_HOME="$PWD/.dsh-test/home" dsh --profile one --json \
-  "新话题：学习日语。先制定一个短计划。"
-```
-
-DSH 安装命令会启用 bundle，默认模型成为 `theone/gateway`。每次 headless 调用启动新进程；使用输出的 Session ID 和 `--session-id` 可恢复同一个 Gateway。重建 Gateway 后，Context 和 Worker 仍可从数据库及 DSH 持久化恢复。
-
-### 环境配置
-
-| 变量 | 用途 / 默认值 |
-| --- | --- |
-| `THEONE_DATABASE_PATH` | 可选，覆盖默认 `$DSH_HOME/theone/contexts.db` |
-| `THEONE_CONTEXTS_PATH` | 可选，人工目录 JSON；省略时从空目录开始 |
-| `THEONE_GATEWAY_KEY` | 入口标识，默认 `default` |
-| `THEONE_ROUTER_MODE` | `rules` / `llm`，默认 `rules` |
-| `THEONE_ROUTER_API_KEY` | 路由凭据，配置文件只引用变量名 |
-| `THEONE_ROUTER_BASE_URL` | 默认 `https://api.deepseek.com` |
-| `THEONE_ROUTER_MODEL` | 默认 `deepseek-flash` |
-| `THEONE_WORKER_PROVIDER` | 默认 `deepseek-official` |
-| `THEONE_WORKER_MODEL` | 默认 `deepseek-flash` |
-
-人工目录是 `ContextDescriptor[]`：`id / title / summary / entities / keywords / lastState`。只在首次初始化时插入；修改文件不会覆盖已有项目。Worker 不能使用 `theone` provider。
-
-`npm run profile:prepare` 可生成加载本地 `dist/index.js` 的开发覆盖层。默认空目录；设置 `THEONE_CONTEXTS_PATH` 才加载人工目录。
-
-### 真实 API 验收
-
-```sh
-node --env-file=.env scripts/test-cli-plugin.mjs /absolute/path/to/dsh-runtime
-```
-
-参数指包含 `node_modules/@deepseek-ai/dsh` 的运行时目录。默认使用本机缓存中的 `dsh-runtime-0.2.0-rc.2`。脚本通过 DSH `plugin add` 安装打包产物，在私有临时 home 和空工作目录中测试。它调用真实模型，仅允许 TheOne 的两个元数据工具；原 DSH profile 和历史不被修改。
+本地隔离开发可运行 `npm run install:local` 和 `npm run start:local`，数据保存在 `~/.dsh-theone`。这是独立 profile，需要在其 DSH 设置中配置模型。可复制 `.env.example` 为 `.env` 调整端口等；`.env` 不提交到 GitHub。
 
 ## 服务接口
 
@@ -126,15 +74,12 @@ node --env-file=.env scripts/test-cli-plugin.mjs /absolute/path/to/dsh-runtime
 
 历史 Session 必须通过 `store.addSource(contextId, sessionId, {startSeq, endSeq})` 指定审核后的闭区间。专用 Worker 才可关联整段 Session。
 
-进度工具由模型按需调用，不保证每轮更新。压缩摘要在 Worker 恢复或后续执行时复用，正文可通过来源引用查阅。
-
 ## 已知边界
 
-- 固定入口通过 DSH 的 `sidebar.panellist` 扩展打开原生 Conversation。主聊天身份保存在当前浏览器、当前 Web 路径的本地存储中；另一个浏览器可能创建另一个 Gateway，但同一数据库仍复用话题 Worker。原始主聊天 Session 仍可在 DSH 会话列表和搜索中找到。
-- 当前面向文字入口。回答在 Worker 的 step 提交后转发；逐 token 流、图片输出、工具卡片和审批界面转发尚未完成。无可用审批通道的请求按 DSH 策略处理。
-- 每个数据库同时运行一个 profile 进程；没有跨进程排队。
-- 未实现 `MULTI-MOUNT`、自动历史聚类、自动历史导入、Worker 自动 ROLLOVER、embedding 或语义检索。
-- 目录更新和 DSH 日志不是跨数据库事务；中断后状态不明的请求需检查原 Session。尚未验证硬断电恢复。
-- 检索逐 Session 扫描，尚无大规模性能验证。Gateway 日志轮换仍待实现。
+- 主聊天身份保存在当前浏览器、当前 Web 路径的本地存储中；另一个浏览器可能创建另一个 Gateway，同一数据库继续复用项目 Worker。
+- 目前面向文字入口，Worker 的 step 提交后转发回答。逐 token 转发、图片输出、工具卡片和审批界面转发尚未完成。
+- 未实现自动历史导入、自动聚类、embedding、语义检索、MULTI-MOUNT 或 Worker 自动轮换。
+- 目录更新和 DSH 日志不是跨数据库事务；中断后状态不明的请求需要检查原 Session。未验证硬断电恢复。
+- 历史检索逐 Session 扫描，没有大规模性能验证；Gateway 日志轮换待实现。
 
-AI Box 历史的旧目录回放为 75/79（94.9%），属于人工目录下的回顾式路由评估；本次没有把它当作新版本线上准确率。TheOne 尚未部署到 AI Box。
+早期人工目录下 AI Box 回放为 75/79，不能代表新用户线上准确率。TheOne 尚未部署到 AI Box。旧版本验收见 [v0.1](./docs/plugin-v0.1.md) 和 [v0.2](./docs/plugin-v0.2.md)。

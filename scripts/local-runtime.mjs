@@ -13,6 +13,7 @@ mkdirSync(data,{recursive:true})
 export const env = {...process.env,DSH_HOME:home,
   THEONE_DATABASE_PATH:process.env.THEONE_DATABASE_PATH || join(data,'contexts.db'),
   THEONE_ROUTER_MODE:process.env.THEONE_ROUTER_MODE || 'llm',
+  THEONE_ROUTER_TRANSPORT:process.env.THEONE_ROUTER_TRANSPORT || 'dsh',
   DEEPSEEK_API_KEY:process.env.DEEPSEEK_API_KEY || process.env.THEONE_ROUTER_API_KEY,
 }
 const cli = process.env.DSH_BIN || 'dsh'

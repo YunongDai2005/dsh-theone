@@ -11,6 +11,9 @@ export class ContextStore {
         this.db = new DatabaseSync(path);
         this.db.exec(`
       PRAGMA foreign_keys = ON;
+      CREATE TABLE IF NOT EXISTS model_binding (
+        gateway_key TEXT PRIMARY KEY, selection TEXT NOT NULL
+      );
       PRAGMA busy_timeout = 5000;
       CREATE TABLE IF NOT EXISTS contexts (
         id TEXT PRIMARY KEY, descriptor TEXT NOT NULL, working_session_id TEXT NOT NULL UNIQUE
@@ -47,6 +50,18 @@ export class ContextStore {
         PRIMARY KEY(gateway_key, gateway_id)
       );
     `);
+    }
+    /** Only model identity is persisted. API credentials remain owned by DSH. */
+    rememberModel(gatewayKey, selection) {
+        if (!selection.provider || !selection.model || selection.provider === 'theone')
+            throw new Error('Invalid backing model');
+        const value = { provider: selection.provider, model: selection.model,
+            ...(selection.reasoningEffort ? { reasoningEffort: selection.reasoningEffort } : {}) };
+        this.db.prepare('INSERT OR REPLACE INTO model_binding VALUES (?, ?)').run(gatewayKey, JSON.stringify(value));
+    }
+    rememberedModel(gatewayKey) {
+        const row = this.db.prepare('SELECT selection FROM model_binding WHERE gateway_key = ?').get(gatewayKey);
+        return row ? JSON.parse(String(row.selection)) : undefined;
     }
     seed(contexts) {
         for (const context of contexts) {

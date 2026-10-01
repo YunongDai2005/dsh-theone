@@ -1,8 +1,12 @@
+import type { ModelSelection } from '@deepseek-ai/dsh-agent';
 import type { ContextDescriptor, Decision, RouteRecord, StoredContext, SourceRange } from './types.ts';
 /** Stores descriptors and routing metadata. Original conversation stays in DSH. */
 export declare class ContextStore {
     private readonly db;
     constructor(path: string);
+    /** Only model identity is persisted. API credentials remain owned by DSH. */
+    rememberModel(gatewayKey: string, selection: ModelSelection): void;
+    rememberedModel(gatewayKey: string): ModelSelection | undefined;
     seed(contexts: ContextDescriptor[]): void;
     contexts(): StoredContext[];
     current(gatewayKey: string): string | undefined;

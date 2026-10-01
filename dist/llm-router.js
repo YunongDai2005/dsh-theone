@@ -136,3 +136,80 @@ export class DeepSeekRouter {
         }
     }
 }
+/** Uses the host's configured adapter; credentials never enter this plugin. */
+export class DshRouter {
+    llm;
+    selection;
+    timeoutMs;
+    now;
+    failures = 0;
+    blockedUntil = 0;
+    constructor(llm, selection, timeoutMs = 30000, now = Date.now) {
+        this.llm = llm;
+        this.selection = selection;
+        this.timeoutMs = timeoutMs;
+        this.now = now;
+    }
+    async decide(input, signal) {
+        signal?.throwIfAborted();
+        const payload = routingPayload(input);
+        const retryAfterMs = this.blockedUntil - this.now();
+        if (retryAfterMs > 0)
+            throw new RouterFailure('ROUTER_CIRCUIT_OPEN', { elapsedMs: 0, retryAfterMs });
+        const start = performance.now();
+        const bounded = signal ? AbortSignal.any([signal, AbortSignal.timeout(this.timeoutMs)]) : AbortSignal.timeout(this.timeoutMs);
+        let usage;
+        try {
+            const selection = this.selection();
+            if (!selection.provider || !selection.model)
+                throw new RouterFailure('ROUTER_MODEL_MISSING');
+            if (selection.provider === 'theone')
+                throw new RouterFailure('ROUTER_RECURSION_BLOCKED');
+            const call = await this.llm.prepareCall({ ...selection, maxTokens: 2048 }, bounded);
+            bounded.throwIfAborted();
+            let output = '', stopped = false;
+            for await (const chunk of call.stream({ ...call.config, system: ROUTING_PROMPT,
+                messages: [{ role: 'user', content: [{ type: 'text', text: JSON.stringify(payload) }] }], signal: bounded })) {
+                bounded.throwIfAborted();
+                if (stopped)
+                    throw new RouterFailure('ROUTER_RESPONSE_INCOMPLETE');
+                if (chunk.type === 'text-delta')
+                    output += chunk.text;
+                if (output.length > 8192)
+                    throw new RouterFailure('ROUTER_RESPONSE_TOO_LARGE');
+                if (chunk.type === 'tool-call-delta' || (chunk.type === 'block-end' && chunk.block.type === 'tool-call'))
+                    throw new RouterFailure('ROUTER_RESPONSE_INCOMPLETE');
+                if (chunk.type === 'usage') {
+                    const u = chunk.usage;
+                    const prompt = u.inputTokens + (u.cacheReadTokens ?? 0) + (u.cacheWriteTokens ?? 0);
+                    usage = { prompt_tokens: prompt, completion_tokens: u.outputTokens,
+                        total_tokens: prompt + u.outputTokens, prompt_cache_hit_tokens: u.cacheReadTokens };
+                }
+                if (chunk.type === 'finish') {
+                    if (chunk.reason.kind === 'error' || chunk.reason.kind === 'aborted')
+                        throw new RouterFailure('ROUTER_REQUEST_FAILED', { elapsedMs: Math.round(performance.now() - start), httpStatus: chunk.reason.failure.status });
+                    if (chunk.reason.kind !== 'stop')
+                        throw new RouterFailure('ROUTER_RESPONSE_INCOMPLETE');
+                    stopped = true;
+                }
+            }
+            if (!stopped)
+                throw new RouterFailure('ROUTER_RESPONSE_INCOMPLETE');
+            // Providers without JSON mode may wrap a single JSON object in a code fence.
+            const json = output.trim().replace(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/, '$1').trim();
+            const decision = validateRoutingDecision(JSON.parse(json), input);
+            this.failures = 0;
+            this.blockedUntil = 0;
+            return { decision, model: call.config.model, elapsedMs: Math.round(performance.now() - start), usage };
+        }
+        catch (error) {
+            signal?.throwIfAborted();
+            const failure = error instanceof RouterFailure ? error : new RouterFailure('ROUTER_REQUEST_FAILED');
+            this.failures++;
+            if ([401, 403, 429].includes(failure.meta?.httpStatus ?? 0) || this.failures >= 3)
+                this.blockedUntil = this.now() + 60000;
+            throw new RouterFailure(failure.code, { elapsedMs: Math.round(performance.now() - start), usage, ...failure.meta,
+                ...(this.blockedUntil > this.now() ? { retryAfterMs: this.blockedUntil - this.now() } : {}) });
+        }
+    }
+}
