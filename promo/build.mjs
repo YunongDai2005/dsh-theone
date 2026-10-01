@@ -21,6 +21,14 @@ const has = (cmd, args = ['--version']) => spawnSync(cmd, args, { stdio: 'ignore
 
 if (!fs.existsSync('bgm.m4a')) { console.error('Put the BGM at promo/bgm.m4a first'); process.exit(1); }
 for (const c of ['ffmpeg', 'ffprobe', 'git']) if (!has(c, c === 'git' ? ['--version'] : ['-version'])) { console.error('missing: ' + c); process.exit(1); }
+// the film uses the BGM from 77.694 s for about 38 s: decode exactly that stretch, so a broken or cut-off file
+// fails here instead of after the slow steps
+const probe = spawnSync('ffmpeg', ['-v', 'error', '-ss', '77.6', '-t', '39', '-i', 'bgm.m4a', '-f', 'null', '-'], { encoding: 'utf8' });
+const probeErr = (probe.stderr || '').trim();
+const decoded = spawnSync('ffmpeg', ['-v', 'quiet', '-stats', '-ss', '77.6', '-t', '39', '-i', 'bgm.m4a', '-f', 'null', '-'], { encoding: 'utf8' }).stderr || '';
+const got = decoded.match(/time=(\d+):(\d+):([\d.]+)/g)?.pop()?.match(/(\d+):(\d+):([\d.]+)/);
+const secs = got ? +got[1] * 3600 + +got[2] * 60 + +got[3] : 0;
+if (probe.status !== 0 || probeErr || secs < 38.2) { console.error(`bgm.m4a can't be used: ${probeErr.split('\n').pop() || `only ${secs.toFixed(1)} s of audio after 1:17.7`}. Copy the full track (about 3:18, 4.3 MB) again.`); process.exit(1); }
 const PY = ['python3', 'python', 'py'].find(p => has(p, ['-c', 'import numpy, scipy']));
 if (!PY) { console.error('missing: Python 3 with numpy and scipy (pip install numpy scipy)'); process.exit(1); }
 
