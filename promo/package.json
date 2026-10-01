@@ -1,0 +1,12 @@
+{
+  "name": "dsh-theone-promo",
+  "private": true,
+  "description": "Vertical promo video for TheOne (rendered frame-by-frame with Playwright)",
+  "type": "module",
+  "dependencies": {
+    "@fontsource/inter": "^5.2.0",
+    "@fontsource/jetbrains-mono": "^5.2.0",
+    "@fontsource/noto-sans-sc": "^5.2.0",
+    "@fontsource/nunito": "^5.2.0"
+  }
+}
