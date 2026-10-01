@@ -489,6 +489,9 @@ const preRays = h('div', 'gl3 grays'); preGlow.appendChild(preRays);
 const glowL = h('div', null); glowL.id = 'glowLayer'; glowL.style.cssText = 'position:absolute;left:0;top:0;width:1080px;height:' + SH + 'px;pointer-events:none;z-index:0'; $('#cam').insertBefore(glowL, w3); $('#cam').insertBefore(preGlow, $('#ov'));
 glowL.innerHTML = `<svg id="cone" width="1080" height="${SH}" style="position:absolute;left:0;top:0;overflow:visible"><defs><filter id="coneB" filterUnits="userSpaceOnUse" x="-600" y="-600" width="2280" height="3360"><feGaussianBlur stdDeviation="7"/></filter></defs><g id="coneP" filter="url(#coneB)"></g><g id="coneP2" filter="url(#coneB)"></g></svg>
   <div class="gl3 grays"></div><div class="gl3 gstreak"></div><div class="gl3 gstreak2"></div>`;
+// the routing wavefront is light in transit, so it draws above the 3D layers (glows around objects stay behind them)
+const waveL = h('div', null); waveL.style.cssText = 'position:absolute;left:0;top:0;width:1080px;height:' + SH + 'px;pointer-events:none;z-index:2';
+$('#cam').insertBefore(waveL, $('#ov')); waveL.appendChild($('#cone'));
 const hull = P => { P = P.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]); const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]); const lo = [], up = []; for (const p of P) { while (lo.length > 1 && cr(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop(); lo.push(p); } for (const p of P.reverse()) { while (up.length > 1 && cr(up[up.length - 2], up[up.length - 1], p) <= 0) up.pop(); up.push(p); } return lo.slice(0, -1).concat(up.slice(0, -1)); };
 // glow that follows an object's real projected outline: the hull of its box corners, rounded by a
 // round-joined stroke, drawn as three blurred layers (edge, bloom, haze) — no more screen ellipses
@@ -524,7 +527,7 @@ function drawHalo(id, P, hw, hh, o, rad = 18) {
 }
 let KEYG = null;
 function drawGlow(t, post, z, S, TH, o, gI, flare, coneO) {
-  show(glowL, post); glowL.querySelectorAll('.grays,.gstreak,.gstreak2,#cone').forEach(e => e.style.visibility = o > .01 ? '' : 'hidden'); if (KEYG && !(o > .01)) KEYG.svg.style.display = 'none'; if (!(post && o > .01)) return;
+  show(glowL, post); [...glowL.querySelectorAll('.grays,.gstreak,.gstreak2'), $('#cone')].forEach(e => e.style.visibility = o > .01 ? '' : 'hidden'); if (KEYG && !(o > .01)) KEYG.svg.style.display = 'none'; if (!(post && o > .01)) return;
   const zc = z + TH * .5, c = proj([ONE.x, ONE.y, zc]);
   const pa = proj([ONE.x - 168 * S, ONE.y, zc]), pb = proj([ONE.x + 168 * S, ONE.y, zc]), pc = proj([ONE.x, ONE.y - 45.5 * S, zc]), pd = proj([ONE.x, ONE.y + 45.5 * S, zc]);
   const L = Math.hypot(pb[0] - pa[0], pb[1] - pa[1]), W = Math.max(30, Math.hypot(pd[0] - pc[0], pd[1] - pc[1]) + TH * S * c[2]), ang = Math.atan2(pb[1] - pa[1], pb[0] - pa[0]) * 180 / Math.PI;
