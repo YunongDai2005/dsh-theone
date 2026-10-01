@@ -2,9 +2,13 @@
 
 1080×2160 (9:18), 60 fps, 38.3 s. Light theme, English only, almost no on-screen text. Every frame is a pure function of `t` in `film.js`; Playwright screenshots each frame and ffmpeg encodes. All sound effects are synthesized by `sfx.py`.
 
-The UI is a replica of the DSH web client built with DSH's own icons, whale mark and wordmark (`extract-icons.tsx` renders them from the `deepseek-harness` sources). The window is laid out at 2.8× resolution with CSS `zoom` and scaled back down, so text stays sharp under the 3D camera. The 1080×1920 design sits in the middle of a 1080×2160 (9:18) stage, so the extra 120 px top and bottom keep the notch, the rounded top corners and the platform UI clear of anything important.
+The UI is a replica of the DSH web client built with DSH's own icons, whale mark and wordmark (`extract-icons.tsx` renders them from the `deepseek-harness` sources). The window is laid out at 3.3× resolution with CSS `zoom` and scaled back down, so text stays sharp under the 3D camera. The 1080×1920 design sits in the middle of a 1080×2160 (9:18) stage, so the extra 120 px top and bottom keep the notch, the rounded top corners and the platform UI clear of anything important.
 
 Video frames are rendered at 3× (`SS=3`) and downsampled with Lanczos, which keeps text sharp on oblique 3D planes. After the drop, The One key glows along its real projected outline (the hull of its box corners, rounded and drawn as blurred edge, bloom and haze layers), with the bloom and haze inflated in 3D before projection so their spread is foreshortened like the key itself; plus soft rays, an anamorphic streak, and a routing light that travels level by level, accelerating into each landing: key → router on r5 / r9 (the bar's strongest hit), router → session on r6¼ / r10¼; each level flares only when the light lands; it flares only on each bar's strongest hit (`r(4k+1)`). The 3D key's face is a pre-rendered 8× bitmap (`mkface.mjs`); whenever the key faces the camera it is swapped for a flat 2D copy fitted to its projected corners, because Chromium caps the raster resolution of 3D layers but not 2D ones. The pre-drop sidebar button, the router and the highlighted session cards use the same outline-following glow, so no glow is an ellipse or lies flat on a tilted plane.
+
+## Night version
+
+`film.html?theme=dark` renders the night version from the same timeline: DSH's own dark theme for the interface, and the plugin's dark One button (#1d2a37 / #344d64 / #93c8f3). Every warm accent (glows, routing light, key thickness, deck, end logo) maps into the same pale blue. Build its face bitmap with `THEME=dark node mkface.mjs` and render with `PAGE="film.html?theme=dark"`. `CRF` and `PRESET` override the encoder for quick previews.
 
 ## Beat map
 
