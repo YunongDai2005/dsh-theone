@@ -192,7 +192,7 @@ const ONE = { x: 186, y: 208 };
 const ONE_HTML = `<span class="osym"></span><span class="ocopy"><span class="otitle"><span class="owm"><span class="othe">The</span><span class="oone">One<span class="odot"></span></span></span><span class="olab">Main chat</span></span><span class="osub">Pick up the conversation</span></span>`;
 // a rounded slab: thin rounded-rect slices stacked in z form the body, the face sits on top
 const SLICES = 30;
-const lift = h('div', 'lay', Array.from({ length: SLICES }, (_, i) => `<div class="lf slice" data-i="${i}"></div>`).join('') + `<div class="lf top" id="lfT"><div class="zin">${ONE_HTML}</div><div class="sheen" id="lfS"></div></div>`);
+const lift = h('div', 'lay', Array.from({ length: SLICES }, (_, i) => `<div class="lf slice" data-i="${i}"></div>`).join('') + `<div class="lf top" id="lfT"><img class="facebm" src="face.png" alt=""><div class="rim" id="lfRim"></div><div class="sheen" id="lfS"></div></div>`);
 Object.assign(lift.style, { width: '336px', height: '91px', borderRadius: '0' }); w3.appendChild(lift);
 lift.querySelectorAll('.slice').forEach(el => { const k = +el.dataset.i / (SLICES - 1); el.style.background = `rgb(${Math.round(lerp(196, 244, k))},${Math.round(lerp(112, 178, k))},${Math.round(lerp(52, 120, k))})`; });
 const router = h('div', 'lay glass', `<div class="rlab">ROUTER</div><svg class="ring" width="180" height="180" viewBox="0 0 180 180"><circle cx="90" cy="90" r="82" fill="none" stroke="rgba(40,60,110,.16)" stroke-width="1.5"/><circle cx="90" cy="90" r="56" fill="none" stroke="rgba(40,60,110,.28)" stroke-width="1.5" stroke-dasharray="4 7"/><circle cx="90" cy="90" r="9" fill="#ff8a2a"/></svg><div class="rtag" id="rtag"></div>`);
@@ -224,6 +224,8 @@ const B0 = beam([ONE.x, ONE.y + 46, Z.lift], [ONE.x, ONE.y, Z.router], true);
 const BC = CARDS.map(c => beam([ONE.x, ONE.y, Z.router], [c.x, c.y, Z.cards]));
 const BN = beam([ONE.x, ONE.y, Z.router], [NEWP.x, NEWP.y, Z.cards]);
 const orb = h('div', 'orb'); ov.appendChild(orb);
+// face-on, the key's face is drawn as a flat 2D bitmap fitted to its projected corners: 3D layers are raster-capped, 2D ones are not
+const face2d = h('div', 'face2d', '<img src="face.png" alt=""><div class="rim2"></div>'); ov.insertBefore(face2d, ov.firstChild);
 const bub = h('div', 'bub'); ov.appendChild(bub);
 const CHIP_T = ['Q3 budget draft', 'Weekly report', 'Refactor auth flow', 'Habit tracker app', 'Paper notes: RAG', 'Rust lifetimes', 'Kyoto day plan', 'Kyoto day plan (2)', 'Trip budget', 'Balcony herbs', 'Recipe: tomato & egg', 'Cat on my keyboard'];
 const CL = [{ name: 'PROJECT A', x: ONE.x - 215, y: ONE.y - 215, t: r(13) }, { name: 'PROJECT B', x: ONE.x + 215, y: ONE.y - 215, t: r(14.25) },
@@ -387,9 +389,17 @@ function sApp(t, ovs) {
   $('#lfT').style.transform = `translateZ(${TH}px)`;
   const flare = t > r(19) - .3 ? Math.max(Math.exp(-Math.max(0, t - r(19)) * 4) * (t > r(19) ? 1 : seg(t, r(19) - .3, r(19))), E.ie(seg(t, r(20.3), r(21)))) : 0;
   const gI = Math.min(1.6, .55 + .5 * pulse(t) + flare);
-  $('#lfT').style.boxShadow = `inset 0 0 0 1.5px rgba(255,196,140,${.55 + .3 * gI}),inset 0 0 ${14 + 18 * gI}px rgba(255,165,85,${.18 + .22 * gI})`;
+  $('#lfRim').style.boxShadow = `inset 0 0 0 1.5px rgba(255,196,140,${.55 + .3 * gI}),inset 0 0 ${14 + 18 * gI}px rgba(255,165,85,${.18 + .22 * gI})`;
   const hit0 = lastHit(t), su = (t - hit0) / .6; $('#lfS').style.backgroundPosition = `${lerp(130, -40, E.io(clamp(su)))}% 0`; op($('#lfS'), su >= 0 && su <= 1 ? Math.sin(Math.PI * su) : 0);
   lift.querySelectorAll('.slice').forEach(el => { const k0 = +el.dataset.i / (SLICES - 1), e0 = 26 * Math.min(1, pulse(t) + flare) * k0; el.style.background = `rgb(${Math.round(Math.min(255, lerp(196, 244, k0) + e0))},${Math.round(lerp(112, 178, k0) + e0)},${Math.round(lerp(52, 120, k0) + e0 * .6)})`; });
+  {
+    const zf = liftZ + TH, S = liftS;
+    const tl = proj([ONE.x - 168 * S, ONE.y - 45.5 * S, zf]), tr = proj([ONE.x + 168 * S, ONE.y - 45.5 * S, zf]), bl = proj([ONE.x - 168 * S, ONE.y + 45.5 * S, zf]);
+    const tilt = C.rx, front = post ? 1 - seg(tilt, 14, 22) : 0, lo = post ? Math.max(dimC, E.io(seg(t, r(18.2), r(18.8)))) : 0;
+    show(face2d, front * lo > .001);
+    if (front * lo > .001) { face2d.style.transform = `matrix(${(tr[0] - tl[0]) / 336},${(tr[1] - tl[1]) / 336},${(bl[0] - tl[0]) / 91},${(bl[1] - tl[1]) / 91},${tl[0]},${tl[1]})`; op(face2d, front * lo); face2d.querySelector('.rim2').style.boxShadow = $('#lfRim').style.boxShadow; }
+    op($('#lfT'), 1 - front * .999);
+  }
   drawGlow(t, post, liftZ, liftS, TH, Math.max(dimC, E.io(seg(t, r(18.2), r(18.8)))) * (t >= D ? 1 : 0), gI, flare, ra * dimC);
   lift.querySelectorAll('.slice').forEach(el => { el.style.transform = `translateZ(${(+el.dataset.i / (SLICES - 1) * (TH - .6)).toFixed(2)}px)`; el.style.display = TH > .5 ? '' : 'none'; });
   CARDS.forEach((c, i) => { const [ca, cz0] = app(r(2.25) + (i % 3) * .03 + Math.floor(i / 3) * .03, Z.router, Z.cards); place(c.el, c.x, c.y, cz0, 230, 136, post ? ca * dimC : 0); });
