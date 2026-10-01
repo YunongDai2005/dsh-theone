@@ -27,9 +27,9 @@ const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
 const I = window.DSH_ICONS; const ic = (n, cls = '') => `<span class="ico ${cls}">${I[n]}</span>`;
 
 /* ---------------------------------------------------------- beat grid */
-const BEAT = 60 / 77, D = 13 * BEAT;            // drop = BGM 1:33.279
+const BEAT = 60 / 77, D = 20 * BEAT;            // drop = BGM 1:33.279
 const b = k => k * BEAT, r = k => D + k * BEAT;  // r(1), r(2.25), r(3) are the bar's hard hits
-const TOTAL = +(r(19) + 0.75).toFixed(3);
+const TOTAL = +(r(20) + 0.6).toFixed(3);
 const CUES = []; const cue = (t, type, o = {}) => CUES.push({ t: +t.toFixed(4), type, ...o });
 window.CUES = CUES; window.TOTAL = TOTAL; window.DROP = D;
 
@@ -98,12 +98,21 @@ w3.appendChild(win);
 const ARROW = '<svg width="28" height="42" viewBox="0 0 24 36"><path d="M2 2 L2 28 L8.3 21.8 L12.7 32 L16.9 30.2 L12.5 20.2 L21.2 20.2 Z" fill="#111" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/></svg>';
 const HAND = '<svg width="34" height="38" viewBox="0 0 32 36"><path d="M11 17V4.5a3 3 0 0 1 6 0V14a3 3 0 0 1 5.2 1.2 3 3 0 0 1 5 1.6 3 3 0 0 1 4 2.2V26c0 5.2-4 9-9 9h-5c-3.6 0-5.6-1.6-7.6-4.6L4.4 23a2.7 2.7 0 0 1 4.2-3.3z" fill="#fff" stroke="#111" stroke-width="1.8" stroke-linejoin="round"/></svg>';
 const lin = $('#lin');
+const POOL = ['Hello', 'Untitled', 'New session', 'Untitled', 'Q3 budget draft', 'Weekly report', 'Fix flaky CI test', 'SQL index help', 'Landing page copy',
+  'Bug in CSV export', 'Interview questions', 'Release notes', 'Refactor auth flow', 'Habit tracker app', 'Cycling route, Sunday', 'Balcony herbs', 'Rust lifetimes',
+  'Docker won’t start', 'Name ideas', 'Paper notes: RAG', 'Translate this email', 'Kyoto day plan', 'Recipe: tomato & egg', 'Cat on my keyboard', 'Is 77 BPM slow?',
+  'Summarize this PDF', 'Meeting notes', 'Fix the chart colors', 'Rewrite intro', 'Pricing page ideas', 'Explain this regex', 'Trip budget', 'Email to landlord',
+  'Slides outline', 'Untitled', 'New session', 'Continue from yesterday', 'That bug again', 'Where did we leave this?', 'Draft v2', 'Draft v3', 'Draft v3 (final)'];
+const AGES = ['4m', '1h', '3h', '1d', '2d', '4d', '6d', '1w', '2w', '3w', '1mo', '2mo', '3mo', '5mo', '8mo', '1y'];
+function genRows(n, seed, a0, a1) { const r0 = rng(seed); return Array.from({ length: n }, (_, i) => { let tt = POOL[Math.floor(r0() * POOL.length)]; if ((tt === 'Untitled' || tt === 'New session') && r0() < .5) tt += ` (${2 + Math.floor(r0() * 30)})`; return [tt, AGES[Math.min(AGES.length - 1, a0 + Math.floor((a1 - a0) * i / n))]]; }); }
 const FOLDERS = [
   ['Inbox', true, [['Download this video at max bitrate', '4m', 1], ['Hello', '8d'], ['Can you control my computer?', '8d'], ['Hello', '10d'], ['archify-dsh plugin installed', '11d']], 'I'],
-  ['Project A', true, [['TheOne native API check', '2h'], ['Q3 budget draft', '1d'], ['Weekly report', '2d'], ['Refactor auth flow', '3d'], ['Fix flaky CI test', '4d'], ['SQL index help', '5d'], ['Landing page copy', '6d'], ['Bug in CSV export', '6d'], ['Interview questions', '1w'], ['Release notes v0.3', '1w'], ['Untitled', '1w']], 'W'],
-  ['Project B', true, [['Habit tracker app', '1w'], ['Cycling route, Sunday', '2w'], ['Balcony herbs', '2w'], ['Rust lifetimes', '2w'], ['Docker won’t start', '3w'], ['Name ideas', '3w'], ['Paper notes: RAG', '3w'], ['Untitled', '3w'], ['Translate this email', '1mo']], 'S'],
-  ['Archive', false, [['Kyoto day plan', '2mo'], ['Kyoto day plan (2)', '2mo'], ['Untitled', '2mo'], ['Untitled', '2mo']], 'A'],
-  ['Unsorted', true, [['New session', '1mo'], ['Untitled', '1mo'], ['Recipe: tomato & egg', '1mo'], ['Untitled', '2mo'], ['Cat on my keyboard', '2mo'], ['Is 77 BPM slow?', '2mo'], ['Untitled', '2mo'], ['Untitled', '3mo'], ['New session', '3mo'], ['Untitled', '3mo']], 'U'],
+  ['Project A', true, genRows(26, 11, 1, 8), 'W'],
+  ['Project B', true, genRows(24, 12, 3, 10), 'S'],
+  ['Project C', true, genRows(22, 13, 5, 12), 'C'],
+  ['Archive 2025', true, genRows(34, 14, 9, 15), 'A'],
+  ['Unsorted', true, genRows(40, 15, 2, 15), 'U'],
+  ['Old chats', true, genRows(26, 16, 12, 15), 'O'],
 ];
 const ROWS = {};
 FOLDERS.forEach(([name, open, ss, pre]) => {
@@ -111,7 +120,6 @@ FOLDERS.forEach(([name, open, ss, pre]) => {
   if (pre) ROWS['F' + pre] = f;
   const kids = h('div', 'kids'); lin.appendChild(kids); if (pre) ROWS['K' + pre] = kids;
   ss.forEach(([tt, mt, dot], i) => { const r0 = h('div', 'srow', `${dot ? '<span class="gd"></span>' : ''}<span class="tt">${esc(tt)}</span><span class="mt">${mt}</span>`); r0.dataset.title = tt; kids.appendChild(r0); if (pre) ROWS[pre + i] = r0; });
-  if (!open) kids.style.display = 'none';
 });
 const cur = $('#cur');
 
@@ -134,36 +142,51 @@ function setMain(title, k) {
 }
 
 /* ---------------------------------------------------------- the search (pre-drop) */
-const SEQ_IDS = [];
-[['U', 10], ['S', 9], ['W', 11], ['I', 5]].forEach(([p0, n]) => { for (let i = n - 1; i >= 0; i--) SEQ_IDS.push(p0 + i); });
-const STEP_T = [];
-for (let k = 0; k < 6; k++) STEP_T.push(b(2 + k * .5));      // 8ths while the pad plays
-for (let k = 0; k < 8; k++) STEP_T.push(b(5 + k * .25));     // 16ths: the silence starts
-for (let k = 0; k < 12; k++) STEP_T.push(b(7 + k * .125));   // 32nds: key held down
-const STEPS = STEP_T.map((t0, i) => ({ t: t0, id: SEQ_IDS[i + 1] }));
-STEPS.forEach((st0, i) => cue(st0.t, 'flap', { g: i < 6 ? 1 : i < 14 ? 1.05 : 1.12 }));
-const T_WH0 = b(8.5), T_WH1 = b(9.4);
-cue(T_WH0 - .05, 'whoosh', { dur: 1.2 }); cue(T_WH1, 'settle');
-cue(b(9.5), 'pad', { dur: D - b(9.5) }); cue(D - 1.6, 'swell', { dur: 1.6 });
+// trackpad swipes: [start, distance(px), coast time(s)] — inertial, so speed is non-linear
+const SWIPES = [[b(2), 560, 1.0 * BEAT], [b(3), 700, 1.0 * BEAT],
+  [b(6), 760, .72 * BEAT], [b(6.75), 820, .72 * BEAT], [b(7.5), 520, .5 * BEAT],
+  [b(10), 640, .5 * BEAT], [b(10.5), 700, .5 * BEAT], [b(11), 520, .25 * BEAT], [b(11.25), 560, .25 * BEAT], [b(11.5), 900, .5 * BEAT]];
+const coast = u => (1 - Math.exp(-5 * clamp(u))) / (1 - Math.exp(-5));
+function listScroll(t) { let s0 = 0; for (const [ts, d, T0] of SWIPES) if (t > ts) s0 += d * coast((t - ts) / T0); return s0; }
+// scans: the cursor checks rows in order, then opens one and lingers
+const REST = [262, 742];
+const SCANS = [
+  { hov: [b(4.25), b(4.5), b(4.75)], dy: 45, open: b(5), end: b(6) },
+  { hov: [b(8.25), b(8.5), b(8.75), b(9)], dy: -45, open: b(9.25), end: b(10) },
+];
+const T_STOP = b(12), T_SLAM = b(13.5), T_UP0 = b(15.25), T_UP1 = b(16.25);
+const T_WH0 = T_UP0, T_WH1 = T_UP1;
+// sound: one flap per session that scrolls past the cursor
+{ let last = -1, lt = -1; for (let t = b(2); t < T_STOP; t += .002) { const k = Math.floor(listScroll(t) / 45); if (k !== last) { const v = (listScroll(t + .01) - listScroll(t)) * 100; if (last >= 0 && t - lt > .03) { cue(t, 'flapk', { g: clamp(.45 + v / 2600, .45, 1.05) }); lt = t; } last = k; } } }
+SCANS.forEach(sc0 => { sc0.hov.forEach(x => cue(x, 'hov')); cue(sc0.open, 'click', { g: .7 }); });
+SWIPES.forEach(([ts], i) => cue(ts - .05, 'swipe', { g: i >= 5 ? 1.2 : .9 }));
+cue(T_STOP, 'growl', { dur: T_SLAM - T_STOP + .1 }); cue(T_SLAM, 'slam');
+{ const r0 = rng(55); for (let j = 0; j < 15; j++) cue(T_SLAM + .3 + j * .045 + r0() * .06, 'book', { g: .5 + r0() * .5 }); }
+cue(T_UP0 - .05, 'whoosh', { dur: 1.1 }); cue(T_UP1, 'settle');
+cue(b(16.4), 'pad', { dur: D - b(16.4) }); cue(D - 1.6, 'swell', { dur: 1.6 });
 cue(D, 'click', { g: 1.1 }); cue(D, 'impact');
 
 const G = {}; // geometry cache
 function rowTop(el) { let y = 0, e = el; while (e && e !== lin) { y += e.offsetTop; e = e.offsetParent; } return y; }
-function stepAt(t) { let s = null; for (const x of STEPS) if (t >= x.t) s = x; return s; }
-function scrollFor(id) { return clamp(rowTop(ROWS[id]) - 300, 0, G.maxScroll()); }
-function listScroll(t) {
-  if (t >= T_WH0) return lerp(G.sLast, 0, E.ioe(seg(t, T_WH0, T_WH1 - .1)));
-  let val = scrollFor(SEQ_IDS[0]), prevId = SEQ_IDS[0];
-  for (let i = 0; i < STEPS.length; i++) {
-    const st0 = STEPS[i]; if (t < st0.t) break;
-    const gap = (STEPS[i + 1] ? STEPS[i + 1].t : T_WH0) - st0.t;
-    val = lerp(scrollFor(prevId), scrollFor(st0.id), E.o(seg(t, st0.t, st0.t + Math.min(.16, gap * .9))));
-    prevId = st0.id;
+const ALLROWS = [...lin.querySelectorAll('.frow,.srow')];
+const FALL = new Map();
+{ const r0 = rng(31); ALLROWS.forEach(el => FALL.set(el, { sgn: r0() < .5 ? -1 : 1, jit: r0(), spin: .6 + r0() * .8, dx: r0() })); }
+let fallPlan = null;
+function cursorAt(t, sc) {
+  // returns [x, y, hand, press] in window coords during the search
+  let x = REST[0], y = REST[1], press = false;
+  for (const S of SCANS) {
+    if (t < S.hov[0] - .2 || t > S.end + .05) continue;
+    if (!S.pts) { const s1 = listScroll(S.hov[0]); const snap = y0 => { for (const el of ALLROWS) { if (!el.classList.contains('srow')) continue; const y1 = 452 + rowTop(el) - s1; if (y0 >= y1 - 1 && y0 < y1 + 46) return [y1 + 24, el]; } return [y0, null]; };
+      S.pts = [...S.hov.map((h0, i) => [h0, ...snap(REST[1] + S.dy * (i + 1))]), [S.open, ...snap(REST[1] + S.dy * (S.hov.length + 1))]]; S.el = S.pts[S.pts.length - 1][2]; }
+    const pts = S.pts;
+    let px = REST[0], py = REST[1];
+    for (let i = 0; i < pts.length; i++) { const [tt, yy] = pts[i]; const k = E.io(seg(t, tt - .14, tt - .02)); py = lerp(py, yy, k); px = lerp(px, REST[0] + (i % 2 ? -14 : 10), k); }
+    const back = E.io(seg(t, S.end - .2, S.end + .05)); x = lerp(px, REST[0], back); y = lerp(py, REST[1], back);
+    press = Math.abs(t - S.open) < .06;
   }
-  return val;
+  return [x, y, false, press];
 }
-let lastRender = { scroll: 0 };
-
 /* ---------------------------------------------------------- 3D: what is behind the button */
 const ONE = { x: 186, y: 208 };
 const ONE_HTML = `<span class="osym"></span><span class="ocopy"><span class="otitle"><span class="owm"><span class="othe">The</span><span class="oone">One<span class="odot"></span></span></span><span class="olab">Main chat</span></span><span class="osub">Pick up the conversation</span></span>`;
@@ -210,7 +233,7 @@ cue(r(1), 'layer'); cue(r(2.25), 'layer', { g: .9 }); cue(r(3), 'layer', { g: .8
 cue(r(4), 'type'); cue(r(5), 'route', { n: 'G5' }); cue(r(6.25), 'hit', { n: 'C6' }); cue(r(7), 'route', { n: 'E5', g: .7 });
 cue(r(8), 'type'); cue(r(9), 'route', { n: 'A5' }); cue(r(10.25), 'create'); cue(r(11), 'route', { n: 'C6', g: .6 });
 cue(r(12), 'rise'); cue(r(13), 'snap'); cue(r(14.25), 'snap'); cue(r(15), 'snap'); cue(r(15.5), 'snap', { g: .8 });
-cue(r(16), 'end');
+cue(r(17), 'end');
 
 let WM = new DOMMatrix();
 function proj(p) { const q = WM.transformPoint(new DOMPoint(p[0], p[1], p[2])); const k = 2200 / (2200 - q.z); return [540 + (q.x - 540) * k, 960 + (q.y - 960) * k, k]; }
@@ -219,16 +242,20 @@ const place = (el, x, y, z, w, hh, o, s = 1) => { el.style.transform = `translat
 function camAt(t) {
   // pre-drop: close, three-quarter angle on the list → whoosh up → frontal on The One
   if (t < D) {
-    const k = seg(t, T_WH0, T_WH1), e = E.ioe(k);
-    const drift = seg(t, b(1.4), T_WH0);
-    const pre = { z: lerp(2.5, 2.62, drift), cx: 200, cy: lerp(730, 700, drift), rx: 4, ry: 9, rz: 0, cz: 0 };
-    const top = { z: track(t, [[T_WH1, 2.75], [D - .05, 3.15, 'io']]), cx: ONE.x, cy: ONE.y, rx: 0, ry: 0, rz: 0, cz: 0 };
+    const drift = seg(t, b(1.4), T_STOP);
+    const pre = { z: lerp(2.5, 2.68, E.io(drift)), cx: 200, cy: lerp(722, 712, drift), rx: 4, ry: 9, rz: 0, cz: 0 };
+    // anger: hand-held shake that builds, then the slam jolts it
+    const sh = (t > T_STOP && t < T_SLAM + .6) ? (E.io(seg(t, T_STOP, T_SLAM)) * 1 + 2.2 * Math.exp(-Math.max(0, t - T_SLAM) * 9) * (t > T_SLAM ? 1 : 0)) * (1 - seg(t, T_SLAM + .3, T_SLAM + .6)) : 0;
+    const n1 = Math.sin(t * 61) * .6 + Math.sin(t * 37 + 1) * .4, n2 = Math.sin(t * 53 + 2) * .6 + Math.sin(t * 29) * .4;
+    pre.cx += sh * 3.2 * n1; pre.cy += sh * 3.2 * n2; pre.rz += sh * .35 * Math.sin(t * 43);
+    // rise and swing to a slight low angle on The One, then a slow push
+    const top = { z: track(t, [[T_UP1, 2.85], [D - .05, 3.2, 'io']]), cx: ONE.x, cy: ONE.y + 24, rx: track(t, [[T_UP1, 17], [D, 12]]), ry: 0, rz: 0, cz: 0 };
+    const e = E.ioe(seg(t, T_UP0, T_UP1));
     const o = {}; for (const key in pre) o[key] = lerp(pre[key], top[key], e);
-    if (t > T_WH1) Object.assign(o, top);
     return o;
   }
   const a = E.oe(seg(t, D, r(1.6)));
-  const c = { z: lerp(3.15, 1.18, a), cx: ONE.x, cy: ONE.y - 40 * a, rx: lerp(0, 56, E.io(seg(t, D, r(1.6)))), ry: 0, rz: lerp(0, -24, E.io(seg(t, D, r(2)))), cz: lerp(0, -420, a) };
+  const c = { z: lerp(3.2, 1.18, a), cx: ONE.x, cy: lerp(ONE.y + 24, ONE.y - 40, a), rx: lerp(12, 56, E.io(seg(t, D, r(1.6)))), ry: 0, rz: lerp(0, -24, E.io(seg(t, D, r(2)))), cz: lerp(0, -420, a) };
   c.rz += -10 * E.ioq(seg(t, r(2), r(12)));
   // shot C: dive to the history layer
   const k = E.io(seg(t, r(11.6), r(12.8)));
@@ -237,7 +264,7 @@ function camAt(t) {
 }
 
 function sApp(t, ovs) {
-  const vis = t >= b(1) && t < r(16.4); show($('#appwrap'), vis); if (!vis) return;
+  const vis = t >= b(1) && t < r(17.4); show($('#appwrap'), vis); if (!vis) return;
   // window-open from the dock icon
   const aw = $('#appwrap');
   if (t < b(1.7)) {
@@ -253,41 +280,65 @@ function sApp(t, ovs) {
   WM = new DOMMatrix().translate(540, 960).rotateAxisAngle(1, 0, 0, C.rx).rotateAxisAngle(0, 1, 0, C.ry).rotateAxisAngle(0, 0, 1, C.rz).scale(C.z, C.z, C.z).translate(-C.cx, -C.cy, -C.cz);
 
   // ---- the search
-  const st = stepAt(t);
-  const sc = t < D ? listScroll(t) : 0;
+  const sc = t < T_SLAM ? listScroll(t) : listScroll(T_SLAM);
   lin.style.transform = `translateY(${-sc}px)`;
-  const selId = st ? st.id : SEQ_IDS[0];
-  let selTitle = 'TheOne · Main chat';
-  for (const k in ROWS) if (ROWS[k].classList.contains('srow')) { const on = k === (t >= T_WH0 ? '__' : selId); ROWS[k].classList.toggle('sel', on); if (on) selTitle = ROWS[k].dataset.title; }
-  if (t < T_WH0) setMain(selTitle, st ? STEPS.indexOf(st) : 99); else setMain('TheOne · Main chat', 0);
-  // motion blur from camera + list velocity
-  const C2 = camAt(t - 1 / 60), vel = Math.hypot((C.cy - C2.cy) * C.z, (C.z - C2.z) * 600) * 60 + Math.abs(sc - (t - 1 / 60 < D ? listScroll(t - 1 / 60) : 0)) * 60 * C.z;
-  const bl = t > T_WH0 - .1 && t < T_WH1 + .1 ? Math.min(60, vel / 260) : 0;
+  const [qx, qy, , qpress] = cursorAt(t, sc);
+  const rowUnder = y0 => { for (const el of ALLROWS) { if (!el.classList.contains('srow')) continue; const y1 = 452 + rowTop(el) - sc; if (y0 >= y1 && y0 < y1 + 45) return el; } return null; };
+  const scanning = SCANS.some(S => t > S.hov[0] - .2 && t < S.end);
+  const hovEl = scanning && t < T_STOP ? rowUnder(qy) : null;
+  let selEl = null; for (const S of SCANS) if (t >= S.open && S.el) selEl = S.el;
+  ALLROWS.forEach(el => { el.classList.toggle('sel', el === selEl || el === hovEl); });
+  if (selEl) setMain(selEl.dataset.title, ALLROWS.indexOf(selEl)); else setMain('Untitled', 0);
+  // the slam: rows tip over and fall like books off a shelf
+  const list = win.querySelector('.list');
+  if (t >= T_SLAM && t < D + 1) {
+    list.style.overflow = 'visible'; list.style.webkitMaskImage = 'none';
+    if (!fallPlan) { fallPlan = []; const sF = listScroll(T_SLAM); ALLROWS.forEach(el => { const y1 = 452 + rowTop(el) - sF; el.dataset.vis = (y1 > 420 && y1 < 1000) ? '1' : '0'; if (el.dataset.vis === '1') fallPlan.push([el, y1]); }); fallPlan.sort((p0, p1) => p1[1] - p0[1]); }
+    fallPlan.forEach(([el, y1], j) => {
+      const F = FALL.get(el), t0 = T_SLAM + .04 + j * .045 + F.jit * .06, tau = Math.max(0, t - t0), tip = E.o(seg(t, t0, t0 + .1));
+      const fy = tau > .1 ? .5 * 5200 * (tau - .1) ** 2 : 0, ang = F.sgn * (6 * tip + (tau > .1 ? (70 * (tau - .1) + 260 * (tau - .1) ** 2) * F.spin : 0));
+      el.style.transformOrigin = F.sgn > 0 ? '100% 100%' : '0 100%';
+      el.style.transform = `translate(${F.sgn * F.dx * 120 * Math.max(0, tau - .1)}px,${fy}px) rotate(${ang}deg)`;
+      el.style.position = 'relative'; el.style.zIndex = 3;
+      const card = tip;  // the row detaches as a solid card, like a book leaving the shelf
+      el.style.background = card > 0 ? `rgba(255,255,255,${card})` : ''; el.style.boxShadow = card > 0 ? `0 ${6 * card}px ${18 * card}px rgba(30,45,90,${.16 * card}),0 0 0 1px rgba(30,45,90,${.08 * card})` : '';
+    });
+    ALLROWS.forEach(el => { if (el.dataset.vis === '0') el.style.visibility = 'hidden'; });
+  } else {
+    list.style.overflow = ''; list.style.webkitMaskImage = '';
+    if (fallPlan) { ALLROWS.forEach(el => { el.style.transform = ''; el.style.visibility = ''; el.style.zIndex = ''; el.style.background = ''; el.style.boxShadow = ''; }); fallPlan = null; }
+  }
+  // motion blur from camera move
+  const C2 = camAt(t - 1 / 60), vel = Math.hypot((C.cy - C2.cy) * C.z, (C.z - C2.z) * 600) * 60;
+  const bl = t > T_UP0 - .1 && t < T_UP1 + .1 ? Math.min(50, vel / 260) : 0;
   if (bl > .4) { $('#vbg').setAttribute('stdDeviation', `0 ${bl.toFixed(1)}`); win.style.filter = 'url(#vb)'; } else win.style.filter = '';
   // depth of field: the far side of the window softens while we are angled
   $('#main').style.filter = C.ry > 2 ? `blur(${(C.ry / 9 * 2).toFixed(2)}px)` : '';
 
   // ---- the reveal light
-  const g = seg(t, T_WH1 - .1, b(10.4));
+  const g = seg(t, T_UP1 - .3, b(17.3));
   op($('#dimW'), t < D ? .82 * E.io(g) : lerp(.82, 0, seg(t, D, r(1))));
-  op($('#rays'), t < D ? .9 * E.io(seg(t, b(9.9), b(11.8))) : 1 - seg(t, D, D + .25));
-  $('#rays').style.transform = `rotate(${(t - b(8.8)) * 6}deg)`;
-  op($('#halo'), t < D ? E.io(seg(t, T_WH1, b(11))) * (.8 + .2 * Math.sin(t * 2.2)) : 1 - seg(t, D, D + .3));
-  const one = $('#oneBtn'), gl = t > T_WH1 ? track(t, [[T_WH1, .2], [b(11.4), .65], [D, 1]]) + .06 * Math.sin(t * 3.4) : 0;
+  op($('#rays'), t < D ? .9 * E.io(seg(t, b(16.6), b(18.6))) : 1 - seg(t, D, D + .25));
+  $('#rays').style.transform = `rotate(${(t - b(16)) * 6}deg)`;
+  op($('#halo'), t < D ? E.io(seg(t, T_UP1, b(17.8))) * (.8 + .2 * Math.sin(t * 2.2)) : 1 - seg(t, D, D + .3));
+  const one = $('#oneBtn'), gl = t > T_WH1 ? track(t, [[T_UP1, .2], [b(18.3), .65], [D, 1]]) + .06 * Math.sin(t * 3.4) : 0;
   one.style.boxShadow = gl ? `0 0 ${30 + 90 * gl}px ${4 + 26 * gl}px rgba(255,${140 + 40 * gl | 0},60,${.2 + .45 * gl}),0 0 ${10 + 20 * gl}px ${1 + 5 * gl}px rgba(255,236,210,${.35 * gl})` : '';
   one.style.borderColor = gl > .3 ? '#f5b680' : '#eed3bb';
-  one.style.transform = `scale(${(t > b(12.2) && t < D ? 1.02 : 1) * (t > D - .09 && t < D + .05 ? .975 : 1)})`;
+  one.style.transform = `scale(${(t > b(19.2) && t < D ? 1.02 : 1) * (t > D - .09 && t < D + .05 ? .975 : 1)})`;
   one.style.visibility = t >= D ? 'hidden' : 'visible';
-  const mv = t > T_WH1 && t < D + .3 ? seg(t, T_WH1, b(10.2)) * (1 - seg(t, D, D + .3)) : 0;
+  const mv = t > T_WH1 && t < D + .3 ? seg(t, T_UP1, b(17)) * (1 - seg(t, D, D + .3)) : 0;
   motes.forEach(M => { if (!mv) { op(M.el, 0); return; } const y = ((M.y - (t - T_WH1) * M.sp) % 1920 + 1920) % 1920; M.el.style.transform = `translate(${M.x + 14 * Math.sin(t + M.ph)}px,${y}px) scale(${M.s})`; op(M.el, mv * (.35 + .65 * Math.abs(Math.sin(t * 1.7 + M.ph)))); });
 
   // ---- cursor (inside the window, so it shares the camera)
   let cx = 0, cy = 0, hand = false, press = false, co = 0;
-  if (t >= b(9.8) && t < D + .1) {
-    co = seg(t, b(9.8), b(10.2)) * (1 - seg(t, D + .02, D + .1));
-    cx = track(t, [[b(9.8), 262], [b(11), 248, 'io'], [b(12.2), 214, 'io']]);
-    cy = track(t, [[b(9.8), 430], [b(11), 300, 'io'], [b(12.2), 222, 'io']]);
-    hand = t > b(12.1); press = t > D - .07 && t < D + .06;
+  if (t >= b(1.6) && t < D + .1) {
+    co = seg(t, b(1.6), b(1.9)) * (1 - seg(t, D + .02, D + .1));
+    if (t < T_UP1) { cx = qx; cy = qy; press = qpress; }
+    else { cx = track(t, [[T_UP1, REST[0]], [b(18), 250, 'io'], [b(19.2), 214, 'io']]); cy = track(t, [[T_UP1, REST[1]], [b(18), 300, 'io'], [b(19.2), 222, 'io']]); }
+    // anger: the cursor trembles with the hand
+    const tr = t > T_STOP && t < T_SLAM + .25 ? 1.6 * E.io(seg(t, T_STOP, T_SLAM)) : 0;
+    cx += tr * Math.sin(t * 97); cy += tr * Math.sin(t * 83 + 1);
+    hand = t > b(19.1); press = press || (t > D - .07 && t < D + .06);
   }
   show(cur, co > 0); op(cur, co);
   const shape = hand ? 'h' : 'a'; if (cur.dataset.s !== shape) { cur.innerHTML = hand ? HAND : ARROW; cur.dataset.s = shape; }
@@ -344,9 +395,9 @@ function sApp(t, ovs) {
     const rot = (1 - k) * (28 * Math.sin(t * 2.3 + c.ph * 3) + (c.i % 2 ? 14 : -14));
     c.el.style.transform = `translate(${p[0]}px,${p[1]}px) translate(-50%,-50%) rotate(${rot}deg) scale(${.92 * p[2]})`;
     c.el.style.zIndex = k > .5 ? 2 : 1;
-    op(c.el, seg(t, r(11.6), r(11.9)) * (1 - seg(t, r(15.8), r(16.2))));
+    op(c.el, seg(t, r(11.6), r(11.9)) * (1 - seg(t, r(16.8), r(17.2))));
   });
-  CL.forEach((c, i) => { const p = proj([c.x, c.y - 14, Z.hist + 8]); CLAB[i].style.transform = `translate(${p[0]}px,${p[1]}px) translate(-50%,-50%)`; op(CLAB[i], seg(t, c.t, c.t + .15) * (1 - seg(t, r(15.8), r(16.2)))); });
+  CL.forEach((c, i) => { const p = proj([c.x, c.y - 14, Z.hist + 8]); CLAB[i].style.transform = `translate(${p[0]}px,${p[1]}px) translate(-50%,-50%)`; op(CLAB[i], seg(t, c.t, c.t + .15) * (1 - seg(t, r(16.8), r(17.2)))); });
 }
 function pulse(t) { if (t < D) return 0; const x = ((t - D) / BEAT) % 4; let p = 0; for (const a of [0, 1, 2.25, 3]) { const d = x - a; if (d >= 0) p = Math.max(p, Math.exp(-d * 5)); } return p; }
 
@@ -357,19 +408,19 @@ endEl.innerHTML = `<div class="ewm" id="ewm"><span class="t">The</span><span cla
   <div class="eurl" id="eurl">github.com/YunongDai2005/dsh-theone</div>
   <div class="edisc" id="edisc">Community plugin for DSH · unofficial</div>`;
 function sEnd(t) {
-  const vis = t >= r(15.9); show(endEl, vis); if (!vis) return;
-  op(endEl, seg(t, r(15.9), r(16.05)));
-  const k = seg(t, r(16), r(16) + .5);
-  $('#ewm').style.transform = `scale(${lerp(1.12, 1, E.oe(k)) * (1 + .015 * pulse(t))})`; op($('#ewm'), seg(t, r(16), r(16) + .12));
+  const vis = t >= r(16.9); show(endEl, vis); if (!vis) return;
+  op(endEl, seg(t, r(16.9), r(17.05)));
+  const k = seg(t, r(17), r(17) + .5);
+  $('#ewm').style.transform = `scale(${lerp(1.12, 1, E.oe(k)) * (1 + .015 * pulse(t))})`; op($('#ewm'), seg(t, r(17), r(17) + .12));
   const up = (id, a) => { const el = $(id), p = seg(t, a, a + .4); op(el, p); el.style.transform = `translateY(${(1 - E.o(p)) * 24}px)`; };
-  up('#etag', r(17)); up('#eurl', r(18.25)); up('#edisc', r(18.6));
+  up('#etag', r(18.25)); up('#eurl', r(19)); up('#edisc', r(19.5));
 }
 
 /* ---------------------------------------------------------- global FX */
 const grain = $('#grain'), gctx = grain.getContext('2d');
 { const img = gctx.createImageData(398, 608), r0 = rng(77); for (let i = 0; i < img.data.length; i += 4) { const v = r0() * 255; img.data[i] = img.data[i + 1] = img.data[i + 2] = v; img.data[i + 3] = 255; } gctx.putImageData(img, 0, 0);  }
 function sFX(t) {
-  const f = Math.max(t >= D ? 1 - E.o(seg(t, D, D + .55)) : 0, t >= r(16) ? .5 * (1 - E.o(seg(t, r(16), r(16) + .4))) : 0);
+  const f = Math.max(t >= D ? 1 - E.o(seg(t, D, D + .55)) : 0, t >= r(17) ? .5 * (1 - E.o(seg(t, r(17), r(17) + .4))) : 0);
   op($('#flash'), f);
   const fr = Math.floor(t * 30), r0 = rng(fr + 1);
   grain.style.transform = `translate(${Math.floor(r0() * 256)}px,${Math.floor(r0() * 256)}px) scale(2.6)`; grain.style.transformOrigin = '0 0';
@@ -385,8 +436,6 @@ function render(t) {
   if (!G.maxScroll) G.maxScroll = () => Math.max(0, lin.offsetHeight - 535);
   const ovs = {};
   sDesk(t, ovs); drawDeskCursor(ovs.desk);
-  if (t >= T_WH0 && G.sLast == null) G.sLast = listScroll(T_WH0 - 1e-3);
-  if (G.sLast == null) G.sLast = 0;
   sApp(t, ovs); sEnd(t); sFX(t);
 }
 window.render = render;
@@ -395,7 +444,6 @@ window.warm = async () => {
   await document.fonts.ready;
   for (let t = 0; t < TOTAL; t += .3) render(t);
   await document.fonts.ready;
-  G.sLast = null; render(T_WH0 - .01); G.sLast = listScroll(T_WH0 - 1e-3);
   render(0); await new Promise(r0 => setTimeout(r0, 300));
   return CUES.length;
 };
