@@ -14,6 +14,8 @@
   },
   "scripts": {
     "build": "node build.mjs",
-    "build:dark": "node build.mjs dark"
+    "build:dark": "node build.mjs dark",
+    "build:fast": "node build.mjs --fast",
+    "build:dark:fast": "node build.mjs dark --fast"
   }
 }

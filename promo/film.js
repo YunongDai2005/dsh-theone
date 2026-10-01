@@ -23,6 +23,7 @@ function track(t, keys) {
 function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 const show = (el, v) => { const d = v ? '' : 'none'; if (el.style.display !== d) el.style.display = d; };
 const op = (el, v) => { el.style.opacity = v; };
+const text = (el, v) => { if (el.textContent !== v) el.textContent = v; };
 const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
 const I = window.DSH_ICONS; const ic = (n, cls = '') => `<span class="ico ${cls}">${I[n]}</span>`;
 
@@ -426,7 +427,7 @@ function sApp(t, ovs) {
   CARDS[0].el.style.borderColor = hot0 ? `rgb(${W(255, 176, 112)})` : ''; CARDS[0].el.style.boxShadow = '';
   NEWC.style.borderColor = hot1 ? `rgb(${W(255, 176, 112)})` : ''; NEWC.style.boxShadow = '';
   // router tag
-  const tag = t > r(9) ? 'CREATE' : t > r(5) ? 'SWAP' : ''; const rt = $('#rtag'); rt.textContent = tag;
+  const tag = t > r(9) ? 'CREATE' : t > r(5) ? 'SWAP' : ''; const rt = $('#rtag'); text(rt, tag);
   op(rt, tag ? (t > r(9) ? seg(t, r(9), r(9) + .1) : seg(t, r(5), r(5) + .1)) * (1 - seg(t, r(11.5), r(12))) : 0);
   router.style.boxShadow = '';
   const land = (t0, hold = 0) => t < t0 ? seg(t, t0 - .04, t0) : hold + (1 - hold) * Math.exp(-(t - t0) * 3.5);
@@ -449,7 +450,7 @@ function sApp(t, ovs) {
   if (pp) { orb.style.transform = `translate(${pp[0]}px,${pp[1]}px)`; } op(orb, op0);
   const bubs = [[r(4), r(5.2), 'Kyoto, day 3?', 0], [r(7), r(8), 'Arashiyama at 9 am.', 1], [r(8), r(9.2), 'New topic: a cat feeder', 0]];
   let bb0 = null; for (const x of bubs) if (t >= x[0] && t < x[1]) bb0 = x;
-  if (bb0) { const p = proj([ONE.x, ONE.y - 30, Z.lift + 10]); bub.textContent = bb0[2]; bub.className = 'bub' + (bb0[3] ? ' r' : ''); const k = E.ob(seg(t, bb0[0], bb0[0] + .25)); bub.style.transform = `translate(${p[0]}px,${p[1]}px) translate(-50%,-160%) scale(${lerp(.7, 1, k)})`; op(bub, seg(t, bb0[0], bb0[0] + .08) * (1 - seg(t, bb0[1] - .12, bb0[1]))); } else op(bub, 0);
+  if (bb0) { const p = proj([ONE.x, ONE.y - 30, Z.lift + 10]); text(bub, bb0[2]); bub.className = 'bub' + (bb0[3] ? ' r' : ''); const k = E.ob(seg(t, bb0[0], bb0[0] + .25)); bub.style.transform = `translate(${p[0]}px,${p[1]}px) translate(-50%,-160%) scale(${lerp(.7, 1, k)})`; op(bub, seg(t, bb0[0], bb0[0] + .08) * (1 - seg(t, bb0[1] - .12, bb0[1]))); } else op(bub, 0);
   const deckOf = i => {
     const Cc = CL[i], g = E.io(seg(t, r(17) - .05 + i * .04, r(17) + .32 + i * .04)), sq = E.io(seg(t, r(17.5) - .05, r(17.5) + .35));
     const cx = lerp(Cc.x, ONE.x + (i - 1.5) * 4 * (1 - sq), g), cy = lerp(Cc.y + 70, ONE.y + (i - 1.5) * 3 * (1 - sq), g);
@@ -480,9 +481,9 @@ function sApp(t, ovs) {
     el.querySelector('.sl').style.opacity = (.35 + .65 * seg(t, CL[i].t, CL[i].t + .15)) * (1 - seg(t, r(17.5), r(17.5) + .2));
   });
 }
-const preGlow = h('div', null); preGlow.style.cssText = 'position:absolute;left:0;top:0;width:1080px;height:' + SH + 'px;pointer-events:none'; let PREG = null;
+const preGlow = h('div', null); preGlow.id = 'preGlow'; preGlow.style.cssText = 'position:absolute;left:0;top:0;width:1080px;height:' + SH + 'px;pointer-events:none;z-index:2'; let PREG = null;
 const preRays = h('div', 'gl3 grays'); preGlow.appendChild(preRays);
-const glowL = h('div', null); glowL.style.cssText = 'position:absolute;left:0;top:0;width:1080px;height:' + SH + 'px;pointer-events:none'; $('#cam').insertBefore(glowL, w3); $('#cam').insertBefore(preGlow, $('#ov'));
+const glowL = h('div', null); glowL.id = 'glowLayer'; glowL.style.cssText = 'position:absolute;left:0;top:0;width:1080px;height:' + SH + 'px;pointer-events:none;z-index:0'; $('#cam').insertBefore(glowL, w3); $('#cam').insertBefore(preGlow, $('#ov'));
 glowL.innerHTML = `<svg id="cone" width="1080" height="${SH}" style="position:absolute;left:0;top:0;overflow:visible"><defs><filter id="coneB" filterUnits="userSpaceOnUse" x="-600" y="-600" width="2280" height="3360"><feGaussianBlur stdDeviation="7"/></filter></defs><g id="coneP" filter="url(#coneB)"></g><g id="coneP2" filter="url(#coneB)"></g></svg>
   <div class="gl3 grays"></div><div class="gl3 gstreak"></div><div class="gl3 gstreak2"></div>`;
 const hull = P => { P = P.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]); const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]); const lo = [], up = []; for (const p of P) { while (lo.length > 1 && cr(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop(); lo.push(p); } for (const p of P.reverse()) { while (up.length > 1 && cr(up[up.length - 2], up[up.length - 1], p) <= 0) up.pop(); up.push(p); } return lo.slice(0, -1).concat(up.slice(0, -1)); };
@@ -600,11 +601,48 @@ function render(t) {
   sApp(t, ovs); sEnd(t); sFX(t);
 }
 window.render = render;
+// Keep the static card copy in the card's own background paint layer.
+// Separate DOM glyph layers can disappear during perspective compositing.
+let cardCopyReady = false;
+async function bakeCardCopy() {
+  if (cardCopyReady) return;
+  await document.fonts.load('600 22px Inter');
+  await document.fonts.load('500 13px "JetBrains Mono"');
+  for (const el of [...CARDS.map(c => c.el), NEWC]) {
+    const canvas = document.createElement('canvas');
+    const scale = 4;
+    canvas.width = 230 * scale; canvas.height = 136 * scale;
+    const ctx = canvas.getContext('2d'); ctx.scale(scale, scale);
+    for (const child of el.children) {
+      const cs = getComputedStyle(child);
+      const x = child.offsetLeft + el.clientLeft, y = child.offsetTop + el.clientTop;
+      if (child.classList.contains('cl')) {
+        ctx.fillStyle = cs.backgroundColor;
+        ctx.beginPath(); ctx.roundRect(x, y, child.offsetWidth, child.offsetHeight, 4); ctx.fill();
+      } else {
+        ctx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+        ctx.fillStyle = cs.color; ctx.textBaseline = 'alphabetic';
+        const metrics = ctx.measureText(child.textContent);
+        const ascent = metrics.fontBoundingBoxAscent ?? metrics.actualBoundingBoxAscent;
+        const descent = metrics.fontBoundingBoxDescent ?? metrics.actualBoundingBoxDescent;
+        ctx.fillText(child.textContent, x, y + (child.offsetHeight - ascent - descent) / 2 + ascent);
+      }
+    }
+    el.style.backgroundImage = `url(${canvas.toDataURL('image/png')})`;
+    el.style.backgroundSize = '100% 100%'; el.style.backgroundOrigin = 'border-box';
+    el.style.backgroundRepeat = 'no-repeat';
+    for (const child of el.children) child.style.visibility = 'hidden';
+  }
+  cardCopyReady = true;
+}
 window.warm = async () => {
   const wasDisp = $('#appwrap').style.display; $('#appwrap').style.display = '';
   await document.fonts.ready;
   for (let t = 0; t < TOTAL; t += .3) render(t);
   await document.fonts.ready;
+  // Lay out visible cards before measuring their static copy.
+  render(22);
+  await bakeCardCopy();
   render(0); await new Promise(r0 => setTimeout(r0, 300));
   return CUES.length;
 };
