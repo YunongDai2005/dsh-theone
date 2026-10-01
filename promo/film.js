@@ -218,7 +218,7 @@ const CARDS = CARD_T.map((tt, i) => {
 const NEWC = h('div', 'lay glass card', `<div class="ct">Cat feeder</div><div class="cl" style="width:60%"></div><div class="cl" style="width:40%"></div><div class="cm">new session</div>`);
 Object.assign(NEWC.style, { width: '230px', height: '136px' }); w3.appendChild(NEWC);
 const NEWP = { x: ONE.x + 2 * 252, y: ONE.y };
-const Z = { lift: 160, router: -250, cards: -560, hist: -880 };
+const Z = { lift: 160, router: -250, cards: -660, hist: -1000 };  // a clear gap between the router and the session cards, so they read as separate floors
 // the history sheet holds four topic slots; later the slots square up into a deck that docks under the key
 const ENV = h('div', 'lay'); ENV.style.width = ENV.style.height = '0px'; w3.appendChild(ENV);
 const envAt = (el, x, y, z, extra = '') => { el.style.transform = `translate3d(${x}px,${y}px,${z}px) ${extra}`; };
@@ -539,7 +539,9 @@ function drawGlow(t, post, z, S, TH, o, gI, flare, coneO) {
   at('gstreak2', L * 1.9, 26, ang, o * Math.min(.8, .12 + .5 * (pulse(t) + flare)));
   // the routing light travels level by level: key → router (lands on r5 / r9), router → session (lands on r6¼ / r10¼)
   const KEY = [ONE.x, ONE.y, 168 * S, 45.5 * S, z], RT = [ONE.x, ONE.y, 260, 150, Z.router];
-  const LEGS = [[r(4.4), r(5), KEY, RT], [r(5.15), r(6.25), RT, [CARDS[0].x, CARDS[0].y, 115, 68, Z.cards]], [r(8.4), r(9), KEY, RT], [r(9.15), r(10.25), RT, [NEWP.x, NEWP.y, 115, 68, Z.cards]]];
+  // wavefronts only where the next level sits straight below (key → router); a session card is off to the side, so a
+  // wave morphing into it would sweep across the other cards; there the light travels as the orb alone
+  const LEGS = [[r(4.4), r(5), KEY, RT], [r(8.4), r(9), KEY, RT]];
   // the wave is the key's rectangle carried down through 3D space into the target's rectangle, so every
   // wavefront has the same angle and perspective as the planes it travels between
   ['#coneP', '#coneP2'].forEach((pid, slot) => {
