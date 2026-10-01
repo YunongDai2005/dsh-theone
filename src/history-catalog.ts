@@ -100,7 +100,7 @@ export class HistoryCatalog {
     return { status: { ...this.status }, groups: this.store.groups(),
       contexts: this.store.contexts().map(context => ({ ...context, sourceSessionIds: this.store.sources(context.id) })) }
   }
-  get incomplete(): boolean { return this.status.running || this.status.pending > 0 || !this.status.lastCompletedAt }
+  get incomplete(): boolean { return this.status.running || this.status.pending > 0 || !!this.status.searchUnavailable || !this.status.lastCompletedAt }
 
   refresh(): Promise<void> {
     if (this.abort.signal.aborted) return Promise.resolve()
@@ -176,6 +176,7 @@ export class HistoryCatalog {
   }
 
   async candidates(text: string, currentId?: string, signal?: AbortSignal) {
+    this.status.searchUnavailable = false
     const all = this.store.contexts()
     if (all.length <= 16) return all
     const normalized = text.toLowerCase()
@@ -184,7 +185,13 @@ export class HistoryCatalog {
     const terms = [...new Set(text.match(/[a-zA-Z][\w.-]{1,40}|[\u4e00-\u9fff]{2,8}/g) ?? [])].slice(0, 4)
     for (const term of terms) {
       signal?.throwIfAborted()
-      const page = await this.ctx.sessionQuery.searchSessions({ query: term, limit: 12 }, { signal })
+      let page
+      try { page = await this.ctx.sessionQuery.searchSessions({ query: term, limit: 12 }, { signal }) }
+      catch {
+        signal?.throwIfAborted()
+        this.status.searchUnavailable = true
+        break
+      }
       for (const id of this.store.contextsForSessions(page.items.map(hit => hit.header.id))) scores.set(id, (scores.get(id) ?? 0) + 20)
     }
     return [...all].sort((a, b) => (scores.get(b.id) ?? 0) - (scores.get(a.id) ?? 0) || a.id.localeCompare(b.id)).slice(0, 16)

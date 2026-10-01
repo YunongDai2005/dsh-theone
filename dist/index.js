@@ -164,7 +164,7 @@ export default class TheOne extends Service {
                         const result = await this.router.decide({ text, contexts, currentId, recent }, signal);
                         proposed = result.decision;
                         // A miss in a short candidate list is not proof that the whole catalog has no match.
-                        if (proposed.action === 'CREATE' && this.catalog && !this.catalog.incomplete && !/^新话题[：:]/.test(text.trim())) {
+                        if (proposed.action === 'CREATE' && this.catalog && !/^新话题[：:]/.test(text.trim())) {
                             const seen = new Set(contexts.map(context => context.id));
                             const remaining = this.store.contexts().filter(context => !seen.has(context.id));
                             const current = this.store.contexts().find(context => context.id === currentId);

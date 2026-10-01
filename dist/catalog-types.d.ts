@@ -17,6 +17,7 @@ export interface CatalogStatus {
     failed: number;
     pending: number;
     lastCompletedAt?: number;
+    searchUnavailable?: boolean;
 }
 export interface CatalogSnapshot {
     groups: TopicGroup[];

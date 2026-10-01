@@ -4,7 +4,7 @@ export interface TopicGroup { id: string; title: string; summary: string; contex
 export interface CatalogContext extends ContextDescriptor { workingSessionId: string; sourceSessionIds: string[] }
 export interface CatalogStatus {
   running: boolean; scanned: number; indexed: number; skipped: number; failed: number
-  pending: number; lastCompletedAt?: number
+  pending: number; lastCompletedAt?: number; searchUnavailable?: boolean
 }
 export interface CatalogSnapshot { groups: TopicGroup[]; contexts: CatalogContext[]; status: CatalogStatus }
 export interface HistoryPart { seq: number; endSeq: number; text: string; fingerprint: string }

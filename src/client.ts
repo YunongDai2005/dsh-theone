@@ -137,6 +137,7 @@ export function apply(ctx: Context) {
         ? `${snapshot.contexts.length} 个话题 · ${snapshot.groups.length} 个分组` + (status?.running ? ' · 正在整理历史…' : status?.pending ? ` · 还有 ${status.pending} 个会话待整理` : ' · 历史目录已更新')
         : '正在读取话题…'),
       status?.failed ? h('p', { className: 'theone-catalog-warning' }, `${status.failed} 个会话暂时未能整理，稍后会重试。已有话题仍可查看。`) : null,
+      status?.searchUnavailable ? h('p', { className: 'theone-catalog-warning' }, '部分历史暂时无法检索，仍可从话题目录继续聊天。') : null,
       error ? h('p', { role: 'alert', className: 'theone-catalog-warning' }, error) : null,
       snapshot && !snapshot.contexts.length ? h('p', { className: 'theone-catalog-empty' }, status?.running ? '正在从以前的聊天中整理话题。你也可以先回到主聊天。' : '目前还没有整理出话题。开始聊天后，它们会自动出现在这里。') : null,
       h('div', { className: 'theone-catalog-groups' }, ...groups.map(group =>

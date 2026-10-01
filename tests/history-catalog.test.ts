@@ -274,3 +274,37 @@ test('history search failure yields clarification and does not dispatch a new Wo
     assert.equal(app.model.requests.length, 0)
   } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
 })
+
+test('broken native FTS still routes known topics and blocks implicit CREATE until search recovers', { timeout: 30000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'theone-catalog-fts-fallback-'))
+  const model = fixture()
+  const base = model.behavior!
+  model.behavior = async function* (options) {
+    const text = options.messages[0].content.filter(b => b.type === 'text').map(b => b.text).join('')
+    if (options.system === ROUTING_PROMPT && JSON.parse(text).text === '我想开始一件全新的事项')
+      yield* textResponse(JSON.stringify({ action: 'CREATE', contextId: null, title: '全新事项', question: null, reason: '无匹配目录' }))
+    else yield* base(options)
+  }
+  const app = await harness(root, model, { historyCatalog: true, routerMode: 'llm', routerTransport: 'dsh' })
+  try {
+    const target = { id: 'topic-paper', title: '论文方法', summary: '论文的研究方法', entities: ['论文'], keywords: ['论文方法'], lastState: '进行中' }
+    app.ctx.theone.store.seed([target, ...Array.from({ length: 20 }, (_, i) => ({ ...target, id: `filler-${i}`, title: `无关话题 ${i}`, entities: [], keywords: [] }))])
+    const originalSearch = app.ctx.sessionQuery.searchSessions.bind(app.ctx.sessionQuery)
+    app.ctx.sessionQuery.searchSessions = async () => { throw new Error('Native migration failure') }
+    const continued = await ask(app.gateway, '继续论文方法')
+    assert.equal(continued.output, '测试回答')
+    assert.equal(app.ctx.theone.store.route(continued.input.id)?.decision.contextId, target.id)
+    assert.equal(app.ctx.theone.catalog!.snapshot().status.searchUnavailable, true)
+    await app.ctx.theone.catalog!.refresh()
+    const count = app.ctx.theone.store.contexts().length
+    const uncertain = await ask(app.gateway, '我想开始一件全新的事项')
+    assert.equal(app.ctx.theone.store.route(uncertain.input.id)?.decision.action, 'CLARIFY')
+    assert.equal(app.ctx.theone.store.contexts().length, count)
+    app.ctx.sessionQuery.searchSessions = originalSearch
+    await app.ctx.theone.catalog!.refresh()
+    const fresh = await ask(app.gateway, '我想开始一件全新的事项')
+    assert.equal(app.ctx.theone.catalog!.snapshot().status.searchUnavailable, false)
+    assert.equal(app.ctx.theone.store.route(fresh.input.id)?.decision.action, 'CREATE')
+    assert.equal(app.ctx.theone.store.contexts().length, count + 1)
+  } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
+})
