@@ -21,3 +21,6 @@ scripts/*history*
 scripts/evaluate-*
 scripts/retrieve-*
 scripts/test-live-llm-gateway.ts
+
+# DeepSeek Harness source cloned by promo/build.mjs for its artwork
+.dsh/
