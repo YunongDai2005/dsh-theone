@@ -4,6 +4,8 @@
 
 The UI is a replica of the DSH web client built with DSH's own icons, whale mark and wordmark (`extract-icons.tsx` renders them from the `deepseek-harness` sources). The window is laid out at 2.8× resolution with CSS `zoom` and scaled back down, so text stays sharp under the 3D camera. The top 170 px stay background-only for the phone notch.
 
+Video frames are rendered at 2× (`SS=2`) and downsampled with Lanczos, which keeps text sharp on oblique 3D planes. After the drop, The One key carries a screen-space volumetric glow (halo shaped to its projection, soft rays, an anamorphic streak and a light cone down to the router); it flares only on each bar's strongest hit (`r(4k+1)`).
+
 ## Beat map
 
 - BGM: 77 BPM, 4/4, one beat = 0.779 s.
@@ -46,7 +48,7 @@ echo '{"total":34.586}' > meta.json && python3 sfx.py          # → sfx.wav
 ffmpeg -i bgm.m4a -i sfx.wav -filter_complex \
   "[0:a]aresample=44100,atrim=start=77.6942:duration=34.586,asetpts=PTS-STARTPTS,afade=t=in:d=0.4,afade=t=out:st=33.59:d=1.0[m];[m][1:a]amix=inputs=2:normalize=0,alimiter=limit=0.95:level=false[a]" \
   -map "[a]" -c:a pcm_s16le mix.wav
-node render.mjs video film_noaudio.mp4 30
+SS=2 node render.mjs video film_noaudio.mp4 30   # 2× supersampled, Lanczos down to 1080×1920
 ffmpeg -i film_noaudio.mp4 -i mix.wav -c:v copy -c:a aac -b:a 256k -shortest theone-film.mp4
 ```
 
