@@ -668,6 +668,11 @@ export default class TheOne extends Service {
         }
       }
     }
+    // The dock preview covers only reasoning not yet in the main-chat message;
+    // once an attempt is published there, keeping it would show the same text twice.
+    const dropPreview = (attemptId: string): void => {
+      if (this.thinkingPreview?.attemptId === attemptId) this.thinkingPreview = undefined
+    }
     const stopStream = this.ctx.on('agent/assistant-stream', ({ agent, frame }) => {
       if (agent.id !== worker.id || failure) return
       if (frame.type === 'start') {
@@ -701,24 +706,22 @@ export default class TheOne extends Service {
         }
         if ((chunk.type === 'text-delta' && chunk.text) || (chunk.type === 'block-end' && chunk.block.type === 'text' && chunk.block.text))
           attempt.streaming = true
-        if (attempt.streaming) publish(attempt)
+        if (attempt.streaming) { dropPreview(frame.attemptId); publish(attempt) }
       }
       if (frame.type === 'end') {
         const attempt = attempts.get(frame.attemptId)
+        dropPreview(frame.attemptId)
         if (attempt && frame.outcome.kind === 'committed' && frame.outcome.eventType === 'assistant/message') {
           publish(attempt)
           // Only close blocks with authoritative content after the worker commits.
           for (const [key, block] of attempt.blocks)
             enqueue({type:'block-end',index:attempt.output.get(key)!.index,block})
-        } else {
-          if (this.thinkingPreview?.attemptId === frame.attemptId) this.thinkingPreview = undefined
-          if (attempt?.streaming) {
-            // DSH's adapter stream has no reset primitive. Once text has been
-            // exposed, stop rather than concatenate an automatic retry to it.
-            failure = new Error('Worker reply was interrupted after streaming began')
-            cancel()
-            wake()
-          }
+        } else if (attempt?.streaming) {
+          // DSH's adapter stream has no reset primitive. Once text has been
+          // exposed, stop rather than concatenate an automatic retry to it.
+          failure = new Error('Worker reply was interrupted after streaming began')
+          cancel()
+          wake()
         }
         attempts.delete(frame.attemptId)
       }

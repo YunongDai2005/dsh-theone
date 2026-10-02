@@ -139,6 +139,53 @@ test('reasoning across tool steps is shown while tools execute only once in the 
   } finally {await app.close();await rm(root,{recursive:true,force:true})}
 })
 
+test('preview hides reasoning once it is in the main-chat message, during tools and after reply text starts', {timeout:30000}, async () => {
+  const root = await mkdtemp(join(tmpdir(),'theone-thinking-handoff-'))
+  const app = await harness(root)
+  const {snapshot} = previewChannel(app)
+  const toolEntered = Promise.withResolvers<void>(), releaseTool = Promise.withResolvers<void>()
+  const reasoned = Promise.withResolvers<void>(), releaseText = Promise.withResolvers<void>()
+  const textStarted = Promise.withResolvers<void>(), releaseEnd = Promise.withResolvers<void>()
+  let calls = 0
+  try {
+    app.ctx.tools.register(defineTool({name:'thinking_gate',description:'Synthetic gate',parameters:{},
+      output:{schema:{type:'string'},render:(_args,value:string)=>[{type:'text',text:value}]},
+      execute:async()=>{calls++;toolEntered.resolve();await releaseTool.promise;return 'complete'}}))
+    app.model.behavior = async function* () {
+      if (!calls) {
+        yield* thinking('工具前的思考')
+        const id = ToolCallId('thinking-gate-call')
+        yield {type:'block-start',index:1,blockType:'tool-call'}
+        yield {type:'tool-call-delta',index:1,id,name:'thinking_gate',argumentsDelta:'{}'}
+        yield {type:'block-end',index:1,block:{type:'tool-call',id,name:'thinking_gate',arguments:'{}'}}
+        yield {type:'finish',reason:{kind:'tool-calls'}}
+      } else {
+        yield* thinking('回答前的思考')
+        reasoned.resolve();await releaseText.promise
+        yield {type:'block-start',index:1,blockType:'text'}
+        yield {type:'text-delta',index:1,text:'开始'}
+        textStarted.resolve();await releaseEnd.promise
+        yield {type:'block-end',index:1,block:{type:'text',text:'开始'}}
+        yield {type:'finish',reason:{kind:'stop'}}
+      }
+    }
+    const pending = ask(app.gateway,'Qwen 那个')
+    await toolEntered.promise
+    assert.equal((await snapshot()).text,'')
+    releaseTool.resolve()
+    await reasoned.promise
+    const live = await snapshot()
+    assert.equal(live.active,true);assert.equal(live.text,'回答前的思考')
+    releaseText.resolve()
+    await textStarted.promise
+    assert.equal((await snapshot()).text,'')
+    releaseEnd.resolve()
+    const result = await pending
+    assert.equal(result.output,'开始')
+    assert.deepEqual(content(result).map(b=>b.type),['reasoning','reasoning','text'])
+  } finally {releaseTool.resolve();releaseText.resolve();releaseEnd.resolve();await app.close();await rm(root,{recursive:true,force:true})}
+})
+
 test('cancellation and reasoning size limits clear transient preview and preserve route failure', {timeout:30000}, async () => {
   const root = await mkdtemp(join(tmpdir(),'theone-thinking-cancel-'))
   const app = await harness(root,undefined,{theoneConfig:{maxResponseChars:128}})
