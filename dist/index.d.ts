@@ -55,6 +55,7 @@ export default class TheOne extends Service {
     private active;
     private reservedGateway;
     private readonly gatewayDirectory;
+    private thinkingPreview?;
     constructor(ctx: Context, config: Config);
     /** DSH Connection protects plugin routes inside its authenticated /api fence. */
     private registerCatalogChannel;
@@ -87,7 +88,7 @@ export default class TheOne extends Service {
     private refreshCompactionSummary;
     /** Capability is scoped to the exact owned Worker; the model cannot select another Context. */
     private registerWorkerTools;
-    /** Stream text from committed worker attempts; tools execute exclusively in the worker. */
+    /** Relay live reply text; tools execute exclusively in the worker. */
     answer(options: GenerateOptions): AsyncIterable<StreamChunk>;
     private relay;
 }

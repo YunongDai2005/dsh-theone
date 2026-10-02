@@ -20,7 +20,7 @@ Compatible with **DSH 0.2.0-rc.2** and **Node.js 24**.
 2. Open **Plugins → Add plugin**, paste `https://github.com/YunongDai2005/dsh-theone`, and install.
 3. Open **TheOne · Main chat** in the sidebar and start chatting.
 
-**v0.3.6 enables LLM routing by default and reuses DSH’s model calls and API credentials. No additional API key is needed.** By default, routing, topic workers, and the entry's context capacity follow the model selected in DSH before opening TheOne. To change models, select another regular chat model in DSH, then open TheOne again.
+**v0.3.7 enables LLM routing by default and reuses DSH’s model calls and API credentials. No additional API key is needed.** By default, routing, topic workers, and the entry's context capacity follow the model selected in DSH before opening TheOne. To change models, select another regular chat model in DSH, then open TheOne again.
 
 The public repository includes the compiled backend and web client. Installation needs no local build or lifecycle scripts. You can also use the DSH CLI:
 
@@ -58,7 +58,7 @@ These workspaces are logical groups stored by TheOne. Native DSH workspaces are 
 
 Catalog entries, groups, source ranges, and indexing progress live in TheOne’s SQLite database. DSH keeps the original logs. The plugin organizes history at startup, updates after chats, and periodically checks for changes. Unchanged sessions do not trigger new model calls. Each scan processes at most 64 extraction batches and continues remaining work later. Initial indexing takes time and uses your configured API quota.
 
-Routing uses the catalog and DSH full-text search to retrieve up to 16 candidates for the LLM. If search fails, it falls back to the existing catalog and checks additional entries. A proposed new topic triggers up to three further batches of catalog checks. While indexing is incomplete or entries remain unchecked, a complete standalone request may create a topic if every review agrees that it needs no missing history. Unresolved historical references ask for clarification. This keeps independent tasks usable during indexing, but a candidate miss can still create a duplicate topic; it does not prove that all history has been searched. An explicit `新话题：` (Chinese for “new topic:”) request can still create one.
+Routing uses the catalog and DSH full-text search to retrieve up to 16 candidates for the LLM. If search fails, it falls back to the existing catalog and checks additional entries. A proposed new topic triggers up to three further batches of catalog checks. Without a credible match or an explicit dependency on an earlier conversation, the default is a new topic, including while indexing or search is unavailable. An unfamiliar name or missing factual knowledge is handled by the chat model; it does not justify asking whether this is an old topic. Routing asks only for unresolved historical references (such as “use the previous link”) or a choice between at least two relevant catalog entries. The classifier must name those entries; unsupported clarification is converted to a new topic. Historical-reference detection supports common Chinese and English phrases and may miss other phrasings. Routing requests disable deep thinking when the configured model supports an `off` effort, keeping the small classification budget available for JSON; chat-model defaults stay as configured in DSH. Candidate retrieval can still miss an old topic and create a duplicate; it does not prove that all history has been searched. An explicit `新话题：` (Chinese for “new topic:”) request can still create one.
 
 Set `THEONE_HISTORY_CATALOG=false` to stop automatic indexing while keeping existing entries and groups. Failed sessions appear in the status and are retried later; one failed source does not block the others.
 
@@ -75,6 +75,14 @@ When DSH compacts through the TheOne provider, the plugin creates a bounded refe
 Only successful calls heat a topic. Failed requests and clarification do not increase its frequency. Usage survives entry reconstruction. Checkpoints are redacted, bounded by the model capacity and the compaction output allowance, and can be compacted again without multiplying retained excerpts. Compression makes no additional model call and never runs a worker or a tool. Original DSH logs, source ranges, topic summaries, and working sessions remain available for history retrieval.
 
 This changes the gateway checkpoint, not workers' ordinary DSH compaction. It activates when DSH compacts; age alone does not start a background compression job. An explicitly configured separate DSH summarization provider uses that provider's summary policy instead.
+
+## Thinking in main chat
+
+When the configured model returns displayable reasoning, a **Live thinking** section below the composer shows it during generation and can be collapsed. While main chat is open, it checks for a new preview every second and refreshes active previews about every 400 ms. Switching sessions, cancellation, failed attempts and retries clear the transient preview. The preview shows up to the latest 16,000 characters; completed thinking remains in main chat as native DSH reasoning blocks and survives reloads.
+
+Reply text streams directly into DSH's native main-chat message as the Worker produces it. Final blocks close after the Worker commits, so the completed answer is saved once and survives reloads. Reasoning-only failed attempts can still retry and clear their preview. If an attempt fails after reply text has started, the entry reports an interrupted request instead of appending an automatic retry to that partial answer; a new user request can continue normally. User cancellation uses DSH's native interrupted-message handling.
+
+Tool calls execute in the Worker and are not replayed in the entry. The response character limit covers both reasoning and answer text. Models that do not return reasoning keep DSH's ordinary status indicator. Routing uses its separate short classification call; this section displays the chat model's returned reasoning. A provider that returns the answer as one complete chunk cannot display intermediate text.
 
 ## Current features
 
@@ -119,7 +127,7 @@ npm run pack:plugin
 
 Tests use real DSH services, AgentLoop, sessions, SQLite queries, JSONL persistence, and compaction, with mocked models and no external API calls. Demo catalogs contain fictional data.
 
-Packaging produces `.dsh-test/dsh-theone-0.3.5.tgz`, containing the backend, web client, configuration, and bilingual documentation. It excludes API keys, chat snapshots, and databases.
+Packaging produces `.dsh-test/dsh-theone-0.3.7.tgz`, containing the backend, web client, configuration, and bilingual documentation. It excludes API keys, chat snapshots, and databases.
 
 For isolated local development, run `npm run install:local` and `npm run start:local`. Data lives under `~/.dsh-theone`; configure a model in that separate DSH profile. Copy `.env.example` to `.env` to adjust the port and other settings. Do not commit `.env`.
 
@@ -132,7 +140,7 @@ Manually linked historical sessions require an approved inclusive range through 
 ## Known limits
 
 - Main chat identity is stored in the current browser for the current web path. Another browser may create another gateway while sharing the same topic workers through the database.
-- This version supports text input and forwards replies after worker steps commit. Token-by-token forwarding, image output, tool cards, and approval UI forwarding are not complete.
+- This version supports text input and streams reply text as the Worker generates it. Image output, tool cards, and approval UI forwarding are not complete.
 - Candidate retrieval uses short catalog entries and DSH full-text search. Embeddings and vector search are not implemented. The LLM extracts topics and groups related entries. Multi-mount and automatic worker rollover are also pending.
 - Catalog updates and DSH logs are not a transaction across databases. Check the original session when an interruption leaves request state uncertain. Hard power-loss recovery has not been validated.
 - Indexing requires readable DSH logs and has not been tested at large scale. History tools scan approved source ranges; gateway log rotation is pending.

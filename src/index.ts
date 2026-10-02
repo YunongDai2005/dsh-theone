@@ -21,10 +21,12 @@ import { gatewayCheckpoint } from './gateway-compaction.ts'
 import { ContextStore } from './store.ts'
 import { resolveContext } from './router.ts'
 import { DeepSeekRouter, DshRouter, RouterFailure } from './llm-router.ts'
+import { referencesHistory } from './routing-policy.ts'
 import type { RecentMessage, RouterReceipt, RoutingRouter } from './llm-router.ts'
 import type { ContextDescriptor, StoredContext, SourceRange } from './types.ts'
 import { EDITABLE_SETTINGS_KEYS, type EditableSettings, type SettingsSnapshot } from './settings-types.ts'
 import { validateSettings } from './settings.ts'
+import type { ThinkingSnapshot } from './thinking-types.ts'
 
 function redactDescriptor(text: string): string {
   return text.replace(/\bsk-[a-zA-Z0-9_-]{16,}|\bBearer\s+\S+/gi, '[REDACTED]')
@@ -114,6 +116,7 @@ export default class TheOne extends Service {
   private active = false
   private reservedGateway: string | undefined
   private readonly gatewayDirectory: string
+  private thinkingPreview?: { gatewayId: string; attemptId: string; blocks: Map<number, { type: 'text' | 'reasoning'; text: string }> }
 
   constructor(ctx: Context, private readonly config: Config) {
     super(ctx, 'theone')
@@ -192,6 +195,8 @@ export default class TheOne extends Service {
         let proposed
         if (searchFailed) {
           receipt.errorCode = 'HISTORY_SEARCH_UNAVAILABLE'
+        }
+        if (searchFailed && referencesHistory(text)) {
           proposed = { action: 'CLARIFY' as const, reason: 'HISTORY_SEARCH_UNAVAILABLE', question: '历史检索暂时不可用，请稍后再试。' }
         } else if (this.router) {
           const recent = await this.recentMessages(agent, input.id, signal)
@@ -254,6 +259,17 @@ export default class TheOne extends Service {
         path: string; methods: string[]; requestBody?: string; fetch: (request: Request) => Promise<Response>
       }) => () => void } } | undefined
       if (!connection?.fetch?.register) return
+      child.effect(() => connection.fetch!.register({ path: '/api/theone/thinking', methods: ['GET'], requestBody:'buffered', fetch: async request => {
+        const gatewayId = new URL(request.url).searchParams.get('sessionId')
+        if (!gatewayId || !/^[a-zA-Z0-9_-]{1,128}$/.test(gatewayId)) return Response.json({error:'INVALID_INPUT'}, {status:400})
+        const preview = this.thinkingPreview
+        const text = preview?.gatewayId === gatewayId
+          ? [...preview.blocks.values()].filter(block => block.type === 'reasoning').map(block => block.text).join('\n\n') : ''
+        const snapshot: ThinkingSnapshot = {active:preview?.gatewayId === gatewayId,
+          ...(preview?.gatewayId === gatewayId ? {attemptId:preview.attemptId} : {}),
+          text:text.slice(-16000), truncated:text.length > 16000}
+        return Response.json(snapshot, {headers:{'cache-control':'no-store'}})
+      } }))
       child.effect(() => connection.fetch!.register({ path: '/api/theone/settings', methods: ['GET', 'PUT'], requestBody: 'buffered', fetch: async request => {
         if (request.method === 'GET') return Response.json(await this.settingsSnapshot(), { headers: { 'cache-control': 'no-store' } })
         let payload: unknown
@@ -559,7 +575,7 @@ export default class TheOne extends Service {
     }))
   }
 
-  /** Stream text from committed worker attempts; tools execute exclusively in the worker. */
+  /** Relay live reply text; tools execute exclusively in the worker. */
   async *answer(options: GenerateOptions): AsyncIterable<StreamChunk> {
     // DSH calls the selected provider for maintenance without an ordinary turn route.
     // Summarization must never claim/replay an input or start a Worker.
@@ -603,7 +619,7 @@ export default class TheOne extends Service {
           throw new Error('Worker has unfinished input; inspect its DSH session before continuing')
         }
         const refreshed = this.store.contexts().find(item => item.id === context.id) ?? context
-        yield* this.relay(worker, refreshed, input, options.signal)
+        yield* this.relay(worker, refreshed, input, options.sessionId, options.signal)
         this.refreshCompactionSummary(worker, context.id)
       }
       this.store.finish(input.id, 'completed')
@@ -617,31 +633,92 @@ export default class TheOne extends Service {
     }
   }
 
-  private async *relay(worker: Agent, context: StoredContext, input: UserMessage, signal?: AbortSignal): AsyncIterable<StreamChunk> {
-    const queue: string[] = []
-    const attempts = new Map<string, string[]>()
+  private async *relay(worker: Agent, context: StoredContext, input: UserMessage, gatewayId: string, signal?: AbortSignal): AsyncIterable<StreamChunk> {
+    type DisplayBlock = { type: 'text' | 'reasoning'; text: string }
+    type Attempt = {
+      blocks: Map<number, DisplayBlock>
+      output: Map<number, { index: number; text: string }>
+      streaming: boolean
+    }
+    const queue: StreamChunk[] = []
+    const attempts = new Map<string, Attempt>()
+    let nextIndex = 0
     let characters = 0
     let done = false
     let failure: Error | undefined
     let outcome: TurnEndReason | undefined
     let wake = (): void => {}
     const cancel = (): void => { worker.cancel({ kind: 'parent' }) }
+    const enqueue = (chunk: StreamChunk): void => { queue.push(chunk); wake() }
+    // Allocate entry indexes in first-seen block order, independently of worker
+    // indexes (which restart at each tool step). Reasoning remains provisional
+    // until reply text starts, so reasoning-only retries can still be discarded.
+    const publish = (attempt: Attempt): void => {
+      for (const [key, block] of attempt.blocks) {
+        let output = attempt.output.get(key)
+        if (!output) {
+          output = { index: nextIndex++, text: '' }
+          attempt.output.set(key, output)
+          enqueue({ type: 'block-start', index: output.index, blockType: block.type })
+        }
+        if (block.text.startsWith(output.text) && block.text.length > output.text.length) {
+          enqueue({ type: block.type === 'text' ? 'text-delta' : 'reasoning-delta',
+            index: output.index, text: block.text.slice(output.text.length) })
+          output.text = block.text
+        }
+      }
+    }
     const stopStream = this.ctx.on('agent/assistant-stream', ({ agent, frame }) => {
-      if (agent.id !== worker.id) return
-      if (frame.type === 'start') attempts.set(frame.attemptId, [])
-      if (frame.type === 'chunk' && frame.chunk.type === 'text-delta') {
-        characters += frame.chunk.text.length
+      if (agent.id !== worker.id || failure) return
+      if (frame.type === 'start') {
+        const blocks = new Map<number, DisplayBlock>()
+        attempts.set(frame.attemptId, { blocks, output: new Map(), streaming: false })
+        this.thinkingPreview = {gatewayId,attemptId:frame.attemptId,blocks}
+      }
+      if (frame.type === 'chunk') {
+        const attempt = attempts.get(frame.attemptId)
+        if (!attempt) return
+        const blocks = attempt.blocks
+        const chunk = frame.chunk
+        if (chunk.type === 'block-start' && (chunk.blockType === 'text' || chunk.blockType === 'reasoning') && !blocks.has(chunk.index))
+          blocks.set(chunk.index,{type:chunk.blockType,text:''})
+        if (chunk.type === 'text-delta' || chunk.type === 'reasoning-delta') {
+          characters += chunk.text.length
+          const block = blocks.get(chunk.index) ?? {type:chunk.type === 'text-delta' ? 'text' as const : 'reasoning' as const,text:''}
+          block.text += chunk.text
+          blocks.set(chunk.index,block)
+        }
+        if (chunk.type === 'block-end' && (chunk.block.type === 'text' || chunk.block.type === 'reasoning')) {
+          const previous = blocks.get(chunk.index)
+          characters += Math.max(0,chunk.block.text.length - (previous?.text.length ?? 0))
+          blocks.set(chunk.index,{type:chunk.block.type,text:chunk.block.text})
+        }
         if (characters > this.config.maxResponseChars) {
           failure = new Error('Worker response exceeded maxResponseChars')
           cancel()
+          wake()
           return
         }
-        attempts.get(frame.attemptId)?.push(frame.chunk.text)
+        if ((chunk.type === 'text-delta' && chunk.text) || (chunk.type === 'block-end' && chunk.block.type === 'text' && chunk.block.text))
+          attempt.streaming = true
+        if (attempt.streaming) publish(attempt)
       }
       if (frame.type === 'end') {
-        if (frame.outcome.kind === 'committed' && frame.outcome.eventType === 'assistant/message') {
-          queue.push(...attempts.get(frame.attemptId) ?? [])
-          wake()
+        const attempt = attempts.get(frame.attemptId)
+        if (attempt && frame.outcome.kind === 'committed' && frame.outcome.eventType === 'assistant/message') {
+          publish(attempt)
+          // Only close blocks with authoritative content after the worker commits.
+          for (const [key, block] of attempt.blocks)
+            enqueue({type:'block-end',index:attempt.output.get(key)!.index,block})
+        } else {
+          if (this.thinkingPreview?.attemptId === frame.attemptId) this.thinkingPreview = undefined
+          if (attempt?.streaming) {
+            // DSH's adapter stream has no reset primitive. Once text has been
+            // exposed, stop rather than concatenate an automatic retry to it.
+            failure = new Error('Worker reply was interrupted after streaming began')
+            cancel()
+            wake()
+          }
         }
         attempts.delete(frame.attemptId)
       }
@@ -663,27 +740,25 @@ export default class TheOne extends Service {
       settled = worker.whenIdle().then(() => { done = true; wake() }, error => {
         failure = error instanceof Error ? error : new Error(String(error)); done = true; wake()
       })
-      let text = ''
-      yield { type: 'block-start', index: 0, blockType: 'text' }
       while (!done || queue.length) {
+        if (failure) throw failure
         while (queue.length) {
           signal?.throwIfAborted()
-          const part = queue.shift()!
-          text += part
-          yield { type: 'text-delta', index: 0, text: part }
+          if (failure) throw failure
+          yield queue.shift()!
         }
         if (!done) await new Promise<void>(resolve => { wake = resolve })
       }
       signal?.throwIfAborted()
       if (failure) throw failure
       if (outcome?.kind !== 'completed') throw new Error(`Worker turn did not complete: ${outcome?.kind ?? 'missing turn/end'}`)
-      yield { type: 'block-end', index: 0, block: { type: 'text', text } }
     } finally {
       signal?.removeEventListener('abort', cancel)
       if (worker.status !== 'idle') cancel()
       await settled
       stopStream()
       stopEvents()
+      if (this.thinkingPreview?.gatewayId === gatewayId) this.thinkingPreview = undefined
     }
   }
 }
