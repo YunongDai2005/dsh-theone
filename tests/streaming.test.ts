@@ -35,7 +35,8 @@ test('reply text reaches native main-chat stream in pieces before worker commit,
     const pending = ask(app.gateway,'Qwen 那个')
     await first.promise
     assert.equal(app.gateway.session.snapshotEvents().filter(e=>e.type === 'assistant/message').length,0)
-    assert.ok(!chunks.some(c=>c.type === 'block-end'))
+    // The reply block stays open until the Worker closes it, exactly as the model streams it.
+    assert.ok(!chunks.some(c=>c.type === 'block-end' && c.block.type === 'text'))
     next.resolve()
     await second.promise
     assert.equal(app.gateway.session.snapshotEvents().filter(e=>e.type === 'assistant/message').length,0)
@@ -51,35 +52,62 @@ test('reply text reaches native main-chat stream in pieces before worker commit,
   } finally {next.resolve();finish.resolve();await app.close();await rm(root,{recursive:true,force:true})}
 })
 
-test('failure after live text stops retries and never commits a successful gateway reply; next user turn works', {timeout:30000}, async () => {
+test('a Worker retry after live text redoes the main-chat attempt, showing only the reply that succeeded', {timeout:30000}, async () => {
   class RetryingModel extends FixtureModel {
     override providerRetryPolicy() {return resolveRetryPolicy({mode:'normal',maxRetries:1},'fixture.retry')}
   }
-  const root = await mkdtemp(join(tmpdir(),'theone-streaming-failure-'))
+  const root = await mkdtemp(join(tmpdir(),'theone-streaming-retry-'))
   const app = await harness(root,new RetryingModel())
   const visible = Promise.withResolvers<void>(), fail = Promise.withResolvers<void>()
   let attempts = 0
-  app.ctx.on('agent/request-error',async (payload,next) => payload.failure.code === 'STREAM_TEST_RETRY' ? {kind:'retry' as const} : next())
+  app.ctx.on('agent/request-error',async (payload,next) => payload.failure.code === 'STREAM_TEST_RETRY' && attempts === 1 ? {kind:'retry' as const} : next())
   app.ctx.on('agent/assistant-stream',({agent,frame}) => {
     if (agent.id === app.gateway.id && frame.type === 'chunk' && frame.chunk.type === 'text-delta') visible.resolve()
   })
   app.model.behavior = async function* () {
-    attempts++
-    yield {type:'block-start',index:0,blockType:'text'}
-    yield {type:'text-delta',index:0,text:'中断前的片段'}
-    await fail.promise
-    yield {type:'finish',reason:{kind:'error',failure:{code:'STREAM_TEST_RETRY',message:'synthetic disconnection',status:503}}}
+    if (++attempts === 1) {
+      yield {type:'block-start',index:0,blockType:'text'}
+      yield {type:'text-delta',index:0,text:'中断前的片段'}
+      await fail.promise
+      yield {type:'finish',reason:{kind:'error',failure:{code:'STREAM_TEST_RETRY',message:'synthetic disconnection',status:503}}}
+    } else yield* textResponse('重试后的完整回答')
   }
   try {
     const pending = ask(app.gateway,'Qwen 那个')
     await visible.promise
     fail.resolve()
     const result = await pending
-    assert.equal(attempts,1)
+    assert.equal(attempts,2)
+    assert.equal(result.end?.data.reason.kind,'completed',JSON.stringify(result.end))
+    assert.equal(result.output,'重试后的完整回答')
+    // The interrupted text is kept only as a superseded attempt, like a native retry.
+    assert.ok(result.events.some(e=>e.type === 'assistant/attempt'))
+    assert.ok(!JSON.stringify(result.events.filter(e=>e.type === 'assistant/message')).includes('中断前的片段'))
+    assert.equal(app.ctx.theone.store.route(result.input.id)?.status,'completed')
+  } finally {fail.resolve();await app.close();await rm(root,{recursive:true,force:true})}
+})
+
+test('a Worker failure after live text ends the main-chat turn with an error; the next turn works', {timeout:30000}, async () => {
+  const root = await mkdtemp(join(tmpdir(),'theone-streaming-failure-'))
+  const app = await harness(root)
+  const visible = Promise.withResolvers<void>(), fail = Promise.withResolvers<void>()
+  app.ctx.on('agent/assistant-stream',({agent,frame}) => {
+    if (agent.id === app.gateway.id && frame.type === 'chunk' && frame.chunk.type === 'text-delta') visible.resolve()
+  })
+  app.model.behavior = async function* () {
+    yield {type:'block-start',index:0,blockType:'text'}
+    yield {type:'text-delta',index:0,text:'中断前的片段'}
+    await fail.promise
+    yield {type:'finish',reason:{kind:'error',failure:{code:'STREAM_TEST_FATAL',message:'synthetic failure',status:400}}}
+  }
+  try {
+    const pending = ask(app.gateway,'Qwen 那个')
+    await visible.promise
+    fail.resolve()
+    const result = await pending
     assert.equal(result.end?.data.reason.kind,'error')
     assert.equal(result.output,'')
     assert.equal(app.ctx.theone.store.route(result.input.id)?.status,'failed')
-    assert.ok(result.events.some(e=>e.type === 'assistant/attempt'))
     const workerId = app.ctx.theone.store.contexts().find(c=>c.id === 'ctx_qwen_9070xt')!.workingSessionId
     assert.equal(app.ctx.agents.get(workerId as typeof app.gateway.id)?.status,'idle')
     app.model.behavior = async function* () {yield* textResponse('下一次可以正常回答')}
@@ -87,7 +115,7 @@ test('failure after live text stops retries and never commits a successful gatew
   } finally {fail.resolve();await app.close();await rm(root,{recursive:true,force:true})}
 })
 
-test('multi-step replies stream with distinct entry indexes while the worker tool runs once', {timeout:30000}, async () => {
+test('each Worker step is its own main-chat step with a tool card; the tool runs once', {timeout:30000}, async () => {
   const root = await mkdtemp(join(tmpdir(),'theone-streaming-tools-'))
   const app = await harness(root)
   let calls = 0
@@ -118,8 +146,9 @@ test('multi-step replies stream with distinct entry indexes while the worker too
     assert.equal(result.output,'正在处理。已经完成。')
     assert.equal(calls,1)
     assert.equal(textIndexes.length,2)
-    assert.notEqual(textIndexes[0],textIndexes[1])
-    assert.ok(!result.events.some(e=>e.type === 'tool/call'))
+    const messages = result.events.filter(e=>e.type === 'assistant/message')
+    assert.deepEqual(messages.map(e=>e.type === 'assistant/message' && e.data.message.content.map(b=>b.type)),[['text','tool-call'],['text']])
+    assert.deepEqual(result.events.filter(e=>e.type === 'tool/call').map(e=>e.type === 'tool/call' && e.data.name),['stream_counter'])
   } finally {await app.close();await rm(root,{recursive:true,force:true})}
 })
 

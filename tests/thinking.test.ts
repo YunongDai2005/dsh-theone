@@ -5,7 +5,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ToolCallId, resolveRetryPolicy, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { HostConnectionService } from '@deepseek-ai/dsh-client-connection'
 import { harness, ask, FixtureModel, textResponse } from './harness.ts'
 
 function* thinking(text: string, index = 0): Generator<StreamChunk> {
@@ -19,17 +18,13 @@ function* answer(text: string): Generator<StreamChunk> {
 function content(result: Awaited<ReturnType<typeof ask>>) {
   return result.events.flatMap(e => e.type === 'assistant/message' ? e.data.message.content : [])
 }
-function previewChannel(app: Awaited<ReturnType<typeof harness>>) {
-  const connection = new HostConnectionService(app.ctx,[],undefined as never)
-  const handler = connection.createSharedFetchHandler('/api')
-  const response = (id: string = app.gateway.id) => {
-    const url = new URL('http://dsh.internal/api/theone/thinking?sessionId='+encodeURIComponent(id))
-    // The native HTTP bridge otherwise treats GET as streaming and rejects its body.
-    assert.equal(handler.requestBodyMode({method:'GET',url}),'buffered')
-    return handler.fetch(new Request(url))
-  }
-  const snapshot = async (id?: string) => (await response(id)).json()
-  return {connection,response,snapshot}
+/** Reasoning text the main chat has streamed live, in the order it appeared. */
+function liveReasoning(app: Awaited<ReturnType<typeof harness>>) {
+  const seen: string[] = []
+  app.ctx.on('agent/assistant-stream',({agent,frame}) => {
+    if (agent.id === app.gateway.id && frame.type === 'chunk' && frame.chunk.type === 'reasoning-delta') seen.push(frame.chunk.text)
+  })
+  return seen
 }
 
 test('main chat retains committed reasoning separately from answer text and across reload', {timeout:30000}, async () => {
@@ -55,15 +50,35 @@ test('main chat retains committed reasoning separately from answer text and acro
   } finally {await app.close();await rm(root,{recursive:true,force:true})}
 })
 
-test('live thinking exists before commit; failed-attempt preview resets and is never saved as successful thinking', {timeout:30000}, async () => {
+test('thinking streams into the main-chat message before any reply text, in its native place', {timeout:30000}, async () => {
+  const root = await mkdtemp(join(tmpdir(),'theone-thinking-live-'))
+  const app = await harness(root)
+  const seen = liveReasoning(app)
+  const reasoned = Promise.withResolvers<void>(), release = Promise.withResolvers<void>()
+  try {
+    app.model.behavior = async function* () {
+      yield* thinking('还在想，没有开始回答')
+      reasoned.resolve();await release.promise
+      yield* answer('想好了')
+    }
+    const pending = ask(app.gateway,'Qwen 那个')
+    await reasoned.promise
+    assert.deepEqual(seen,['还在想，没有开始回答'])
+    assert.equal(app.gateway.session.snapshotEvents().filter(e => e.type === 'assistant/message').length,0)
+    release.resolve()
+    const result = await pending
+    assert.deepEqual(content(result).map(b => b.type),['reasoning','text'])
+  } finally {release.resolve();await app.close();await rm(root,{recursive:true,force:true})}
+})
+
+test('a retried attempt replaces its thinking on screen; only the successful thinking is saved', {timeout:30000}, async () => {
   class RetryingModel extends FixtureModel {
     override providerRetryPolicy() {return resolveRetryPolicy({mode:'normal',maxRetries:1},'fixture.retry')}
   }
   const root = await mkdtemp(join(tmpdir(),'theone-thinking-retry-'))
   const app = await harness(root,new RetryingModel())
-  const {response,snapshot} = previewChannel(app)
-  const first = Promise.withResolvers<void>(), second = Promise.withResolvers<void>()
-  const finishFirst = Promise.withResolvers<void>(), finishSecond = Promise.withResolvers<void>()
+  const seen = liveReasoning(app)
+  const first = Promise.withResolvers<void>(), finishFirst = Promise.withResolvers<void>()
   let attempt = 0
   // Exercise DSH's real request recovery extension without a timer/backoff plugin.
   app.ctx.on('agent/request-error', async (payload,next) => {
@@ -76,38 +91,22 @@ test('live thinking exists before commit; failed-attempt preview resets and is n
     if (current === 1) {
       first.resolve();await finishFirst.promise
       yield {type:'finish',reason:{kind:'error',failure:{code:'TEST_RETRY',message:'synthetic transient error',status:503}}}
-    } else {
-      second.resolve();await finishSecond.promise
-      yield* answer('重试后的回答')
-    }
+    } else yield* answer('重试后的回答')
   }
   try {
-    await new Promise<void>(resolve => setImmediate(resolve))
     const pending = ask(app.gateway,'Qwen 那个')
     await first.promise
-    const live = await snapshot()
-    assert.equal(live.active,true);assert.equal(live.text,'失败尝试的临时思考')
-    assert.equal((await response()).headers.get('cache-control'),'no-store')
-    assert.equal((await snapshot('other-session')).active,false)
-    assert.equal((await snapshot('other-session')).text,'')
-    assert.equal((await response('bad/id')).status,400)
-    assert.equal(app.gateway.session.snapshotEvents().filter(e => e.type === 'assistant/message').length,0)
+    assert.deepEqual(seen,['失败尝试的临时思考'])
     finishFirst.resolve()
-    await Promise.race([second.promise,pending.then(()=>{throw new Error('Worker did not retry')})])
-    const retried = await snapshot()
-    assert.equal(retried.text,'第二次成功尝试的思考')
-    assert.notEqual(retried.attemptId,live.attemptId)
-    finishSecond.resolve()
     const result = await pending
     assert.equal(result.output,'重试后的回答')
+    assert.deepEqual(seen,['失败尝试的临时思考','第二次成功尝试的思考'])
     assert.ok(!JSON.stringify(content(result)).includes('失败尝试'))
     assert.ok(JSON.stringify(content(result)).includes('第二次成功尝试'))
-    assert.equal((await snapshot()).active,false)
-    assert.equal((await snapshot()).text,'')
-  } finally {finishFirst.resolve();finishSecond.resolve();await app.close();await rm(root,{recursive:true,force:true})}
+  } finally {finishFirst.resolve();await app.close();await rm(root,{recursive:true,force:true})}
 })
 
-test('reasoning across tool steps is shown while tools execute only once in the Worker', {timeout:30000}, async () => {
+test('each step keeps its own thinking next to its tool card, and the tool runs only once', {timeout:30000}, async () => {
   const root = await mkdtemp(join(tmpdir(),'theone-thinking-tools-'))
   const app = await harness(root)
   let calls = 0
@@ -125,90 +124,39 @@ test('reasoning across tool steps is shown while tools execute only once in the 
         yield {type:'finish',reason:{kind:'tool-calls'}}
       } else {
         yield* thinking('测试完成后的思考')
-        yield {type:'block-start',index:1,blockType:'text'}
-        yield {type:'text-delta',index:1,text:'已完成'}
-        yield {type:'block-end',index:1,block:{type:'text',text:'已完成'}}
-        yield {type:'finish',reason:{kind:'stop'}}
+        yield* answer('已完成')
       }
     }
     const result = await ask(app.gateway,'Qwen 那个')
     assert.equal(calls,1)
     assert.equal(result.output,'已完成')
-    assert.deepEqual(content(result).map(b=>b.type),['reasoning','reasoning','text'])
-    assert.ok(!result.events.some(e=>e.type === 'tool/call'))
+    const steps = result.events.flatMap(e => e.type === 'assistant/message' ? [e.data.message.content.map(b => b.type)] : [])
+    assert.deepEqual(steps,[['reasoning','tool-call'],['reasoning','text']])
   } finally {await app.close();await rm(root,{recursive:true,force:true})}
 })
 
-test('preview hides reasoning once it is in the main-chat message, during tools and after reply text starts', {timeout:30000}, async () => {
-  const root = await mkdtemp(join(tmpdir(),'theone-thinking-handoff-'))
-  const app = await harness(root)
-  const {snapshot} = previewChannel(app)
-  const toolEntered = Promise.withResolvers<void>(), releaseTool = Promise.withResolvers<void>()
-  const reasoned = Promise.withResolvers<void>(), releaseText = Promise.withResolvers<void>()
-  const textStarted = Promise.withResolvers<void>(), releaseEnd = Promise.withResolvers<void>()
-  let calls = 0
-  try {
-    app.ctx.tools.register(defineTool({name:'thinking_gate',description:'Synthetic gate',parameters:{},
-      output:{schema:{type:'string'},render:(_args,value:string)=>[{type:'text',text:value}]},
-      execute:async()=>{calls++;toolEntered.resolve();await releaseTool.promise;return 'complete'}}))
-    app.model.behavior = async function* () {
-      if (!calls) {
-        yield* thinking('工具前的思考')
-        const id = ToolCallId('thinking-gate-call')
-        yield {type:'block-start',index:1,blockType:'tool-call'}
-        yield {type:'tool-call-delta',index:1,id,name:'thinking_gate',argumentsDelta:'{}'}
-        yield {type:'block-end',index:1,block:{type:'tool-call',id,name:'thinking_gate',arguments:'{}'}}
-        yield {type:'finish',reason:{kind:'tool-calls'}}
-      } else {
-        yield* thinking('回答前的思考')
-        reasoned.resolve();await releaseText.promise
-        yield {type:'block-start',index:1,blockType:'text'}
-        yield {type:'text-delta',index:1,text:'开始'}
-        textStarted.resolve();await releaseEnd.promise
-        yield {type:'block-end',index:1,block:{type:'text',text:'开始'}}
-        yield {type:'finish',reason:{kind:'stop'}}
-      }
-    }
-    const pending = ask(app.gateway,'Qwen 那个')
-    await toolEntered.promise
-    assert.equal((await snapshot()).text,'')
-    releaseTool.resolve()
-    await reasoned.promise
-    const live = await snapshot()
-    assert.equal(live.active,true);assert.equal(live.text,'回答前的思考')
-    releaseText.resolve()
-    await textStarted.promise
-    assert.equal((await snapshot()).text,'')
-    releaseEnd.resolve()
-    const result = await pending
-    assert.equal(result.output,'开始')
-    assert.deepEqual(content(result).map(b=>b.type),['reasoning','reasoning','text'])
-  } finally {releaseTool.resolve();releaseText.resolve();releaseEnd.resolve();await app.close();await rm(root,{recursive:true,force:true})}
-})
-
-test('cancellation and reasoning size limits clear transient preview and preserve route failure', {timeout:30000}, async () => {
+test('cancellation and the reasoning size limit end the turn and record the failed route', {timeout:30000}, async () => {
   const root = await mkdtemp(join(tmpdir(),'theone-thinking-cancel-'))
   const app = await harness(root,undefined,{theoneConfig:{maxResponseChars:128}})
-  const {snapshot} = previewChannel(app)
   const entered = Promise.withResolvers<void>()
   try {
     app.model.behavior = async function* (options) {
-      yield* thinking('取消前的临时思考')
+      yield* thinking('取消前的思考')
       entered.resolve()
       await new Promise<void>(resolve => options.signal?.addEventListener('abort',()=>resolve(),{once:true}))
       options.signal?.throwIfAborted()
     }
     const pending = ask(app.gateway,'Qwen 那个')
     await entered.promise
-    assert.equal((await snapshot()).active,true)
     app.gateway.cancel({kind:'user'})
     const cancelled = await pending
     assert.equal(cancelled.end?.data.reason.kind,'aborted')
-    assert.equal((await snapshot()).active,false)
+    assert.equal(app.ctx.theone.store.route(cancelled.input.id)?.status,'failed')
     app.model.behavior = async function* () {yield* thinking('x'.repeat(129));yield* answer('不可输出')}
     const oversized = await ask(app.gateway,'继续')
     assert.equal(oversized.end?.data.reason.kind,'error')
     assert.equal(app.ctx.theone.store.route(oversized.input.id)?.status,'failed')
-    assert.equal((await snapshot()).text,'')
+    app.model.behavior = async function* () {yield* answer('恢复正常')}
+    assert.equal((await ask(app.gateway,'继续')).output,'恢复正常')
   } finally {await app.close();await rm(root,{recursive:true,force:true})}
 })

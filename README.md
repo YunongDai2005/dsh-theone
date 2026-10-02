@@ -80,13 +80,11 @@ Only successful calls heat a topic. Failed requests and clarification do not inc
 
 This changes the gateway checkpoint, not workers' ordinary DSH compaction. It activates when DSH compacts; age alone does not start a background compression job. An explicitly configured separate DSH summarization provider uses that provider's summary policy instead.
 
-## Thinking in main chat
+## Main chat reads like an ordinary session
 
-When the configured model returns displayable reasoning, a **Live thinking** section below the composer shows it during generation and can be collapsed. While main chat is open, it checks for a new preview every second and refreshes active previews about every 400 ms. Once reply text starts, or a tool step commits, that thinking moves into the main-chat message and the preview hides so it is not shown twice. Switching sessions, cancellation, failed attempts and retries clear the transient preview. The preview shows up to the latest 16,000 characters; completed thinking remains in main chat as native DSH reasoning blocks and survives reloads.
+Each Worker step appears in main chat as one native step, as it is generated: the model's thinking in its usual place from the first token, reply text, and tool calls as DSH's own tool cards with their results. Main chat never runs those tools: its cards resolve with the Worker's outcome and skip hooks and permission policy, so every tool runs exactly once, in the Worker. A tool that needs approval asks on its card in main chat; a question the Worker asks the user (`ask_user_question`) is also answered there. The Worker's todo list shows in main chat as well.
 
-Reply text streams directly into DSH's native main-chat message as the Worker produces it. Final blocks close after the Worker commits, so the completed answer is saved once and survives reloads. Reasoning-only failed attempts can still retry and clear their preview. If an attempt fails after reply text has started, the entry reports an interrupted request instead of appending an automatic retry to that partial answer; a new user request can continue normally. User cancellation uses DSH's native interrupted-message handling.
-
-Tool calls execute in the Worker and are not replayed in the entry. The response character limit covers both reasoning and answer text. Models that do not return reasoning keep DSH's ordinary status indicator. Routing uses its separate short classification call; this section displays the chat model's returned reasoning. A provider that returns the answer as one complete chunk cannot display intermediate text.
+When the Worker retries a step, main chat redoes that attempt as a native retry does, so only the reply that succeeded is kept. Steering typed during a reply reaches the Worker at its next step and appears between the steps; queued messages wait for their own turn and are routed then. Cancelling stops the Worker. The response character limit covers reasoning and answer text. A provider that returns the answer as one chunk shows no intermediate text.
 
 ## Current features
 
@@ -98,8 +96,7 @@ Tool calls execute in the Worker and are not replayed in the entry. The response
 - `theone_search_history` lets a worker search its dedicated session and approved historical event ranges on demand: at most 10 windows and 8,000 characters of excerpts.
 - `theone_update_state` saves up to 800 characters of progress. Completed DSH compaction summaries are reused, redacted, and limited to 1,200 characters, without summarizing the whole session again.
 - SQLite stores catalog, source ranges, mounts, and execution state. DSH logs store original inputs, tool results, and replies. Historical instructions are treated as reference material.
-- Main chat accepts one active request at a time. Messages queued or steered during a reply are routed after it; several steering messages are answered together. Cancellation propagates to routing and the worker; in-progress inputs are not replayed automatically.
-- When a worker tool needs approval, the question appears in main chat with the tool name and arguments; the answer goes back to the worker.
+- Main chat accepts one active request at a time. Steering during a reply goes to the worker in the same topic; queued messages are routed after the reply. Cancellation propagates to routing and the worker; in-progress inputs are not replayed automatically.
 
 ## Optional configuration
 
@@ -145,7 +142,7 @@ Manually linked historical sessions require an approved inclusive range through 
 ## Known limits
 
 - Main chat identity is stored in the current browser for the current web path. Another browser may create another gateway while sharing the same topic workers through the database.
-- This version supports text input and streams reply text as the Worker generates it. Worker tool approvals are asked in main chat. Image output and tool cards are not forwarded yet.
+- This version supports text input and streams reply text as the Worker generates it. Worker steps, tool cards, approvals and questions show in main chat. Image output is not forwarded yet.
 - Candidate retrieval uses short catalog entries and DSH full-text search. Embeddings and vector search are not implemented. The LLM extracts topics and groups related entries. Multi-mount and automatic worker rollover are also pending.
 - Catalog updates and DSH logs are not a transaction across databases. Check the original session when an interruption leaves request state uncertain. Hard power-loss recovery has not been validated.
 - Indexing requires readable DSH logs and has not been tested at large scale. History tools scan approved source ranges; gateway log rotation is pending.
