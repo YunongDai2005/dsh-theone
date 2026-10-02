@@ -4,21 +4,22 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import UserApproval from '@deepseek-ai/dsh-user-approval'
+import UserQuestions from '@deepseek-ai/dsh-user-questions'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { harness, ask, textResponse } from './harness.ts'
 
-test('a Worker tool approval is asked in the main chat and its answer reaches the Worker', { timeout: 30000 }, async () => {
+test('a Worker tool approval is asked on the main-chat card for that call and its answer reaches the Worker', { timeout: 30000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'theone-approval-'))
   const app = await harness(root)
-  const asked: { agent: string; toolName: string; display?: string }[] = []
+  const asked: { agent: string; toolName: string; callId?: string; display?: string }[] = []
   let outcome: string | undefined
   try {
     await app.ctx.plugin(UserApproval, { policy: 'ask' })
     // Stands in for the browser answerer, which only answers for the session it shows.
     app.ctx.on('approval/request', async (request, next) => {
       if (request.agent.id !== app.gateway.id) return next()
-      asked.push({ agent: request.agent.id, toolName: request.toolName, display: request.displayReason?.zh })
+      asked.push({ agent: request.agent.id, toolName: request.toolName, callId: request.callId, display: request.displayReason?.zh })
       return 'allowed-once'
     })
     app.ctx.tools.register(defineTool({ name: 'guarded_write', description: 'Synthetic guarded tool', parameters: { path: { type: 'string', required: true } },
@@ -42,7 +43,46 @@ test('a Worker tool approval is asked in the main chat and its answer reaches th
     assert.equal(outcome, 'allowed-once')
     assert.equal(asked.length, 1)
     assert.equal(asked[0].toolName, 'guarded_write')
+    // The prompt attaches to the main chat's card for the same call.
+    assert.equal(asked[0].callId, 'guarded-call')
     assert.match(asked[0].display ?? '', /guarded_write \{"path":"\/etc\/hosts"\}/)
     assert.ok(result.events.some(event => event.type === 'approval/decided'))
+  } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
+})
+
+test('a question the Worker asks the user is answered in the main chat', { timeout: 30000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'theone-question-'))
+  const app = await harness(root)
+  const askedFor: string[] = []
+  let answer: unknown
+  try {
+    await app.ctx.plugin(UserQuestions)
+    // Stands in for the browser, which only answers for the conversation it shows.
+    app.ctx.on('user-questions/request', async (request, next) => {
+      if (request.agent?.id !== app.gateway.id) return next()
+      askedFor.push(request.questions[0].question)
+      return { answers: [{ id: request.questions[0].id, selected: ['14B'] }] }
+    })
+    app.ctx.tools.register(defineTool({ name: 'ask_size', description: 'Synthetic question', parameters: {},
+      output: { schema: { type: 'string' }, render: (_args, value: string) => [{ type: 'text', text: value }] },
+      execute: async (_args, exec) => {
+        answer = await app.ctx.userQuestions.ask({ agent: exec.agent!, signal: exec.signal,
+          questions: [{ id: 'size', question: '用哪个尺寸？', options: [{ label: '7B' }, { label: '14B' }] }] })
+        return JSON.stringify(answer)
+      } }))
+    let step = 0
+    app.model.behavior = async function* () {
+      if (step++ === 0) {
+        const id = ToolCallId('ask-call')
+        yield { type: 'block-start', index: 0, blockType: 'tool-call' }
+        yield { type: 'tool-call-delta', index: 0, id, name: 'ask_size', argumentsDelta: '{}' }
+        yield { type: 'block-end', index: 0, block: { type: 'tool-call', id, name: 'ask_size', arguments: '{}' } }
+        yield { type: 'finish', reason: { kind: 'tool-calls' } }
+      } else yield* textResponse('用 14B')
+    }
+    const result = await ask(app.gateway, 'Qwen 那个')
+    assert.equal(result.output, '用 14B')
+    assert.deepEqual(askedFor, ['用哪个尺寸？'])
+    assert.deepEqual(answer, { answers: [{ id: 'size', selected: ['14B'] }] })
   } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
 })

@@ -89,9 +89,6 @@ var zh = {
   "gateway.opening": "\u6B63\u5728\u6253\u5F00 TheOne \u4E3B\u804A\u5929\u2026",
   "gateway.error": "\u4E3B\u804A\u5929\u6682\u65F6\u65E0\u6CD5\u6253\u5F00\uFF0C\u8BF7\u68C0\u67E5 DSH \u8FDE\u63A5\u548C TheOne \u63D2\u4EF6\u72B6\u6001\u3002",
   "retry": "\u91CD\u8BD5",
-  "thinking.live": "\u5B9E\u65F6\u601D\u8003",
-  "thinking.content": "\u6A21\u578B\u8FD4\u56DE\u7684\u601D\u8003\u5185\u5BB9",
-  "thinking.truncated": "\u8FD9\u91CC\u663E\u793A\u6700\u8FD1\u7684\u601D\u8003\u7247\u6BB5\uFF0C\u5B8C\u6574\u5185\u5BB9\u5728\u5B8C\u6210\u540E\u4FDD\u7559\u3002",
   "settings.title": "TheOne \u8BBE\u7F6E",
   "settings.menu": "\u8BBE\u7F6E",
   "settings.subtitle": "\u67E5\u770B\u5F53\u524D\u751F\u6548\u7684\u914D\u7F6E\u548C\u5404\u9879\u7528\u9014\u3002",
@@ -186,9 +183,6 @@ var en = {
   "gateway.opening": "Opening TheOne main chat\u2026",
   "gateway.error": "Main chat could not open. Check your DSH connection and TheOne plugin status.",
   "retry": "Retry",
-  "thinking.live": "Live thinking",
-  "thinking.content": "Thinking returned by the model",
-  "thinking.truncated": "Showing recent thinking here. The full content is kept after completion.",
   "settings.title": "TheOne settings",
   "settings.menu": "Settings",
   "settings.subtitle": "Review active configuration and what each option does.",
@@ -291,56 +285,6 @@ function apply(ctx) {
   function useText() {
     (0, import_react.useSyncExternalStore)(subscribeLocale, localeSnapshot);
     return t;
-  }
-  function ThinkingPreview({ theoneSessionId }) {
-    const t2 = useText();
-    const gatewayId = (0, import_react.useSyncExternalStore)(navigation.subscribe, navigation.getSnapshot);
-    const [preview, setPreview] = (0, import_react.useState)();
-    (0, import_react.useEffect)(() => {
-      setPreview(void 0);
-      if (theoneSessionId !== gatewayId) return;
-      const abort = new AbortController();
-      const signal = AbortSignal.any([abort.signal, lifetime.signal]);
-      let timer;
-      let active = false;
-      const refresh = async () => {
-        try {
-          const response = await fetch("/api/theone/thinking?sessionId=" + encodeURIComponent(theoneSessionId), { signal, cache: "no-store" });
-          if (!response.ok) throw new Error("Thinking preview unavailable");
-          const value2 = await response.json();
-          signal.throwIfAborted();
-          active = value2.active;
-          setPreview({ sessionId: theoneSessionId, value: value2 });
-        } catch {
-          if (!signal.aborted) {
-            active = false;
-            setPreview(void 0);
-          }
-        } finally {
-          if (!signal.aborted) timer = setTimeout(() => {
-            void refresh();
-          }, active ? 400 : 1e3);
-        }
-      };
-      void refresh();
-      return () => {
-        abort.abort();
-        clearTimeout(timer);
-      };
-    }, [theoneSessionId, gatewayId]);
-    const value = preview?.sessionId === theoneSessionId ? preview.value : void 0;
-    return (0, import_react.createElement)(
-      "details",
-      {
-        className: "theone-thinking",
-        open: true,
-        hidden: !value?.active || !value.text,
-        "data-session-id": theoneSessionId
-      },
-      (0, import_react.createElement)("summary", null, t2("thinking.live")),
-      (0, import_react.createElement)("pre", { "aria-label": t2("thinking.content") }, value?.text ?? ""),
-      value?.truncated ? (0, import_react.createElement)("p", null, t2("thinking.truncated")) : null
-    );
   }
   async function createGateway(id) {
     const response = await fetch("/api/theone/gateway", { signal: lifetime.signal, cache: "no-store" });
@@ -902,17 +846,8 @@ function apply(ctx) {
       return (0, import_react.createElement)("span", { className: "theone-catalog-entry", translate: "no" }, (0, import_react.createElement)("span", null, "\u25A6"), size === 16 ? (0, import_react.createElement)("span", null, t2("catalog.title")) : null);
     })
   ]);
-  ctx.slots.inject("conversation.composer.dock", () => ctx.slots.register({
-    name: "conversation.composer.dock",
-    id: "theone-thinking",
-    order: -100,
-    inject: (sessionId) => ({ theoneSessionId: sessionId })
-  }, ThinkingPreview));
 }
 var sidebarCss = `
-.theone-thinking{pointer-events:auto;margin:8px auto 0;padding:10px 14px;border:1px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);width:100%;max-width:var(--dsh-composer-card-max-width,820px);box-sizing:border-box;font-size:13px}
-div:has(>[data-slot="conversation.composer.dock"]>.theone-thinking:not([hidden])){flex-direction:column}
-.theone-thinking summary{cursor:pointer;color:var(--dsw-alias-label-secondary)}.theone-thinking pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:180px;overflow:auto;font:inherit;line-height:1.7;margin:10px 0 0}.theone-thinking p{font-size:12px;color:var(--dsw-alias-label-secondary);margin:8px 0 0}
 button:has(.theone-nav){--one-accent:#a75b1e;--one-tint:#fff5ec;--one-line:#eed3bb;--one-heat:#ff78002b;--one-glow:0 0 22px 4px #ff6b0024,0 4px 32px 6px #ff76000d;border:1px solid var(--one-line);background:var(--one-tint);box-shadow:var(--one-glow);overflow:visible;border-radius:12px;color:var(--dsw-alias-label-primary);flex:none;position:relative;isolation:isolate}
 [data-ds-dark-theme] button:has(.theone-nav){--one-accent:#93c8f3;--one-tint:#1d2a37;--one-line:#344d64;--one-heat:#80caff30;--one-glow:0 0 22px 4px #80bae924}
 button:has(.theone-nav)::after{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;background:radial-gradient(85px circle at var(--one-pointer-x,50%) var(--one-pointer-y,50%),var(--one-heat),transparent 100%);opacity:0;transition:opacity 180ms ease;z-index:0}

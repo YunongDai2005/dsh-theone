@@ -8,7 +8,7 @@ import { harness, ask, textResponse } from './harness.ts'
 
 const say = (text: string) => createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text }] })
 
-test('several steering messages sent during a reply are answered together after it', { timeout: 30000 }, async () => {
+test('steering sent during a reply reaches the Worker at its next step, in the same turn', { timeout: 30000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'theone-steer-batch-'))
   const app = await harness(root)
   const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>()
@@ -16,8 +16,8 @@ test('several steering messages sent during a reply are answered together after 
   let calls = 0
   try {
     app.model.behavior = async function* (options) {
-      const last = options.messages.at(-1)!
-      seen.push(last.content.filter(block => block.type === 'text').map(block => block.text).join(''))
+      seen.push(options.messages.filter(message => message.role === 'user')
+        .map(message => message.content.filter(block => block.type === 'text').map(block => block.text).join('')).join('\n'))
       if (++calls === 1) { entered.resolve(); await release.promise }
       yield* textResponse(calls === 1 ? '第一段回答' : '补充回答')
     }

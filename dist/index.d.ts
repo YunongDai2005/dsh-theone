@@ -55,9 +55,10 @@ export default class TheOne extends Service {
     private active;
     private reservedGateway;
     private readonly gatewayDirectory;
-    /** Worker id → the gateway whose turn it is answering; that is where the user can approve its tools. */
-    private readonly relayGateways;
-    private thinkingPreview?;
+    /** Gateway id → the Worker activity its current turn is showing. */
+    private readonly runs;
+    /** Gateway id → cleanup of a run whose main-chat turn has closed while its Worker winds down. */
+    private readonly closing;
     constructor(ctx: Context, config: Config);
     /** DSH Connection protects plugin routes inside its authenticated /api fence. */
     private registerCatalogChannel;
@@ -93,9 +94,25 @@ export default class TheOne extends Service {
      * main chat whose turn the Worker is answering instead, naming the exact call being approved.
      */
     private forwardApprovals;
+    /** Wait briefly for the main chat to log its mirror of a Worker tool call. */
+    private mirroredCall;
+    /** Questions the Worker asks the user (ask_user_question) are answered in the main chat, like approvals. */
+    private forwardQuestions;
     /** Capability is scoped to the exact owned Worker; the model cannot select another Context. */
     private registerWorkerTools;
-    /** Relay live reply text; tools execute exclusively in the worker. */
+    /** Mirror the routed Worker's steps into the main chat; tools execute exclusively in the Worker. */
     answer(options: GenerateOptions): AsyncIterable<StreamChunk>;
-    private relay;
+    /**
+     * Settle a run when the main chat turn closes: record the outcome and free the gateway once the
+     * Worker is idle. An abandoned (cancelled or failed) turn is recorded as failed immediately.
+     */
+    private finishRun;
+    /** Worker-only tools (e.g. TheOne's own) become visible to the main chat so their calls render as cards. */
+    private showWorkerTools;
+    /**
+     * Main-chat tool calls only mirror Worker calls. The main chat never runs a tool itself: outside a
+     * run (or for a nested dispatch) its calls are refused rather than executed.
+     */
+    private mirroredRun;
+    private runForWorker;
 }

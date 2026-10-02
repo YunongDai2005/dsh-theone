@@ -155,7 +155,11 @@ test('tool calls run once in the worker; history search stays in its Context', {
     assert.equal(result.end?.data.reason.kind, 'completed', JSON.stringify(result.end))
     assert.equal(calls, 1)
     assert.equal(result.output, 'tunable_marker: complete')
-    assert.ok(!result.events.some(event => event.type === 'tool/call'))
+    // The main chat shows the call as a card with the Worker's result; it never runs it again.
+    const mirrored = result.events.filter(event => event.type === 'tool/call')
+    assert.deepEqual(mirrored.map(event => event.type === 'tool/call' && event.data.name), ['fixture_counter'])
+    const shown = result.events.find(event => event.type === 'tool/result')
+    assert.ok(shown?.type === 'tool/result' && JSON.stringify(shown.data).includes('tunable_marker'))
     const route = app.ctx.theone.store.route(result.input.id)!
     assert.equal(route.status, 'completed')
     const windows = await app.ctx.theone.searchHistory('ctx_qwen_9070xt', 'tunable_marker')
