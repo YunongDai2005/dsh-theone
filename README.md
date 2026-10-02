@@ -93,12 +93,13 @@ Tool calls execute in the Worker and are not replayed in the entry. The response
 - The LLM selects an existing topic, a new topic, or clarification. Code validates the target and plans `KEEP / MOUNT / SWAP / CREATE / CLARIFY`.
 - Each project has a dedicated, resumable DSH working session. Returning to a project resumes its worker.
 - Routing calls the configured DSH provider through `ctx.llm.prepareCall()`. It sends a short catalog, the current input, and up to 12 recent text messages, without tools or full history.
-- Routing makes an additional model call, separate from the reply, with a 2,048-token output limit and a 30-second timeout. Additional catalog checks may make further calls. These use your API quota.
+- Routing makes an additional model call, separate from the reply, with a 2,048-token output limit and a 30-second timeout. Additional catalog checks may make further calls; they run concurrently, so a new topic costs about two calls of waiting. These use your API quota. A bare acknowledgement or "go on" (for example "ok", "continue", "why") while a topic is mounted continues it without any routing call.
 - Failed calls, invalid JSON, unknown topic IDs, truncation, and cancellation do not switch projects or start workers. Permission/rate-limit errors, or three consecutive other errors, pause routing for 60 seconds.
 - `theone_search_history` lets a worker search its dedicated session and approved historical event ranges on demand: at most 10 windows and 8,000 characters of excerpts.
 - `theone_update_state` saves up to 800 characters of progress. Completed DSH compaction summaries are reused, redacted, and limited to 1,200 characters, without summarizing the whole session again.
 - SQLite stores catalog, source ranges, mounts, and execution state. DSH logs store original inputs, tool results, and replies. Historical instructions are treated as reference material.
-- Main chat accepts one active request at a time. Cancellation propagates to routing and the worker; in-progress inputs are not replayed automatically.
+- Main chat accepts one active request at a time. Messages queued or steered during a reply are routed after it; several steering messages are answered together. Cancellation propagates to routing and the worker; in-progress inputs are not replayed automatically.
+- When a worker tool needs approval, the question appears in main chat with the tool name and arguments; the answer goes back to the worker.
 
 ## Optional configuration
 
@@ -144,7 +145,7 @@ Manually linked historical sessions require an approved inclusive range through 
 ## Known limits
 
 - Main chat identity is stored in the current browser for the current web path. Another browser may create another gateway while sharing the same topic workers through the database.
-- This version supports text input and streams reply text as the Worker generates it. Image output, tool cards, and approval UI forwarding are not complete.
+- This version supports text input and streams reply text as the Worker generates it. Worker tool approvals are asked in main chat. Image output and tool cards are not forwarded yet.
 - Candidate retrieval uses short catalog entries and DSH full-text search. Embeddings and vector search are not implemented. The LLM extracts topics and groups related entries. Multi-mount and automatic worker rollover are also pending.
 - Catalog updates and DSH logs are not a transaction across databases. Check the original session when an interruption leaves request state uncertain. Hard power-loss recovery has not been validated.
 - Indexing requires readable DSH logs and has not been tested at large scale. History tools scan approved source ranges; gateway log rotation is pending.

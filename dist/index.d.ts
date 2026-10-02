@@ -55,6 +55,8 @@ export default class TheOne extends Service {
     private active;
     private reservedGateway;
     private readonly gatewayDirectory;
+    /** Worker id → the gateway whose turn it is answering; that is where the user can approve its tools. */
+    private readonly relayGateways;
     private thinkingPreview?;
     constructor(ctx: Context, config: Config);
     /** DSH Connection protects plugin routes inside its authenticated /api fence. */
@@ -86,6 +88,11 @@ export default class TheOne extends Service {
     searchHistory(contextId: string, query: string, limit?: number): Promise<SessionEventWindow[]>;
     private worker;
     private refreshCompactionSummary;
+    /**
+     * No one views a Worker session, so its approval questions would fail closed. Ask in the
+     * main chat whose turn the Worker is answering instead, naming the exact call being approved.
+     */
+    private forwardApprovals;
     /** Capability is scoped to the exact owned Worker; the model cannot select another Context. */
     private registerWorkerTools;
     /** Relay live reply text; tools execute exclusively in the worker. */

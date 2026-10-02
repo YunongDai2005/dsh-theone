@@ -14,7 +14,7 @@ import { gatewayCheckpoint } from "./gateway-compaction.js";
 import { ContextStore } from "./store.js";
 import { resolveContext } from "./router.js";
 import { DeepSeekRouter, DshRouter, RouterFailure } from "./llm-router.js";
-import { referencesHistory } from "./routing-policy.js";
+import { continuesCurrent, referencesHistory } from "./routing-policy.js";
 import { EDITABLE_SETTINGS_KEYS } from "./settings-types.js";
 import { validateSettings } from "./settings.js";
 function redactDescriptor(text) {
@@ -37,6 +37,19 @@ class GatewayAdapter extends LlmAdapter {
     }
     providerRetryPolicy() { return resolveRetryPolicy({ mode: 'normal', maxRetries: 0 }, 'theone.retry'); }
     stream(options) { return this.service.answer(options); }
+}
+/** The Worker receives every message admitted in this gateway step, e.g. several steering messages, as one input. */
+function stepInput(messages, input) {
+    const batch = [];
+    for (const message of [...messages].reverse()) {
+        if (message.role === 'assistant')
+            break;
+        if (message.role === 'user' && 'source' in message && message.source?.kind === 'user')
+            batch.unshift(message);
+    }
+    if (batch.length < 2 || batch.at(-1).id !== input.id)
+        return input;
+    return createUserMessage({ source: input.source, content: batch.flatMap((message, index) => index ? [{ type: 'text', text: '\n\n' }, ...message.content] : [...message.content]) });
 }
 function legacyRouter(config) {
     return new DeepSeekRouter({ apiKey: process.env[config.routerApiKeyEnv ?? 'THEONE_ROUTER_API_KEY'] ?? '', baseUrl: config.routerBaseUrl, model: config.routerModel });
@@ -81,6 +94,8 @@ export default class TheOne extends Service {
     active = false;
     reservedGateway;
     gatewayDirectory;
+    /** Worker id → the gateway whose turn it is answering; that is where the user can approve its tools. */
+    relayGateways = new Map();
     thinkingPreview;
     constructor(ctx, config) {
         super(ctx, 'theone');
@@ -156,12 +171,13 @@ export default class TheOne extends Service {
                 return decision;
             signal.throwIfAborted();
             const users = decision.messages.filter(message => message.source.kind === 'user');
-            if (users.length !== 1)
-                throw new Error('TheOne requires exactly one direct user message per gateway step');
+            // Several steering messages can be claimed in one batch; they are routed and answered together.
+            if (!users.length)
+                throw new Error('TheOne requires a direct user message per gateway step');
             if (this.active || this.reservedGateway)
                 throw new Error('TheOne prototype accepts one active gateway turn at a time');
-            const input = users[0];
-            const text = input.content.filter(block => block.type === 'text').map(block => block.text).join('\n');
+            const input = users.at(-1);
+            const text = users.map(message => message.content.filter(block => block.type === 'text').map(block => block.text).join('\n')).join('\n\n');
             // Reserve before asynchronous classification so a second gateway cannot race it.
             this.reservedGateway = agent.id;
             let route;
@@ -169,8 +185,10 @@ export default class TheOne extends Service {
             try {
                 const currentId = this.store.current(config.gatewayKey);
                 let contexts = this.store.contexts();
+                // A bare "go on"/"thanks" skips candidate search and the classifier: it can only continue.
+                const fastKeep = !!this.router && !!currentId && contexts.some(context => context.id === currentId) && continuesCurrent(text);
                 let searchFailed = false;
-                if (this.catalog) {
+                if (this.catalog && !fastKeep) {
                     try {
                         contexts = await this.catalog.candidates(text, currentId, signal);
                     }
@@ -183,7 +201,11 @@ export default class TheOne extends Service {
                 if (searchFailed) {
                     receipt.errorCode = 'HISTORY_SEARCH_UNAVAILABLE';
                 }
-                if (searchFailed && referencesHistory(text)) {
+                if (fastKeep) {
+                    receipt.mode = 'rules';
+                    proposed = { action: 'KEEP', contextId: currentId, reason: 'short-continuation' };
+                }
+                else if (searchFailed && referencesHistory(text)) {
                     proposed = { action: 'CLARIFY', reason: 'HISTORY_SEARCH_UNAVAILABLE', question: '历史检索暂时不可用，请稍后再试。' };
                 }
                 else if (this.router) {
@@ -197,11 +219,20 @@ export default class TheOne extends Service {
                             const remaining = this.store.contexts().filter(context => !seen.has(context.id));
                             const current = this.store.contexts().find(context => context.id === currentId);
                             const pageSize = current ? 15 : 16;
+                            const pages = [];
+                            for (let offset = 0; offset < remaining.length && pages.length < 3; offset += pageSize)
+                                pages.push([...(current ? [current] : []), ...remaining.slice(offset, offset + pageSize)]);
+                            // Review pages concurrently, then read them in order exactly as a sequential pass would.
+                            const router = this.router, incomplete = this.catalog.incomplete;
+                            const reviews = await Promise.allSettled(pages.map(page => router.decide({ text, contexts: page, currentId, recent, historyIncomplete: incomplete }, signal)));
+                            const firstElapsed = result.elapsedMs;
                             let checked = 0;
-                            for (let offset = 0; offset < remaining.length && checked < 3; offset += pageSize, checked++) {
-                                const page = [...(current ? [current] : []), ...remaining.slice(offset, offset + pageSize)];
-                                const review = await this.router.decide({ text, contexts: page, currentId, recent, historyIncomplete: this.catalog.incomplete }, signal);
-                                result.elapsedMs += review.elapsedMs;
+                            for (const settled of reviews) {
+                                checked++;
+                                if (settled.status === 'rejected')
+                                    throw settled.reason;
+                                const review = settled.value;
+                                result.elapsedMs = Math.max(result.elapsedMs, firstElapsed + review.elapsedMs);
                                 if (review.usage)
                                     result.usage = { prompt_tokens: (result.usage?.prompt_tokens ?? 0) + review.usage.prompt_tokens,
                                         completion_tokens: (result.usage?.completion_tokens ?? 0) + review.usage.completion_tokens,
@@ -550,6 +581,7 @@ export default class TheOne extends Service {
             this.workerSelections.set(context.id, selection);
             installModelSelection(agentCtx, selection);
             this.registerWorkerTools(agentCtx, agent, context.id);
+            this.forwardApprovals(agentCtx, agent);
         };
         const sessions = await this.ctx.sessionQuery.listSessions(signal);
         signal?.throwIfAborted();
@@ -573,6 +605,34 @@ export default class TheOne extends Service {
         const text = redactDescriptor(summary.data.summary.filter(block => block.type === 'text').map(block => block.text).join('\n')).slice(0, 1200);
         if (text.trim())
             this.store.updateSummary(contextId, text, worker.id, summary.seq, end.seq);
+    }
+    /**
+     * No one views a Worker session, so its approval questions would fail closed. Ask in the
+     * main chat whose turn the Worker is answering instead, naming the exact call being approved.
+     */
+    forwardApprovals(agentCtx, worker) {
+        agentCtx.on('approval/request', async (request, next) => {
+            const approval = this.ctx.get('approval');
+            const gatewayId = this.relayGateways.get(worker.id);
+            const gateway = gatewayId ? this.ctx.agents.get(SessionId(gatewayId)) : undefined;
+            if (request.agent !== worker || !approval || !gateway)
+                return next();
+            const call = request.callId === undefined ? undefined
+                : worker.session.snapshotEvents().findLast(event => event.type === 'tool/call' && event.data.callId === request.callId);
+            const detail = call?.type === 'tool/call' ? `${call.data.name} ${call.data.arguments}`.slice(0, 600) : request.toolName;
+            const base = request.displayReason ?? (request.reason ? { en: request.reason } : undefined);
+            try {
+                return await approval.request({ agent: gateway, toolName: request.toolName,
+                    ...(request.reason === undefined ? {} : { reason: request.reason }),
+                    displayReason: { en: [base?.en, `Requested in the background task: ${detail}`].filter(Boolean).join('\n'),
+                        zh: [base?.zh ?? base?.en, `后台任务请求执行：${detail}`].filter(Boolean).join('\n') },
+                    ...(request.signal === undefined ? {} : { signal: request.signal }) });
+            }
+            catch {
+                // The gateway turn closed or approval is unavailable: answer as the Worker's own chain would.
+                return next();
+            }
+        });
     }
     /** Capability is scoped to the exact owned Worker; the model cannot select another Context. */
     registerWorkerTools(agentCtx, worker, contextId) {
@@ -674,7 +734,7 @@ export default class TheOne extends Service {
                     throw new Error('Worker has unfinished input; inspect its DSH session before continuing');
                 }
                 const refreshed = this.store.contexts().find(item => item.id === context.id) ?? context;
-                yield* this.relay(worker, refreshed, input, options.sessionId, options.signal);
+                yield* this.relay(worker, refreshed, stepInput(options.messages, input), options.sessionId, options.signal);
                 this.refreshCompactionSummary(worker, context.id);
             }
             this.store.finish(input.id, 'completed');
@@ -797,6 +857,7 @@ export default class TheOne extends Service {
                             title: context.title, summary: context.summary, lastState: context.lastState,
                         }).slice(0, this.config.maxDescriptorChars) }],
             }));
+            this.relayGateways.set(worker.id, gatewayId);
             worker.followup(input);
             settled = worker.whenIdle().then(() => { done = true; wake(); }, error => {
                 failure = error instanceof Error ? error : new Error(String(error));
@@ -828,6 +889,8 @@ export default class TheOne extends Service {
             await settled;
             stopStream();
             stopEvents();
+            if (this.relayGateways.get(worker.id) === gatewayId)
+                this.relayGateways.delete(worker.id);
             if (this.thinkingPreview?.gatewayId === gatewayId)
                 this.thinkingPreview = undefined;
         }
