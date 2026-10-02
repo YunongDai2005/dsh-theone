@@ -1,5 +1,6 @@
+import { newIndependentTopic, referencesHistory } from "./routing-policy.js";
 const normalize = (value) => value.toLowerCase().replace(/[\s/_-]+/g, '');
-/** Conservative lexical routing. Ambiguous references need clarification. */
+/** Standalone misses start new topics; unresolved historical references ask. */
 export function resolveContext(text, contexts, currentId) {
     const current = contexts.find(context => context.id === currentId);
     const input = text.trim();
@@ -22,6 +23,8 @@ export function resolveContext(text, contexts, currentId) {
         const context = candidates[0];
         const explicitEntity = [...context.entities, context.title].some(term => normalize(term).length >= 2 && positive.includes(normalize(term)));
         if (current && context.id !== current.id && !explicitEntity && !/回到|切换|换到|先.*(?:处理|修|聊)|谈谈|聊聊/.test(input)) {
+            if (!referencesHistory(input))
+                return newIndependentTopic(input, contexts, 'weak-keyword-match');
             return { action: 'CLARIFY', reason: 'keyword-only-switch', question: `你是在继续“${current.title}”，还是切换到“${context.title}”？` };
         }
         return { action: current?.id === context.id ? 'KEEP' : current ? 'SWAP' : 'MOUNT', contextId: context.id, reason: 'entity-or-keyword' };
@@ -32,6 +35,8 @@ export function resolveContext(text, contexts, currentId) {
     if (current && reference && !unresolvedSwitch) {
         return { action: 'KEEP', contextId: current.id, reason: 'current-reference' };
     }
+    if (!referencesHistory(input) && !/^(?:不要|先不管|暂时不管|不是|算了)/.test(input))
+        return newIndependentTopic(input, contexts, 'no-history-match');
     const examples = contexts.slice(0, 2).map(context => `“${context.entities[0] ?? context.title}”`).join('或');
     return { action: 'CLARIFY', reason: 'insufficient-evidence', question: `你指的是哪个话题？${examples ? `可以说${examples}；` : ''}新话题请以“新话题：”开头。` };
 }

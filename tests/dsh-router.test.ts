@@ -4,6 +4,8 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DshRouter, RouterFailure, ROUTING_PROMPT } from '../src/llm-router.ts'
+import type { LlmResolvedModelInfo } from '@deepseek-ai/dsh-llm'
+import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import { harness, ask, FixtureModel, textResponse } from './harness.ts'
 
 const context = { id: 'ctx_qwen_9070xt', title: 'Qwen', summary: '配置', entities: [], keywords: [], lastState: '检查' }
@@ -31,6 +33,31 @@ test('DSH router uses its configured adapter without a separate key or session/t
     assert.equal(app.model.requests.length, 1)
     assert.equal(app.gateway.session.snapshotEvents().filter(e => e.type === 'assistant/message').length, 0)
   } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
+})
+
+test('routing disables supported deep thinking without changing Worker or provider defaults', async () => {
+  class ReasoningModel extends FixtureModel {
+    override async resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
+      return {provider,id:model,name:model,reasoning:{efforts:[{id:ReasoningEffortId('off'),name:'Off'},{id:ReasoningEffortId('high'),name:'High'}],defaultEffort:ReasoningEffortId('high')}}
+    }
+  }
+  const root = await mkdtemp(join(tmpdir(),'theone-router-thinking-'))
+  const model = new ReasoningModel()
+  model.behavior = async function* (options) {
+    if (options.system === ROUTING_PROMPT) {
+      assert.equal(options.reasoningEffort,'off')
+      assert.equal(options.maxTokens,2048)
+      yield* textResponse(JSON.stringify(decision))
+    } else {
+      assert.equal(options.reasoningEffort,'high')
+      yield* textResponse('Worker keeps user model defaults')
+    }
+  }
+  const app = await harness(root,model,{routerMode:'llm',routerTransport:'dsh'})
+  try {
+    assert.equal((await ask(app.gateway,'继续 Qwen 配置')).output,'Worker keeps user model defaults')
+    assert.equal((await app.ctx.llm.resolveModelInfo('fixture','fixture')).reasoning?.defaultEffort,'high')
+  } finally {await app.close();await rm(root,{recursive:true,force:true})}
 })
 
 test('native routing and Worker share DSH model; gateway selection persists through restart', async () => {

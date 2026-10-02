@@ -48,7 +48,7 @@ const regressionCases = [
   ['检查论文，然后继续配置 Qwen', 'ctx_thesis', 'SWAP', 'ctx_qwen_9070xt'],
   ['还有你说的那个方案，具体怎么做', 'ctx_thesis', 'KEEP', 'ctx_thesis'],
   ['合成一个 MD 然后归档', 'ctx_thesis', 'KEEP', 'ctx_thesis'],
-  ['我想了解摄影', 'ctx_thesis', 'CLARIFY', undefined],
+  ['我想了解摄影', 'ctx_thesis', 'CREATE', undefined],
   ['回到上周那个，继续', 'ctx_thesis', 'CLARIFY', undefined],
 ] as const
 for (const [text, current, action, contextId] of regressionCases) {
@@ -65,12 +65,12 @@ test('clarification examples come from the supplied catalog', () => {
   assert.doesNotMatch(result.question!, /Qwen|论文/)
 })
 
-test('a generic keyword alone cannot switch a mounted Context', () => {
+test('a generic keyword alone starts a standalone topic instead of forcing a switch', () => {
   const catalog = [
     { id: 'host', title: '家庭主机', summary: '维护电脑', entities: ['AI Box'], keywords: ['硬盘'], lastState: '配置' },
     { id: 'tools', title: '工具', summary: '插件', entities: ['Harness'], keywords: ['浏览器'], lastState: '配置' },
   ]
-  assert.equal(resolveContext('有没有给 AI 做的浏览器', catalog, 'host').action, 'CLARIFY')
+  assert.equal(resolveContext('有没有给 AI 做的浏览器', catalog, 'host').action, 'CREATE')
   assert.equal(resolveContext('回到浏览器那个', catalog, 'host').contextId, 'tools')
   assert.equal(resolveContext('Harness 的浏览器', catalog, 'host').contextId, 'tools')
   assert.equal(resolveContext('浏览器那个', catalog).contextId, 'tools')

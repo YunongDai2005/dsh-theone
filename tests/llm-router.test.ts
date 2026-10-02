@@ -157,7 +157,7 @@ test('gateway reserves admission during LLM classification; cancellation and inv
 
 
 test('only a boolean historyIndependent flag can admit standalone CREATE during indexing', () => {
- const request = {...input, historyIncomplete: true}
+ const request = {...input, text:'继续上次的音频下载', historyIncomplete: true}
  const create = {action:'CREATE',contextId:null,title:'音频下载',question:null,reason:'完整链接可独立执行'}
  assert.equal(validateRoutingDecision({...create,historyIndependent:true},request).historyIndependent,true)
  assert.equal(validateRoutingDecision({...create,historyIndependent:false},request).historyIndependent,false)

@@ -5,6 +5,9 @@ export declare const zh: {
     readonly 'gateway.opening': "正在打开 TheOne 主聊天…";
     readonly 'gateway.error': "主聊天暂时无法打开，请检查 DSH 连接和 TheOne 插件状态。";
     readonly retry: "重试";
+    readonly 'thinking.live': "实时思考";
+    readonly 'thinking.content': "模型返回的思考内容";
+    readonly 'thinking.truncated': "这里显示最近的思考片段，完整内容在完成后保留。";
     readonly 'settings.title': "TheOne 设置";
     readonly 'settings.menu': "设置";
     readonly 'settings.subtitle': "查看当前生效的配置和各项用途。";

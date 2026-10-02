@@ -15,10 +15,18 @@ import type { CatalogSnapshot } from './catalog-types.ts'
 import { EDITABLE_SETTINGS_KEYS, type EditableSettings, type SettingsSnapshot } from './settings-types.ts'
 import { GatewayNavigation } from './client-navigation.ts'
 import { zh, en, type TheOneLocaleKey } from './client-locales.ts'
+import type { ThinkingSnapshot } from './thinking-types.ts'
 
 // ui-workspace retains the selected conversation with this public source label.
 declare module '@deepseek-ai/dsh-api-session-controller/client' {
   interface SessionReferenceSourceMap { mainView: unknown }
+}
+
+// Public additive seat below DSH's composer, owned by ui-conversation.
+declare module '@deepseek-ai/dsh-client-ui-slots' {
+  interface SlotMap {
+    'conversation.composer.dock': { kind: 'list'; scope: 'session' }
+  }
 }
 
 export const inject = ['slots', 'locale', 'sessions', 'workspaces', 'layout', 'uiWorkspace', 'modelDirectories', 'remote.session']
@@ -33,6 +41,41 @@ export function apply(ctx: Context) {
   const subscribeLocale = ctx.locale.subscribe.bind(ctx.locale)
   const localeSnapshot = ctx.locale.getSnapshot.bind(ctx.locale)
   function useText() { useSyncExternalStore(subscribeLocale, localeSnapshot); return t }
+  function ThinkingPreview({theoneSessionId}: {theoneSessionId: string}) {
+    const t = useText()
+    const gatewayId = useSyncExternalStore(navigation.subscribe,navigation.getSnapshot)
+    const [preview,setPreview] = useState<{sessionId:string;value:ThinkingSnapshot}>()
+    useEffect(() => {
+      setPreview(undefined)
+      if (theoneSessionId !== gatewayId) return
+      const abort = new AbortController()
+      const signal = AbortSignal.any([abort.signal,lifetime.signal])
+      let timer: ReturnType<typeof setTimeout> | undefined
+      let active = false
+      const refresh = async () => {
+        try {
+          const response = await fetch('/api/theone/thinking?sessionId='+encodeURIComponent(theoneSessionId),{signal,cache:'no-store'})
+          if (!response.ok) throw new Error('Thinking preview unavailable')
+          const value = await response.json() as ThinkingSnapshot
+          signal.throwIfAborted()
+          active = value.active
+          setPreview({sessionId:theoneSessionId,value})
+        } catch {
+          if (!signal.aborted) { active = false; setPreview(undefined) }
+        } finally {
+          if (!signal.aborted) timer = setTimeout(() => {void refresh()},active ? 400 : 1000)
+        }
+      }
+      void refresh()
+      return () => {abort.abort();clearTimeout(timer)}
+    },[theoneSessionId,gatewayId])
+    const value = preview?.sessionId === theoneSessionId ? preview.value : undefined
+    return h('details',{className:'theone-thinking',open:true,hidden:!value?.active || !value.text,
+      'data-session-id':theoneSessionId},
+      h('summary',null,t('thinking.live')),
+      h('pre',{'aria-label':t('thinking.content')},value?.text ?? ''),
+      value?.truncated ? h('p',null,t('thinking.truncated')) : null)
+  }
   async function createGateway(id: string) {
     const response = await fetch('/api/theone/gateway', { signal: lifetime.signal, cache: 'no-store' })
     if (!response.ok) throw new Error('Global gateway directory unavailable')
@@ -437,10 +480,17 @@ export function apply(ctx: Context) {
       return h('span',{className:'theone-catalog-entry',translate:'no'},h('span',null,'▦'),size === 16 ? h('span',null,t('catalog.title')) : null)
     }),
   ])
+  ctx.slots.inject('conversation.composer.dock', () => ctx.slots.register({
+    name:'conversation.composer.dock',id:'theone-thinking',order:-100,
+    inject:(sessionId) => ({theoneSessionId:sessionId}),
+  },ThinkingPreview))
 }
 
 /** Target only the row containing our own slot marker; no generated DSH class names. */
 const sidebarCss = `
+.theone-thinking{pointer-events:auto;margin:8px auto 0;padding:10px 14px;border:1px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);width:100%;max-width:var(--dsh-composer-card-max-width,820px);box-sizing:border-box;font-size:13px}
+div:has(>[data-slot="conversation.composer.dock"]>.theone-thinking:not([hidden])){flex-direction:column}
+.theone-thinking summary{cursor:pointer;color:var(--dsw-alias-label-secondary)}.theone-thinking pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:180px;overflow:auto;font:inherit;line-height:1.7;margin:10px 0 0}.theone-thinking p{font-size:12px;color:var(--dsw-alias-label-secondary);margin:8px 0 0}
 button:has(.theone-nav){--one-accent:#a75b1e;--one-tint:#fff5ec;--one-line:#eed3bb;--one-heat:#ff78002b;--one-glow:0 0 22px 4px #ff6b0024,0 4px 32px 6px #ff76000d;border:1px solid var(--one-line);background:var(--one-tint);box-shadow:var(--one-glow);overflow:visible;border-radius:12px;color:var(--dsw-alias-label-primary);flex:none;position:relative;isolation:isolate}
 [data-ds-dark-theme] button:has(.theone-nav){--one-accent:#93c8f3;--one-tint:#1d2a37;--one-line:#344d64;--one-heat:#80caff30;--one-glow:0 0 22px 4px #80bae924}
 button:has(.theone-nav)::after{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;background:radial-gradient(85px circle at var(--one-pointer-x,50%) var(--one-pointer-y,50%),var(--one-heat),transparent 100%);opacity:0;transition:opacity 180ms ease;z-index:0}
