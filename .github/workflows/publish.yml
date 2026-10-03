@@ -1,0 +1,42 @@
+name: Publish to npm
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-publish-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: ${{ !github.event.release.prerelease }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Require the release tag to match the package version
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          node --input-type=module -e 'import fs from "node:fs"; const pkg = JSON.parse(fs.readFileSync("package.json", "utf8")); if (process.env.RELEASE_TAG !== `v${pkg.version}`) throw new Error("Release tag must be v" + pkg.version);'
+      - run: npm install --global npm@11
+      - run: npm ci --ignore-scripts
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run pack:plugin
+      - name: Publish the checked plugin archive
+        run: |
+          VERSION=$(node -p 'JSON.parse(require("node:fs").readFileSync("package.json", "utf8")).version')
+          npm publish ".dsh-test/dsh-theone-${VERSION}.tgz" --access public --provenance --registry=https://registry.npmjs.org/
