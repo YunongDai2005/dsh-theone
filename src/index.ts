@@ -5,7 +5,7 @@ import { mkdir } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { LlmAdapter, createUserMessage, resolveRetryPolicy } from '@deepseek-ai/dsh-llm'
-import type { GenerateOptions, LlmResolvedModelInfo, ReasoningEffortId, StreamChunk, UserMessage } from '@deepseek-ai/dsh-llm'
+import type { GenerateOptions, LlmModelInfo, LlmResolvedModelInfo, ReasoningEffortId, StreamChunk, UserMessage } from '@deepseek-ai/dsh-llm'
 import type { Agent, AgentHandle, ModelSelection, ModelSelectionRef } from '@deepseek-ai/dsh-agent'
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
 import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -68,18 +68,28 @@ declare module '@deepseek-ai/dsh-llm' {
   }
 }
 
+/**
+ * Main chat's model entries besides plain "TheOne": "TheOne · <model>" still answers through TheOne,
+ * with that model doing the routing and the background work.
+ */
+const VIA = 'via:'
+export function viaModel(selection: ModelSelection): string { return `${VIA}${selection.provider}/${selection.model}` }
+export function parseVia(id: string | undefined): ModelSelection | undefined {
+  if (!id?.startsWith(VIA)) return undefined
+  const rest = id.slice(VIA.length)
+  const slash = rest.indexOf('/')
+  if (slash <= 0 || slash === rest.length - 1 || rest.slice(0, slash) === 'theone') return undefined
+  return { provider: rest.slice(0, slash), model: rest.slice(slash + 1) }
+}
+
 /** Gateway provider delegates each accepted input to its context's DSH worker. */
 class GatewayAdapter extends LlmAdapter {
   constructor(private readonly service: TheOne) { super() }
   override providerInfo(provider: string) { return { id: provider, name: 'TheOne' } }
-  override async listModels(provider: string) {
-    // The entry accepts whatever the backing model accepts (e.g. images).
-    const info = await this.service.gatewayModelInfo(provider).catch(() => undefined)
-    return [{ provider, id: 'gateway', name: 'TheOne', inputModalities: [...(info?.inputModalities ?? ['text' as const])] }]
-  }
+  override listModels(provider: string) { return this.service.gatewayModels(provider) }
   override resolveModel(provider: string, model: string, signal?: AbortSignal): Promise<LlmResolvedModelInfo> {
-    if (model !== 'gateway') throw new Error('TheOne only exposes the gateway model')
-    return this.service.gatewayModelInfo(provider, signal)
+    if (model !== 'gateway' && !parseVia(model)) throw new Error('TheOne only exposes its gateway models')
+    return this.service.gatewayModelInfo(provider, signal, model)
   }
   override providerRetryPolicy() { return resolveRetryPolicy({ mode: 'normal', maxRetries: 0 }, 'theone.retry') }
   override stream(options: GenerateOptions): AsyncIterable<StreamChunk> { return this.service.answer(options) }
@@ -276,8 +286,8 @@ export default class TheOne extends Service {
         return config
       }
       this.throughTheOne.set(payload.agent, true)
-      // The resolved selection is authoritative; TheOne itself means "follow DSH's selected model".
-      this.pickedModel = config.provider === 'theone' ? undefined : { provider: config.provider, model: config.model }
+      // The resolved selection is authoritative; plain TheOne means "follow DSH's selected model".
+      this.pickedModel = config.provider === 'theone' ? parseVia(config.model) : { provider: config.provider, model: config.model }
       return config.provider === 'theone' ? config : { ...config, provider: 'theone', model: 'gateway' }
     }, { prepend: true })
     ctx.on('agent/pre-step', async ({ agent, signal }, next) => {
@@ -288,7 +298,7 @@ export default class TheOne extends Service {
       signal.throwIfAborted()
       // Know main chat's model choice before routing, so this very message is classified with it.
       const pickedNow = selected?.signal === signal ? selected.model : undefined
-      if (provider === 'theone') this.pickedModel = undefined
+      if (provider === 'theone') this.pickedModel = parseVia(pickedNow ?? agent.options.model)
       else if (provider && pickedNow) this.pickedModel = { provider, model: pickedNow }
       const users = decision.messages.filter(message => message.source.kind === 'user')
       const run = this.runs.get(agent.id)
@@ -617,7 +627,7 @@ export default class TheOne extends Service {
     const defaultSelection = this.ctx.agentDefaultModel.currentSelection()
     const selection = c.workerProvider && c.workerModel
       ? { provider: c.workerProvider, model: c.workerModel }
-      : defaultSelection.provider !== 'theone' ? defaultSelection : this.store.rememberedModel(c.gatewayKey)
+      : defaultSelection.provider !== 'theone' ? defaultSelection : parseVia(defaultSelection.model) ?? this.store.rememberedModel(c.gatewayKey)
     let model: SettingsSnapshot['model'] = selection ? { provider: selection.provider, model: selection.model } : null
     let modelUnavailable = !model
     if (selection) {
@@ -638,11 +648,7 @@ export default class TheOne extends Service {
     const activeEditable = Object.fromEntries(EDITABLE_SETTINGS_KEYS.map(key => [key, key === 'contextsPath' ? c.contextsPath ?? null : values[key]])) as EditableSettings
     let savedValues = activeEditable
     try { if (saved) savedValues = validateSettings(saved.values, { contextsPath: c.contextsPath ?? null }) } catch { /* Keep the current usable form. */ }
-    // A provider that cannot list its models in time offers none here.
-    const listed = await Promise.all(this.ctx.llm.listProviders().filter(provider => provider.id !== 'theone').map(provider =>
-      Promise.race([this.ctx.llm.listModels(provider.id), new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000).unref())])
-        .then(models => models.map(model => ({ provider: provider.id, id: model.id, name: model.name })), () => [])))
-    const models: SettingsSnapshot['models'] = listed.flat()
+    const models: SettingsSnapshot['models'] = (await this.offeredModels()).map(model => ({ provider: model.provider, id: model.id, name: model.name }))
     return { values, model, models, modelUnavailable, savedValues, revision: saved?.revision ?? 0,
       restartRequired: RESTART_SETTINGS_KEYS.some(key => savedValues[key] !== activeEditable[key]) }
   }
@@ -661,9 +667,9 @@ export default class TheOne extends Service {
 
   /** Capture before Web saves the gateway itself as DSH's new default. */
   captureDefaultModel(): void {
-    const selection = this.ctx.agentDefaultModel.currentSelection()
-    if (selection.provider && selection.model && selection.provider !== 'theone')
-      this.store.rememberModel(this.config.gatewayKey, selection)
+    const current = this.ctx.agentDefaultModel.currentSelection()
+    const selection = current.provider === 'theone' ? parseVia(current.model) : current
+    if (selection?.provider && selection.model) this.store.rememberModel(this.config.gatewayKey, selection)
   }
 
   private backingModel(): ModelSelection {
@@ -676,16 +682,38 @@ export default class TheOne extends Service {
     return selection
   }
 
-  /** The entry has exactly the configured backing model's capacity, including DSH overrides. */
-  async gatewayModelInfo(provider = 'theone', signal?: AbortSignal): Promise<LlmResolvedModelInfo> {
-    const info: LlmResolvedModelInfo = { provider, id: 'gateway', name: 'TheOne Gateway', inputModalities: ['text'] }
+  /** Every model DSH offers besides TheOne; a provider that cannot list its models in time offers none. */
+  private async offeredModels(): Promise<LlmModelInfo[]> {
+    const listed = await Promise.all(this.ctx.llm.listProviders().filter(provider => provider.id !== 'theone').map(provider =>
+      Promise.race([this.ctx.llm.listModels(provider.id), new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000).unref())])
+        .catch(() => [] as LlmModelInfo[])))
+    return listed.flat()
+  }
+
+  /** Main chat's model menu: plain TheOne (follow DSH), then "TheOne · <model>" for every model DSH offers. */
+  async gatewayModels(provider: string): Promise<LlmModelInfo[]> {
+    // The entry accepts whatever the backing model accepts (e.g. images).
+    const info = await this.gatewayModelInfo(provider).catch(() => undefined)
+    const models: LlmModelInfo[] = [{ provider, id: 'gateway', name: 'TheOne', inputModalities: [...(info?.inputModalities ?? ['text' as const])] }]
+    // A model pinned in TheOne's settings decides for the Workers, so choices here would do nothing.
+    if (this.config.workerProvider && this.config.workerModel) return models
+    for (const model of await this.offeredModels()) models.push({ provider, id: viaModel({ provider: model.provider, model: model.id }), name: `TheOne · ${model.name}`,
+      ...(model.description ? { description: model.description } : {}), ...(model.inputModalities ? { inputModalities: [...model.inputModalities] } : {}) })
+    return models
+  }
+
+  /** The entry has exactly the backing model's capacity, including DSH overrides. */
+  async gatewayModelInfo(provider = 'theone', signal?: AbortSignal, model = 'gateway'): Promise<LlmResolvedModelInfo> {
+    const chosen = parseVia(model)
+    const info: LlmResolvedModelInfo = { provider, id: model, name: 'TheOne Gateway', inputModalities: ['text'] }
     let selection: ModelSelection
-    try { selection = this.backingModel() }
+    try { selection = chosen ?? this.backingModel() }
     catch (error) {
       if (error instanceof RouterFailure && error.code === 'ROUTER_MODEL_MISSING') return info
       throw error
     }
     const backing = await this.ctx.llm.resolveModelInfo(selection.provider, selection.model, signal)
+    if (chosen) info.name = `TheOne · ${backing.name}`
     // Image input and the thinking-effort choices are the backing model's, so main chat offers the same controls.
     return { ...info, ...(backing.inputModalities ? { inputModalities: [...backing.inputModalities] } : {}),
       ...(backing.reasoning ? { reasoning: backing.reasoning } : {}),

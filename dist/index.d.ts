@@ -1,6 +1,7 @@
 import { Context, Service } from '@deepseek-ai/cordis';
 import z from '@deepseek-ai/schemastery';
-import type { GenerateOptions, LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm';
+import type { GenerateOptions, LlmModelInfo, LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm';
+import type { ModelSelection } from '@deepseek-ai/dsh-agent';
 import type { SessionEventWindow } from '@deepseek-ai/dsh-session-query';
 import { HistoryCatalog } from './history-catalog.ts';
 import { ContextStore } from './store.ts';
@@ -54,6 +55,8 @@ declare module '@deepseek-ai/dsh-llm' {
         };
     }
 }
+export declare function viaModel(selection: ModelSelection): string;
+export declare function parseVia(id: string | undefined): ModelSelection | undefined;
 export default class TheOne extends Service {
     private config;
     static inject: string[];
@@ -89,8 +92,12 @@ export default class TheOne extends Service {
     /** Capture before Web saves the gateway itself as DSH's new default. */
     captureDefaultModel(): void;
     private backingModel;
-    /** The entry has exactly the configured backing model's capacity, including DSH overrides. */
-    gatewayModelInfo(provider?: string, signal?: AbortSignal): Promise<LlmResolvedModelInfo>;
+    /** Every model DSH offers besides TheOne; a provider that cannot list its models in time offers none. */
+    private offeredModels;
+    /** Main chat's model menu: plain TheOne (follow DSH), then "TheOne · <model>" for every model DSH offers. */
+    gatewayModels(provider: string): Promise<LlmModelInfo[]>;
+    /** The entry has exactly the backing model's capacity, including DSH overrides. */
+    gatewayModelInfo(provider?: string, signal?: AbortSignal, model?: string): Promise<LlmResolvedModelInfo>;
     /** This main chat's recent text turns, each attributed to the topic it was routed to. */
     private recentMainChat;
     /** Recover bounded routing context from DSH references after the Gateway is rebuilt. */

@@ -8,6 +8,7 @@ import { ReasoningEffortId, type LlmResolvedModelInfo } from '@deepseek-ai/dsh-l
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { installModelSelection, type ModelSelectionRef } from '@deepseek-ai/dsh-agent'
 import { defineTool } from '@deepseek-ai/dsh-tools'
+import { ROUTING_PROMPT } from '../src/llm-router.ts'
 import { harness, ask, FixtureModel, textResponse } from './harness.ts'
 
 class VisionReasoningModel extends FixtureModel {
@@ -132,5 +133,39 @@ test('a session that used TheOne and switched back to an ordinary model runs its
     assert.equal(ordinary.output, '普通会话自己执行了工具')
     assert.equal(runs, 1)
     assert.equal(app.ctx.theone.store.route(ordinary.input.id), undefined)
+  } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
+})
+
+test('main chat lists "TheOne · <model>" for every model; picking one routes and works with it', { timeout: 30000 }, async () => {
+  class ListedModel extends VisionReasoningModel {
+    override async listModels(provider: string) {
+      return [{ provider, id: 'fixture', name: 'Fixture' }, { provider, id: 'fixture-b', name: 'Fixture B', inputModalities: ['text' as const] }]
+    }
+  }
+  const root = await mkdtemp(join(tmpdir(), 'theone-controls-via-'))
+  const model = new ListedModel()
+  model.behavior = async function* (options) {
+    yield* textResponse(options.system === ROUTING_PROMPT
+      ? JSON.stringify({ action: 'EXISTING', contextId: 'ctx_qwen_9070xt', title: null, question: null, reason: '测试' }) : '好')
+  }
+  const app = await harness(root, model, { routerMode: 'llm', autoModel: true })
+  try {
+    const listed = await app.ctx.llm.listModels('theone')
+    assert.deepEqual(listed.map(entry => [entry.id, entry.name]), [
+      ['gateway', 'TheOne'], ['via:fixture/fixture', 'TheOne · Fixture'], ['via:fixture/fixture-b', 'TheOne · Fixture B']])
+    const info = await app.ctx.llm.resolveModelInfo('theone', 'via:fixture/fixture-b')
+    assert.equal(info.name, 'TheOne · fixture-b')
+    assert.deepEqual(info.reasoning?.efforts.map(effort => effort.id), ['off', 'high'])
+    await assert.rejects(app.ctx.llm.resolveModelInfo('theone', 'via:theone/gateway'))
+    const chat = (await app.ctx.agents.create({ sessionId: SessionId(randomUUID()),
+      agentOptions: { provider: 'theone', model: 'via:fixture/fixture-b' } })).agent
+    app.ctx.theone.store.rememberGateway('test-gateway', chat.id)
+    assert.equal((await ask(chat, 'Qwen 那个')).output, '好')
+    // Routing and the background both ran on the picked model; main chat stayed TheOne.
+    assert.deepEqual(model.requests.map(request => request.model), ['fixture-b', 'fixture-b'])
+    // A model pinned in TheOne's settings decides instead, so the menu offers only TheOne.
+    const pinned = await harness(join(root, 'pinned'), new ListedModel())
+    try { assert.deepEqual((await pinned.ctx.llm.listModels('theone')).map(entry => entry.id), ['gateway']) }
+    finally { await pinned.close() }
   } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
 })
