@@ -72,6 +72,7 @@ declare module '@deepseek-ai/dsh-llm' {
     'theone-route': { kind: 'theone-route'; form: 'notice'; summary: string; messageId: string; router?: RouterReceipt }
     'theone-context': { kind: 'theone-context'; form: 'recall'; contextId: string }
     'theone-links': { kind: 'theone-links'; form: 'recall'; contextId: string; related: string[] }
+    'theone-welcome': { kind: 'theone-welcome'; form: 'notice'; locale: string }
   }
 }
 
@@ -127,9 +128,22 @@ const TERMS_PROMPT = `你在帮话题路由器从用户的更正中学习。用�
 从 message 原文中挑出最多 4 个能把它和 rightTopic 联系起来、又能和 wrongTopic 区分开的词语：项目名、术语、产品、人名、文件名等，每个 2–12 个字，必须在 message 中原样出现。
 不要选泛泛的词（如「帮我」「这个」「问题」），不要选 wrongTopic 的名字。只输出 JSON 字符串数组，例如 ["消融实验","第三章"]。`
 
+/** The first words of a new main chat, in the interface language. */
+function welcomeText(locale: string): string {
+  return locale.toLowerCase().startsWith('zh')
+    ? '你好！以后所有的事都在这里聊就行。TheOne 会判断每句话属于哪件事，交给那件事自己的后台会话去做，过程原样显示在这里。你以前在 DSH 里聊过的内容，会整理到左侧的「话题工作区」。'
+    : 'Hi! From now on, just talk here about anything. TheOne works out which topic each message belongs to, hands it to that topic\'s own background session, and shows the work right here. Your earlier DSH conversations are organized under **Topic workspaces** in the sidebar.'
+}
+
 /** Why a message went where it did, as a short phrase for the "show every decision" notice. */
-function reasonLabel(reason: string): string {
-  const fixed: Record<string, string> = {
+function reasonLabel(reason: string, english = false): string {
+  const fixed: Record<string, string> = english ? {
+    'steering': 'added during the reply', 'short-continuation': 'continuing', 'attachment-only': 'attachment', 'correction': 'your correction',
+    'explicit-new-topic': 'new topic', 'no-history-evidence': 'new question', 'entity-or-keyword': 'mentions this topic',
+    'keyword-only-switch': 'mentions this topic', 'current-reference': 'same topic', 'combined-contexts': 'combines topics',
+    'insufficient-evidence': 'no matching topic', 'multiple-contexts': 'several topics fit', 'weak-keyword-match': 'new question', 'no-history-match': 'new question',
+    'CATALOG_NOT_READY': 'history still being catalogued', 'CATALOG_REVIEW_LIMIT': 'no clearly related topic', 'HISTORY_SEARCH_UNAVAILABLE': 'history search unavailable',
+  } : {
     'steering': '回复中补充', 'short-continuation': '接着说', 'attachment-only': '附件', 'correction': '按你的更正',
     'explicit-new-topic': '明确的新话题', 'no-history-evidence': '新的问题', 'entity-or-keyword': '提到了这个话题',
     'keyword-only-switch': '提到了这个话题', 'current-reference': '接着当前话题', 'combined-contexts': '结合多个话题',
@@ -137,7 +151,7 @@ function reasonLabel(reason: string): string {
     'CATALOG_REVIEW_LIMIT': '没有找到明确相关的旧话题', 'HISTORY_SEARCH_UNAVAILABLE': '历史检索暂不可用',
   }
   if (fixed[reason]) return fixed[reason]
-  if (reason.startsWith('router-fallback:')) return '分类暂不可用，按规则判断'
+  if (reason.startsWith('router-fallback:')) return english ? 'classifier unavailable, routed by rules' : '分类暂不可用，按规则判断'
   const text = reason.replace(/\s+/g, ' ').trim()
   return text.length > 60 ? text.slice(0, 59) + '…' : text
 }
@@ -341,6 +355,8 @@ export default class TheOne extends Service {
       const provider = selected?.signal === signal ? selected.provider : agent.options.provider
       if (decision.kind === 'reject' || (provider !== 'theone' && !this.store.isPinnedGateway(agent.id))) return decision
       signal.throwIfAborted()
+      // The welcome turn of a new main chat has nothing to route.
+      if (!decision.messages.some(message => message.source.kind === 'user') && decision.messages.some(message => message.source.kind === 'theone-welcome')) return decision
       // Know main chat's model choice before routing, so this very message is classified with it.
       const pickedNow = selected?.signal === signal ? selected.model : undefined
       if (provider === 'theone') this.pickedModel = parseVia(pickedNow ?? agent.options.model)
@@ -474,8 +490,10 @@ export default class TheOne extends Service {
       const mark = { KEEP: '·', MOUNT: '→', SWAP: '→', CREATE: '＋', CLARIFY: '?' }[route.decision.action]
       const notice = this.config.routeNotice ?? 'switch'
       // Showing every decision also says why it was made.
-      const why = notice === 'all' ? ` · ${reasonLabel(route.decision.reason)}` : ''
-      const summary = `${mark} ${titleOf(route.decision.contextId) ?? '请补充话题'}${references.length ? ` · 参考：${references.join('、')}` : ''}${why}`.slice(0, 160)
+      // The notice speaks the language the message was written in.
+      const english = !!text.trim() && !/[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/.test(text)
+      const why = notice === 'all' ? ` · ${reasonLabel(route.decision.reason, english)}` : ''
+      const summary = `${mark} ${titleOf(route.decision.contextId) ?? (english ? 'needs a topic' : '请补充话题')}${references.length ? (english ? ` · reference: ${references.join(', ')}` : ` · 参考：${references.join('、')}`) : ''}${why}`.slice(0, 160)
       const switched = route.decision.action === 'MOUNT' || route.decision.action === 'SWAP' || route.decision.action === 'CREATE'
       if (notice === 'hidden' || (notice === 'switch' && !switched)) return decision
       return { ...decision, messages: [...decision.messages, createUserMessage({
@@ -541,6 +559,8 @@ export default class TheOne extends Service {
           }
           this.store.rememberGateway(this.config.gatewayKey, id)
           await scope.workspaceRegistry.unarchiveSession(id)
+          const locale = 'locale' in value && typeof value.locale === 'string' ? value.locale.slice(0, 16) : 'en'
+          this.welcomeGateway(id, locale)
           return Response.json({ prepared: true, workspaceId: null })
         } }))
       })
@@ -1181,6 +1201,17 @@ export default class TheOne extends Service {
     // Later steps of a running reply (after tool calls, steering or a retry) show the Worker's next step.
     const running = this.runs.get(options.sessionId)
     if (running) { yield* running.stream(options.signal); return }
+    // Other plugins may add their own context after it; the welcome is the newest input from either side.
+    const latest = [...options.messages].reverse().find(message => message.role === 'user' && 'source' in message
+      && (message.source?.kind === 'user' || message.source?.kind === 'theone-welcome'))
+    if (latest && 'source' in latest && latest.source?.kind === 'theone-welcome') {
+      const text = welcomeText(latest.source.locale)
+      yield { type: 'block-start', index: 0, blockType: 'text' }
+      yield { type: 'text-delta', index: 0, text }
+      yield { type: 'block-end', index: 0, block: { type: 'text', text } }
+      yield { type: 'finish', reason: { kind: 'stop' } }
+      return
+    }
     const input = [...options.messages].reverse().find((message): message is UserMessage =>
       message.role === 'user' && 'source' in message && message.source?.kind === 'user')
     if (!input) throw new Error('TheOne requires a session-backed user input')
@@ -1373,6 +1404,18 @@ export default class TheOne extends Service {
     const note = correction.content.filter(block => block.type === 'text').map(block => block.text).join('\n').trim()
     return createUserMessage({ source: correction.source, content: [...event.data.content,
       { type: 'text', text: `\n\n（这条消息先前被分到了别的话题，用户更正后交给这里处理${note ? `。用户的更正：${note}` : ''}）` }] })
+  }
+
+  /**
+   * DSH treats a session that never had a turn as blank, and a blank session outside any workspace
+   * locks its input until a workspace is chosen. The main chat belongs to no workspace, so a new one
+   * opens with a short welcome turn, which also tells the user how it works. No model is called.
+   */
+  welcomeGateway(id: string, locale: string): void {
+    const agent = this.ctx.agents.get(SessionId(id))
+    if (!agent || agent.status !== 'idle' || agent.inbox.nextTurn.length || agent.inbox.nextStep.length) return
+    if (agent.session.snapshotEvents().some(event => event.type === 'turn/start')) return
+    agent.followup(createUserMessage({ source: { kind: 'theone-welcome', form: 'notice', locale }, content: [{ type: 'text', text: 'TheOne' }] }))
   }
 
   /** Topic → when main chat last answered in it; quick alternation between two topics links them. */

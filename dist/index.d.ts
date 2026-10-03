@@ -59,6 +59,11 @@ declare module '@deepseek-ai/dsh-llm' {
             contextId: string;
             related: string[];
         };
+        'theone-welcome': {
+            kind: 'theone-welcome';
+            form: 'notice';
+            locale: string;
+        };
     }
 }
 export declare function viaModel(selection: ModelSelection): string;
@@ -187,6 +192,12 @@ export default class TheOne extends Service {
     private similarCorrections;
     /** The misrouted message, handed to the right topic with the user's correction. */
     private correctedInput;
+    /**
+     * DSH treats a session that never had a turn as blank, and a blank session outside any workspace
+     * locks its input until a workspace is chosen. The main chat belongs to no workspace, so a new one
+     * opens with a short welcome turn, which also tells the user how it works. No model is called.
+     */
+    welcomeGateway(id: string, locale: string): void;
     /** Topic → when main chat last answered in it; quick alternation between two topics links them. */
     private lastRoute?;
     private learnFromRoute;

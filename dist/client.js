@@ -544,7 +544,7 @@ function apply(ctx) {
       const prepared = await fetch("/api/theone/gateway/prepare", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ sessionId: id }),
+        body: JSON.stringify({ sessionId: id, locale: localeSnapshot().active }),
         signal: lifetime.signal
       });
       if (!prepared.ok) throw new Error("Global gateway preparation failed");

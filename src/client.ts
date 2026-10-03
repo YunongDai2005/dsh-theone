@@ -60,7 +60,7 @@ export function apply(ctx: Context) {
         if (!renamed.ok) throw renamed.error
       })
       const prepared = await fetch('/api/theone/gateway/prepare', { method: 'POST',
-        headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sessionId: id }), signal: lifetime.signal })
+        headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sessionId: id, locale: localeSnapshot().active }), signal: lifetime.signal })
       if (!prepared.ok) throw new Error('Global gateway preparation failed')
       // Archiving the underlying session must not strand the fixed entry.
       await ctx.uiWorkspace.unarchiveSession(target)
