@@ -229,13 +229,17 @@ export class HistoryCatalog {
         this.settledPending = this.status.pending;
         this.status.lastCompletedAt = Date.now();
     }
-    async candidates(text, currentId, signal) {
+    /**
+     * Up to 16 topics worth showing the classifier. `contexts` may carry learned terms; `prior`
+     * favours topics used recently, often, or together with the current one.
+     */
+    async candidates(text, currentId, signal, hints = {}) {
         this.status.searchUnavailable = false;
-        const all = this.store.contexts();
+        const all = hints.contexts ?? this.store.contexts();
         if (all.length <= 16)
             return all;
         const normalized = text.toLowerCase();
-        const scores = new Map(all.map(c => [c.id, (c.id === currentId ? 10000 : 0) +
+        const scores = new Map(all.map(c => [c.id, (c.id === currentId ? 10000 : 0) + (hints.prior?.get(c.id) ?? 0) +
                 [...c.entities, ...c.keywords, c.title].filter(t => t.length >= 2 && normalized.includes(t.toLowerCase())).length * 10]));
         const terms = [...new Set(text.match(/[a-zA-Z][\w.-]{1,40}|[\u4e00-\u9fff]{2,8}/g) ?? [])].slice(0, 4);
         for (const term of terms) {

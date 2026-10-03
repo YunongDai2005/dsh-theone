@@ -160,6 +160,7 @@ export declare const zh: {
     readonly 'manage.cancel': "取消";
     readonly 'routes.title': "最近的话题分配";
     readonly 'routes.hint': "分错时可以在这里改到正确的话题：TheOne 会记住，类似的消息以后分到那里，下一条消息也接着那个话题。也可以直接在主聊天里说「分错了，是 某某 的」，上一条会交给正确的话题重新处理。";
+    readonly 'routes.stats': "最近 {total} 条：{rate}% 没有被更正，追问 {clarified} 次";
     readonly 'routes.empty': "还没有分配记录。";
     readonly 'routes.move': "改到…";
     readonly 'routes.corrected': "已改到 {title}";

@@ -2,6 +2,8 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
+/** Terms learned from corrections fade by half every 30 days unless they are confirmed again. */
+export const TERM_HALF_LIFE_MS = 30 * 86400000;
 /** A whole session attached by hand counts as reviewed from its first event to its last. */
 export const WHOLE_SESSION = { startSeq: 0, endSeq: Number.MAX_SAFE_INTEGER };
 /** Stores descriptors and routing metadata. Original conversation stays in DSH. */
@@ -87,6 +89,9 @@ export class ContextStore {
       );
       CREATE TABLE IF NOT EXISTS dismissed_turns (
         session_id TEXT NOT NULL, user_seq INTEGER NOT NULL, fingerprint TEXT NOT NULL, PRIMARY KEY(session_id, user_seq)
+      );
+      CREATE TABLE IF NOT EXISTS learned_terms (
+        context_id TEXT NOT NULL, term TEXT NOT NULL, weight REAL NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY(context_id, term)
       );
       CREATE TABLE IF NOT EXISTS route_details (
         message_id TEXT PRIMARY KEY, excerpt TEXT NOT NULL, receipt TEXT, corrected_to TEXT, corrected_at INTEGER
@@ -491,8 +496,44 @@ export class ContextStore {
         this.db.prepare(`INSERT INTO route_details(message_id, excerpt, corrected_to, corrected_at) VALUES (?, '', ?, ?)
       ON CONFLICT(message_id) DO UPDATE SET corrected_to = excluded.corrected_to, corrected_at = excluded.corrected_at`).run(messageId, contextId, now);
     }
-    /** Recent corrections as examples for the classifier: this text belonged there, not here. */
-    corrections(gatewayKey, limit = 5) {
+    /**
+     * Terms a correction showed belong to a topic (positive delta) or not (negative). Weights fade
+     * over time, stay within 0–5, and a term that falls to nothing is forgotten.
+     */
+    learnTerms(contextId, terms, delta, now = Date.now()) {
+        if (!this.contexts().some(context => context.id === contextId))
+            return;
+        for (const raw of new Set(terms.map(term => term.trim()).filter(term => term.length >= 2 && term.length <= 24))) {
+            const row = this.db.prepare('SELECT weight, updated_at FROM learned_terms WHERE context_id = ? AND term = ?').get(contextId, raw);
+            const current = row ? row.weight * 0.5 ** ((now - row.updated_at) / TERM_HALF_LIFE_MS) : 0;
+            const weight = Math.min(5, current + delta);
+            if (weight <= 0.05)
+                this.db.prepare('DELETE FROM learned_terms WHERE context_id = ? AND term = ?').run(contextId, raw);
+            else
+                this.db.prepare('INSERT OR REPLACE INTO learned_terms VALUES (?, ?, ?, ?)').run(contextId, raw, weight, now);
+        }
+    }
+    /** Each topic's learned terms that still count (weight ≥ 0.5 after fading), strongest first. */
+    learnedTerms(now = Date.now(), limit = 20) {
+        const result = new Map();
+        for (const row of this.db.prepare('SELECT * FROM learned_terms').all()) {
+            const weight = row.weight * 0.5 ** ((now - row.updated_at) / TERM_HALF_LIFE_MS);
+            if (weight < 0.5)
+                continue;
+            result.set(row.context_id, [...result.get(row.context_id) ?? [], { term: row.term, weight }]);
+        }
+        return new Map([...result].map(([id, terms]) => [id, terms.sort((a, b) => b.weight - a.weight).slice(0, limit).map(item => item.term)]));
+    }
+    /** How routing has gone lately: of the last `limit` messages, how many were moved, asked about or routed by rules after a failure. */
+    routeStats(gatewayKey, limit = 100) {
+        const routes = this.recentRoutes(gatewayKey, limit);
+        return { total: routes.length,
+            corrected: routes.filter(route => route.correctedTo && route.correctedTo !== route.decision.contextId).length,
+            clarified: routes.filter(route => route.decision.action === 'CLARIFY').length,
+            fallback: routes.filter(route => route.decision.reason.startsWith('router-fallback:')).length };
+    }
+    /** Corrections as examples for the classifier: this text belonged there, not here. Newest first. */
+    corrections(gatewayKey, limit = 50) {
         const known = new Set(this.contexts().map(context => context.id));
         return this.db.prepare(`SELECT d.excerpt, d.corrected_to, r.decision FROM route_details d
       JOIN routing_events r ON r.message_id = d.message_id JOIN gateway_sessions gs ON gs.gateway_id = r.gateway_id
@@ -597,6 +638,7 @@ export class ContextStore {
             this.db.prepare('UPDATE OR IGNORE context_summary_updates SET context_id = ? WHERE context_id = ?').run(targetId, sourceId);
             this.db.prepare('UPDATE gateway_state SET context_id = ? WHERE context_id = ?').run(targetId, sourceId);
             this.db.prepare('UPDATE route_details SET corrected_to = ? WHERE corrected_to = ?').run(targetId, sourceId);
+            this.db.prepare('INSERT OR IGNORE INTO learned_terms SELECT ?, term, weight, updated_at FROM learned_terms WHERE context_id = ?').run(targetId, sourceId);
             const rules = [this.constraints(targetId)?.text, this.constraints(sourceId)?.text].filter(Boolean);
             if (rules.length)
                 this.setConstraints(targetId, rules.join('\n').slice(0, 400));
@@ -635,7 +677,7 @@ export class ContextStore {
     }
     purge(contextId) {
         for (const table of ['topic_group_members', 'history_turns', 'context_origins', 'context_sources', 'context_source_ranges',
-            'gateway_state', 'context_state_updates', 'context_summary_updates', 'topic_flags', 'compaction_digests'])
+            'gateway_state', 'context_state_updates', 'context_summary_updates', 'topic_flags', 'compaction_digests', 'learned_terms'])
             this.db.prepare(`DELETE FROM ${table} WHERE context_id = ?`).run(contextId);
         this.db.prepare('DELETE FROM topic_links WHERE a = ? OR b = ?').run(contextId, contextId);
         this.db.prepare('DELETE FROM briefing_seen WHERE reader = ? OR source = ?').run(contextId, contextId);

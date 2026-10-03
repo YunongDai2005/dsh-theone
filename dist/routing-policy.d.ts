@@ -15,3 +15,7 @@ export declare function continuesCurrent(text: string): boolean;
 export declare function spokenCorrection(text: string): string | undefined;
 /** A few distinctive terms of a message, used to teach a topic what belongs to it. */
 export declare function topicTerms(text: string, limit?: number): string[];
+/** Word and character-pair features of a short message, for cheap similarity without a model call. */
+export declare function textFeatures(text: string): Set<string>;
+/** Overlap of two feature sets, 0 (nothing shared) to 1 (identical). */
+export declare function similarity(a: Set<string>, b: Set<string>): number;

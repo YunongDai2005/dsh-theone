@@ -53,9 +53,10 @@ test('"wrong topic" redoes the previous message in the right topic and teaches i
     const records = app.ctx.theone.store.recentRoutes('test-gateway')
     assert.equal(records.find(item => item.messageId === first.input.id)?.correctedTo, 'ctx_thesis')
     assert.equal(records.find(item => item.messageId === first.input.id)?.excerpt, 'Qwen 的显存设置')
-    const thesis = app.ctx.theone.store.contexts().find(context => context.id === 'ctx_thesis')!
-    assert.ok(thesis.keywords.includes('显存设置'))
-    assert.ok(!thesis.keywords.includes('Qwen'), 'a term naming another topic stays with it')
+    await app.ctx.theone.learning
+    const learned = app.ctx.theone.store.learnedTerms().get('ctx_thesis') ?? []
+    assert.ok(learned.includes('显存设置'))
+    assert.ok(!learned.includes('Qwen'), 'a term naming another topic stays with it')
     // Correcting again is about the original message, and never returns it to the topic just ruled out.
     const again = await ask(app.gateway, '分错了')
     const back = app.ctx.theone.store.route(again.input.id)?.decision

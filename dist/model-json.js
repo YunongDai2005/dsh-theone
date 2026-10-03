@@ -1,15 +1,17 @@
 import { RouterFailure } from "./llm-router.js";
 /** Small, tool-free analysis through the host runtime, with no session history replay. */
-export async function modelJson(llm, selection, system, payload, signal) {
+export async function modelJson(llm, selection, system, payload, signal, options = {}) {
     signal?.throwIfAborted();
     if (!selection.provider || !selection.model || selection.provider === 'theone')
         throw new RouterFailure('CATALOG_MODEL_UNAVAILABLE');
     const text = JSON.stringify(payload);
     if (text.length > 42000)
         throw new RouterFailure('CATALOG_INPUT_TOO_LARGE');
-    const bounded = signal ? AbortSignal.any([signal, AbortSignal.timeout(90000)]) : AbortSignal.timeout(90000);
+    const timeout = AbortSignal.timeout(options.timeoutMs ?? 90000);
+    const bounded = signal ? AbortSignal.any([signal, timeout]) : timeout;
     try {
-        const call = await llm.prepareCall({ ...selection, maxTokens: 16384 }, bounded);
+        const call = await llm.prepareCall({ ...selection, maxTokens: options.maxTokens ?? 16384,
+            ...(options.reasoningEffort ? { reasoningEffort: options.reasoningEffort } : {}) }, bounded);
         bounded.throwIfAborted();
         let output = '', finished = false;
         for await (const chunk of call.stream({ ...call.config, system,

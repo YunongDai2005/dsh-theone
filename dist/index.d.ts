@@ -160,8 +160,25 @@ export default class TheOne extends Service {
     private previousRoute;
     /** Route a misrouted message again, never back to the topic it was wrongly given. */
     private reroute;
-    /** The user moved a message to another topic: remember it, and teach that topic its terms. */
+    /** Learning from corrections in flight; tests and shutdown can wait for it. */
+    learning: Promise<void>;
+    /**
+     * The user moved a message to another topic: remember it, and teach both topics. The right topic
+     * gains the message's distinctive terms and the wrong one loses them; `weight` is lower for
+     * implicit signals. The model picks the terms in one small call; plain extraction is the fallback.
+     */
     private applyCorrection;
+    /** Ask the selected model, thinking off, for the few terms that tie a message to its topic. */
+    private pickTerms;
+    /** Topics with the terms corrections taught them added to their own keywords. */
+    private routingContexts;
+    /**
+     * Favour topics used recently or often, and those linked to the current one, when narrowing
+     * candidates. It stays below one matching term (10), so it only orders otherwise similar topics.
+     */
+    private routingPrior;
+    /** The past corrections most like this message, as examples for the classifier. */
+    private similarCorrections;
     /** The misrouted message, handed to the right topic with the user's correction. */
     private correctedInput;
     /** Topic → when main chat last answered in it; quick alternation between two topics links them. */

@@ -23,7 +23,8 @@ import { gatewayCheckpoint } from './gateway-compaction.ts'
 import { ContextStore } from './store.ts'
 import { resolveContext } from './router.ts'
 import { DshRouter, RouterFailure } from './llm-router.ts'
-import { continuesCurrent, newIndependentTopic, redactRoutingText, referencesHistory, spokenCorrection, topicTerms } from './routing-policy.ts'
+import { continuesCurrent, newIndependentTopic, redactRoutingText, referencesHistory, similarity, spokenCorrection, textFeatures, topicTerms } from './routing-policy.ts'
+import { modelJson } from './model-json.ts'
 import type { RecentMessage, RouterReceipt, RoutingRouter } from './llm-router.ts'
 import type { ContextDescriptor, Decision, RouteView, StoredContext, SourceRange } from './types.ts'
 import type { LinkageSnapshot } from './catalog-types.ts'
@@ -116,6 +117,10 @@ function descriptorJson(context: Pick<ContextDescriptor, 'title' | 'summary' | '
   const lastState = clip(context.lastState, Math.floor(room / 3))
   return JSON.stringify({ title, summary: clip(context.summary, room - lastState.length), lastState })
 }
+
+const TERMS_PROMPT = `你在帮话题路由器从用户的更正中学习。用户确认这条 message 属于 rightTopic（而不是 wrongTopic）。
+从 message 原文中挑出最多 4 个能把它和 rightTopic 联系起来、又能和 wrongTopic 区分开的词语：项目名、术语、产品、人名、文件名等，每个 2–12 个字，必须在 message 中原样出现。
+不要选泛泛的词（如「帮我」「这个」「问题」），不要选 wrongTopic 的名字。只输出 JSON 字符串数组，例如 ["消融实验","第三章"]。`
 
 /** Why a message went where it did, as a short phrase for the "show every decision" notice. */
 function reasonLabel(reason: string): string {
@@ -362,13 +367,15 @@ export default class TheOne extends Service {
       const receipt: RouterReceipt = {mode:this.router?'llm':'rules'}
       try {
         const currentId = this.store.current(config.gatewayKey)
-        let contexts = this.store.contexts()
+        // Topics as routing sees them: with what corrections taught them.
+        const allContexts = this.routingContexts()
+        let contexts = allContexts
         // A bare "go on"/"thanks" skips candidate search and the classifier: it can only continue.
         // Steering inside a turn also stays with its topic, as it would in an ordinary session.
         const fastKeep = !previous && !!currentId && contexts.some(context => context.id === currentId) && (midTurn || attachmentOnly || (!!this.router && continuesCurrent(text)))
         let searchFailed = false
         if (this.catalog && !fastKeep && !attachmentOnly && !previous) {
-          try { contexts = await this.catalog.candidates(text, currentId, signal) }
+          try { contexts = await this.catalog.candidates(text, currentId, signal, { contexts: allContexts, prior: this.routingPrior(currentId) }) }
           catch { signal.throwIfAborted(); searchFailed = true }
         }
         let proposed
@@ -387,14 +394,14 @@ export default class TheOne extends Service {
         } else if (this.router) {
           const recent = await this.recentMessages(agent, input.id, signal)
           try {
-            const corrections = this.store.corrections(config.gatewayKey)
+            const corrections = this.similarCorrections(text)
             const result = await this.router.decide({text,contexts,currentId,recent,historyIncomplete: this.catalog?.incomplete,corrections},signal)
             proposed = result.decision
             // A miss in a short candidate list is not proof that the whole catalog has no match.
             if (proposed.action === 'CREATE' && this.catalog && !/^新话题[：:]/.test(text.trim())) {
               const seen = new Set(contexts.map(context => context.id))
-              const remaining = this.store.contexts().filter(context => !seen.has(context.id))
-              const current = this.store.contexts().find(context => context.id === currentId)
+              const remaining = allContexts.filter(context => !seen.has(context.id))
+              const current = allContexts.find(context => context.id === currentId)
               const pageSize = current ? 15 : 16
               const pages: ContextDescriptor[][] = []
               for (let offset = 0; offset < remaining.length && pages.length < 3; offset += pageSize)
@@ -543,7 +550,8 @@ export default class TheOne extends Service {
           // The conversation continues in the topic the user chose.
           this.store.mount(this.config.gatewayKey, row.contextId)
         }
-        return Response.json({ routes: this.store.recentRoutes(this.config.gatewayKey, 30) satisfies RouteView[] }, { headers: { 'cache-control': 'no-store' } })
+        return Response.json({ routes: this.store.recentRoutes(this.config.gatewayKey, 30) satisfies RouteView[], stats: this.store.routeStats(this.config.gatewayKey) },
+          { headers: { 'cache-control': 'no-store' } })
       } }))
       // Rename, merge, delete, move and create topics, edit their summary and constraints, attach sessions.
       child.effect(() => connection.fetch!.register({ path: '/api/theone/topics', methods: ['POST'], requestBody: 'buffered', fetch: async request => {
@@ -593,6 +601,11 @@ export default class TheOne extends Service {
           return Response.json({ error: 'UNKNOWN_CONTEXT' }, { status: 400 })
         if (this.active || this.reservedGateway) return Response.json({ error: 'GATEWAY_BUSY' }, { status: 409 })
         this.store.mount(this.config.gatewayKey, value.contextId)
+        // Opening another topic just after a message went elsewhere hints at where it belonged.
+        const last = this.store.recentRoutes(this.config.gatewayKey, 1)[0]
+        if (last && Date.now() - last.at < 10 * 60000 && !last.correctedTo && last.decision.action !== 'CLARIFY'
+          && last.decision.contextId && last.decision.contextId !== value.contextId)
+          this.applyCorrection(last.messageId, value.contextId, undefined, 0.5, false)
         return Response.json({ mounted: true })
       } }))
     })
@@ -1210,8 +1223,9 @@ export default class TheOne extends Service {
     const query = hint || previous.text
     const unclear: Decision = { action: 'CLARIFY', reason: 'correction-unclear', question: '应该放到哪个话题？可以说「分错了，是 某某 的」，我会把上一条交给它重新处理。' }
     if (!query.trim()) return unclear
-    let contexts = this.store.contexts()
-    if (this.catalog) contexts = await this.catalog.candidates(query, undefined, signal).catch(() => { signal.throwIfAborted(); return this.store.contexts() })
+    const allContexts = this.routingContexts()
+    let contexts = allContexts
+    if (this.catalog) contexts = await this.catalog.candidates(query, undefined, signal, { contexts: allContexts }).catch(() => { signal.throwIfAborted(); return allContexts })
     contexts = contexts.filter(context => context.id !== previous.contextId)
     let decision: Decision
     let byRules = !this.router
@@ -1236,15 +1250,91 @@ export default class TheOne extends Service {
     return { ...chosen, action: decision.action === 'CREATE' ? 'CREATE' : 'MOUNT', reason: 'correction', correctionOf: previous.id }
   }
 
-  /** The user moved a message to another topic: remember it, and teach that topic its terms. */
-  private applyCorrection(messageId: string, contextId: string, text?: string): void {
-    this.store.correctRoute(messageId, contextId)
+  /** Learning from corrections in flight; tests and shutdown can wait for it. */
+  learning: Promise<void> = Promise.resolve()
+
+  /**
+   * The user moved a message to another topic: remember it, and teach both topics. The right topic
+   * gains the message's distinctive terms and the wrong one loses them; `weight` is lower for
+   * implicit signals. The model picks the terms in one small call; plain extraction is the fallback.
+   */
+  private applyCorrection(messageId: string, contextId: string, text?: string, weight = 1, record = true): void {
+    const route = this.store.route(messageId)
+    if (record) this.store.correctRoute(messageId, contextId)
+    const wrongId = route?.decision.contextId !== contextId ? route?.decision.contextId : undefined
+    const source = text ?? this.store.recentRoutes(this.config.gatewayKey, 200).find(item => item.messageId === messageId)?.excerpt ?? ''
+    if (!source.trim()) return
+    const contexts = this.store.contexts()
+    const right = contexts.find(context => context.id === contextId)
+    const wrong = contexts.find(context => context.id === wrongId)
     // A term another topic is named by stays with it; teaching it here would only make both match.
-    const owned = new Set(this.store.contexts().filter(context => context.id !== contextId)
-      .flatMap(context => [context.title, ...context.entities]).map(term => term.toLowerCase()))
-    const terms = topicTerms(text ?? this.store.recentRoutes(this.config.gatewayKey, 100).find(route => route.messageId === messageId)?.excerpt ?? '')
-      .filter(term => !owned.has(term.toLowerCase()))
-    if (terms.length) this.store.addKeywords(contextId, terms)
+    const owned = new Set(contexts.filter(context => context.id !== contextId).flatMap(context => [context.title, ...context.entities]).map(term => term.toLowerCase()))
+    const usable = (terms: string[]) => terms.filter(term => !owned.has(term.toLowerCase()))
+    const learn = (terms: string[]) => {
+      if (!terms.length || !right) return
+      this.store.learnTerms(contextId, terms, weight)
+      // Only an explicit correction says the first topic was wrong; a hint only strengthens the other.
+      if (wrong && record) this.store.learnTerms(wrong.id, terms, -weight)
+    }
+    const picked = this.router && right ? this.pickTerms(source, right, wrong).catch(() => [] as string[]) : Promise.resolve([] as string[])
+    this.learning = this.learning.then(() => picked).then(terms => {
+      // Terms must appear in the message: the model chooses, it does not invent.
+      const chosen = usable(terms.filter(term => source.toLowerCase().includes(term.toLowerCase())))
+      learn(chosen.length ? chosen : usable(topicTerms(source)))
+    }).catch(() => {})
+  }
+
+  /** Ask the selected model, thinking off, for the few terms that tie a message to its topic. */
+  private async pickTerms(text: string, right: StoredContext, wrong?: StoredContext): Promise<string[]> {
+    const selection = this.backingModel()
+    let reasoningEffort: ModelSelection['reasoningEffort']
+    try { reasoningEffort = (await this.ctx.llm.resolveModelInfo(selection.provider, selection.model)).reasoning?.efforts.find(effort => effort.id === 'off')?.id } catch { /* Default effort. */ }
+    const value = await modelJson(this.ctx.llm, selection, TERMS_PROMPT,
+      { message: redactRoutingText(text).slice(0, 600), rightTopic: { title: right.title, summary: right.summary.slice(0, 300) },
+        ...(wrong ? { wrongTopic: { title: wrong.title, summary: wrong.summary.slice(0, 300) } } : {}) },
+      undefined, { maxTokens: 256, timeoutMs: 20000, ...(reasoningEffort ? { reasoningEffort } : {}) })
+    if (!Array.isArray(value)) return []
+    return value.filter((term): term is string => typeof term === 'string' && term.trim().length >= 2 && term.trim().length <= 24).map(term => term.trim()).slice(0, 4)
+  }
+
+  /** Topics with the terms corrections taught them added to their own keywords. */
+  private routingContexts(): StoredContext[] {
+    const learned = this.store.learnedTerms()
+    return this.store.contexts().map(context => {
+      const terms = learned.get(context.id)
+      if (!terms?.length) return context
+      const own = new Set(context.keywords.map(term => term.toLowerCase()))
+      return { ...context, keywords: [...context.keywords, ...terms.filter(term => !own.has(term.toLowerCase()))].slice(0, 40) }
+    })
+  }
+
+  /**
+   * Favour topics used recently or often, and those linked to the current one, when narrowing
+   * candidates. It stays below one matching term (10), so it only orders otherwise similar topics.
+   */
+  private routingPrior(currentId?: string, now = Date.now()): Map<string, number> {
+    const prior = new Map<string, number>()
+    const add = (id: string, score: number) => prior.set(id, Math.min(9, (prior.get(id) ?? 0) + score))
+    for (const usage of this.store.contextUsage(this.config.gatewayKey, now)) {
+      add(usage.contextId, Math.min(4, usage.recentCalls))
+      const age = now - usage.lastUsedAt
+      if (age < 86400000) add(usage.contextId, 3)
+      else if (age < 7 * 86400000) add(usage.contextId, 1.5)
+    }
+    if (currentId && this.linkScope !== 'off') for (const link of this.store.links(currentId, now)) {
+      const other = link.a === currentId ? link.b : link.a
+      if (link.manual === 1) add(other, 3)
+      else if (link.manual === 0) add(other, Math.min(3, link.weight * 1.5))
+    }
+    return prior
+  }
+
+  /** The past corrections most like this message, as examples for the classifier. */
+  private similarCorrections(text: string, limit = 4) {
+    const features = textFeatures(text)
+    return this.store.corrections(this.config.gatewayKey)
+      .map((item, index) => ({ item, score: similarity(features, textFeatures(item.text)) - index * 0.001 }))
+      .filter(entry => entry.score >= 0.12).sort((a, b) => b.score - a.score).slice(0, limit).map(entry => entry.item)
   }
 
   /** The misrouted message, handed to the right topic with the user's correction. */

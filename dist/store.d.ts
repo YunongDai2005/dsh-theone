@@ -1,6 +1,8 @@
 import type { ModelSelection } from '@deepseek-ai/dsh-agent';
 import type { ExtractedTopic, HistoryPart, TopicGroup } from './catalog-types.ts';
 import type { ContextDescriptor, ContextUsage, Decision, RouteRecord, RouteView, StoredContext, SourceRange, TopicLink } from './types.ts';
+/** Terms learned from corrections fade by half every 30 days unless they are confirmed again. */
+export declare const TERM_HALF_LIFE_MS: number;
 /** A whole session attached by hand counts as reviewed from its first event to its last. */
 export declare const WHOLE_SESSION: {
     startSeq: number;
@@ -108,7 +110,21 @@ export declare class ContextStore {
     recentRoutes(gatewayKey: string, limit?: number): RouteView[];
     /** Record that a message belonged to another topic; later routing learns from it. */
     correctRoute(messageId: string, contextId: string, now?: number): void;
-    /** Recent corrections as examples for the classifier: this text belonged there, not here. */
+    /**
+     * Terms a correction showed belong to a topic (positive delta) or not (negative). Weights fade
+     * over time, stay within 0–5, and a term that falls to nothing is forgotten.
+     */
+    learnTerms(contextId: string, terms: string[], delta: number, now?: number): void;
+    /** Each topic's learned terms that still count (weight ≥ 0.5 after fading), strongest first. */
+    learnedTerms(now?: number, limit?: number): Map<string, string[]>;
+    /** How routing has gone lately: of the last `limit` messages, how many were moved, asked about or routed by rules after a failure. */
+    routeStats(gatewayKey: string, limit?: number): {
+        total: number;
+        corrected: number;
+        clarified: number;
+        fallback: number;
+    };
+    /** Corrections as examples for the classifier: this text belonged there, not here. Newest first. */
     corrections(gatewayKey: string, limit?: number): {
         text: string;
         wrongId?: string;

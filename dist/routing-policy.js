@@ -49,3 +49,27 @@ export function topicTerms(text, limit = 6) {
     const terms = words.match(/[A-Za-z][A-Za-z0-9_.+#-]{2,}|[\u4e00-\u9fff]{2,8}/g) ?? [];
     return [...new Set(terms.filter(term => !FILLER.has(term.toLowerCase()) && !term.startsWith('REDACTED')))].slice(0, limit);
 }
+/** Word and character-pair features of a short message, for cheap similarity without a model call. */
+export function textFeatures(text) {
+    const lower = redactRoutingText(text).toLowerCase();
+    const features = new Set();
+    for (const word of lower.match(/[a-z0-9][a-z0-9_.+#-]+/g) ?? [])
+        features.add(word);
+    for (const run of lower.match(/[\u4e00-\u9fff]+/g) ?? []) {
+        if (run.length === 1)
+            features.add(run);
+        for (let index = 0; index + 1 < run.length; index++)
+            features.add(run.slice(index, index + 2));
+    }
+    return features;
+}
+/** Overlap of two feature sets, 0 (nothing shared) to 1 (identical). */
+export function similarity(a, b) {
+    if (!a.size || !b.size)
+        return 0;
+    let shared = 0;
+    for (const feature of a)
+        if (b.has(feature))
+            shared++;
+    return shared / Math.sqrt(a.size * b.size);
+}
