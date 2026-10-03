@@ -10,8 +10,8 @@ export interface UpdateStatus {
     /** It can be installed from here (otherwise reinstall by hand). */
     installable: boolean;
     source: UpdateSource;
-    /** installing → restart (installed, applies after DSH restarts) or failed. */
-    state?: 'installing' | 'restart' | 'failed';
+    /** installing → reloading (TheOne restarts itself; DSH keeps running), restart (applies after DSH restarts) or failed. */
+    state?: 'installing' | 'reloading' | 'restart' | 'failed';
     error?: string;
 }
 /** The DSH plugin manager's install call, as TheOne uses it. */
@@ -20,6 +20,7 @@ export interface PluginInstaller {
         enabled?: boolean;
     }): Promise<{
         application: string;
+        bundle?: string;
         error?: {
             code?: string;
             message?: string;
@@ -44,8 +45,11 @@ export declare class Updater {
     get source(): UpdateSource;
     /** The latest known status; checks again at most every six hours (or now, when forced). */
     status(force?: boolean): Promise<UpdateStatus>;
-    /** Install the newer version. It is loaded the next time DSH starts. */
-    install(installer: PluginInstaller | undefined): Promise<UpdateStatus>;
+    /**
+     * Install the newer version. With `reload`, TheOne then restarts itself so the new version runs
+     * without restarting DSH; otherwise it is loaded the next time DSH starts.
+     */
+    install(installer: PluginInstaller | undefined, reload?: (bundle: string) => void): Promise<UpdateStatus>;
     private snapshot;
     private check;
 }

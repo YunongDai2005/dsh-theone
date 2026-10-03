@@ -97,8 +97,20 @@ export function apply(ctx: Context) {
   const readUpdate = async (method: 'GET' | 'POST' = 'GET') => {
     try {
       const response = await fetch('/api/theone/update', { method, signal: lifetime.signal, cache: 'no-store' })
-      if (response.ok) setUpdate(await response.json() as UpdateStatus)
+      if (response.ok || response.status === 409) setUpdate(await response.json() as UpdateStatus)
+      if (update?.state === 'reloading') void awaitReload(update.current)
     } catch { /* Offline: the button simply stays hidden. */ }
+  }
+  /** TheOne restarts itself with the new version; once it answers again, the page loads the new interface. */
+  async function awaitReload(previous: string) {
+    for (const started = Date.now(); Date.now() - started < 120000;) {
+      await new Promise(resolve => setTimeout(resolve, 1500))
+      try {
+        const response = await fetch('/api/theone/update', { cache: 'no-store' })
+        if (response.ok && (await response.json() as UpdateStatus).current !== previous) { window.location.reload(); return }
+      } catch { /* Still reloading. */ }
+    }
+    if (update) setUpdate({ ...update, state: 'restart' })
   }
   ctx.effect(() => {
     void readUpdate()
@@ -111,16 +123,18 @@ export function apply(ctx: Context) {
     const t = useText()
     const status = useSyncExternalStore(subscribeUpdate, () => update)
     if (!status || (!status.available && !status.state)) return null
-    const label = status.state === 'installing' ? t('update.installing') : status.state === 'restart' ? t('update.restart')
+    const label = status.state === 'installing' ? t('update.installing') : status.state === 'reloading' ? t('update.reloading')
+      : status.state === 'restart' ? t('update.restart')
       : status.state === 'failed' ? t('update.failed') : t('update.available')
-    const title = status.state === 'restart' ? t('update.restartHint')
+    const title = status.error === 'GATEWAY_BUSY' ? t('update.busy') : status.state === 'reloading' ? t('update.reloadingHint')
+      : status.state === 'restart' ? t('update.restartHint')
       : status.state === 'failed' ? t('update.failedHint', { error: status.error ?? '' })
       : status.installable ? t('update.hint', { current: status.current, latest: status.latest ?? '' })
       : t('update.manualHint', { current: status.current, latest: status.latest ?? '' })
     const act = (event: React.SyntheticEvent) => {
       // The entry itself is a button that opens main chat; this click is only the update's.
       event.preventDefault(); event.stopPropagation()
-      if (status.state === 'installing' || status.state === 'restart') return
+      if (status.state === 'installing' || status.state === 'reloading' || status.state === 'restart') return
       if (!status.installable) { window.open('https://github.com/YunongDai2005/dsh-theone#readme', '_blank', 'noopener'); return }
       setUpdate({ ...status, state: 'installing' })
       void readUpdate('POST')
@@ -128,7 +142,7 @@ export function apply(ctx: Context) {
     return h('span', { className: 'theone-update', role: 'button', tabIndex: 0, title, 'aria-label': title, 'data-state': status.state ?? 'available',
       onClick: act, onPointerDown: (event: React.PointerEvent) => event.stopPropagation(),
       onKeyDown: (event: React.KeyboardEvent) => { if (event.key === 'Enter' || event.key === ' ') act(event) } },
-      status.state === 'installing' ? h('span', { className: 'theone-update-spin', 'aria-hidden': true }) : null, label,
+      status.state === 'installing' || status.state === 'reloading' ? h('span', { className: 'theone-update-spin', 'aria-hidden': true }) : null, label,
       !status.state && status.latest ? h('small', null, `v${status.latest}`) : null)
   }
 
@@ -687,7 +701,7 @@ button:has(.theone-nav[data-wide=true])>span:has(.theone-nav){flex:1;min-width:0
 .theone-update:hover{background:color-mix(in srgb,var(--one-accent) 22%,transparent)}
 .theone-update:focus-visible{outline:2px solid var(--one-accent);outline-offset:2px}
 .theone-update small{font-size:11px;opacity:.75}
-.theone-update[data-state=installing],.theone-update[data-state=restart]{cursor:default}
+.theone-update[data-state=installing],.theone-update[data-state=reloading],.theone-update[data-state=restart]{cursor:default}
 .theone-update[data-state=failed]{color:#d9480f;border-color:#d9480f66;background:#d9480f14}
 .theone-update-spin{width:10px;height:10px;border-radius:50%;border:1.5px solid currentColor;border-right-color:transparent;animation:theone-spin 800ms linear infinite}
 @keyframes theone-spin{to{transform:rotate(360deg)}}

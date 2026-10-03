@@ -91,8 +91,11 @@ var zh = {
   "update.available": "\u66F4\u65B0",
   "update.installing": "\u66F4\u65B0\u4E2D\u2026",
   "update.restart": "\u91CD\u542F\u751F\u6548",
+  "update.reloading": "\u6B63\u5728\u91CD\u65B0\u52A0\u8F7D\u2026",
+  "update.reloadingHint": "TheOne \u6B63\u5728\u7528\u65B0\u7248\u672C\u91CD\u65B0\u52A0\u8F7D\uFF0CDSH \u4E0D\u9700\u8981\u91CD\u542F\uFF1B\u5B8C\u6210\u540E\u9875\u9762\u4F1A\u81EA\u52A8\u5237\u65B0\u3002",
+  "update.busy": "\u6709\u56DE\u590D\u6B63\u5728\u8FDB\u884C\uFF0C\u7B49\u5B83\u7ED3\u675F\u540E\u518D\u70B9\u66F4\u65B0\u3002",
   "update.failed": "\u66F4\u65B0\u5931\u8D25",
-  "update.hint": "\u5F53\u524D {current}\uFF0C\u53EF\u66F4\u65B0\u5230 {latest}\u3002\u70B9\u51FB\u4E00\u952E\u66F4\u65B0\uFF0C\u91CD\u542F DSH \u540E\u751F\u6548\u3002",
+  "update.hint": "\u5F53\u524D {current}\uFF0C\u53EF\u66F4\u65B0\u5230 {latest}\u3002\u70B9\u51FB\u4E00\u952E\u66F4\u65B0\uFF0C\u4E0D\u7528\u91CD\u542F DSH\u3002",
   "update.manualHint": "\u5F53\u524D {current}\uFF0C\u6700\u65B0 {latest}\u3002\u8FD9\u4EFD\u63D2\u4EF6\u4E0D\u662F\u4ECE GitHub \u6216 npm \u5B89\u88C5\u7684\uFF0C\u8BF7\u5728\u300C\u63D2\u4EF6\u300D\u9875\u9762\u91CD\u65B0\u5B89\u88C5\u3002",
   "update.restartHint": "\u5DF2\u66F4\u65B0\uFF0C\u91CD\u542F DSH \u540E\u751F\u6548\u3002",
   "update.failedHint": "\u66F4\u65B0\u6CA1\u6709\u5B8C\u6210\uFF08{error}\uFF09\u3002\u70B9\u51FB\u91CD\u8BD5\uFF0C\u6216\u5728\u300C\u63D2\u4EF6\u300D\u9875\u9762\u91CD\u65B0\u5B89\u88C5\u3002",
@@ -268,8 +271,11 @@ var en = {
   "update.available": "Update",
   "update.installing": "Updating\u2026",
   "update.restart": "Restart to apply",
+  "update.reloading": "Reloading\u2026",
+  "update.reloadingHint": "TheOne is reloading with the new version; DSH keeps running, and the page refreshes when it is done.",
+  "update.busy": "A reply is in progress. Update once it finishes.",
   "update.failed": "Update failed",
-  "update.hint": "You have {current}; {latest} is available. Click to update; it applies after DSH restarts.",
+  "update.hint": "You have {current}; {latest} is available. Click to update without restarting DSH.",
   "update.manualHint": "You have {current}; {latest} is available. This copy was not installed from GitHub or npm, so reinstall it from the Plugins page.",
   "update.restartHint": "Updated. Restart DSH to apply it.",
   "update.failedHint": "The update did not finish ({error}). Click to retry, or reinstall from the Plugins page.",
@@ -528,10 +534,25 @@ function apply(ctx) {
   const readUpdate = async (method = "GET") => {
     try {
       const response = await fetch("/api/theone/update", { method, signal: lifetime.signal, cache: "no-store" });
-      if (response.ok) setUpdate(await response.json());
+      if (response.ok || response.status === 409) setUpdate(await response.json());
+      if (update?.state === "reloading") void awaitReload(update.current);
     } catch {
     }
   };
+  async function awaitReload(previous) {
+    for (const started = Date.now(); Date.now() - started < 12e4; ) {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      try {
+        const response = await fetch("/api/theone/update", { cache: "no-store" });
+        if (response.ok && (await response.json()).current !== previous) {
+          window.location.reload();
+          return;
+        }
+      } catch {
+      }
+    }
+    if (update) setUpdate({ ...update, state: "restart" });
+  }
   ctx.effect(() => {
     void readUpdate();
     const timer = setInterval(() => {
@@ -543,12 +564,12 @@ function apply(ctx) {
     const t2 = useText();
     const status = (0, import_react.useSyncExternalStore)(subscribeUpdate, () => update);
     if (!status || !status.available && !status.state) return null;
-    const label = status.state === "installing" ? t2("update.installing") : status.state === "restart" ? t2("update.restart") : status.state === "failed" ? t2("update.failed") : t2("update.available");
-    const title = status.state === "restart" ? t2("update.restartHint") : status.state === "failed" ? t2("update.failedHint", { error: status.error ?? "" }) : status.installable ? t2("update.hint", { current: status.current, latest: status.latest ?? "" }) : t2("update.manualHint", { current: status.current, latest: status.latest ?? "" });
+    const label = status.state === "installing" ? t2("update.installing") : status.state === "reloading" ? t2("update.reloading") : status.state === "restart" ? t2("update.restart") : status.state === "failed" ? t2("update.failed") : t2("update.available");
+    const title = status.error === "GATEWAY_BUSY" ? t2("update.busy") : status.state === "reloading" ? t2("update.reloadingHint") : status.state === "restart" ? t2("update.restartHint") : status.state === "failed" ? t2("update.failedHint", { error: status.error ?? "" }) : status.installable ? t2("update.hint", { current: status.current, latest: status.latest ?? "" }) : t2("update.manualHint", { current: status.current, latest: status.latest ?? "" });
     const act = (event) => {
       event.preventDefault();
       event.stopPropagation();
-      if (status.state === "installing" || status.state === "restart") return;
+      if (status.state === "installing" || status.state === "reloading" || status.state === "restart") return;
       if (!status.installable) {
         window.open("https://github.com/YunongDai2005/dsh-theone#readme", "_blank", "noopener");
         return;
@@ -571,7 +592,7 @@ function apply(ctx) {
           if (event.key === "Enter" || event.key === " ") act(event);
         }
       },
-      status.state === "installing" ? (0, import_react.createElement)("span", { className: "theone-update-spin", "aria-hidden": true }) : null,
+      status.state === "installing" || status.state === "reloading" ? (0, import_react.createElement)("span", { className: "theone-update-spin", "aria-hidden": true }) : null,
       label,
       !status.state && status.latest ? (0, import_react.createElement)("small", null, `v${status.latest}`) : null
     );
@@ -1452,7 +1473,7 @@ button:has(.theone-nav[data-wide=true])>span:has(.theone-nav){flex:1;min-width:0
 .theone-update:hover{background:color-mix(in srgb,var(--one-accent) 22%,transparent)}
 .theone-update:focus-visible{outline:2px solid var(--one-accent);outline-offset:2px}
 .theone-update small{font-size:11px;opacity:.75}
-.theone-update[data-state=installing],.theone-update[data-state=restart]{cursor:default}
+.theone-update[data-state=installing],.theone-update[data-state=reloading],.theone-update[data-state=restart]{cursor:default}
 .theone-update[data-state=failed]{color:#d9480f;border-color:#d9480f66;background:#d9480f14}
 .theone-update-spin{width:10px;height:10px;border-radius:50%;border:1.5px solid currentColor;border-right-color:transparent;animation:theone-spin 800ms linear infinite}
 @keyframes theone-spin{to{transform:rotate(360deg)}}

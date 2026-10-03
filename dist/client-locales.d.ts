@@ -8,8 +8,11 @@ export declare const zh: {
     readonly 'update.available': "更新";
     readonly 'update.installing': "更新中…";
     readonly 'update.restart': "重启生效";
+    readonly 'update.reloading': "正在重新加载…";
+    readonly 'update.reloadingHint': "TheOne 正在用新版本重新加载，DSH 不需要重启；完成后页面会自动刷新。";
+    readonly 'update.busy': "有回复正在进行，等它结束后再点更新。";
     readonly 'update.failed': "更新失败";
-    readonly 'update.hint': "当前 {current}，可更新到 {latest}。点击一键更新，重启 DSH 后生效。";
+    readonly 'update.hint': "当前 {current}，可更新到 {latest}。点击一键更新，不用重启 DSH。";
     readonly 'update.manualHint': "当前 {current}，最新 {latest}。这份插件不是从 GitHub 或 npm 安装的，请在「插件」页面重新安装。";
     readonly 'update.restartHint': "已更新，重启 DSH 后生效。";
     readonly 'update.failedHint': "更新没有完成（{error}）。点击重试，或在「插件」页面重新安装。";

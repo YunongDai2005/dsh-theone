@@ -97,6 +97,20 @@ function reasonLabel(reason) {
 function settingsConfig(values) {
     return { ...values, workerProvider: values.workerProvider ?? undefined, workerModel: values.workerModel ?? undefined, contextsPath: values.contextsPath ?? undefined };
 }
+/**
+ * Switch an installed bundle off and on so DSH loads its new version. This disposes the running
+ * TheOne, so it runs after the current request has answered and outlives this instance.
+ */
+function reloadBundle(manager, bundle) {
+    setTimeout(() => {
+        void (async () => {
+            const off = await manager.setBundleEnabled(bundle, false);
+            if (off.application === 'failed' || off.application === 'cancelled')
+                return;
+            await manager.setBundleEnabled(bundle, true);
+        })().catch(error => console.warn('TheOne could not reload itself after updating; restart DSH to apply the update.', error));
+    }, 300);
+}
 function readOwnVersion() {
     try {
         return String(JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version ?? '0.0.0');
@@ -602,8 +616,13 @@ export default class TheOne extends Service {
                 } }));
             // Is a newer TheOne out, and install it with DSH's plugin manager (it loads after a restart).
             child.effect(() => connection.fetch.register({ path: '/api/theone/update', methods: ['GET', 'POST'], requestBody: 'buffered', fetch: async (request) => {
+                    if (request.method === 'POST' && (this.active || this.reservedGateway))
+                        return Response.json({ ...await this.updater.status(), error: 'GATEWAY_BUSY' }, { status: 409 });
+                    const manager = this.ctx.get('pluginManager');
+                    // With DSH's hot reload, switching the bundle off and on loads the new version without a DSH restart.
+                    const live = !!this.ctx.get('hmr') && typeof manager?.setBundleEnabled === 'function';
                     const status = request.method === 'POST'
-                        ? await this.updater.install(this.ctx.get('pluginManager'))
+                        ? await this.updater.install(manager, live ? bundle => reloadBundle(manager, bundle) : undefined)
                         : await this.updater.status(new URL(request.url).searchParams.has('force'));
                     return Response.json(status, { headers: { 'cache-control': 'no-store' } });
                 } }));

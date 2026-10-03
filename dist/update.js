@@ -53,18 +53,23 @@ export class Updater {
         }
         return this.snapshot();
     }
-    /** Install the newer version. It is loaded the next time DSH starts. */
-    async install(installer) {
+    /**
+     * Install the newer version. With `reload`, TheOne then restarts itself so the new version runs
+     * without restarting DSH; otherwise it is loaded the next time DSH starts.
+     */
+    async install(installer, reload) {
         const status = await this.status();
-        if (!status.available || !status.installable || !installer || this.state === 'installing' || this.state === 'restart')
+        if (!status.available || !status.installable || !installer || this.state === 'installing' || this.state === 'reloading' || this.state === 'restart')
             return this.snapshot();
         const spec = this.source === 'github' ? `github:${REPOSITORY}#${this.checked.sha}` : `${PACKAGE_NAME}@${this.checked.latest}`;
         this.state = 'installing';
         this.error = undefined;
         try {
             const result = await installer.installBundle(spec, { enabled: true });
-            if (result.application === 'applied' || result.application === 'restart-required')
-                this.state = 'restart';
+            if (result.application === 'applied' || result.application === 'restart-required') {
+                this.state = reload ? 'reloading' : 'restart';
+                reload?.(result.bundle ?? PACKAGE_NAME);
+            }
             else {
                 this.state = 'failed';
                 const error = result.error;

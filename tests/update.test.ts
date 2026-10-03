@@ -66,3 +66,44 @@ test('npm installs use the registry; nothing newer, offline or unmanaged install
   const missing = new Updater('0.3.10', () => '^0.3.10', (async () => Response.json({ version: '0.4.0' })) as typeof fetch)
   assert.equal((await missing.install(undefined)).state, undefined)
 })
+
+test('with hot reload, TheOne reloads itself after installing instead of waiting for a DSH restart', async () => {
+  const updater = new Updater('0.3.10', () => 'github:YunongDai2005/dsh-theone', github('0.3.11'))
+  const reloaded: string[] = []
+  const status = await updater.install({ installBundle: async () => ({ application: 'restart-required', bundle: 'dsh-theone' }) }, bundle => reloaded.push(bundle))
+  assert.equal(status.state, 'reloading')
+  assert.deepEqual(reloaded, ['dsh-theone'])
+  await updater.install({ installBundle: async () => assert.fail('installed once') }, bundle => reloaded.push(bundle))
+  assert.equal(reloaded.length, 1)
+})
+
+test('the update endpoint installs, then switches the bundle off and on so DSH loads the new version', { timeout: 30000 }, async () => {
+  const { mkdtemp, rm } = await import('node:fs/promises')
+  const { tmpdir } = await import('node:os')
+  const { join } = await import('node:path')
+  const { HostConnectionService } = await import('@deepseek-ai/dsh-client-connection')
+  const { harness } = await import('./harness.ts')
+  const root = await mkdtemp(join(tmpdir(), 'theone-update-'))
+  const previousFetch = globalThis.fetch
+  const app = await harness(root)
+  try {
+    const calls: string[] = []
+    const manager = {
+      installBundle: async (spec: string) => { calls.push(`install ${spec}`); return { application: 'restart-required', bundle: 'dsh-theone' } },
+      setBundleEnabled: async (name: string, enabled: boolean) => { calls.push(`${enabled ? 'on' : 'off'} ${name}`); return { application: 'applied' } },
+    }
+    app.ctx.provide('pluginManager'); app.ctx.set('pluginManager', manager)
+    app.ctx.provide('hmr'); app.ctx.set('hmr', {})
+    // This copy reports itself as installed from GitHub, one version behind.
+    Object.defineProperty(app.ctx.theone, 'updater', { value: new Updater('0.0.1', () => 'github:YunongDai2005/dsh-theone', github('9.9.9')) })
+    const connection = new HostConnectionService(app.ctx, [], undefined as never)
+    const handler = connection.createSharedFetchHandler('/api')
+    await new Promise<void>(resolve => setImmediate(resolve))
+    const checked = await (await handler.fetch(new Request('http://dsh.internal/api/theone/update'))).json() as { available: boolean }
+    assert.equal(checked.available, true)
+    const response = await handler.fetch(new Request('http://dsh.internal/api/theone/update', { method: 'POST' }))
+    assert.equal((await response.json() as { state: string }).state, 'reloading')
+    await new Promise(resolve => setTimeout(resolve, 600))
+    assert.deepEqual(calls, [`install github:YunongDai2005/dsh-theone#${SHA}`, 'off dsh-theone', 'on dsh-theone'])
+  } finally { globalThis.fetch = previousFetch; await app.close(); await rm(root, { recursive: true, force: true }) }
+})

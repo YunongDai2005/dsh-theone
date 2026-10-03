@@ -105,7 +105,7 @@ The database location and entry identifier switch TheOne to different data, so t
 - Text sent to the router or written into briefings has API keys, passwords and similar secrets removed.
 - A topic marked **Do not share** never appears in other topics' briefings, recent-chat excerpts or lookups.
 - When main chat grows long, DSH compacts it through TheOne: frequently used topics keep longer summaries and their latest turns, rarely used ones keep a short status. This makes no model call.
-- When a new version is out, an **Update** button appears on the right of the TheOne entry in the sidebar: one click installs it through DSH's plugin manager, and it applies after DSH restarts. Your topics stay in the database.
+- When a new version is out, an **Update** button appears on the right of the TheOne entry in the sidebar: one click installs it through DSH's plugin manager and reloads TheOne in place, without restarting DSH (a DSH without plugin hot reload applies it at the next restart). Your topics stay in the database.
 </details>
 
 <details>

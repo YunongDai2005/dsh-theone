@@ -12,14 +12,14 @@ export interface UpdateStatus {
   /** It can be installed from here (otherwise reinstall by hand). */
   installable: boolean
   source: UpdateSource
-  /** installing → restart (installed, applies after DSH restarts) or failed. */
-  state?: 'installing' | 'restart' | 'failed'
+  /** installing → reloading (TheOne restarts itself; DSH keeps running), restart (applies after DSH restarts) or failed. */
+  state?: 'installing' | 'reloading' | 'restart' | 'failed'
   error?: string
 }
 
 /** The DSH plugin manager's install call, as TheOne uses it. */
 export interface PluginInstaller {
-  installBundle(spec: string, options?: { enabled?: boolean }): Promise<{ application: string; error?: { code?: string; message?: string } | unknown }>
+  installBundle(spec: string, options?: { enabled?: boolean }): Promise<{ application: string; bundle?: string; error?: { code?: string; message?: string } | unknown }>
 }
 
 /** Compare dotted versions numerically; a pre-release sorts before its release. */
@@ -69,16 +69,21 @@ export class Updater {
     return this.snapshot()
   }
 
-  /** Install the newer version. It is loaded the next time DSH starts. */
-  async install(installer: PluginInstaller | undefined): Promise<UpdateStatus> {
+  /**
+   * Install the newer version. With `reload`, TheOne then restarts itself so the new version runs
+   * without restarting DSH; otherwise it is loaded the next time DSH starts.
+   */
+  async install(installer: PluginInstaller | undefined, reload?: (bundle: string) => void): Promise<UpdateStatus> {
     const status = await this.status()
-    if (!status.available || !status.installable || !installer || this.state === 'installing' || this.state === 'restart') return this.snapshot()
+    if (!status.available || !status.installable || !installer || this.state === 'installing' || this.state === 'reloading' || this.state === 'restart') return this.snapshot()
     const spec = this.source === 'github' ? `github:${REPOSITORY}#${this.checked!.sha}` : `${PACKAGE_NAME}@${this.checked!.latest}`
     this.state = 'installing'; this.error = undefined
     try {
       const result = await installer.installBundle(spec, { enabled: true })
-      if (result.application === 'applied' || result.application === 'restart-required') this.state = 'restart'
-      else {
+      if (result.application === 'applied' || result.application === 'restart-required') {
+        this.state = reload ? 'reloading' : 'restart'
+        reload?.(result.bundle ?? PACKAGE_NAME)
+      } else {
         this.state = 'failed'
         const error = result.error as { code?: string; message?: string } | undefined
         this.error = String(error?.code ?? error?.message ?? result.application).slice(0, 120)
