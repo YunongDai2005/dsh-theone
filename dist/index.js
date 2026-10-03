@@ -21,6 +21,7 @@ import { validateSettings } from "./settings.js";
 import { RESTART_CODE, WorkerRun } from "./run.js";
 import { buildBriefing, LINK_SIGNAL, relatedTopics } from "./linkage.js";
 import { PACKAGE_NAME, Updater } from "./update.js";
+import { NOTICE_URL, NoticeBoard } from "./notices.js";
 function redactDescriptor(text) {
     return text.replace(/\bsk-[a-zA-Z0-9_-]{16,}|\bBearer\s+\S+/gi, '[REDACTED]')
         .replace(/((?:api[_ -]?key|password|密码|密钥)\s*[:=：]\s*)\S+/gi, '$1[REDACTED]');
@@ -155,6 +156,8 @@ export default class TheOne extends Service {
         routerBaseUrl: z.string(), routerModel: z.string(), routerApiKeyEnv: z.string(),
         linkScope: z.union([z.const('off'), z.const('workspace'), z.const('auto')]).default('auto'),
         routeNotice: z.union([z.const('hidden'), z.const('switch'), z.const('all')]).default('switch'),
+        notices: z.boolean().default(true),
+        noticeUrl: z.string(),
     });
     store;
     catalog;
@@ -173,6 +176,7 @@ export default class TheOne extends Service {
     adapter;
     /** Update checks and one-click install through DSH's plugin manager. */
     updater;
+    noticeBoard;
     /** Sessions whose current step answers through TheOne; only these refuse to run tools themselves. */
     throughTheOne = new WeakMap();
     constructor(ctx, config) {
@@ -218,6 +222,7 @@ export default class TheOne extends Service {
                 return undefined;
             }
         }, fetch, Date.now, () => { const dir = profileDir(); return dir ? join(dir, 'pnpm-workspace.yaml') : undefined; });
+        this.noticeBoard = new NoticeBoard(this.updater.current, config.noticeUrl || NOTICE_URL);
         ctx.effect(() => async () => {
             try {
                 await Promise.all([...this.workers.values()].map(handle => handle.dispose()));
@@ -646,6 +651,19 @@ export default class TheOne extends Service {
                         : await this.updater.status(new URL(request.url).searchParams.has('force'));
                     return Response.json(status, { headers: { 'cache-control': 'no-store' } });
                 } }));
+            // Notices from TheOne's maintainer; the user can close each one, or turn them all off in Settings.
+            child.effect(() => connection.fetch.register({ path: '/api/theone/notices', methods: ['GET', 'POST'], requestBody: 'buffered', fetch: async (request) => {
+                    if (request.method === 'POST') {
+                        const body = await request.json().catch(() => ({}));
+                        if (typeof body?.dismiss !== 'string' || !/^[\w.-]{1,64}$/.test(body.dismiss))
+                            return Response.json({ error: 'INVALID_INPUT' }, { status: 400 });
+                        this.store.dismissNotice(body.dismiss);
+                    }
+                    if (this.config.notices === false)
+                        return Response.json({ notices: [] }, { headers: { 'cache-control': 'no-store' } });
+                    const dismissed = this.store.dismissedNotices();
+                    return Response.json({ notices: (await this.noticeBoard.notices()).filter(notice => !dismissed.has(notice.id)) }, { headers: { 'cache-control': 'no-store' } });
+                } }));
             child.effect(() => connection.fetch.register({ path: '/api/theone/sessions', methods: ['GET'], requestBody: 'buffered', fetch: async () => Response.json({ sessions: await this.attachableSessions() }, { headers: { 'cache-control': 'no-store' } }) }));
             // The user's corrections to topic linking always take precedence over what was learned.
             child.effect(() => connection.fetch.register({ path: '/api/theone/links', methods: ['POST'], requestBody: 'buffered', fetch: async (request) => {
@@ -805,7 +823,7 @@ export default class TheOne extends Service {
             workerProvider: c.workerProvider ? redactDescriptor(c.workerProvider) : null, workerModel: c.workerModel ? redactDescriptor(c.workerModel) : null,
             maxDescriptorChars: c.maxDescriptorChars, maxResponseChars: c.maxResponseChars,
             routerMode: c.routerMode ?? 'llm',
-            linkScope: c.linkScope ?? 'auto', routeNotice: c.routeNotice ?? 'switch',
+            linkScope: c.linkScope ?? 'auto', routeNotice: c.routeNotice ?? 'switch', notices: c.notices ?? true,
         };
         const activeEditable = Object.fromEntries(EDITABLE_SETTINGS_KEYS.map(key => [key, key === 'contextsPath' ? c.contextsPath ?? null : values[key]]));
         let savedValues = activeEditable;

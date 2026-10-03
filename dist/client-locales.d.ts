@@ -5,6 +5,13 @@ export declare const zh: {
     readonly 'gateway.opening': "正在打开 TheOne 主聊天…";
     readonly 'gateway.error': "主聊天暂时无法打开，请检查 DSH 连接和 TheOne 插件状态。";
     readonly retry: "重试";
+    readonly 'settings.other': "其他";
+    readonly 'settings.notices': "显示公告";
+    readonly 'settings.help.notices': "显示 TheOne 作者发布的公告（新版本、重要提醒等）。只从 yulid.org 读取一个公告文件，不发送任何你的数据。";
+    readonly 'notice.label': "公告";
+    readonly 'notice.more': "查看详情";
+    readonly 'notice.ok': "知道了";
+    readonly 'notice.close': "关闭这条公告";
     readonly 'bg.label': "后台";
     readonly 'bg.follow': "默认";
     readonly 'bg.title': "后台模型：分配话题和干活都用它";

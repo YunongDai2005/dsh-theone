@@ -157,5 +157,8 @@ export declare class ContextStore {
     /** Remove a topic and everything TheOne kept about it. DSH keeps the conversations themselves. */
     deleteTopic(contextId: string): void;
     private purge;
+    /** Notices the user closed; they are not shown again on any browser. */
+    dismissNotice(id: string, now?: number): void;
+    dismissedNotices(): Set<string>;
     close(): void;
 }

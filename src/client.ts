@@ -14,6 +14,7 @@ import type { MainPanelId, PanelInfo } from '@deepseek-ai/dsh-client-ui-layout/c
 import type { CatalogContext, CatalogSnapshot, LinkageSnapshot, TopicGroup } from './catalog-types.ts'
 import type { RouteView } from './types.ts'
 import type { UpdateStatus } from './update.ts'
+import type { Notice } from './notices.ts'
 import { EDITABLE_SETTINGS_KEYS, type EditableSettings, type SettingsSnapshot } from './settings-types.ts'
 import { GatewayNavigation } from './client-navigation.ts'
 import { zh, en, type TheOneLocaleKey } from './client-locales.ts'
@@ -408,11 +409,77 @@ export function apply(ctx: Context) {
       h('span', { className: 'theone-bg-chevron', 'aria-hidden': true }, saving ? '…' : '⌃'))
   }
 
+  /** Notices from TheOne's maintainer, shared by the dialog and the strip under the main chat input. */
+  let notices: Notice[] = []
+  const noticeListeners = new Set<() => void>()
+  const setNotices = (value: Notice[]) => { notices = value; for (const listener of noticeListeners) listener() }
+  const subscribeNotices = (listener: () => void) => { noticeListeners.add(listener); return () => { noticeListeners.delete(listener) } }
+  const localized = (value: { zh?: string; en?: string }) => localeSnapshot().active.startsWith('zh') ? value.zh ?? value.en ?? '' : value.en ?? value.zh ?? ''
+  const shownDialogs = new Set<string>()
+  const dismissNotice = (id: string) => {
+    setNotices(notices.filter(notice => notice.id !== id))
+    void fetch('/api/theone/notices', { method: 'POST', signal: lifetime.signal, cache: 'no-store', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ dismiss: id }) }).catch(() => {})
+  }
+  /** An important notice opens once as a dialog; closing it dismisses it. */
+  function openNoticeDialog(notice: Notice) {
+    shownDialogs.add(notice.id)
+    const backdrop = document.createElement('div')
+    backdrop.className = 'theone-dialog-backdrop'; backdrop.setAttribute('translate', 'no')
+    const card = document.createElement('div')
+    card.className = 'theone-dialog'; card.setAttribute('role', 'dialog'); card.setAttribute('aria-modal', 'true')
+    const title = document.createElement('h2'); title.id = 'theone-notice-title'; title.textContent = localized(notice.title); card.setAttribute('aria-labelledby', title.id)
+    const body = document.createElement('p'); body.className = 'theone-dialog-body'; body.textContent = localized(notice.body)
+    const footer = document.createElement('div'); footer.className = 'theone-dialog-actions'
+    const close = () => { backdrop.remove(); document.removeEventListener('keydown', keydown, true); dismissNotice(notice.id) }
+    const keydown = (event: KeyboardEvent) => { if (event.key === 'Escape') { event.preventDefault(); close() } }
+    if (notice.link) {
+      const more = document.createElement('button'); more.type = 'button'; more.textContent = t('notice.more')
+      more.addEventListener('click', () => { window.open(notice.link, '_blank', 'noopener'); close() }); footer.append(more)
+    }
+    const ok = document.createElement('button'); ok.type = 'button'; ok.className = 'theone-dialog-primary'; ok.textContent = t('notice.ok')
+    ok.addEventListener('click', close); footer.append(ok)
+    card.append(title, body, footer); backdrop.append(card)
+    document.addEventListener('keydown', keydown, true)
+    document.body.append(backdrop); ok.focus()
+  }
+  const readNotices = async () => {
+    try {
+      const response = await fetch('/api/theone/notices', { signal: lifetime.signal, cache: 'no-store' })
+      if (!response.ok) return
+      setNotices(((await response.json()) as { notices: Notice[] }).notices)
+      const important = notices.find(notice => notice.level === 'important' && !shownDialogs.has(notice.id))
+      if (important && !document.querySelector('.theone-dialog-backdrop')) openNoticeDialog(important)
+    } catch { /* No notices when offline. */ }
+  }
+  ctx.effect(() => {
+    void readNotices()
+    const timer = setInterval(() => { void readNotices() }, 3 * 3600000)
+    return () => clearInterval(timer)
+  })
+
+  /** Ordinary notices: one quiet line under the main chat input while TheOne is selected. */
+  function NoticeStrip({ directory }: { directory: DirectoryStore }) {
+    const t = useText()
+    const state = useSyncExternalStore(listener => directory.subscribe(listener), () => directory.getSnapshot())
+    const list = useSyncExternalStore(subscribeNotices, () => notices)
+    const notice = list.find(item => item.level === 'info')
+    if ((state.pending ?? state.current)?.provider !== 'theone' || !notice) return null
+    const title = localized(notice.title), body = localized(notice.body)
+    return h('div', { className: 'theone-notice', role: 'status', translate: 'no' },
+      h('span', { className: 'theone-notice-tag' }, t('notice.label')),
+      h('span', { className: 'theone-notice-text', title: `${title}\n${body}` }, h('strong', null, title), ' ', body),
+      notice.link ? h('button', { type: 'button', className: 'theone-notice-link', onClick: () => { window.open(notice.link, '_blank', 'noopener') } }, t('notice.more')) : null,
+      h('button', { type: 'button', className: 'theone-notice-close', 'aria-label': t('notice.close'), title: t('notice.close'), onClick: () => dismissNotice(notice.id) }, '×'))
+  }
+
   // Beside main chat's model button, only while TheOne is the selected model.
   ctx.inject(['slots', 'modelDirectories'], scope => {
     const slots = scope.slots as unknown as { inject(name: string, factory: () => () => void): void; register(options: Record<string, unknown>, component: unknown): () => void }
     slots.inject('conversation.input.right', () => slots.register({ name: 'conversation.input.right', id: 'theone.background-model', order: 100,
       inject: (sessionId: SessionId) => ({ directory: scope.modelDirectories.directoryFor(sessionId).store }) }, BackgroundModel))
+    slots.inject('conversation.composer.dock', () => slots.register({ name: 'conversation.composer.dock', id: 'theone.notice', order: 100,
+      inject: (sessionId: SessionId) => ({ directory: scope.modelDirectories.directoryFor(sessionId).store }) }, NoticeStrip))
   })
 
   function GatewayPanel() {
@@ -465,6 +532,7 @@ export function apply(ctx: Context) {
       ['linkage', ['linkScope', 'routeNotice']],
       ['limits', ['maxDescriptorChars', 'maxResponseChars']],
       ['storage', ['contextsPath', 'databasePath', 'gatewayKey']],
+      ['other', ['notices']],
     ] as const
     const display = (key: keyof SettingsSnapshot['values']) => {
       const value = snapshot!.values[key]
@@ -504,7 +572,7 @@ export function apply(ctx: Context) {
       const select = (value: string, choices: { value: string; label: string }[], selectValue: (value: string) => void) =>
         h('select', { ...props, value, required: field === 'workerModel' && !!draft.workerProvider, onChange: (event: React.ChangeEvent<HTMLSelectElement>) => selectValue(event.target.value) },
           ...choices.map(choice => h('option', { key: choice.value, value: choice.value }, choice.label)))
-      if (field === 'historyCatalog') return select(String(draft.historyCatalog), [{ value: 'true', label: t('settings.on') }, { value: 'false', label: t('settings.off') }], v => change(field, v === 'true'))
+      if (field === 'historyCatalog' || field === 'notices') return select(String(draft[field]), [{ value: 'true', label: t('settings.on') }, { value: 'false', label: t('settings.off') }], v => change(field, v === 'true'))
       if (field === 'linkScope' || field === 'routeNotice') {
         const values = field === 'linkScope' ? ['auto', 'workspace', 'off'] : ['switch', 'hidden', 'all']
         return select(draft[field], values.map(value => ({ value, label: t(`settings.${field === 'linkScope' ? 'scope' : 'notice'}.${value}` as TheOneLocaleKey) })), v => change(field, v as never))
@@ -886,6 +954,15 @@ button:has(.theone-nav[data-wide=true])>span:has(.theone-nav){flex:1;min-width:0
 .theone-dialog-actions .theone-dialog-primary{border-color:transparent;background:#3b6fb0;color:#fff}
 .theone-dialog-actions .theone-dialog-primary:hover{background:#4a7fc0}
 .theone-dialog-actions button:focus-visible{outline:2px solid #4a7fc0;outline-offset:2px}
+.theone-dialog .theone-dialog-body{white-space:pre-wrap;color:var(--dsw-alias-label-primary,#e8e8ea)}
+.theone-notice{display:flex;align-items:center;gap:8px;margin:6px 4px 0;padding:6px 8px 6px 10px;border:1px solid var(--dsw-alias-border-l2,#ffffff1f);border-radius:10px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary,#a0a0a6);min-width:0}
+.theone-notice-tag{flex:none;padding:0 6px;border-radius:6px;background:#3b6fb033;color:#7fa9dd}
+.theone-notice-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.theone-notice-text strong{color:var(--dsw-alias-label-primary,#e8e8ea);font-weight:500}
+.theone-notice button{flex:none;border:0;background:transparent;color:inherit;font:inherit;cursor:pointer;padding:2px 6px;border-radius:6px}
+.theone-notice button:hover{background:var(--dsw-alias-interactive-bg-hover,#ffffff12)}
+.theone-notice-link{color:#7fa9dd!important}
+.theone-notice-close{font-size:15px;line-height:1}
 .theone-update-spin{width:10px;height:10px;border-radius:50%;border:1.5px solid currentColor;border-right-color:transparent;animation:theone-spin 800ms linear infinite}
 @keyframes theone-spin{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){.theone-update-spin{animation:none}}

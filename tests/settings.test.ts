@@ -35,7 +35,7 @@ test('settings expose all public runtime options without credentials, writes or 
     assert.equal(response.status, 200)
     assert.equal(response.headers.get('cache-control'), 'no-store')
     const settings: SettingsSnapshot = await response.json()
-    assert.equal(Object.keys(settings.values).length, 12)
+    assert.equal(Object.keys(settings.values).length, 13)
     assert.equal(settings.values.catalogIntervalMs, 45000)
     // Every model DSH offers can be picked, except TheOne's own entry.
     assert.deepEqual(settings.models, [{ provider: 'fixture', id: 'fixture', name: 'Fixture' }, { provider: 'fixture', id: 'fixture-b', name: 'Fixture B' }])

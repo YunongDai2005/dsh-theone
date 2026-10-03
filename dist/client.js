@@ -38,7 +38,8 @@ var EDITABLE_SETTINGS_KEYS = [
   "maxResponseChars",
   "linkScope",
   "routeNotice",
-  "contextsPath"
+  "contextsPath",
+  "notices"
 ];
 
 // src/client-navigation.ts
@@ -88,6 +89,13 @@ var zh = {
   "gateway.opening": "\u6B63\u5728\u6253\u5F00 TheOne \u4E3B\u804A\u5929\u2026",
   "gateway.error": "\u4E3B\u804A\u5929\u6682\u65F6\u65E0\u6CD5\u6253\u5F00\uFF0C\u8BF7\u68C0\u67E5 DSH \u8FDE\u63A5\u548C TheOne \u63D2\u4EF6\u72B6\u6001\u3002",
   "retry": "\u91CD\u8BD5",
+  "settings.other": "\u5176\u4ED6",
+  "settings.notices": "\u663E\u793A\u516C\u544A",
+  "settings.help.notices": "\u663E\u793A TheOne \u4F5C\u8005\u53D1\u5E03\u7684\u516C\u544A\uFF08\u65B0\u7248\u672C\u3001\u91CD\u8981\u63D0\u9192\u7B49\uFF09\u3002\u53EA\u4ECE yulid.org \u8BFB\u53D6\u4E00\u4E2A\u516C\u544A\u6587\u4EF6\uFF0C\u4E0D\u53D1\u9001\u4EFB\u4F55\u4F60\u7684\u6570\u636E\u3002",
+  "notice.label": "\u516C\u544A",
+  "notice.more": "\u67E5\u770B\u8BE6\u60C5",
+  "notice.ok": "\u77E5\u9053\u4E86",
+  "notice.close": "\u5173\u95ED\u8FD9\u6761\u516C\u544A",
   "bg.label": "\u540E\u53F0",
   "bg.follow": "\u9ED8\u8BA4",
   "bg.title": "\u540E\u53F0\u6A21\u578B\uFF1A\u5206\u914D\u8BDD\u9898\u548C\u5E72\u6D3B\u90FD\u7528\u5B83",
@@ -290,6 +298,13 @@ var en = {
   "gateway.opening": "Opening TheOne main chat\u2026",
   "gateway.error": "Main chat could not open. Check your DSH connection and TheOne plugin status.",
   "retry": "Retry",
+  "settings.other": "Other",
+  "settings.notices": "Show notices",
+  "settings.help.notices": "Show notices from TheOne's author (new versions, important reminders). TheOne only reads one notice file from yulid.org and sends none of your data.",
+  "notice.label": "Notice",
+  "notice.more": "Read more",
+  "notice.ok": "Got it",
+  "notice.close": "Close this notice",
   "bg.label": "Background",
   "bg.follow": "Default",
   "bg.title": "Background model: routes and does the work",
@@ -1039,6 +1054,118 @@ function apply(ctx) {
       (0, import_react.createElement)("span", { className: "theone-bg-chevron", "aria-hidden": true }, saving ? "\u2026" : "\u2303")
     );
   }
+  let notices = [];
+  const noticeListeners = /* @__PURE__ */ new Set();
+  const setNotices = (value) => {
+    notices = value;
+    for (const listener of noticeListeners) listener();
+  };
+  const subscribeNotices = (listener) => {
+    noticeListeners.add(listener);
+    return () => {
+      noticeListeners.delete(listener);
+    };
+  };
+  const localized = (value) => localeSnapshot().active.startsWith("zh") ? value.zh ?? value.en ?? "" : value.en ?? value.zh ?? "";
+  const shownDialogs = /* @__PURE__ */ new Set();
+  const dismissNotice = (id) => {
+    setNotices(notices.filter((notice) => notice.id !== id));
+    void fetch("/api/theone/notices", {
+      method: "POST",
+      signal: lifetime.signal,
+      cache: "no-store",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ dismiss: id })
+    }).catch(() => {
+    });
+  };
+  function openNoticeDialog(notice) {
+    shownDialogs.add(notice.id);
+    const backdrop = document.createElement("div");
+    backdrop.className = "theone-dialog-backdrop";
+    backdrop.setAttribute("translate", "no");
+    const card = document.createElement("div");
+    card.className = "theone-dialog";
+    card.setAttribute("role", "dialog");
+    card.setAttribute("aria-modal", "true");
+    const title = document.createElement("h2");
+    title.id = "theone-notice-title";
+    title.textContent = localized(notice.title);
+    card.setAttribute("aria-labelledby", title.id);
+    const body = document.createElement("p");
+    body.className = "theone-dialog-body";
+    body.textContent = localized(notice.body);
+    const footer = document.createElement("div");
+    footer.className = "theone-dialog-actions";
+    const close = () => {
+      backdrop.remove();
+      document.removeEventListener("keydown", keydown, true);
+      dismissNotice(notice.id);
+    };
+    const keydown = (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        close();
+      }
+    };
+    if (notice.link) {
+      const more = document.createElement("button");
+      more.type = "button";
+      more.textContent = t("notice.more");
+      more.addEventListener("click", () => {
+        window.open(notice.link, "_blank", "noopener");
+        close();
+      });
+      footer.append(more);
+    }
+    const ok = document.createElement("button");
+    ok.type = "button";
+    ok.className = "theone-dialog-primary";
+    ok.textContent = t("notice.ok");
+    ok.addEventListener("click", close);
+    footer.append(ok);
+    card.append(title, body, footer);
+    backdrop.append(card);
+    document.addEventListener("keydown", keydown, true);
+    document.body.append(backdrop);
+    ok.focus();
+  }
+  const readNotices = async () => {
+    try {
+      const response = await fetch("/api/theone/notices", { signal: lifetime.signal, cache: "no-store" });
+      if (!response.ok) return;
+      setNotices((await response.json()).notices);
+      const important = notices.find((notice) => notice.level === "important" && !shownDialogs.has(notice.id));
+      if (important && !document.querySelector(".theone-dialog-backdrop")) openNoticeDialog(important);
+    } catch {
+    }
+  };
+  ctx.effect(() => {
+    void readNotices();
+    const timer = setInterval(() => {
+      void readNotices();
+    }, 3 * 36e5);
+    return () => clearInterval(timer);
+  });
+  function NoticeStrip({ directory }) {
+    const t2 = useText();
+    const state = (0, import_react.useSyncExternalStore)((listener) => directory.subscribe(listener), () => directory.getSnapshot());
+    const list = (0, import_react.useSyncExternalStore)(subscribeNotices, () => notices);
+    const notice = list.find((item) => item.level === "info");
+    if ((state.pending ?? state.current)?.provider !== "theone" || !notice) return null;
+    const title = localized(notice.title), body = localized(notice.body);
+    return (0, import_react.createElement)(
+      "div",
+      { className: "theone-notice", role: "status", translate: "no" },
+      (0, import_react.createElement)("span", { className: "theone-notice-tag" }, t2("notice.label")),
+      (0, import_react.createElement)("span", { className: "theone-notice-text", title: `${title}
+${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
+      notice.link ? (0, import_react.createElement)("button", { type: "button", className: "theone-notice-link", onClick: () => {
+        window.open(notice.link, "_blank", "noopener");
+      } }, t2("notice.more")) : null,
+      (0, import_react.createElement)("button", { type: "button", className: "theone-notice-close", "aria-label": t2("notice.close"), title: t2("notice.close"), onClick: () => dismissNotice(notice.id) }, "\xD7")
+    );
+  }
   ctx.inject(["slots", "modelDirectories"], (scope) => {
     const slots = scope.slots;
     slots.inject("conversation.input.right", () => slots.register({
@@ -1047,6 +1174,12 @@ function apply(ctx) {
       order: 100,
       inject: (sessionId) => ({ directory: scope.modelDirectories.directoryFor(sessionId).store })
     }, BackgroundModel));
+    slots.inject("conversation.composer.dock", () => slots.register({
+      name: "conversation.composer.dock",
+      id: "theone.notice",
+      order: 100,
+      inject: (sessionId) => ({ directory: scope.modelDirectories.directoryFor(sessionId).store })
+    }, NoticeStrip));
   });
   function GatewayPanel() {
     const t2 = useText();
@@ -1107,7 +1240,8 @@ function apply(ctx) {
       ["history", ["historyCatalog", "catalogIntervalMs"]],
       ["linkage", ["linkScope", "routeNotice"]],
       ["limits", ["maxDescriptorChars", "maxResponseChars"]],
-      ["storage", ["contextsPath", "databasePath", "gatewayKey"]]
+      ["storage", ["contextsPath", "databasePath", "gatewayKey"]],
+      ["other", ["notices"]]
     ];
     const display = (key) => {
       const value = snapshot.values[key];
@@ -1164,7 +1298,7 @@ function apply(ctx) {
         { ...props, value, required: field === "workerModel" && !!draft.workerProvider, onChange: (event) => selectValue(event.target.value) },
         ...choices.map((choice) => (0, import_react.createElement)("option", { key: choice.value, value: choice.value }, choice.label))
       );
-      if (field === "historyCatalog") return select(String(draft.historyCatalog), [{ value: "true", label: t2("settings.on") }, { value: "false", label: t2("settings.off") }], (v) => change(field, v === "true"));
+      if (field === "historyCatalog" || field === "notices") return select(String(draft[field]), [{ value: "true", label: t2("settings.on") }, { value: "false", label: t2("settings.off") }], (v) => change(field, v === "true"));
       if (field === "linkScope" || field === "routeNotice") {
         const values = field === "linkScope" ? ["auto", "workspace", "off"] : ["switch", "hidden", "all"];
         return select(draft[field], values.map((value) => ({ value, label: t2(`settings.${field === "linkScope" ? "scope" : "notice"}.${value}`) })), (v) => change(field, v));
@@ -1817,6 +1951,15 @@ button:has(.theone-nav[data-wide=true])>span:has(.theone-nav){flex:1;min-width:0
 .theone-dialog-actions .theone-dialog-primary{border-color:transparent;background:#3b6fb0;color:#fff}
 .theone-dialog-actions .theone-dialog-primary:hover{background:#4a7fc0}
 .theone-dialog-actions button:focus-visible{outline:2px solid #4a7fc0;outline-offset:2px}
+.theone-dialog .theone-dialog-body{white-space:pre-wrap;color:var(--dsw-alias-label-primary,#e8e8ea)}
+.theone-notice{display:flex;align-items:center;gap:8px;margin:6px 4px 0;padding:6px 8px 6px 10px;border:1px solid var(--dsw-alias-border-l2,#ffffff1f);border-radius:10px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary,#a0a0a6);min-width:0}
+.theone-notice-tag{flex:none;padding:0 6px;border-radius:6px;background:#3b6fb033;color:#7fa9dd}
+.theone-notice-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.theone-notice-text strong{color:var(--dsw-alias-label-primary,#e8e8ea);font-weight:500}
+.theone-notice button{flex:none;border:0;background:transparent;color:inherit;font:inherit;cursor:pointer;padding:2px 6px;border-radius:6px}
+.theone-notice button:hover{background:var(--dsw-alias-interactive-bg-hover,#ffffff12)}
+.theone-notice-link{color:#7fa9dd!important}
+.theone-notice-close{font-size:15px;line-height:1}
 .theone-update-spin{width:10px;height:10px;border-radius:50%;border:1.5px solid currentColor;border-right-color:transparent;animation:theone-spin 800ms linear infinite}
 @keyframes theone-spin{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){.theone-update-spin{animation:none}}

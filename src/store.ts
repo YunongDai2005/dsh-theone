@@ -99,6 +99,7 @@ export class ContextStore {
       CREATE TABLE IF NOT EXISTS learned_terms (
         context_id TEXT NOT NULL, term TEXT NOT NULL, weight REAL NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY(context_id, term)
       );
+      CREATE TABLE IF NOT EXISTS dismissed_notices (id TEXT PRIMARY KEY, dismissed_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS route_details (
         message_id TEXT PRIMARY KEY, excerpt TEXT NOT NULL, receipt TEXT, corrected_to TEXT, corrected_at INTEGER
       );
@@ -686,6 +687,15 @@ export class ContextStore {
     this.db.prepare('DELETE FROM briefing_seen WHERE reader = ? OR source = ?').run(contextId, contextId)
     this.db.prepare('UPDATE route_details SET corrected_to = NULL, corrected_at = NULL WHERE corrected_to = ?').run(contextId)
     this.db.prepare('DELETE FROM contexts WHERE id = ?').run(contextId)
+  }
+
+  /** Notices the user closed; they are not shown again on any browser. */
+  dismissNotice(id: string, now = Date.now()): void {
+    this.db.prepare('INSERT OR IGNORE INTO dismissed_notices VALUES (?, ?)').run(id, now)
+  }
+
+  dismissedNotices(): Set<string> {
+    return new Set(this.db.prepare('SELECT id FROM dismissed_notices').all().map(row => String(row.id)))
   }
 
   close(): void { this.db.close() }

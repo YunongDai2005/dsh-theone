@@ -10,6 +10,7 @@ import type { LinkageSnapshot } from './catalog-types.ts';
 import { type SettingsSnapshot } from './settings-types.ts';
 import { type LinkScope } from './linkage.ts';
 import { Updater } from './update.ts';
+import { NoticeBoard } from './notices.ts';
 export interface Config {
     databasePath?: string;
     contextsPath?: string;
@@ -28,6 +29,10 @@ export interface Config {
     routerApiKeyEnv?: string;
     linkScope?: LinkScope;
     routeNotice?: 'hidden' | 'switch' | 'all';
+    /** Show notices the maintainer publishes (read from a static file; nothing is sent). */
+    notices?: boolean;
+    /** Where notices are read from; for testing. */
+    noticeUrl?: string;
 }
 declare module '@deepseek-ai/cordis' {
     interface Context {
@@ -79,6 +84,7 @@ export default class TheOne extends Service {
     private adapter?;
     /** Update checks and one-click install through DSH's plugin manager. */
     readonly updater: Updater;
+    readonly noticeBoard: NoticeBoard;
     /** Sessions whose current step answers through TheOne; only these refuse to run tools themselves. */
     private readonly throughTheOne;
     constructor(ctx: Context, config: Config);

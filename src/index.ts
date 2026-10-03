@@ -33,6 +33,7 @@ import { validateSettings } from './settings.ts'
 import { RESTART_CODE, WorkerRun } from './run.ts'
 import { buildBriefing, LINK_SIGNAL, relatedTopics, type LinkScope } from './linkage.ts'
 import { PACKAGE_NAME, Updater, type PluginInstaller } from './update.ts'
+import { NOTICE_URL, NoticeBoard } from './notices.ts'
 
 function redactDescriptor(text: string): string {
   return text.replace(/\bsk-[a-zA-Z0-9_-]{16,}|\bBearer\s+\S+/gi, '[REDACTED]')
@@ -57,6 +58,10 @@ export interface Config {
   routerApiKeyEnv?: string
   linkScope?: LinkScope
   routeNotice?: 'hidden' | 'switch' | 'all'
+  /** Show notices the maintainer publishes (read from a static file; nothing is sent). */
+  notices?: boolean
+  /** Where notices are read from; for testing. */
+  noticeUrl?: string
 }
 
 declare module '@deepseek-ai/cordis' {
@@ -192,6 +197,8 @@ export default class TheOne extends Service {
     routerBaseUrl: z.string(), routerModel: z.string(), routerApiKeyEnv: z.string(),
     linkScope: z.union([z.const('off'), z.const('workspace'), z.const('auto')]).default('auto'),
     routeNotice: z.union([z.const('hidden'), z.const('switch'), z.const('all')]).default('switch'),
+    notices: z.boolean().default(true),
+    noticeUrl: z.string(),
   })
   readonly store: ContextStore
   readonly catalog?: HistoryCatalog
@@ -210,6 +217,7 @@ export default class TheOne extends Service {
   private adapter?: { replace(providers: string[]): void }
   /** Update checks and one-click install through DSH's plugin manager. */
   readonly updater: Updater
+  readonly noticeBoard: NoticeBoard
   /** Sessions whose current step answers through TheOne; only these refuse to run tools themselves. */
   private readonly throughTheOne = new WeakMap<Agent, boolean>()
 
@@ -240,6 +248,7 @@ export default class TheOne extends Service {
       try { return (JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as { dependencies?: Record<string, string> }).dependencies?.[PACKAGE_NAME] }
       catch { return undefined }
     }, fetch, Date.now, () => { const dir = profileDir(); return dir ? join(dir, 'pnpm-workspace.yaml') : undefined })
+    this.noticeBoard = new NoticeBoard(this.updater.current, config.noticeUrl || NOTICE_URL)
     ctx.effect(() => async () => {
       try { await Promise.all([...this.workers.values()].map(handle => handle.dispose())) }
       finally { await this.catalog?.close(); this.store.close() }
@@ -583,6 +592,17 @@ export default class TheOne extends Service {
           : await this.updater.status(new URL(request.url).searchParams.has('force'))
         return Response.json(status, { headers: { 'cache-control': 'no-store' } })
       } }))
+      // Notices from TheOne's maintainer; the user can close each one, or turn them all off in Settings.
+      child.effect(() => connection.fetch!.register({ path: '/api/theone/notices', methods: ['GET', 'POST'], requestBody: 'buffered', fetch: async request => {
+        if (request.method === 'POST') {
+          const body = await request.json().catch(() => ({})) as { dismiss?: unknown }
+          if (typeof body?.dismiss !== 'string' || !/^[\w.-]{1,64}$/.test(body.dismiss)) return Response.json({ error: 'INVALID_INPUT' }, { status: 400 })
+          this.store.dismissNotice(body.dismiss)
+        }
+        if (this.config.notices === false) return Response.json({ notices: [] }, { headers: { 'cache-control': 'no-store' } })
+        const dismissed = this.store.dismissedNotices()
+        return Response.json({ notices: (await this.noticeBoard.notices()).filter(notice => !dismissed.has(notice.id)) }, { headers: { 'cache-control': 'no-store' } })
+      } }))
       child.effect(() => connection.fetch!.register({ path: '/api/theone/sessions', methods: ['GET'], requestBody: 'buffered', fetch: async () =>
         Response.json({ sessions: await this.attachableSessions() }, { headers: { 'cache-control': 'no-store' } }) }))
       // The user's corrections to topic linking always take precedence over what was learned.
@@ -706,7 +726,7 @@ export default class TheOne extends Service {
       workerProvider: c.workerProvider ? redactDescriptor(c.workerProvider) : null, workerModel: c.workerModel ? redactDescriptor(c.workerModel) : null,
       maxDescriptorChars: c.maxDescriptorChars, maxResponseChars: c.maxResponseChars,
       routerMode: c.routerMode ?? 'llm',
-      linkScope: c.linkScope ?? 'auto', routeNotice: c.routeNotice ?? 'switch',
+      linkScope: c.linkScope ?? 'auto', routeNotice: c.routeNotice ?? 'switch', notices: c.notices ?? true,
     }
     const activeEditable = Object.fromEntries(EDITABLE_SETTINGS_KEYS.map(key => [key, key === 'contextsPath' ? c.contextsPath ?? null : values[key]])) as EditableSettings
     let savedValues = activeEditable

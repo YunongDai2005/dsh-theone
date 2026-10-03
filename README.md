@@ -104,6 +104,7 @@ The database location and entry identifier switch TheOne to different data, so t
 - DSH keeps the original conversations and tool results; TheOne keeps only its catalog, summaries, links and routing records in its own SQLite database (`$DSH_HOME/theone/contexts.db`, `~/.dsh/theone/` by default).
 - Text sent to the router or written into briefings has API keys, passwords and similar secrets removed.
 - A topic marked **Do not share** never appears in other topics' briefings, recent-chat excerpts or lookups.
+- Notices from the author are read from `https://yulid.org/theone/notice.json` with a plain request that sends none of your data; turn them off in Settings.
 - When main chat grows long, DSH compacts it through TheOne: frequently used topics keep longer summaries and their latest turns, rarely used ones keep a short status. This makes no model call.
 - When a new version is out, an **Update** button appears on the right of the TheOne entry in the sidebar: one click installs it through DSH's plugin manager and reloads TheOne in place, without restarting DSH (a DSH without plugin hot reload applies it at the next restart). Your topics stay in the database.
 </details>

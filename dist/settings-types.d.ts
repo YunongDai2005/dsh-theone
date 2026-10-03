@@ -13,6 +13,7 @@ export interface SettingsSnapshot {
         routerMode: 'rules' | 'llm';
         linkScope: 'off' | 'workspace' | 'auto';
         routeNotice: 'hidden' | 'switch' | 'all';
+        notices: boolean;
     };
     model: {
         provider: string;
@@ -32,7 +33,7 @@ export interface SettingsSnapshot {
     /** Saved settings that apply only after DSH restarts; everything else applies when saved. */
     restartRequired: boolean;
 }
-export declare const EDITABLE_SETTINGS_KEYS: readonly ["workerProvider", "workerModel", "routerMode", "historyCatalog", "catalogIntervalMs", "maxDescriptorChars", "maxResponseChars", "linkScope", "routeNotice", "contextsPath"];
+export declare const EDITABLE_SETTINGS_KEYS: readonly ["workerProvider", "workerModel", "routerMode", "historyCatalog", "catalogIntervalMs", "maxDescriptorChars", "maxResponseChars", "linkScope", "routeNotice", "contextsPath", "notices"];
 /** The background catalog is started once; these take effect after DSH restarts. */
 export declare const RESTART_SETTINGS_KEYS: readonly ["historyCatalog", "catalogIntervalMs"];
 /** Settings of the removed direct router; forms saved by older versions may still carry them. */
@@ -41,5 +42,6 @@ export declare const RETIRED_SETTINGS_KEYS: readonly ["routerTransport", "router
 export declare const SETTINGS_DEFAULTS: {
     readonly linkScope: "auto";
     readonly routeNotice: "switch";
+    readonly notices: true;
 };
 export type EditableSettings = Pick<SettingsSnapshot['values'], typeof EDITABLE_SETTINGS_KEYS[number]>;
