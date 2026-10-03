@@ -85,3 +85,10 @@ jobs:
         env:
           VERSION: ${{ steps.plan.outputs.version }}
         run: npm publish ".dsh-test/dsh-theone-${VERSION}.tgz" --access public --provenance --registry=https://registry.npmjs.org/
+      - name: Ask npmmirror to sync, so installs through the mirror DSH offers get this version now
+        if: ${{ steps.plan.outputs.skip != 'true' }}
+        run: |
+          for attempt in 1 2 3; do
+            curl -fsS -X PUT "https://registry-direct.npmmirror.com/-/package/dsh-theone/syncs" && break
+            sleep 10
+          done || echo "npmmirror sync request failed; it will still sync on its own schedule."
