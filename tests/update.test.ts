@@ -1,6 +1,13 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { compareVersions, installSource, Updater, type PluginInstaller } from '../src/update.ts'
+import { compareVersions, installSource, RELEASE_AGE_MS, Updater, type PluginInstaller } from '../src/update.ts'
+
+/** An npm registry answer: each version with its publication time. */
+const registry = (releases: Record<string, number>): typeof fetch => (async () => Response.json({
+  versions: Object.fromEntries(Object.keys(releases).map(version => [version, {}])),
+  time: Object.fromEntries(Object.entries(releases).map(([version, at]) => [version, new Date(at).toISOString()])),
+})) as typeof fetch
+const DAY_AGO = Date.now() - RELEASE_AGE_MS - 60000
 
 const SHA = 'a'.repeat(40)
 function github(version: string, calls: string[] = []): typeof fetch {
@@ -42,7 +49,7 @@ test('a GitHub install updates to the exact commit it checked, through the plugi
 })
 
 test('npm installs use the registry; nothing newer, offline or unmanaged installs are handled', async () => {
-  const npm = new Updater('0.3.10', () => '^0.3.10', (async () => Response.json({ version: '0.4.0' })) as typeof fetch)
+  const npm = new Updater('0.3.10', () => '^0.3.10', registry({ '0.3.10': DAY_AGO, '0.4.0': DAY_AGO }))
   const specs: string[] = []
   const status = await npm.install({ installBundle: async spec => { specs.push(spec); return { application: 'failed', error: { code: 'incompatible-version' } } } })
   assert.deepEqual(specs, ['dsh-theone@0.4.0'])
@@ -63,7 +70,7 @@ test('npm installs use the registry; nothing newer, offline or unmanaged install
   assert.equal(manual.installable, false)
   assert.equal((await local.install({ installBundle: async () => assert.fail('must not install') })).state, undefined)
   // Without DSH's plugin manager nothing is installed either.
-  const missing = new Updater('0.3.10', () => '^0.3.10', (async () => Response.json({ version: '0.4.0' })) as typeof fetch)
+  const missing = new Updater('0.3.10', () => '^0.3.10', registry({ '0.4.0': DAY_AGO }))
   assert.equal((await missing.install(undefined)).state, undefined)
 })
 
@@ -106,4 +113,25 @@ test('the update endpoint installs, then switches the bundle off and on so DSH l
     await new Promise(resolve => setTimeout(resolve, 600))
     assert.deepEqual(calls, [`install github:YunongDai2005/dsh-theone#${SHA}`, 'off dsh-theone', 'on dsh-theone'])
   } finally { globalThis.fetch = previousFetch; await app.close(); await rm(root, { recursive: true, force: true }) }
+})
+
+test('npm updates wait until pnpm accepts the version, and its refusal is explained', async () => {
+  let time = Date.now()
+  const published = time - 3600000
+  const updater = new Updater('0.3.12', () => '0.3.12', registry({ '0.3.12': DAY_AGO - 1000, '0.3.13': DAY_AGO, '0.3.14': published }), () => time)
+  // 0.3.14 is an hour old: 0.3.13 is offered, 0.3.14 waits.
+  const first = await updater.status()
+  assert.equal(first.latest, '0.3.13')
+  assert.deepEqual(first.waiting, { version: '0.3.14', readyAt: published + RELEASE_AGE_MS })
+  time = published + RELEASE_AGE_MS + 1000
+  const later = await updater.status()
+  assert.equal(later.latest, '0.3.14')
+  assert.equal(later.waiting, undefined)
+  const refused = await updater.install({ installBundle: async () => ({ application: 'failed', error: { code: 'install-failed' },
+    packageResult: { output: '[ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION] 1 lockfile entries failed verification' } }) })
+  assert.equal(refused.state, 'failed')
+  assert.equal(refused.error, 'MINIMUM_RELEASE_AGE')
+  const offline = new Updater('0.3.12', () => '0.3.12', registry({ '0.3.13': DAY_AGO }))
+  const network = await offline.install({ installBundle: async () => ({ application: 'failed', packageResult: { output: 'GET https://registry.npmjs.org/x error (UND_ERR_DESTROYED)' } }) })
+  assert.equal(network.error, 'NETWORK')
 })

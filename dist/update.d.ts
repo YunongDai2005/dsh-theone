@@ -12,8 +12,19 @@ export interface UpdateStatus {
     source: UpdateSource;
     /** installing → reloading (TheOne restarts itself; DSH keeps running), restart (applies after DSH restarts) or failed. */
     state?: 'installing' | 'reloading' | 'restart' | 'failed';
+    /** Why it failed: MINIMUM_RELEASE_AGE, NETWORK, or the plugin manager's own code. */
     error?: string;
+    /** A newer npm version that pnpm will accept only once it is a day old, and when that is. */
+    waiting?: {
+        version: string;
+        readyAt: number;
+    };
 }
+/**
+ * pnpm, which DSH installs plugins with, refuses npm versions published less than a day ago
+ * (minimumReleaseAge, a supply-chain safeguard). Updates from npm wait until then.
+ */
+export declare const RELEASE_AGE_MS: number;
 /** The DSH plugin manager's install call, as TheOne uses it. */
 export interface PluginInstaller {
     installBundle(spec: string, options?: {
@@ -25,6 +36,9 @@ export interface PluginInstaller {
             code?: string;
             message?: string;
         } | unknown;
+        packageResult?: {
+            output?: string;
+        };
     }>;
 }
 /** Compare dotted versions numerically; a pre-release sorts before its release. */

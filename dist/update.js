@@ -1,5 +1,10 @@
 export const REPOSITORY = 'YunongDai2005/dsh-theone';
 export const PACKAGE_NAME = 'dsh-theone';
+/**
+ * pnpm, which DSH installs plugins with, refuses npm versions published less than a day ago
+ * (minimumReleaseAge, a supply-chain safeguard). Updates from npm wait until then.
+ */
+export const RELEASE_AGE_MS = 24 * 3600000;
 /** Compare dotted versions numerically; a pre-release sorts before its release. */
 export function compareVersions(a, b) {
     const parse = (value) => {
@@ -47,7 +52,9 @@ export class Updater {
     /** The latest known status; checks again at most every six hours (or now, when forced). */
     async status(force = false) {
         const age = this.checked ? this.now() - this.checked.at : Infinity;
-        if (this.state !== 'installing' && (force || age > (this.checked?.error ? HOUR / 2 : 6 * HOUR))) {
+        // A version waiting out pnpm's release age is looked at again as soon as it qualifies.
+        const due = !!this.checked?.waiting && this.now() >= this.checked.waiting.readyAt;
+        if (this.state !== 'installing' && (force || due || age > (this.checked?.error ? HOUR / 2 : 6 * HOUR))) {
             this.pending ??= this.check().finally(() => { this.pending = undefined; });
             await this.pending;
         }
@@ -73,7 +80,11 @@ export class Updater {
             else {
                 this.state = 'failed';
                 const error = result.error;
-                this.error = String(error?.code ?? error?.message ?? result.application).slice(0, 120);
+                // pnpm's own reasons are clearer than the plugin manager's generic failure.
+                const output = `${result.packageResult?.output ?? ''}\n${error?.message ?? ''}`;
+                this.error = /MINIMUM_RELEASE_AGE/.test(output) ? 'MINIMUM_RELEASE_AGE'
+                    : /UND_ERR|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|ERR_PNPM_META_FETCH_FAIL|network/i.test(output) ? 'NETWORK'
+                        : String(error?.code ?? error?.message ?? result.application).slice(0, 120);
             }
         }
         catch (error) {
@@ -86,7 +97,8 @@ export class Updater {
         const latest = this.checked?.latest;
         const source = this.source;
         const available = !!latest && compareVersions(latest, this.current) > 0;
-        return { current: this.current, ...(latest ? { latest } : {}), available, source,
+        const waiting = this.checked?.waiting && compareVersions(this.checked.waiting.version, this.current) > 0 ? { waiting: this.checked.waiting } : {};
+        return { current: this.current, ...(latest ? { latest } : {}), available, source, ...waiting,
             installable: available && (source === 'npm' || (source === 'github' && !!this.checked?.sha)),
             ...(this.state ? { state: this.state } : {}), ...(this.error ?? this.checked?.error ? { error: this.error ?? this.checked?.error } : {}) };
     }
@@ -94,10 +106,19 @@ export class Updater {
         const signal = AbortSignal.timeout(10000);
         try {
             if (this.source === 'npm') {
-                const response = await this.fetcher(`https://registry.npmjs.org/${PACKAGE_NAME}/latest`, { signal });
+                const response = await this.fetcher(`https://registry.npmjs.org/${PACKAGE_NAME}`, { signal });
                 if (!response.ok)
                     throw new Error(`npm ${response.status}`);
-                this.checked = { at: this.now(), latest: String((await response.json()).version ?? '') || undefined };
+                const packument = await response.json();
+                // Offer the newest release pnpm will accept now; a newer one waits until it is a day old.
+                const now = this.now();
+                const releases = Object.keys(packument.versions ?? {}).filter(version => /^\d+\.\d+\.\d+$/.test(version))
+                    .map(version => ({ version, at: Date.parse(packument.time?.[version] ?? '') }))
+                    .filter(release => Number.isFinite(release.at)).sort((a, b) => compareVersions(b.version, a.version));
+                const ready = releases.find(release => now - release.at >= RELEASE_AGE_MS);
+                const newest = releases[0];
+                this.checked = { at: now, ...(ready ? { latest: ready.version } : {}),
+                    ...(newest && newest !== ready ? { waiting: { version: newest.version, readyAt: newest.at + RELEASE_AGE_MS } } : {}) };
                 return;
             }
             // A GitHub install updates to the exact commit whose version was read.

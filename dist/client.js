@@ -103,6 +103,8 @@ var zh = {
   "update.reloading": "\u6B63\u5728\u91CD\u65B0\u52A0\u8F7D\u2026",
   "update.reloadingHint": "TheOne \u6B63\u5728\u7528\u65B0\u7248\u672C\u91CD\u65B0\u52A0\u8F7D\uFF0CDSH \u4E0D\u9700\u8981\u91CD\u542F\uFF1B\u5B8C\u6210\u540E\u9875\u9762\u4F1A\u81EA\u52A8\u5237\u65B0\u3002",
   "update.busy": "\u6709\u56DE\u590D\u6B63\u5728\u8FDB\u884C\uFF0C\u7B49\u5B83\u7ED3\u675F\u540E\u518D\u70B9\u66F4\u65B0\u3002",
+  "update.tooNew": "DSH \u7684\u5B89\u5168\u7B56\u7565\u53EA\u5141\u8BB8\u5B89\u88C5\u53D1\u5E03\u6EE1 24 \u5C0F\u65F6\u7684\u7248\u672C\uFF0C\u8FD9\u4E00\u7248\u8FD8\u592A\u65B0\u3002\u8FC7\u4E00\u9635\u518D\u70B9\u4E00\u6B21\u5373\u53EF\u3002",
+  "update.network": "\u8FDE\u4E0D\u4E0A\u4E0B\u8F7D\u6E90\uFF0C\u8BF7\u68C0\u67E5\u7F51\u7EDC\u540E\u70B9\u51FB\u91CD\u8BD5\u3002",
   "update.failed": "\u66F4\u65B0\u5931\u8D25",
   "update.hint": "\u5F53\u524D {current}\uFF0C\u53EF\u66F4\u65B0\u5230 {latest}\u3002\u70B9\u51FB\u4E00\u952E\u66F4\u65B0\uFF0C\u4E0D\u7528\u91CD\u542F DSH\u3002",
   "update.manualHint": "\u5F53\u524D {current}\uFF0C\u6700\u65B0 {latest}\u3002\u8FD9\u4EFD\u63D2\u4EF6\u4E0D\u662F\u4ECE GitHub \u6216 npm \u5B89\u88C5\u7684\uFF0C\u8BF7\u5728\u300C\u63D2\u4EF6\u300D\u9875\u9762\u91CD\u65B0\u5B89\u88C5\u3002",
@@ -293,6 +295,8 @@ var en = {
   "update.reloading": "Reloading\u2026",
   "update.reloadingHint": "TheOne is reloading with the new version; DSH keeps running, and the page refreshes when it is done.",
   "update.busy": "A reply is in progress. Update once it finishes.",
+  "update.tooNew": "DSH only installs versions published at least 24 hours ago, as a safety policy, and this one is newer. Try again later.",
+  "update.network": "Could not reach the download source. Check the network and click to retry.",
   "update.failed": "Update failed",
   "update.hint": "You have {current}; {latest} is available. Click to update without restarting DSH.",
   "update.manualHint": "You have {current}; {latest} is available. This copy was not installed from GitHub or npm, so reinstall it from the Plugins page.",
@@ -585,7 +589,7 @@ function apply(ctx) {
     const status = (0, import_react.useSyncExternalStore)(subscribeUpdate, () => update);
     if (!status || !status.available && !status.state) return null;
     const label = status.state === "installing" ? t2("update.installing") : status.state === "reloading" ? t2("update.reloading") : status.state === "restart" ? t2("update.restart") : status.state === "failed" ? t2("update.failed") : t2("update.available");
-    const title = status.error === "GATEWAY_BUSY" ? t2("update.busy") : status.state === "reloading" ? t2("update.reloadingHint") : status.state === "restart" ? t2("update.restartHint") : status.state === "failed" ? t2("update.failedHint", { error: status.error ?? "" }) : status.installable ? t2("update.hint", { current: status.current, latest: status.latest ?? "" }) : t2("update.manualHint", { current: status.current, latest: status.latest ?? "" });
+    const title = status.error === "GATEWAY_BUSY" ? t2("update.busy") : status.state === "reloading" ? t2("update.reloadingHint") : status.state === "restart" ? t2("update.restartHint") : status.state === "failed" ? status.error === "MINIMUM_RELEASE_AGE" ? t2("update.tooNew") : status.error === "NETWORK" ? t2("update.network") : t2("update.failedHint", { error: status.error ?? "" }) : status.installable ? t2("update.hint", { current: status.current, latest: status.latest ?? "" }) : t2("update.manualHint", { current: status.current, latest: status.latest ?? "" });
     const act = (event) => {
       event.preventDefault();
       event.stopPropagation();

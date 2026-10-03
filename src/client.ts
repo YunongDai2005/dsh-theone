@@ -128,7 +128,8 @@ export function apply(ctx: Context) {
       : status.state === 'failed' ? t('update.failed') : t('update.available')
     const title = status.error === 'GATEWAY_BUSY' ? t('update.busy') : status.state === 'reloading' ? t('update.reloadingHint')
       : status.state === 'restart' ? t('update.restartHint')
-      : status.state === 'failed' ? t('update.failedHint', { error: status.error ?? '' })
+      : status.state === 'failed' ? (status.error === 'MINIMUM_RELEASE_AGE' ? t('update.tooNew') : status.error === 'NETWORK' ? t('update.network')
+        : t('update.failedHint', { error: status.error ?? '' }))
       : status.installable ? t('update.hint', { current: status.current, latest: status.latest ?? '' })
       : t('update.manualHint', { current: status.current, latest: status.latest ?? '' })
     const act = (event: React.SyntheticEvent) => {
