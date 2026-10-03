@@ -47,7 +47,7 @@ Each project gets its own background session that reasons, runs tools and compac
 - **Related work connects; unrelated work stays out.** Related topics share progress automatically and TheOne learns which ones belong together from how you use them. A topic's constraints (say, "budget figures stay out of the paper") are attached verbatim every time, so compaction never drops them.
 - **Gets better with use.** Say "wrong topic" or click **Move to…** in the directory, and similar messages go to the right place from then on.
 - **Your old sessions become a topic directory.** After install it reads your existing sessions in the background, turns them into topics grouped into workspaces, and you pick up where you left off.
-- **Nothing extra to configure.** No separate API key: routing and the background sessions use the model you chose in DSH. To switch, pick **TheOne · &lt;model&gt;** in main chat's model menu; it still routes through TheOne, with that model doing the work.
+- **Nothing extra to configure.** No separate API key: routing and the background sessions use the model you chose in DSH. When TheOne is the selected model, a **Background** button beside the model menu shows which model does the routing and the work, and switches it.
 
 ![TheOne main chat and topic workspaces](https://raw.githubusercontent.com/YunongDai2005/dsh-theone/main/docs/images/theone-topic-workspaces-en.png)
 

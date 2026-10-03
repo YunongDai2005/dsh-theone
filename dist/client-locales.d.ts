@@ -5,6 +5,15 @@ export declare const zh: {
     readonly 'gateway.opening': "正在打开 TheOne 主聊天…";
     readonly 'gateway.error': "主聊天暂时无法打开，请检查 DSH 连接和 TheOne 插件状态。";
     readonly retry: "重试";
+    readonly 'bg.label': "后台";
+    readonly 'bg.follow': "默认";
+    readonly 'bg.title': "后台模型：分配话题和干活都用它";
+    readonly 'bg.followItem': "跟随 DSH 默认模型";
+    readonly 'bg.hint': "后台模型：{model}。TheOne 分配话题和后台干活都用这个模型。";
+    readonly 'bg.hintFollow': "后台模型：{model}（跟随 DSH 默认模型）。点击可以固定为其他模型。";
+    readonly 'bg.search': "搜索模型";
+    readonly 'bg.none': "没有匹配的模型";
+    readonly 'bg.error': "后台模型没有切换成功，请重试。";
     readonly 'update.available': "更新";
     readonly 'update.installing': "更新中…";
     readonly 'update.restart': "重启生效";

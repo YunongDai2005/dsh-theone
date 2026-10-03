@@ -166,6 +166,7 @@ export default class TheOne extends Service {
     closing = new Map();
     /** A model the user picked in main chat's own model selector; it answers through the Workers. */
     pickedModel;
+    adapter;
     /** Update checks and one-click install through DSH's plugin manager. */
     updater;
     /** Sessions whose current step answers through TheOne; only these refuse to run tools themselves. */
@@ -231,7 +232,7 @@ export default class TheOne extends Service {
             this.catalog.start();
         }
         this.registerCatalogChannel();
-        ctx.llm.registerAdapter(['theone'], new GatewayAdapter(this));
+        this.adapter = ctx.llm.registerAdapter(['theone'], new GatewayAdapter(this));
         ctx.on('session/event', (session, event) => {
             if (event.type === 'turn/end') {
                 if (session.id === this.reservedGateway)
@@ -801,7 +802,14 @@ export default class TheOne extends Service {
         const { historyCatalog: _catalog, catalogIntervalMs: _interval, ...live } = settingsConfig(values);
         if (live.routerMode !== this.config.routerMode)
             this.router = this.routerFor(live.routerMode);
+        const modelChanged = live.workerProvider !== this.config.workerProvider || live.workerModel !== this.config.workerModel;
         this.config = { ...this.config, ...live };
+        // Main chat's reasoning levels and image input are the background model's; DSH re-reads them on this signal.
+        if (modelChanged)
+            try {
+                this.adapter?.replace(['theone']);
+            }
+            catch { /* Released during shutdown. */ }
         this.store.seed(descriptors);
     }
     /** Capture before Web saves the gateway itself as DSH's new default. */
@@ -828,18 +836,14 @@ export default class TheOne extends Service {
             .catch(() => [])));
         return listed.flat();
     }
-    /** Main chat's model menu: plain TheOne (follow DSH), then "TheOne · <model>" for every model DSH offers. */
+    /**
+     * Main chat's model menu has one TheOne entry; the background model is chosen with the button
+     * beside it. Selections of the older "TheOne · <model>" entries still resolve.
+     */
     async gatewayModels(provider) {
         // The entry accepts whatever the backing model accepts (e.g. images).
         const info = await this.gatewayModelInfo(provider).catch(() => undefined);
-        const models = [{ provider, id: 'gateway', name: 'TheOne', inputModalities: [...(info?.inputModalities ?? ['text'])] }];
-        // A model pinned in TheOne's settings decides for the Workers, so choices here would do nothing.
-        if (this.config.workerProvider && this.config.workerModel)
-            return models;
-        for (const model of await this.offeredModels())
-            models.push({ provider, id: viaModel({ provider: model.provider, model: model.id }), name: `TheOne · ${model.name}`,
-                ...(model.description ? { description: model.description } : {}), ...(model.inputModalities ? { inputModalities: [...model.inputModalities] } : {}) });
-        return models;
+        return [{ provider, id: 'gateway', name: 'TheOne', inputModalities: [...(info?.inputModalities ?? ['text'])] }];
     }
     /** The entry has exactly the backing model's capacity, including DSH overrides. */
     async gatewayModelInfo(provider = 'theone', signal, model = 'gateway') {

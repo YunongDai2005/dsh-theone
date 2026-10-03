@@ -248,6 +248,134 @@ export function apply(ctx: Context) {
       size === 16 && h(UpdateButton))
   }
 
+  /** Settings as the background-model button reads and writes them. */
+  const readSettings = async () => {
+    const response = await fetch('/api/theone/settings', { signal: lifetime.signal, cache: 'no-store' })
+    if (!response.ok) throw new Error('Settings unavailable')
+    return await response.json() as SettingsSnapshot
+  }
+  /** Pin (or with null, release) the background model; a concurrent edit elsewhere is retried once on fresh settings. */
+  const saveBackgroundModel = async (choice: { provider: string; model: string } | null) => {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const current = await readSettings()
+      const response = await fetch('/api/theone/settings', { method: 'PUT', signal: lifetime.signal, cache: 'no-store', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ revision: current.revision, values: { ...current.savedValues, workerProvider: choice?.provider ?? null, workerModel: choice?.model ?? null } }) })
+      if (response.ok) return await response.json() as SettingsSnapshot
+      if (response.status !== 409) break
+    }
+    throw new Error('Background model not saved')
+  }
+
+  type DirectoryStore = { subscribe(listener: () => void): () => void; getSnapshot(): { current: { provider: string; model: string } | null; pending: { provider: string; model: string } | null } }
+
+  /**
+   * Beside main chat's model button while TheOne is selected: which model does the routing and the
+   * background work. Following DSH uses the default model; picking one pins it, as in Settings.
+   */
+  function BackgroundModel({ directory }: { directory: DirectoryStore }) {
+    const t = useText()
+    const state = useSyncExternalStore(listener => directory.subscribe(listener), () => directory.getSnapshot())
+    const selection = state.pending ?? state.current
+    const theone = selection?.provider === 'theone'
+    const [settings, setSettings] = useState<SettingsSnapshot>()
+    const [failed, setFailed] = useState(false)
+    const [saving, setSaving] = useState(false)
+    const button = useRef<HTMLButtonElement>(null)
+    const closeMenu = useRef<() => void>()
+    useEffect(() => {
+      if (!theone) return
+      let alive = true
+      readSettings().then(value => { if (alive) setSettings(value) }, () => {})
+      return () => { alive = false; closeMenu.current?.() }
+    }, [theone])
+    if (!theone) return null
+    const pinned = settings?.values.workerProvider && settings.values.workerModel ? { provider: settings.values.workerProvider, model: settings.values.workerModel } : null
+    const nameOf = (provider: string, model: string) => settings?.models.find(item => item.provider === provider && item.id === model)?.name ?? model
+    const effective = settings?.model ? nameOf(settings.model.provider, settings.model.model) : undefined
+    // Following DSH still names the model doing the work.
+    const label = pinned ? nameOf(pinned.provider, pinned.model) : effective ?? t('bg.follow')
+    const choose = async (choice: { provider: string; model: string } | null) => {
+      closeMenu.current?.(); setSaving(true); setFailed(false)
+      try { setSettings(await saveBackgroundModel(choice)) } catch { setFailed(true) } finally { setSaving(false) }
+    }
+    const open = () => {
+      const anchor = button.current
+      if (!anchor || closeMenu.current) { closeMenu.current?.(); return }
+      const menu = document.createElement('div')
+      menu.className = 'theone-bg-menu'; menu.setAttribute('role', 'menu'); menu.setAttribute('translate', 'no'); menu.setAttribute('aria-label', t('bg.title'))
+      const heading = document.createElement('div'); heading.className = 'theone-bg-heading'; heading.textContent = t('bg.title')
+      const list = document.createElement('div'); list.className = 'theone-bg-list'
+      const models = (settings?.models ?? []).filter(item => item.provider !== 'theone')
+      const item = (text: string, sub: string | undefined, checked: boolean, pick: () => void) => {
+        const row = document.createElement('button')
+        row.type = 'button'; row.setAttribute('role', 'menuitemradio'); row.setAttribute('aria-checked', String(checked)); row.className = 'theone-bg-item'
+        const name = document.createElement('span'); name.textContent = text; row.append(name)
+        if (sub) { const small = document.createElement('small'); small.textContent = sub; row.append(small) }
+        const mark = document.createElement('span'); mark.className = 'theone-bg-check'; mark.textContent = checked ? '✓' : ''; row.append(mark)
+        row.addEventListener('click', pick)
+        return row
+      }
+      const render = (query: string) => {
+        list.replaceChildren(item(t('bg.followItem'), !pinned && effective ? effective : undefined, !pinned, () => { void choose(null) }))
+        const needle = query.trim().toLowerCase()
+        const matched = models.filter(model => !needle || `${model.name} ${model.id} ${model.provider}`.toLowerCase().includes(needle))
+        for (const provider of [...new Set(matched.map(model => model.provider))]) {
+          const group = document.createElement('div'); group.className = 'theone-bg-group'; group.textContent = provider; list.append(group)
+          for (const model of matched.filter(entry => entry.provider === provider))
+            list.append(item(model.name, model.name !== model.id ? model.id : undefined, pinned?.provider === model.provider && pinned.model === model.id, () => { void choose({ provider: model.provider, model: model.id }) }))
+        }
+        if (!matched.length && needle) { const empty = document.createElement('p'); empty.className = 'theone-bg-empty'; empty.textContent = t('bg.none'); list.append(empty) }
+      }
+      menu.append(heading)
+      let search: HTMLInputElement | undefined
+      if (models.length > 8) {
+        search = document.createElement('input'); search.type = 'search'; search.className = 'theone-bg-search'; search.placeholder = t('bg.search')
+        search.addEventListener('input', () => render(search!.value)); menu.append(search)
+      }
+      menu.append(list); render('')
+      document.body.append(menu)
+      anchor.setAttribute('aria-expanded', 'true')
+      const place = () => {
+        const bounds = anchor.getBoundingClientRect(), size = menu.getBoundingClientRect()
+        menu.style.left = `${Math.max(8, Math.min(bounds.right - size.width, window.innerWidth - size.width - 8))}px`
+        menu.style.top = `${Math.max(8, bounds.top - size.height - 8)}px`
+      }
+      place()
+      const rows = () => [...menu.querySelectorAll<HTMLButtonElement>('.theone-bg-item')]
+      const outside = (event: PointerEvent) => { if (!menu.contains(event.target as Node) && !anchor.contains(event.target as Node)) close() }
+      const keydown = (event: KeyboardEvent) => {
+        if (event.key === 'Escape') { event.preventDefault(); close(); anchor.focus() }
+        else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+          event.preventDefault()
+          const all = rows(), index = all.indexOf(document.activeElement as HTMLButtonElement)
+          all[(index + (event.key === 'ArrowDown' ? 1 : all.length - 1) + (index < 0 && event.key === 'ArrowUp' ? 1 : 0)) % all.length]?.focus()
+        }
+      }
+      const close = () => {
+        menu.remove(); closeMenu.current = undefined; anchor.setAttribute('aria-expanded', 'false')
+        document.removeEventListener('pointerdown', outside, true); document.removeEventListener('keydown', keydown, true)
+        window.removeEventListener('resize', close); window.removeEventListener('blur', close)
+      }
+      closeMenu.current = close
+      document.addEventListener('pointerdown', outside, true); document.addEventListener('keydown', keydown, true)
+      window.addEventListener('resize', close); window.addEventListener('blur', close)
+      ;(search ?? rows().find(row => row.getAttribute('aria-checked') === 'true') ?? rows()[0])?.focus()
+    }
+    const title = failed ? t('bg.error') : t(pinned ? 'bg.hint' : 'bg.hintFollow', { model: label })
+    return h('button', { ref: button, type: 'button', className: 'theone-bg', title, 'aria-label': title, 'aria-haspopup': 'menu', 'data-failed': failed, disabled: saving,
+      onClick: () => { if (settings) open(); else readSettings().then(value => { setSettings(value) }, () => setFailed(true)) } },
+      h('span', { className: 'theone-bg-caption' }, t('bg.label')),
+      h('span', { className: 'theone-bg-text' }, label),
+      h('span', { className: 'theone-bg-chevron', 'aria-hidden': true }, saving ? '…' : '⌃'))
+  }
+
+  // Beside main chat's model button, only while TheOne is the selected model.
+  ctx.inject(['slots', 'modelDirectories'], scope => {
+    const slots = scope.slots as unknown as { inject(name: string, factory: () => () => void): void; register(options: Record<string, unknown>, component: unknown): () => void }
+    slots.inject('conversation.input.right', () => slots.register({ name: 'conversation.input.right', id: 'theone.background-model', order: 100,
+      inject: (sessionId: SessionId) => ({ directory: scope.modelDirectories.directoryFor(sessionId).store }) }, BackgroundModel))
+  })
+
   function GatewayPanel() {
     const t = useText()
     const [error,setError] = useState<TheOneLocaleKey>()
@@ -643,7 +771,7 @@ export function apply(ctx: Context) {
   ctx.effect(() => {
     const style = document.createElement('style')
     style.dataset.plugin = 'dsh-theone'
-    style.textContent = sidebarCss + catalogCss + settingsCss
+    style.textContent = sidebarCss + catalogCss + settingsCss + composerCss
     document.head.append(style)
     return () => { lifetime.abort(); style.remove() }
   })
@@ -722,6 +850,29 @@ const catalogCss = `
 button:has(.theone-catalog-entry)>span:not(:has(.theone-catalog-entry)){display:none}
 .theone-catalog{padding:32px;max-width:1180px;margin:auto;box-sizing:border-box;height:100%;overflow:auto;color:var(--dsw-alias-label-primary)}
 .theone-catalog-header{display:flex;justify-content:space-between;align-items:center;gap:16px}.theone-catalog h1{font-size:24px;margin:0 0 8px}.theone-catalog-header p,.theone-catalog-status,.theone-group-summary{opacity:.65;margin:0 0 18px;line-height:1.6}.theone-catalog button{border:1px solid #8883;border-radius:9px;padding:8px 13px;background:transparent;color:inherit;cursor:pointer;font:inherit;white-space:nowrap}.theone-catalog button:disabled{opacity:.5;cursor:default}.theone-catalog-groups{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,310px),1fr));gap:20px}.theone-topic-group{border:1px solid #8882;border-radius:16px;padding:20px;background:#88805}.theone-topic-group h2{font-size:18px;margin:0 0 8px}.theone-topic-group h2 span{font-size:13px;opacity:.5}.theone-topic-card{border-top:1px solid #8882;padding:16px 0}.theone-topic-card:last-child{padding-bottom:0}.theone-topic-card h3{font-size:15px;line-height:1.5;margin:0 0 7px}.theone-topic-card p{font-size:13px;line-height:1.7;opacity:.75;margin:0 0 12px;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}.theone-topic-actions{display:flex;gap:8px;flex-wrap:wrap}.theone-topic-actions button{font-size:12px}.theone-topic-actions .theone-source-link{border-color:transparent;opacity:.6}.theone-catalog-warning{background:#ff900011;padding:12px;border-radius:10px;font-size:13px}.theone-catalog-entry{display:flex;align-items:center;gap:10px;font-size:14px}.theone-catalog-empty{padding:40px 0;opacity:.65;line-height:1.8}.theone-catalog-tools{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.theone-topic-links{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 12px;font-size:12px}.theone-links-label,.theone-links-empty{opacity:.6}.theone-link-chip{display:inline-flex;align-items:center;gap:2px;border:1px solid #8883;border-radius:999px;padding:2px 4px 2px 9px}.theone-catalog .theone-link-chip button{border:0;padding:0 5px;opacity:.6;font-size:13px;line-height:1}.theone-topic-links select{font:inherit;font-size:12px;color:inherit;background:transparent;border:1px solid #8883;border-radius:8px;padding:2px 6px}.theone-link-private{display:inline-flex;align-items:center;gap:4px;opacity:.75;cursor:pointer}.theone-topic-card .theone-topic-state{font-size:12px;opacity:.8;-webkit-line-clamp:3}.theone-topic-state span{opacity:.6;margin-right:4px}.theone-manage{display:flex;flex-direction:column;gap:10px;margin-top:12px;padding:14px;border:1px solid #8883;border-radius:12px;font-size:12px}.theone-create{flex-direction:row;flex-wrap:wrap;align-items:center;margin:0 0 18px}.theone-create input{flex:1;min-width:180px}.theone-manage-field{display:flex;flex-direction:column;gap:5px}.theone-manage-field>span{opacity:.65}.theone-manage input,.theone-manage textarea,.theone-manage select,.theone-routes select{font:inherit;font-size:12px;color:inherit;background:transparent;border:1px solid #8883;border-radius:8px;padding:6px 8px;box-sizing:border-box;min-width:0}.theone-manage textarea{resize:vertical;width:100%}.theone-manage-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.theone-manage-row select,.theone-manage-row input{flex:1;min-width:140px}.theone-manage-hint{opacity:.6;font-size:12px;line-height:1.6;margin:0}.theone-catalog .theone-danger{color:#c4402f;border-color:#c4402f55}.theone-routes{border:1px solid #8882;border-radius:16px;padding:14px 20px;margin:0 0 20px}.theone-routes summary{cursor:pointer;font-weight:500}.theone-routes summary span{opacity:.5;font-size:13px}.theone-routes ol{list-style:none;margin:12px 0 0;padding:0;display:flex;flex-direction:column;gap:10px}.theone-routes li{border-top:1px solid #8882;padding-top:10px;font-size:12px;display:flex;flex-direction:column;gap:5px}.theone-route-head{display:flex;gap:10px;min-width:0}.theone-route-head time{opacity:.55;flex:none}.theone-route-head q{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.theone-route-body{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.theone-route-body small{opacity:.6}.theone-route-fixed{opacity:.75}@media(max-width:640px){.theone-catalog{padding:20px}.theone-catalog-header{align-items:flex-start}.theone-catalog-header h1{font-size:21px}}
+`
+
+const composerCss = `
+.theone-bg{display:inline-flex;align-items:center;gap:5px;height:32px;padding:0 10px;border:0;border-radius:10px;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:14px;white-space:nowrap;cursor:pointer;max-width:220px}
+.theone-bg:hover,.theone-bg[aria-expanded=true]{background:var(--dsw-alias-interactive-bg-hover)}
+.theone-bg:focus-visible{outline:2px solid var(--dsw-focus-ring-color,#4a7fb5);outline-offset:1px}
+.theone-bg:disabled{opacity:.6;cursor:default}
+.theone-bg-caption,.theone-bg-chevron{color:var(--dsw-alias-label-secondary)}
+.theone-bg-text{overflow:hidden;text-overflow:ellipsis;display:var(--dsh-composer-model-text-display,inline)}
+.theone-bg-chevron{font-size:11px}
+.theone-bg[data-failed=true] .theone-bg-caption{color:#d9480f}
+.theone-bg-menu{position:fixed;z-index:10000;width:280px;max-height:min(420px,70vh);display:flex;flex-direction:column;padding:6px;border:1px solid var(--dsw-alias-border-l2);border-radius:14px;background:var(--dsw-specific-sidebar-fill);color:var(--dsw-alias-label-primary);box-shadow:0 10px 32px #0003;font:inherit;font-size:14px;box-sizing:border-box}
+.theone-bg-heading{padding:8px 10px 6px;font-size:12px;color:var(--dsw-alias-label-secondary)}
+.theone-bg-search{margin:0 4px 6px;padding:7px 10px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:transparent;color:inherit;font:inherit;font-size:13px;outline:none}
+.theone-bg-search:focus{border-color:var(--dsw-focus-ring-color,#4a7fb5)}
+.theone-bg-list{overflow:auto;min-height:0}
+.theone-bg-group{padding:8px 10px 4px;font-size:12px;color:var(--dsw-alias-label-secondary)}
+.theone-bg-item{display:flex;align-items:center;gap:8px;width:100%;padding:9px 10px;border:0;border-radius:8px;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}
+.theone-bg-item:hover,.theone-bg-item:focus-visible{outline:none;background:var(--dsw-alias-interactive-bg-hover)}
+.theone-bg-item span:first-child{flex:0 1 auto;min-width:40px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.theone-bg-item small{flex:0 100 auto;color:var(--dsw-alias-label-secondary);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.theone-bg-check{margin-left:auto;flex:none;width:14px;text-align:center;color:var(--dsw-alias-label-primary)}
+.theone-bg-empty{margin:8px 10px;font-size:13px;color:var(--dsw-alias-label-secondary)}
 `
 
 const settingsCss = `

@@ -136,7 +136,7 @@ test('a session that used TheOne and switched back to an ordinary model runs its
   } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
 })
 
-test('main chat lists "TheOne · <model>" for every model; picking one routes and works with it', { timeout: 30000 }, async () => {
+test('the TheOne menu has one entry; older "TheOne · <model>" selections still route and work with that model', { timeout: 30000 }, async () => {
   class ListedModel extends VisionReasoningModel {
     override async listModels(provider: string) {
       return [{ provider, id: 'fixture', name: 'Fixture' }, { provider, id: 'fixture-b', name: 'Fixture B', inputModalities: ['text' as const] }]
@@ -150,9 +150,8 @@ test('main chat lists "TheOne · <model>" for every model; picking one routes an
   }
   const app = await harness(root, model, { routerMode: 'llm', autoModel: true })
   try {
-    const listed = await app.ctx.llm.listModels('theone')
-    assert.deepEqual(listed.map(entry => [entry.id, entry.name]), [
-      ['gateway', 'TheOne'], ['via:fixture/fixture', 'TheOne · Fixture'], ['via:fixture/fixture-b', 'TheOne · Fixture B']])
+    // The background model is chosen with the button beside the model menu, not in it.
+    assert.deepEqual((await app.ctx.llm.listModels('theone')).map(entry => entry.id), ['gateway'])
     const info = await app.ctx.llm.resolveModelInfo('theone', 'via:fixture/fixture-b')
     assert.equal(info.name, 'TheOne · fixture-b')
     assert.deepEqual(info.reasoning?.efforts.map(effort => effort.id), ['off', 'high'])
@@ -161,11 +160,6 @@ test('main chat lists "TheOne · <model>" for every model; picking one routes an
       agentOptions: { provider: 'theone', model: 'via:fixture/fixture-b' } })).agent
     app.ctx.theone.store.rememberGateway('test-gateway', chat.id)
     assert.equal((await ask(chat, 'Qwen 那个')).output, '好')
-    // Routing and the background both ran on the picked model; main chat stayed TheOne.
     assert.deepEqual(model.requests.map(request => request.model), ['fixture-b', 'fixture-b'])
-    // A model pinned in TheOne's settings decides instead, so the menu offers only TheOne.
-    const pinned = await harness(join(root, 'pinned'), new ListedModel())
-    try { assert.deepEqual((await pinned.ctx.llm.listModels('theone')).map(entry => entry.id), ['gateway']) }
-    finally { await pinned.close() }
   } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
 })

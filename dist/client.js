@@ -88,6 +88,15 @@ var zh = {
   "gateway.opening": "\u6B63\u5728\u6253\u5F00 TheOne \u4E3B\u804A\u5929\u2026",
   "gateway.error": "\u4E3B\u804A\u5929\u6682\u65F6\u65E0\u6CD5\u6253\u5F00\uFF0C\u8BF7\u68C0\u67E5 DSH \u8FDE\u63A5\u548C TheOne \u63D2\u4EF6\u72B6\u6001\u3002",
   "retry": "\u91CD\u8BD5",
+  "bg.label": "\u540E\u53F0",
+  "bg.follow": "\u9ED8\u8BA4",
+  "bg.title": "\u540E\u53F0\u6A21\u578B\uFF1A\u5206\u914D\u8BDD\u9898\u548C\u5E72\u6D3B\u90FD\u7528\u5B83",
+  "bg.followItem": "\u8DDF\u968F DSH \u9ED8\u8BA4\u6A21\u578B",
+  "bg.hint": "\u540E\u53F0\u6A21\u578B\uFF1A{model}\u3002TheOne \u5206\u914D\u8BDD\u9898\u548C\u540E\u53F0\u5E72\u6D3B\u90FD\u7528\u8FD9\u4E2A\u6A21\u578B\u3002",
+  "bg.hintFollow": "\u540E\u53F0\u6A21\u578B\uFF1A{model}\uFF08\u8DDF\u968F DSH \u9ED8\u8BA4\u6A21\u578B\uFF09\u3002\u70B9\u51FB\u53EF\u4EE5\u56FA\u5B9A\u4E3A\u5176\u4ED6\u6A21\u578B\u3002",
+  "bg.search": "\u641C\u7D22\u6A21\u578B",
+  "bg.none": "\u6CA1\u6709\u5339\u914D\u7684\u6A21\u578B",
+  "bg.error": "\u540E\u53F0\u6A21\u578B\u6CA1\u6709\u5207\u6362\u6210\u529F\uFF0C\u8BF7\u91CD\u8BD5\u3002",
   "update.available": "\u66F4\u65B0",
   "update.installing": "\u66F4\u65B0\u4E2D\u2026",
   "update.restart": "\u91CD\u542F\u751F\u6548",
@@ -268,6 +277,15 @@ var en = {
   "gateway.opening": "Opening TheOne main chat\u2026",
   "gateway.error": "Main chat could not open. Check your DSH connection and TheOne plugin status.",
   "retry": "Retry",
+  "bg.label": "Background",
+  "bg.follow": "Default",
+  "bg.title": "Background model: routes and does the work",
+  "bg.followItem": "Follow DSH's default model",
+  "bg.hint": "Background model: {model}. TheOne routes and does the background work with it.",
+  "bg.hintFollow": "Background model: {model} (following DSH's default). Click to pin another model.",
+  "bg.search": "Search models",
+  "bg.none": "No matching models",
+  "bg.error": "The background model was not switched. Try again.",
   "update.available": "Update",
   "update.installing": "Updating\u2026",
   "update.restart": "Restart to apply",
@@ -733,6 +751,210 @@ function apply(ctx) {
       size === 16 && (0, import_react.createElement)(UpdateButton)
     );
   }
+  const readSettings = async () => {
+    const response = await fetch("/api/theone/settings", { signal: lifetime.signal, cache: "no-store" });
+    if (!response.ok) throw new Error("Settings unavailable");
+    return await response.json();
+  };
+  const saveBackgroundModel = async (choice) => {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const current = await readSettings();
+      const response = await fetch("/api/theone/settings", {
+        method: "PUT",
+        signal: lifetime.signal,
+        cache: "no-store",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ revision: current.revision, values: { ...current.savedValues, workerProvider: choice?.provider ?? null, workerModel: choice?.model ?? null } })
+      });
+      if (response.ok) return await response.json();
+      if (response.status !== 409) break;
+    }
+    throw new Error("Background model not saved");
+  };
+  function BackgroundModel({ directory }) {
+    const t2 = useText();
+    const state = (0, import_react.useSyncExternalStore)((listener) => directory.subscribe(listener), () => directory.getSnapshot());
+    const selection = state.pending ?? state.current;
+    const theone = selection?.provider === "theone";
+    const [settings, setSettings] = (0, import_react.useState)();
+    const [failed, setFailed] = (0, import_react.useState)(false);
+    const [saving, setSaving] = (0, import_react.useState)(false);
+    const button = (0, import_react.useRef)(null);
+    const closeMenu = (0, import_react.useRef)();
+    (0, import_react.useEffect)(() => {
+      if (!theone) return;
+      let alive = true;
+      readSettings().then((value) => {
+        if (alive) setSettings(value);
+      }, () => {
+      });
+      return () => {
+        alive = false;
+        closeMenu.current?.();
+      };
+    }, [theone]);
+    if (!theone) return null;
+    const pinned = settings?.values.workerProvider && settings.values.workerModel ? { provider: settings.values.workerProvider, model: settings.values.workerModel } : null;
+    const nameOf = (provider, model) => settings?.models.find((item) => item.provider === provider && item.id === model)?.name ?? model;
+    const effective = settings?.model ? nameOf(settings.model.provider, settings.model.model) : void 0;
+    const label = pinned ? nameOf(pinned.provider, pinned.model) : effective ?? t2("bg.follow");
+    const choose = async (choice) => {
+      closeMenu.current?.();
+      setSaving(true);
+      setFailed(false);
+      try {
+        setSettings(await saveBackgroundModel(choice));
+      } catch {
+        setFailed(true);
+      } finally {
+        setSaving(false);
+      }
+    };
+    const open = () => {
+      const anchor = button.current;
+      if (!anchor || closeMenu.current) {
+        closeMenu.current?.();
+        return;
+      }
+      const menu = document.createElement("div");
+      menu.className = "theone-bg-menu";
+      menu.setAttribute("role", "menu");
+      menu.setAttribute("translate", "no");
+      menu.setAttribute("aria-label", t2("bg.title"));
+      const heading = document.createElement("div");
+      heading.className = "theone-bg-heading";
+      heading.textContent = t2("bg.title");
+      const list = document.createElement("div");
+      list.className = "theone-bg-list";
+      const models = (settings?.models ?? []).filter((item2) => item2.provider !== "theone");
+      const item = (text, sub, checked, pick) => {
+        const row = document.createElement("button");
+        row.type = "button";
+        row.setAttribute("role", "menuitemradio");
+        row.setAttribute("aria-checked", String(checked));
+        row.className = "theone-bg-item";
+        const name = document.createElement("span");
+        name.textContent = text;
+        row.append(name);
+        if (sub) {
+          const small = document.createElement("small");
+          small.textContent = sub;
+          row.append(small);
+        }
+        const mark = document.createElement("span");
+        mark.className = "theone-bg-check";
+        mark.textContent = checked ? "\u2713" : "";
+        row.append(mark);
+        row.addEventListener("click", pick);
+        return row;
+      };
+      const render = (query) => {
+        list.replaceChildren(item(t2("bg.followItem"), !pinned && effective ? effective : void 0, !pinned, () => {
+          void choose(null);
+        }));
+        const needle = query.trim().toLowerCase();
+        const matched = models.filter((model) => !needle || `${model.name} ${model.id} ${model.provider}`.toLowerCase().includes(needle));
+        for (const provider of [...new Set(matched.map((model) => model.provider))]) {
+          const group = document.createElement("div");
+          group.className = "theone-bg-group";
+          group.textContent = provider;
+          list.append(group);
+          for (const model of matched.filter((entry) => entry.provider === provider))
+            list.append(item(model.name, model.name !== model.id ? model.id : void 0, pinned?.provider === model.provider && pinned.model === model.id, () => {
+              void choose({ provider: model.provider, model: model.id });
+            }));
+        }
+        if (!matched.length && needle) {
+          const empty = document.createElement("p");
+          empty.className = "theone-bg-empty";
+          empty.textContent = t2("bg.none");
+          list.append(empty);
+        }
+      };
+      menu.append(heading);
+      let search;
+      if (models.length > 8) {
+        search = document.createElement("input");
+        search.type = "search";
+        search.className = "theone-bg-search";
+        search.placeholder = t2("bg.search");
+        search.addEventListener("input", () => render(search.value));
+        menu.append(search);
+      }
+      menu.append(list);
+      render("");
+      document.body.append(menu);
+      anchor.setAttribute("aria-expanded", "true");
+      const place = () => {
+        const bounds = anchor.getBoundingClientRect(), size = menu.getBoundingClientRect();
+        menu.style.left = `${Math.max(8, Math.min(bounds.right - size.width, window.innerWidth - size.width - 8))}px`;
+        menu.style.top = `${Math.max(8, bounds.top - size.height - 8)}px`;
+      };
+      place();
+      const rows = () => [...menu.querySelectorAll(".theone-bg-item")];
+      const outside = (event) => {
+        if (!menu.contains(event.target) && !anchor.contains(event.target)) close();
+      };
+      const keydown = (event) => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          close();
+          anchor.focus();
+        } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+          event.preventDefault();
+          const all = rows(), index = all.indexOf(document.activeElement);
+          all[(index + (event.key === "ArrowDown" ? 1 : all.length - 1) + (index < 0 && event.key === "ArrowUp" ? 1 : 0)) % all.length]?.focus();
+        }
+      };
+      const close = () => {
+        menu.remove();
+        closeMenu.current = void 0;
+        anchor.setAttribute("aria-expanded", "false");
+        document.removeEventListener("pointerdown", outside, true);
+        document.removeEventListener("keydown", keydown, true);
+        window.removeEventListener("resize", close);
+        window.removeEventListener("blur", close);
+      };
+      closeMenu.current = close;
+      document.addEventListener("pointerdown", outside, true);
+      document.addEventListener("keydown", keydown, true);
+      window.addEventListener("resize", close);
+      window.addEventListener("blur", close);
+      (search ?? rows().find((row) => row.getAttribute("aria-checked") === "true") ?? rows()[0])?.focus();
+    };
+    const title = failed ? t2("bg.error") : t2(pinned ? "bg.hint" : "bg.hintFollow", { model: label });
+    return (0, import_react.createElement)(
+      "button",
+      {
+        ref: button,
+        type: "button",
+        className: "theone-bg",
+        title,
+        "aria-label": title,
+        "aria-haspopup": "menu",
+        "data-failed": failed,
+        disabled: saving,
+        onClick: () => {
+          if (settings) open();
+          else readSettings().then((value) => {
+            setSettings(value);
+          }, () => setFailed(true));
+        }
+      },
+      (0, import_react.createElement)("span", { className: "theone-bg-caption" }, t2("bg.label")),
+      (0, import_react.createElement)("span", { className: "theone-bg-text" }, label),
+      (0, import_react.createElement)("span", { className: "theone-bg-chevron", "aria-hidden": true }, saving ? "\u2026" : "\u2303")
+    );
+  }
+  ctx.inject(["slots", "modelDirectories"], (scope) => {
+    const slots = scope.slots;
+    slots.inject("conversation.input.right", () => slots.register({
+      name: "conversation.input.right",
+      id: "theone.background-model",
+      order: 100,
+      inject: (sessionId) => ({ directory: scope.modelDirectories.directoryFor(sessionId).store })
+    }, BackgroundModel));
+  });
   function GatewayPanel() {
     const t2 = useText();
     const [error, setError] = (0, import_react.useState)();
@@ -1415,7 +1637,7 @@ function apply(ctx) {
   ctx.effect(() => {
     const style = document.createElement("style");
     style.dataset.plugin = "dsh-theone";
-    style.textContent = sidebarCss + catalogCss + settingsCss;
+    style.textContent = sidebarCss + catalogCss + settingsCss + composerCss;
     document.head.append(style);
     return () => {
       lifetime.abort();
@@ -1493,6 +1715,28 @@ var catalogCss = `
 button:has(.theone-catalog-entry)>span:not(:has(.theone-catalog-entry)){display:none}
 .theone-catalog{padding:32px;max-width:1180px;margin:auto;box-sizing:border-box;height:100%;overflow:auto;color:var(--dsw-alias-label-primary)}
 .theone-catalog-header{display:flex;justify-content:space-between;align-items:center;gap:16px}.theone-catalog h1{font-size:24px;margin:0 0 8px}.theone-catalog-header p,.theone-catalog-status,.theone-group-summary{opacity:.65;margin:0 0 18px;line-height:1.6}.theone-catalog button{border:1px solid #8883;border-radius:9px;padding:8px 13px;background:transparent;color:inherit;cursor:pointer;font:inherit;white-space:nowrap}.theone-catalog button:disabled{opacity:.5;cursor:default}.theone-catalog-groups{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,310px),1fr));gap:20px}.theone-topic-group{border:1px solid #8882;border-radius:16px;padding:20px;background:#88805}.theone-topic-group h2{font-size:18px;margin:0 0 8px}.theone-topic-group h2 span{font-size:13px;opacity:.5}.theone-topic-card{border-top:1px solid #8882;padding:16px 0}.theone-topic-card:last-child{padding-bottom:0}.theone-topic-card h3{font-size:15px;line-height:1.5;margin:0 0 7px}.theone-topic-card p{font-size:13px;line-height:1.7;opacity:.75;margin:0 0 12px;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}.theone-topic-actions{display:flex;gap:8px;flex-wrap:wrap}.theone-topic-actions button{font-size:12px}.theone-topic-actions .theone-source-link{border-color:transparent;opacity:.6}.theone-catalog-warning{background:#ff900011;padding:12px;border-radius:10px;font-size:13px}.theone-catalog-entry{display:flex;align-items:center;gap:10px;font-size:14px}.theone-catalog-empty{padding:40px 0;opacity:.65;line-height:1.8}.theone-catalog-tools{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.theone-topic-links{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 12px;font-size:12px}.theone-links-label,.theone-links-empty{opacity:.6}.theone-link-chip{display:inline-flex;align-items:center;gap:2px;border:1px solid #8883;border-radius:999px;padding:2px 4px 2px 9px}.theone-catalog .theone-link-chip button{border:0;padding:0 5px;opacity:.6;font-size:13px;line-height:1}.theone-topic-links select{font:inherit;font-size:12px;color:inherit;background:transparent;border:1px solid #8883;border-radius:8px;padding:2px 6px}.theone-link-private{display:inline-flex;align-items:center;gap:4px;opacity:.75;cursor:pointer}.theone-topic-card .theone-topic-state{font-size:12px;opacity:.8;-webkit-line-clamp:3}.theone-topic-state span{opacity:.6;margin-right:4px}.theone-manage{display:flex;flex-direction:column;gap:10px;margin-top:12px;padding:14px;border:1px solid #8883;border-radius:12px;font-size:12px}.theone-create{flex-direction:row;flex-wrap:wrap;align-items:center;margin:0 0 18px}.theone-create input{flex:1;min-width:180px}.theone-manage-field{display:flex;flex-direction:column;gap:5px}.theone-manage-field>span{opacity:.65}.theone-manage input,.theone-manage textarea,.theone-manage select,.theone-routes select{font:inherit;font-size:12px;color:inherit;background:transparent;border:1px solid #8883;border-radius:8px;padding:6px 8px;box-sizing:border-box;min-width:0}.theone-manage textarea{resize:vertical;width:100%}.theone-manage-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.theone-manage-row select,.theone-manage-row input{flex:1;min-width:140px}.theone-manage-hint{opacity:.6;font-size:12px;line-height:1.6;margin:0}.theone-catalog .theone-danger{color:#c4402f;border-color:#c4402f55}.theone-routes{border:1px solid #8882;border-radius:16px;padding:14px 20px;margin:0 0 20px}.theone-routes summary{cursor:pointer;font-weight:500}.theone-routes summary span{opacity:.5;font-size:13px}.theone-routes ol{list-style:none;margin:12px 0 0;padding:0;display:flex;flex-direction:column;gap:10px}.theone-routes li{border-top:1px solid #8882;padding-top:10px;font-size:12px;display:flex;flex-direction:column;gap:5px}.theone-route-head{display:flex;gap:10px;min-width:0}.theone-route-head time{opacity:.55;flex:none}.theone-route-head q{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.theone-route-body{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.theone-route-body small{opacity:.6}.theone-route-fixed{opacity:.75}@media(max-width:640px){.theone-catalog{padding:20px}.theone-catalog-header{align-items:flex-start}.theone-catalog-header h1{font-size:21px}}
+`;
+var composerCss = `
+.theone-bg{display:inline-flex;align-items:center;gap:5px;height:32px;padding:0 10px;border:0;border-radius:10px;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:14px;white-space:nowrap;cursor:pointer;max-width:220px}
+.theone-bg:hover,.theone-bg[aria-expanded=true]{background:var(--dsw-alias-interactive-bg-hover)}
+.theone-bg:focus-visible{outline:2px solid var(--dsw-focus-ring-color,#4a7fb5);outline-offset:1px}
+.theone-bg:disabled{opacity:.6;cursor:default}
+.theone-bg-caption,.theone-bg-chevron{color:var(--dsw-alias-label-secondary)}
+.theone-bg-text{overflow:hidden;text-overflow:ellipsis;display:var(--dsh-composer-model-text-display,inline)}
+.theone-bg-chevron{font-size:11px}
+.theone-bg[data-failed=true] .theone-bg-caption{color:#d9480f}
+.theone-bg-menu{position:fixed;z-index:10000;width:280px;max-height:min(420px,70vh);display:flex;flex-direction:column;padding:6px;border:1px solid var(--dsw-alias-border-l2);border-radius:14px;background:var(--dsw-specific-sidebar-fill);color:var(--dsw-alias-label-primary);box-shadow:0 10px 32px #0003;font:inherit;font-size:14px;box-sizing:border-box}
+.theone-bg-heading{padding:8px 10px 6px;font-size:12px;color:var(--dsw-alias-label-secondary)}
+.theone-bg-search{margin:0 4px 6px;padding:7px 10px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:transparent;color:inherit;font:inherit;font-size:13px;outline:none}
+.theone-bg-search:focus{border-color:var(--dsw-focus-ring-color,#4a7fb5)}
+.theone-bg-list{overflow:auto;min-height:0}
+.theone-bg-group{padding:8px 10px 4px;font-size:12px;color:var(--dsw-alias-label-secondary)}
+.theone-bg-item{display:flex;align-items:center;gap:8px;width:100%;padding:9px 10px;border:0;border-radius:8px;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}
+.theone-bg-item:hover,.theone-bg-item:focus-visible{outline:none;background:var(--dsw-alias-interactive-bg-hover)}
+.theone-bg-item span:first-child{flex:0 1 auto;min-width:40px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.theone-bg-item small{flex:0 100 auto;color:var(--dsw-alias-label-secondary);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.theone-bg-check{margin-left:auto;flex:none;width:14px;text-align:center;color:var(--dsw-alias-label-primary)}
+.theone-bg-empty{margin:8px 10px;font-size:13px;color:var(--dsw-alias-label-secondary)}
 `;
 var settingsCss = `
 .theone-settings{--one-settings-accent:#a75b1e}[data-ds-dark-theme] .theone-settings{--one-settings-accent:#93c8f3}

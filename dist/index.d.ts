@@ -76,6 +76,7 @@ export default class TheOne extends Service {
     private readonly closing;
     /** A model the user picked in main chat's own model selector; it answers through the Workers. */
     private pickedModel?;
+    private adapter?;
     /** Update checks and one-click install through DSH's plugin manager. */
     readonly updater: Updater;
     /** Sessions whose current step answers through TheOne; only these refuse to run tools themselves. */
@@ -97,7 +98,10 @@ export default class TheOne extends Service {
     private backingModel;
     /** Every model DSH offers besides TheOne; a provider that cannot list its models in time offers none. */
     private offeredModels;
-    /** Main chat's model menu: plain TheOne (follow DSH), then "TheOne · <model>" for every model DSH offers. */
+    /**
+     * Main chat's model menu has one TheOne entry; the background model is chosen with the button
+     * beside it. Selections of the older "TheOne · <model>" entries still resolve.
+     */
     gatewayModels(provider: string): Promise<LlmModelInfo[]>;
     /** The entry has exactly the backing model's capacity, including DSH overrides. */
     gatewayModelInfo(provider?: string, signal?: AbortSignal, model?: string): Promise<LlmResolvedModelInfo>;

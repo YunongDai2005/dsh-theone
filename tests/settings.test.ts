@@ -159,3 +159,22 @@ test('saved settings load with retired keys, and an unreadable saved catalog fil
     assert.equal((await app.ctx.theone.settingsSnapshot()).values.maxResponseChars, 100000)
   } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
 })
+
+test('pinning the background model tells DSH to re-read main chat\'s model details', { timeout: 30000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'theone-settings-signal-'))
+  const app = await harness(root, new CapacityModel(), { autoModel: true })
+  try {
+    let updates = 0
+    (app.ctx.on as unknown as (name: string, listener: () => void) => void)('llm/adapters-updated', () => { updates++ })
+    const connection = new HostConnectionService(app.ctx, [], undefined as never)
+    const handler = connection.createSharedFetchHandler('/api')
+    await new Promise<void>(resolve => setImmediate(resolve))
+    const put = async (values: unknown, revision: number) => handler.fetch(new Request('http://dsh.internal/api/theone/settings', {
+      method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ values, revision }) }))
+    const initial = await app.ctx.theone.settingsSnapshot()
+    assert.equal((await put({ ...initial.savedValues, maxResponseChars: 5000 }, 0)).status, 200)
+    assert.equal(updates, 0)
+    assert.equal((await put({ ...initial.savedValues, maxResponseChars: 5000, workerProvider: 'fixture', workerModel: 'fixture-b' }, 1)).status, 200)
+    assert.equal(updates, 1)
+  } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
+})
