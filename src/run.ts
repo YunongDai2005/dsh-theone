@@ -40,6 +40,8 @@ export class WorkerRun {
       if (agent.id !== worker.id) return
       if (frame.type === 'start') {
         const attempt: Attempt = { id: frame.attemptId, chunks: [] }
+        // The limit applies per step: a long multi-step task is not cut off by its total length.
+        this.characters = 0
         const last = this.steps.at(-1)
         // A new attempt for the same step is the Worker retrying it.
         if (last && last.turn === frame.turn && last.step === frame.step) last.attempt = attempt

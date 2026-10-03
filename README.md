@@ -84,7 +84,11 @@ This changes the gateway checkpoint, not workers' ordinary DSH compaction. It ac
 
 Each Worker step appears in main chat as one native step, as it is generated: the model's thinking in its usual place from the first token, reply text, and tool calls as DSH's own tool cards with their results. Main chat never runs those tools: its cards resolve with the Worker's outcome and skip hooks and permission policy, so every tool runs exactly once, in the Worker. A tool that needs approval asks on its card in main chat; a question the Worker asks the user (`ask_user_question`) is also answered there. The Worker's todo list shows in main chat as well.
 
-When the Worker retries a step, main chat redoes that attempt as a native retry does, so only the reply that succeeded is kept. Steering typed during a reply reaches the Worker at its next step and appears between the steps; queued messages wait for their own turn and are routed then. Cancelling stops the Worker. The response character limit covers reasoning and answer text. A provider that returns the answer as one chunk shows no intermediate text.
+When the Worker retries a step, main chat redoes that attempt as a native retry does, so only the reply that succeeded is kept. Steering typed during a reply reaches the Worker at its next step and appears between the steps; queued messages wait for their own turn and are routed then. Cancelling stops the Worker. The reply character limit applies to each step, reasoning included, so long multi-step tasks are not cut off by their total length. A provider that returns the answer as one chunk shows no intermediate text.
+
+Main chat's controls apply to the Workers. It accepts images when the backing model does, and offers that model's thinking-effort choices; the chosen effort is used by the Worker. Picking another model in main chat's model selector makes the Workers use that model, while main chat keeps routing through TheOne; picking TheOne again follows DSH's selected model. Before each reply the Worker takes main chat's permission mode (sandbox and approval policy together); a hand-tuned combination that matches no preset is not copied.
+
+Main chat shows tool calls without running them because TheOne places its own handlers first in DSH's tool pipeline. A plugin that also inserts itself ahead of them could see main chat's mirrored calls; as a safeguard, main chat refuses any tool call that does not mirror a Worker call instead of executing it.
 
 ## Current features
 

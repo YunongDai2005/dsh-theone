@@ -30,7 +30,11 @@ class GatewayAdapter extends LlmAdapter {
         this.service = service;
     }
     providerInfo(provider) { return { id: provider, name: 'TheOne' }; }
-    async listModels(provider) { return [{ provider, id: 'gateway', name: 'TheOne', inputModalities: ['text'] }]; }
+    async listModels(provider) {
+        // The entry accepts whatever the backing model accepts (e.g. images).
+        const info = await this.service.gatewayModelInfo(provider).catch(() => undefined);
+        return [{ provider, id: 'gateway', name: 'TheOne', inputModalities: [...(info?.inputModalities ?? ['text'])] }];
+    }
     resolveModel(provider, model, signal) {
         if (model !== 'gateway')
             throw new Error('TheOne only exposes the gateway model');
@@ -99,6 +103,10 @@ export default class TheOne extends Service {
     runs = new Map();
     /** Gateway id → cleanup of a run whose main-chat turn has closed while its Worker winds down. */
     closing = new Map();
+    /** A model the user picked in main chat's own model selector; it answers through the Workers. */
+    pickedModel;
+    /** Sessions whose current step answers through TheOne; only these refuse to run tools themselves. */
+    throughTheOne = new WeakMap();
     constructor(ctx, config) {
         super(ctx, 'theone');
         this.config = config;
@@ -216,11 +224,25 @@ export default class TheOne extends Service {
             }
             return assembled;
         }, { prepend: true });
+        // Main chat always answers through TheOne. Picking another model in its selector chooses the
+        // model the Workers use, rather than silently turning main chat into an ordinary session.
+        ctx.on('agent/request', async (payload, next) => {
+            const config = await next();
+            // Any session may pick TheOne and switch away again; only the fixed main chat always routes.
+            if (!this.store.isPinnedGateway(payload.agent.id)) {
+                this.throughTheOne.set(payload.agent, config.provider === 'theone');
+                return config;
+            }
+            this.throughTheOne.set(payload.agent, true);
+            // The resolved selection is authoritative; TheOne itself means "follow DSH's selected model".
+            this.pickedModel = config.provider === 'theone' ? undefined : { provider: config.provider, model: config.model };
+            return config.provider === 'theone' ? config : { ...config, provider: 'theone', model: 'gateway' };
+        }, { prepend: true });
         ctx.on('agent/pre-step', async ({ agent, signal }, next) => {
             const decision = await next();
             const selected = selectedProviders.get(agent);
             const provider = selected?.signal === signal ? selected.provider : agent.options.provider;
-            if (decision.kind === 'reject' || provider !== 'theone')
+            if (decision.kind === 'reject' || (provider !== 'theone' && !this.store.isPinnedGateway(agent.id)))
                 return decision;
             signal.throwIfAborted();
             const users = decision.messages.filter(message => message.source.kind === 'user');
@@ -506,6 +528,8 @@ export default class TheOne extends Service {
     backingModel() {
         if (this.config.workerProvider && this.config.workerModel)
             return { provider: this.config.workerProvider, model: this.config.workerModel };
+        if (this.pickedModel)
+            return this.pickedModel;
         this.captureDefaultModel();
         const selection = this.store.rememberedModel(this.config.gatewayKey);
         if (!selection)
@@ -525,7 +549,10 @@ export default class TheOne extends Service {
             throw error;
         }
         const backing = await this.ctx.llm.resolveModelInfo(selection.provider, selection.model, signal);
-        return { ...info, ...(backing.context ? { context: { ...backing.context } } : {}),
+        // Image input and the thinking-effort choices are the backing model's, so main chat offers the same controls.
+        return { ...info, ...(backing.inputModalities ? { inputModalities: [...backing.inputModalities] } : {}),
+            ...(backing.reasoning ? { reasoning: backing.reasoning } : {}),
+            ...(backing.context ? { context: { ...backing.context } } : {}),
             ...(backing.defaultMaxTokens !== undefined ? { defaultMaxTokens: backing.defaultMaxTokens } : {}) };
     }
     /** Recover bounded routing context from DSH references after the Gateway is rebuilt. */
@@ -620,9 +647,9 @@ export default class TheOne extends Service {
     async searchHistory(contextId, query, limit = 3) {
         return (await this.searchHistoryDetailed(contextId, query, limit)).windows;
     }
-    async worker(context, gatewayId, signal) {
+    async worker(context, gatewayId, signal, reasoningEffort) {
         const existing = this.workers.get(context.id);
-        const agentOptions = this.backingModel();
+        const agentOptions = await this.workerModel(reasoningEffort, signal);
         if (existing) {
             this.workerSelections.get(context.id).current = agentOptions;
             this.refreshCompactionSummary(existing.agent, context.id);
@@ -650,6 +677,33 @@ export default class TheOne extends Service {
         this.store.addSource(context.id, sessionId);
         this.refreshCompactionSummary(handle.agent, context.id);
         return handle.agent;
+    }
+    /** The backing model, with the thinking effort chosen in main chat when that model offers it. */
+    async workerModel(reasoningEffort, signal) {
+        const backing = this.backingModel();
+        if (!reasoningEffort)
+            return backing;
+        try {
+            const info = await this.ctx.llm.resolveModelInfo(backing.provider, backing.model, signal);
+            return info.reasoning?.efforts.some(effort => effort.id === reasoningEffort) ? { ...backing, reasoningEffort } : backing;
+        }
+        catch {
+            signal?.throwIfAborted();
+            return backing;
+        }
+    }
+    /** The Worker runs under the permission mode chosen in main chat (sandbox and approval together). */
+    syncPermissions(gateway, worker) {
+        const presets = this.ctx.get('permissionPresets');
+        if (!presets)
+            return;
+        try {
+            const chosen = presets.current(gateway.session);
+            // A hand-tuned combination has no preset to copy; the Worker keeps its own.
+            if (chosen !== 'custom' && presets.current(worker.session) !== chosen)
+                presets.set(worker.session, chosen);
+        }
+        catch { /* An unavailable preset (e.g. Auto without its integration) leaves the Worker's setting unchanged. */ }
     }
     refreshCompactionSummary(worker, contextId) {
         const events = worker.session.snapshotEvents();
@@ -831,11 +885,12 @@ export default class TheOne extends Service {
             const context = this.store.contexts().find(context => context.id === route.decision.contextId);
             if (!context)
                 throw new Error('Routed Context is missing');
-            const worker = await this.worker(context, options.sessionId, options.signal);
+            const worker = await this.worker(context, options.sessionId, options.signal, options.reasoningEffort);
             if (worker.status !== 'idle' || worker.inbox.nextTurn.length || worker.inbox.nextStep.length) {
                 throw new Error('Worker has unfinished input; inspect its DSH session before continuing');
             }
             options.signal?.throwIfAborted();
+            this.syncPermissions(gateway, worker);
             const refreshed = this.store.contexts().find(item => item.id === context.id) ?? context;
             run = new WorkerRun(this.ctx, worker, gateway, input.id, this.config.maxResponseChars, names => this.showWorkerTools(gateway, worker, names));
             this.runs.set(gateway.id, run);
@@ -902,9 +957,12 @@ export default class TheOne extends Service {
      * run (or for a nested dispatch) its calls are refused rather than executed.
      */
     mirroredRun(exec) {
-        if (!exec.agent || !this.store.isGateway(exec.agent.id))
+        if (!exec.agent)
             return undefined;
-        return (exec.parent === undefined ? this.runs.get(exec.agent.id) : undefined) ?? 'refuse';
+        const run = exec.parent === undefined ? this.runs.get(exec.agent.id) : undefined;
+        if (run)
+            return run;
+        return this.throughTheOne.get(exec.agent) ? 'refuse' : undefined;
     }
     runForWorker(worker) {
         for (const run of this.runs.values())

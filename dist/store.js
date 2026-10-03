@@ -69,6 +69,7 @@ export class ContextStore {
         gateway_key TEXT NOT NULL, gateway_id TEXT NOT NULL,
         PRIMARY KEY(gateway_key, gateway_id)
       );
+      CREATE TABLE IF NOT EXISTS pinned_gateways (gateway_id TEXT PRIMARY KEY);
     `);
     }
     settings(gatewayKey) {
@@ -144,8 +145,13 @@ export class ContextStore {
     isGateway(sessionId) {
         return !!this.db.prepare('SELECT 1 FROM gateway_sessions WHERE gateway_id = ? LIMIT 1').get(sessionId);
     }
+    /** Record the fixed "TheOne · Main chat" entry; other sessions may also use TheOne and switch away. */
     rememberGateway(gatewayKey, sessionId) {
         this.db.prepare('INSERT OR IGNORE INTO gateway_sessions VALUES (?, ?)').run(gatewayKey, sessionId);
+        this.db.prepare('INSERT OR IGNORE INTO pinned_gateways VALUES (?)').run(sessionId);
+    }
+    isPinnedGateway(sessionId) {
+        return !!this.db.prepare('SELECT 1 FROM pinned_gateways WHERE gateway_id = ?').get(sessionId);
     }
     origin(contextId) {
         const row = this.db.prepare('SELECT * FROM context_origins WHERE context_id = ?').get(contextId);

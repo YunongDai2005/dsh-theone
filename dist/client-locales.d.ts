@@ -50,7 +50,7 @@ export declare const zh: {
     readonly 'settings.historyCatalog': "自动整理历史";
     readonly 'settings.catalogIntervalMs': "历史补扫间隔";
     readonly 'settings.maxDescriptorChars': "话题摘要长度上限";
-    readonly 'settings.maxResponseChars': "单次回复长度上限";
+    readonly 'settings.maxResponseChars': "单步回复长度上限";
     readonly 'settings.databasePath': "话题目录数据库位置";
     readonly 'settings.contextsPath': "人工话题目录文件";
     readonly 'settings.gatewayKey': "主入口标识";
@@ -64,7 +64,7 @@ export declare const zh: {
     readonly 'settings.help.historyCatalog': "从已有会话提取话题目录，并自动分组。关闭后已有目录仍保留。";
     readonly 'settings.help.catalogIntervalMs': "定期检查历史变化的间隔，最少 10 秒。";
     readonly 'settings.help.maxDescriptorChars': "挂载到工作会话的话题说明字符上限，最少 128。";
-    readonly 'settings.help.maxResponseChars': "入口转发一次回复的字符上限，最少 128。";
+    readonly 'settings.help.maxResponseChars': "后台每一步回复（含思考）的字符上限，最少 128；多步任务不按总长度计算。";
     readonly 'settings.help.databasePath': "保存目录、分组与使用记录；原始聊天由 DSH 保存。";
     readonly 'settings.help.contextsPath': "可选 JSON 文件，用于导入人工准备的话题目录。";
     readonly 'settings.help.gatewayKey': "区分入口状态，通常保留 default。";

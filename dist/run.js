@@ -38,6 +38,8 @@ export class WorkerRun {
                 return;
             if (frame.type === 'start') {
                 const attempt = { id: frame.attemptId, chunks: [] };
+                // The limit applies per step: a long multi-step task is not cut off by its total length.
+                this.characters = 0;
                 const last = this.steps.at(-1);
                 // A new attempt for the same step is the Worker retrying it.
                 if (last && last.turn === frame.turn && last.step === frame.step)

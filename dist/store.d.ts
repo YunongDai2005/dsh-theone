@@ -22,7 +22,9 @@ export declare class ContextStore {
     contextUsage(gatewayKey: string, now?: number): ContextUsage[];
     groups(): TopicGroup[];
     isGateway(sessionId: string): boolean;
+    /** Record the fixed "TheOne · Main chat" entry; other sessions may also use TheOne and switch away. */
     rememberGateway(gatewayKey: string, sessionId: string): void;
+    isPinnedGateway(sessionId: string): boolean;
     origin(contextId: string): {
         sessionId: string;
         cwd?: string;

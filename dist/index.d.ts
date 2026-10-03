@@ -59,6 +59,10 @@ export default class TheOne extends Service {
     private readonly runs;
     /** Gateway id → cleanup of a run whose main-chat turn has closed while its Worker winds down. */
     private readonly closing;
+    /** A model the user picked in main chat's own model selector; it answers through the Workers. */
+    private pickedModel?;
+    /** Sessions whose current step answers through TheOne; only these refuse to run tools themselves. */
+    private readonly throughTheOne;
     constructor(ctx: Context, config: Config);
     /** DSH Connection protects plugin routes inside its authenticated /api fence. */
     private registerCatalogChannel;
@@ -88,6 +92,10 @@ export default class TheOne extends Service {
     /** Convenience API. Use searchHistoryDetailed when source diagnostics matter. */
     searchHistory(contextId: string, query: string, limit?: number): Promise<SessionEventWindow[]>;
     private worker;
+    /** The backing model, with the thinking effort chosen in main chat when that model offers it. */
+    private workerModel;
+    /** The Worker runs under the permission mode chosen in main chat (sandbox and approval together). */
+    private syncPermissions;
     private refreshCompactionSummary;
     /**
      * No one views a Worker session, so its approval questions would fail closed. Ask in the
