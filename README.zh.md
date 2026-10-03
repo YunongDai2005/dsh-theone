@@ -38,7 +38,9 @@
 
 - 默认用你在 DSH 选的模型做一次简短分类（关闭深度思考，最多 2048 token，30 秒超时），并结合 DSH 全文搜索从目录中召回候选。没有可信匹配就开新话题，不会追问「是不是新话题」。
 - 一句话同时用到几个话题（比如「把 Qwen 的测试结果写进论文」）时，交给实际做事的话题，其余作为参考一起带上，不再反问。
-- 只有明确引用了找不到的旧聊天，或确实分不清你指的是哪一个时才会追问。判断失败不会切换话题，也不会启动后台。
+- 只有明确引用了找不到的旧聊天，或确实分不清你指的是哪一个时才会追问。
+- 只发图片或文件、没有文字时，接着当前话题。分类调用失败时改用规则判断，拿不准就留在当前话题。
+- 分错了？直接说「分错了，是论文的」，上一条会交给正确的话题重新处理；也可以在话题目录的**最近的话题分配**里改。TheOne 会记住这次更正，之后类似的消息分到那里。
 - 规则模式（`THEONE_ROUTER_MODE=rules`）不调用模型。
 
 ## 话题联动
@@ -65,20 +67,23 @@
 
 TheOne 会在后台读取你已有的 DSH 会话，整理出话题目录，并把相关话题归入**话题工作区**（左侧入口查看）。它优先复用 DSH 的压缩摘要，没有变化的会话不会重复处理。历史较多时，第一次整理需要一些时间和 API 额度。设置 `THEONE_HISTORY_CATALOG=false` 可以关闭。
 
+话题卡片会显示最新进展和约束。点 **管理** 可以重命名、修改摘要和约束、移到其他工作区、合并到另一个话题、把已有的 DSH 会话关联为可检索的历史，或删除话题（原会话仍在 DSH，目录不会再把它整理回来）。**＋ 新话题** 可以手动新建。**最近的话题分配** 列出每条消息分到了哪里、原因、所用模型和耗时。
+
 ## 设置
 
-右键左侧的 TheOne 按钮，选择 **设置**。保存后重启 DSH 生效。
+右键左侧的 TheOne 按钮，选择 **设置**。保存后立即生效，只有历史整理相关的设置需要重启 DSH。
 
 | 设置 | 说明 |
 | --- | --- |
-| 话题提示 | 主聊天里怎样显示话题切换：隐藏、仅切换时显示一行（默认）、每条都显示 |
+| 话题提示 | 主聊天里怎样显示话题切换：隐藏、仅切换时显示一行（默认）、每条都显示并注明原因 |
 | 联动范围 | 自动学习（默认）、仅同一工作区、关闭 |
-| 模型 | 跟随 DSH（默认）或固定后台模型；固定的设置优先于主聊天里的选择 |
+| 模型 | 跟随 DSH（默认），或从 DSH 已配置的全部模型中固定后台模型；固定的设置优先于主聊天里的选择 |
 | 路由方式 | LLM 判断（默认）或规则判断 |
 | 历史整理 | 开关与补扫间隔 |
 | 内容限制 | 话题资料长度；后台每一步回复的长度（含思考） |
+| 人工话题目录文件 | 可选的 JSON 话题目录，保存时导入 |
 
-可选的环境变量：`THEONE_DATABASE_PATH`、`THEONE_CONTEXTS_PATH`（人工目录 JSON）、`THEONE_GATEWAY_KEY`，以及须一起设置的 `THEONE_WORKER_PROVIDER` / `THEONE_WORKER_MODEL`。只有旧的直连路由（`THEONE_ROUTER_TRANSPORT=legacy`）会读取 `THEONE_ROUTER_API_KEY`。
+数据库位置和主入口标识会让 TheOne 换用另一份数据，所以只能用环境变量 `THEONE_DATABASE_PATH`、`THEONE_GATEWAY_KEY` 设置。另外可选：`THEONE_CONTEXTS_PATH`，以及须一起设置的 `THEONE_WORKER_PROVIDER` / `THEONE_WORKER_MODEL`。
 
 ## 数据与隐私
 
@@ -93,7 +98,7 @@ TheOne 会在后台读取你已有的 DSH 会话，整理出话题目录，并�
 - 新话题的文件默认写在 `~/.dsh/theone/gateway`，暂时不能给新话题指定项目目录。
 - 主聊天里保存了工具调用的副本，长期使用记录会变大；入口日志轮换尚未实现。
 - 主聊天身份按浏览器保存：换浏览器或在桌面端会出现另一个主聊天，话题仍然共用。同一个数据库同时只应由一个 DSH 进程使用。
-- 图片输出尚未转发；没有向量检索。
+- 图片输出尚未转发；没有向量检索；暂不支持拆分话题。
 - 主聊天里的工具卡片只显示、不执行，这依赖 TheOne 位于 DSH 工具流程的最前面。如果其他插件也抢到最前面，可能会看到这些镜像调用，但工具不会执行两次。
 
 ## 开发
@@ -108,4 +113,4 @@ npm test
 
 测试使用真实的 DSH 运行时（AgentLoop、Session、SQLite、JSONL 持久化、压缩），只模拟模型，不调用外部 API。`npm run pack:plugin` 生成安装包；`npm run install:local` 和 `npm run start:local` 会在 `~/.dsh-theone` 启动一个独立的 DSH profile。
 
-服务接口：`ctx.theone.searchHistoryDetailed(contextId, query, limit)` 检索话题的已审核历史；手工关联历史会话使用 `store.addSource(contextId, sessionId, { startSeq, endSeq })`。旧版本验收记录见 [v0.1](./docs/plugin-v0.1.zh.md) 和 [v0.2](./docs/plugin-v0.2.zh.md)。
+服务接口：`ctx.theone.searchHistoryDetailed(contextId, query, limit)` 检索话题的已审核历史；`store.addSource(contextId, sessionId, { startSeq, endSeq })` 关联会话的一部分。旧版本验收记录见 [v0.1](./docs/plugin-v0.1.zh.md) 和 [v0.2](./docs/plugin-v0.2.zh.md)。

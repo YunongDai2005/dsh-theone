@@ -11,7 +11,8 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { MainPanelId, PanelInfo } from '@deepseek-ai/dsh-client-ui-layout/client'
-import type { CatalogSnapshot, LinkageSnapshot } from './catalog-types.ts'
+import type { CatalogContext, CatalogSnapshot, LinkageSnapshot, TopicGroup } from './catalog-types.ts'
+import type { RouteView } from './types.ts'
 import { EDITABLE_SETTINGS_KEYS, type EditableSettings, type SettingsSnapshot } from './settings-types.ts'
 import { GatewayNavigation } from './client-navigation.ts'
 import { zh, en, type TheOneLocaleKey } from './client-locales.ts'
@@ -227,12 +228,11 @@ export function apply(ctx: Context) {
       return () => controller.abort()
     }, [attempt])
     const groups = [
-      ['models', ['workerProvider', 'workerModel', 'routerMode', 'routerTransport']],
+      ['models', ['workerProvider', 'workerModel', 'routerMode']],
       ['history', ['historyCatalog', 'catalogIntervalMs']],
       ['linkage', ['linkScope', 'routeNotice']],
       ['limits', ['maxDescriptorChars', 'maxResponseChars']],
-      ['storage', ['databasePath', 'contextsPath', 'gatewayKey']],
-      ['legacy', ['routerBaseUrl', 'routerModel', 'routerApiKeyEnv']],
+      ['storage', ['contextsPath', 'databasePath', 'gatewayKey']],
     ] as const
     const display = (key: keyof SettingsSnapshot['values']) => {
       const value = snapshot!.values[key]
@@ -257,7 +257,7 @@ export function apply(ctx: Context) {
           headers: { 'content-type': 'application/json' }, body: JSON.stringify({ values: draft, revision: snapshot.revision }) })
         if (!response.ok) {
           const failure = await response.json().catch(() => ({})) as { error?: string }
-          if (!signal.aborted) setMessage(response.status === 409 ? 'settings.conflict' : failure.error === 'LEGACY_KEY_MISSING' ? 'settings.keyMissing' : 'settings.saveError')
+          if (!signal.aborted) setMessage(response.status === 409 ? 'settings.conflict' : failure.error === 'CONTEXTS_UNREADABLE' ? 'settings.contextsUnreadable' : 'settings.saveError')
           return
         }
         const value = await response.json() as SettingsSnapshot
@@ -277,20 +277,21 @@ export function apply(ctx: Context) {
         const values = field === 'linkScope' ? ['auto', 'workspace', 'off'] : ['switch', 'hidden', 'all']
         return select(draft[field], values.map(value => ({ value, label: t(`settings.${field === 'linkScope' ? 'scope' : 'notice'}.${value}` as TheOneLocaleKey) })), v => change(field, v as never))
       }
-      if (field === 'routerMode' || field === 'routerTransport') {
-        const values = field === 'routerMode' ? ['llm', 'rules'] : ['dsh', 'legacy']
-        return select(draft[field], values.map(value => ({ value, label: t(`settings.${value === 'legacy' ? 'legacyCall' : value}` as TheOneLocaleKey) })), v => change(field, v))
-      }
+      if (field === 'routerMode')
+        return select(draft.routerMode, ['llm', 'rules'].map(value => ({ value, label: t(`settings.${value}` as TheOneLocaleKey) })), v => change(field, v as EditableSettings['routerMode']))
+      // Every model DSH offers, so the Workers can be pinned to any of them.
+      const offered = (provider: string | null) => snapshot.models.filter(model => model.provider === provider)
       if (field === 'workerProvider') {
-        const providers = [...new Set([snapshot.model?.provider, snapshot.values.workerProvider, snapshot.savedValues.workerProvider].filter((value): value is string => !!value && value !== 'theone'))]
+        const providers = [...new Set([...snapshot.models.map(model => model.provider), snapshot.savedValues.workerProvider].filter((value): value is string => !!value && value !== 'theone'))]
         return select(draft.workerProvider ?? '', [{ value: '', label: t('settings.follow') }, ...providers.map(value => ({ value, label: value }))], v => {
-          const model = v === snapshot.model?.provider ? snapshot.model.model : v === snapshot.savedValues.workerProvider ? snapshot.savedValues.workerModel : snapshot.values.workerModel
+          const model = v === snapshot.savedValues.workerProvider ? snapshot.savedValues.workerModel : v === snapshot.model?.provider ? snapshot.model.model : offered(v)[0]?.id
           setDraft(current => current && { ...current, workerProvider: v || null, workerModel: v ? model ?? null : null }); setMessage(undefined)
         })
       }
       if (field === 'workerModel') {
-        const models = [...new Set([draft.workerModel, draft.workerProvider === snapshot.model?.provider ? snapshot.model?.model : null].filter((value): value is string => !!value))]
-        return select(draft.workerModel ?? '', [{ value: '', label: t(draft.workerProvider ? 'settings.none' : 'settings.follow') }, ...models.map(value => ({ value, label: value }))], v => change(field, v || null))
+        const models = offered(draft.workerProvider).map(model => ({ value: model.id, label: model.name && model.name !== model.id ? `${model.name} (${model.id})` : model.id }))
+        if (draft.workerModel && !models.some(model => model.value === draft.workerModel)) models.unshift({ value: draft.workerModel, label: draft.workerModel })
+        return select(draft.workerModel ?? '', [{ value: '', label: t(draft.workerProvider ? 'settings.none' : 'settings.follow') }, ...models], v => change(field, v || null))
       }
       if (field === 'catalogIntervalMs' || field === 'maxDescriptorChars' || field === 'maxResponseChars') {
         const interval = field === 'catalogIntervalMs'
@@ -299,9 +300,8 @@ export function apply(ctx: Context) {
           value: Number.isFinite(draft[field]) ? draft[field] / (interval ? 1000 : 1) : '',
           onChange: (event: React.ChangeEvent<HTMLInputElement>) => change(field, event.target.valueAsNumber * (interval ? 1000 : 1)) })
       }
-      return h('input', { ...props, type: field === 'routerBaseUrl' ? 'url' : 'text', value: draft[field] ?? '', required: true,
-        maxLength: field === 'routerBaseUrl' ? 2048 : field === 'routerApiKeyEnv' ? 128 : 256,
-        onChange: (event: React.ChangeEvent<HTMLInputElement>) => change(field, event.target.value) })
+      return h('input', { ...props, type: 'text', value: draft.contextsPath ?? '', maxLength: 4096, placeholder: t('settings.none'),
+        onChange: (event: React.ChangeEvent<HTMLInputElement>) => change('contextsPath', event.target.value.trim() ? event.target.value : null) })
     }
     return h('section', { className: 'theone-settings', translate: 'no' },
       h('header', { className: 'theone-settings-header' },
@@ -321,12 +321,11 @@ export function apply(ctx: Context) {
           h('p', null, t('settings.compression'))),
         ...groups.map(([group, keys]) => h('section', { className: 'theone-settings-group', key: group },
           h('h2', null, t(`settings.${group}`)),
-          group === 'legacy' ? h('p', { className: 'theone-settings-help' }, t('settings.legacyHint')) : null,
-          h('dl', null, ...keys.map(key => h('div', { className: 'theone-settings-row', key, 'data-inactive': group === 'legacy' && (draft.routerTransport !== 'legacy' || draft.routerMode !== 'llm') },
+          h('dl', null, ...keys.map(key => h('div', { className: 'theone-settings-row', key },
             h('dt', null, h('strong', null, t(`settings.${key}`)), h('p', null, t(`settings.help.${key}`)), h('code', null, key)),
             h('dd', null, control(key), key === 'catalogIntervalMs' && Number.isFinite(draft.catalogIntervalMs) ? h('small', null, t('settings.seconds', { count: draft.catalogIntervalMs / 1000 })) : null)))))),
         h('footer', { className: 'theone-settings-footer' },
-          h('p', { role: message === 'settings.saveError' || message === 'settings.conflict' || message === 'settings.keyMissing' ? 'alert' : 'status' },
+          h('p', { role: message === 'settings.saveError' || message === 'settings.conflict' || message === 'settings.contextsUnreadable' ? 'alert' : 'status' },
             message ? t(message) : dirty ? t('settings.unsaved') : snapshot.restartRequired ? t('settings.restart') : ''),
           message === 'settings.conflict' ? h('button', { type: 'button', onClick: () => setAttempt(n => n + 1) }, t('settings.reload')) : null,
           h('button', { type: 'button', disabled: saving || !dirty, onClick: () => { setDraft(snapshot.savedValues); setMessage(undefined) } }, t('settings.reset')),
@@ -334,11 +333,109 @@ export function apply(ctx: Context) {
     )
   }
 
+  type Post = (path: string, body: Record<string, unknown>) => Promise<boolean>
+  const ROUTE_REASONS = new Set(['steering', 'short-continuation', 'attachment-only', 'correction', 'correction-unclear', 'explicit-new-topic',
+    'no-history-evidence', 'entity-or-keyword', 'keyword-only-switch', 'current-reference', 'combined-contexts', 'insufficient-evidence',
+    'multiple-contexts', 'weak-keyword-match', 'no-history-match', 'CATALOG_NOT_READY', 'CATALOG_REVIEW_LIMIT', 'HISTORY_SEARCH_UNAVAILABLE'])
+  const routeReason = (reason: string) => ROUTE_REASONS.has(reason) ? t(`route.reason.${reason}` as TheOneLocaleKey)
+    : reason.startsWith('router-fallback:') ? t('route.reason.router-fallback') : reason
+
+  /** Rename, describe, constrain, move, merge, attach history to or delete one topic. */
+  function TopicManager({ topic, constraints, groups, contexts, post, busy }: {
+    topic: CatalogContext; constraints: string; groups: TopicGroup[]; contexts: CatalogContext[]; post: Post; busy: boolean
+  }) {
+    const t = useText()
+    const [title, setTitle] = useState(topic.title)
+    const [summary, setSummary] = useState(topic.summary)
+    const [rules, setRules] = useState(constraints)
+    const groupOf = groups.find(group => group.contextIds.includes(topic.id))?.id ?? ''
+    const [group, setGroup] = useState(groupOf)
+    const [groupTitle, setGroupTitle] = useState('')
+    const [into, setInto] = useState('')
+    const [confirm, setConfirm] = useState<'merge' | 'delete'>()
+    const [sessions, setSessions] = useState<{ id: string; title: string }[]>()
+    const [session, setSession] = useState('')
+    useEffect(() => {
+      const controller = new AbortController()
+      fetch('/api/theone/sessions', { signal: AbortSignal.any([controller.signal, lifetime.signal]), cache: 'no-store' })
+        .then(response => response.ok ? response.json() : { sessions: [] }).then(value => setSessions((value as { sessions: { id: string; title: string }[] }).sessions))
+        .catch(() => { if (!controller.signal.aborted) setSessions([]) })
+      return () => controller.abort()
+    }, [])
+    const own = new Set(topic.sourceSessionIds)
+    const edited = title.trim() !== topic.title || summary.trim() !== topic.summary || rules.trim() !== constraints
+    const field = (label: TheOneLocaleKey, control: unknown) => h('label', { className: 'theone-manage-field' }, h('span', null, t(label)), control as never)
+    return h('div', { className: 'theone-manage' },
+      field('manage.title', h('input', { value: title, maxLength: 80, disabled: busy, onChange: (event: React.ChangeEvent<HTMLInputElement>) => setTitle(event.target.value) })),
+      field('manage.summary', h('textarea', { value: summary, rows: 3, maxLength: 2000, disabled: busy, onChange: (event: React.ChangeEvent<HTMLTextAreaElement>) => setSummary(event.target.value) })),
+      field('manage.constraintsLabel', h('textarea', { value: rules, rows: 2, maxLength: 400, disabled: busy, placeholder: t('manage.constraintsPlaceholder'), onChange: (event: React.ChangeEvent<HTMLTextAreaElement>) => setRules(event.target.value) })),
+      h('div', { className: 'theone-manage-row' },
+        h('button', { type: 'button', disabled: busy || !edited || !title.trim() || !summary.trim(),
+          onClick: () => { void post('/api/theone/topics', { action: 'edit', id: topic.id, title, summary, constraints: rules }) } }, t('manage.save'))),
+      field('manage.workspace', h('div', { className: 'theone-manage-row' },
+        h('select', { value: group, disabled: busy, onChange: (event: React.ChangeEvent<HTMLSelectElement>) => setGroup(event.target.value) },
+          h('option', { value: '' }, t('manage.unassigned')), ...groups.map(item => h('option', { key: item.id, value: item.id }, item.title)),
+          h('option', { value: '__new' }, t('manage.newWorkspace'))),
+        group === '__new' ? h('input', { value: groupTitle, maxLength: 80, placeholder: t('manage.newWorkspaceName'), disabled: busy, onChange: (event: React.ChangeEvent<HTMLInputElement>) => setGroupTitle(event.target.value) }) : null,
+        h('button', { type: 'button', disabled: busy || group === groupOf || (group === '__new' && !groupTitle.trim()),
+          onClick: () => { void post('/api/theone/topics', { action: 'move', id: topic.id, ...(group === '__new' ? { groupTitle } : group ? { groupId: group } : {}) }) } }, t('manage.move')))),
+      field('manage.attach', h('div', { className: 'theone-manage-row' },
+        h('select', { value: session, disabled: busy || !sessions, onChange: (event: React.ChangeEvent<HTMLSelectElement>) => setSession(event.target.value) },
+          h('option', { value: '' }, sessions ? t('manage.attachPick') : t('manage.loadingSessions')),
+          ...(sessions ?? []).filter(item => !own.has(item.id)).map(item => h('option', { key: item.id, value: item.id }, item.title))),
+        h('button', { type: 'button', disabled: busy || !session, onClick: () => { void post('/api/theone/topics', { action: 'attach', id: topic.id, sessionId: session }).then(ok => { if (ok) setSession('') }) } }, t('manage.attachButton')))),
+      h('p', { className: 'theone-manage-hint' }, t('manage.attachHint')),
+      field('manage.merge', h('div', { className: 'theone-manage-row' },
+        h('select', { value: into, disabled: busy, onChange: (event: React.ChangeEvent<HTMLSelectElement>) => { setInto(event.target.value); setConfirm(undefined) } },
+          h('option', { value: '' }, t('manage.mergePick')), ...contexts.filter(item => item.id !== topic.id).map(item => h('option', { key: item.id, value: item.id }, item.title))),
+        h('button', { type: 'button', disabled: busy || !into, className: confirm === 'merge' ? 'theone-danger' : undefined,
+          onClick: () => { if (confirm !== 'merge') setConfirm('merge'); else void post('/api/theone/topics', { action: 'merge', id: topic.id, into }) } },
+          t(confirm === 'merge' ? 'manage.confirm' : 'manage.mergeButton')))),
+      h('p', { className: 'theone-manage-hint' }, t('manage.mergeHint')),
+      h('div', { className: 'theone-manage-row' },
+        h('button', { type: 'button', disabled: busy, className: 'theone-danger',
+          onClick: () => { if (confirm !== 'delete') setConfirm('delete'); else void post('/api/theone/topics', { action: 'delete', id: topic.id }) } },
+          t(confirm === 'delete' ? 'manage.deleteConfirm' : 'manage.delete')),
+        confirm === 'delete' ? h('span', { className: 'theone-manage-hint' }, t('manage.deleteHint')) : null))
+  }
+
+  /** Where recent messages went and why; a misrouted one can be moved to the right topic. */
+  function RouteList({ routes, contexts, post, busy }: { routes: RouteView[]; contexts: CatalogContext[]; post: Post; busy: boolean }) {
+    const t = useText()
+    const titleOf = (id?: string) => contexts.find(context => context.id === id)?.title ?? t('routes.removed')
+    return h('details', { className: 'theone-routes' },
+      h('summary', null, t('routes.title'), h('span', null, ` ${routes.length}`)),
+      h('p', { className: 'theone-manage-hint' }, t('routes.hint')),
+      routes.length ? h('ol', null, ...routes.map(route => {
+        const target = route.decision.contextId
+        const receipt = route.receipt
+        const details = [routeReason(route.decision.reason), receipt?.mode === 'llm' ? receipt.model : receipt ? t('routes.rules') : undefined,
+          receipt?.elapsedMs !== undefined ? `${(receipt.elapsedMs / 1000).toFixed(1)} s` : undefined,
+          receipt?.errorCode ? t('routes.error', { code: receipt.errorCode }) : undefined].filter(Boolean).join(' · ')
+        return h('li', { key: route.messageId },
+          h('div', { className: 'theone-route-head' },
+            h('time', null, new Date(route.at).toLocaleTimeString(localeSnapshot().active, { hour: '2-digit', minute: '2-digit' })),
+            h('q', null, route.excerpt || '…')),
+          h('div', { className: 'theone-route-body' },
+            h('strong', null, route.decision.action === 'CLARIFY' ? t('routes.clarify') : `→ ${titleOf(target)}`),
+            h('small', null, details),
+            route.correctedTo ? h('span', { className: 'theone-route-fixed' }, t('routes.corrected', { title: titleOf(route.correctedTo) }))
+              : h('select', { value: '', disabled: busy, 'aria-label': t('routes.move'),
+                onChange: (event: React.ChangeEvent<HTMLSelectElement>) => { if (event.target.value) void post('/api/theone/routes', { messageId: route.messageId, contextId: event.target.value }) } },
+                h('option', { value: '' }, t('routes.move')), ...contexts.filter(context => context.id !== target).map(context => h('option', { key: context.id, value: context.id }, context.title)))))
+      })) : h('p', { className: 'theone-links-empty' }, t('routes.empty')))
+  }
+
   function CatalogPanel() {
     const t = useText()
     const [snapshot, setSnapshot] = useState<CatalogSnapshot>()
     const [error, setError] = useState<TheOneLocaleKey>()
     const [busy, setBusy] = useState<string>()
+    const [routes, setRoutes] = useState<RouteView[]>([])
+    const [managing, setManaging] = useState<string>()
+    const [creating, setCreating] = useState(false)
+    const [newTitle, setNewTitle] = useState('')
+    const reload = useRef<() => Promise<void>>(async () => {})
     useEffect(() => {
       const controller = new AbortController()
       const signal = AbortSignal.any([controller.signal, lifetime.signal])
@@ -350,10 +447,13 @@ export function apply(ctx: Context) {
           const response = await fetch('/api/theone/catalog', { signal, cache: 'no-store' })
           if (!response.ok) throw new Error('Catalog unavailable')
           const value = await response.json() as CatalogSnapshot
-          if (!signal.aborted) { setSnapshot(value); setError(undefined) }
+          if (!signal.aborted) { setSnapshot(value); setError(current => current === 'catalog.loadError' ? undefined : current) }
+          const recent = await fetch('/api/theone/routes', { signal, cache: 'no-store' }).then(r => r.ok ? r.json() as Promise<{ routes: RouteView[] }> : undefined).catch(() => undefined)
+          if (recent && !signal.aborted) setRoutes(recent.routes)
         } catch { if (!signal.aborted) setError('catalog.loadError') }
         finally { reading = false }
       }
+      reload.current = async () => { while (reading) await new Promise(resolve => setTimeout(resolve, 50)); await load() }
       void load()
       const timer = setInterval(() => { void load() }, 5000)
       return () => { controller.abort(); clearInterval(timer) }
@@ -366,6 +466,25 @@ export function apply(ctx: Context) {
         if (!response.ok) throw new Error('Mount unavailable')
         await navigation.open()
       } catch { setError('catalog.continueError') }
+      finally { setBusy(undefined) }
+    }
+    /** One directory edit; the directory reloads after it. */
+    const post: Post = async (path, body) => {
+      setBusy(path); setError(undefined)
+      try {
+        const response = await fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body), signal: lifetime.signal, cache: 'no-store' })
+        if (!response.ok) {
+          const failure = await response.json().catch(() => ({})) as { error?: string }
+          setError(failure.error === 'GATEWAY_BUSY' ? 'manage.busy' : 'manage.error')
+          return false
+        }
+        const value = await response.json().catch(() => ({})) as { id?: string }
+        if (body.action === 'merge' || body.action === 'delete') setManaging(undefined)
+        if (body.action === 'create' && value.id) { setCreating(false); setNewTitle(''); setManaging(value.id) }
+        await reload.current()
+        return true
+      } catch { setError('manage.error'); return false }
       finally { setBusy(undefined) }
     }
     async function editLinks(body: Record<string, unknown>) {
@@ -416,9 +535,14 @@ export function apply(ctx: Context) {
       h('header', { className: 'theone-catalog-header' },
         h('div', null, h('h1', null, t('catalog.title')), h('p', null, t('catalog.subtitle'))),
         h('div', { className: 'theone-catalog-tools' },
+          h('button', { type: 'button', disabled: !!busy, onClick: () => setCreating(open => !open) }, t('manage.create')),
           snapshot?.linkage && snapshot.linkage.scope !== 'off' ? h('button', { type: 'button', disabled: !!busy, title: t('link.clearLearnedHint'),
             onClick: () => { void editLinks({ action: 'clearLearned' }) } }, t('link.clearLearned')) : null,
           h('button', { type: 'button', onClick: refresh, disabled: !!busy || status?.running }, t('catalog.refresh')))),
+      creating ? h('form', { className: 'theone-manage theone-create', onSubmit: (event: React.FormEvent<HTMLFormElement>) => { event.preventDefault(); void post('/api/theone/topics', { action: 'create', title: newTitle }) } },
+        h('input', { value: newTitle, maxLength: 80, autoFocus: true, placeholder: t('manage.title'), disabled: !!busy, onChange: (event: React.ChangeEvent<HTMLInputElement>) => setNewTitle(event.target.value) }),
+        h('button', { type: 'submit', disabled: !!busy || !newTitle.trim() }, t('manage.createButton')),
+        h('button', { type: 'button', onClick: () => { setCreating(false); setNewTitle('') } }, t('manage.cancel'))) : null,
       snapshot?.linkage?.scope === 'off' ? h('p', { className: 'theone-catalog-status' }, t('link.off')) : null,
       h('p', { className: 'theone-catalog-status', role: 'status' }, snapshot
         ? t('catalog.counts', { topics: snapshot.contexts.length, groups: snapshot.groups.length, topicSuffix: snapshot.contexts.length === 1 ? '' : 's', groupSuffix: snapshot.groups.length === 1 ? '' : 's' }) + ' · ' + (status?.running ? t('catalog.indexing') : status?.pending ? t('catalog.pending', { count: status.pending, sessionSuffix: status.pending === 1 ? '' : 's' }) : t('catalog.updated'))
@@ -426,6 +550,7 @@ export function apply(ctx: Context) {
       status?.failed ? h('p', { className: 'theone-catalog-warning' }, t('catalog.failed', { count: status.failed, sessionSuffix: status.failed === 1 ? '' : 's' })) : null,
       status?.searchUnavailable ? h('p', { className: 'theone-catalog-warning' }, t('catalog.searchUnavailable')) : null,
       error ? h('p', { role: 'alert', className: 'theone-catalog-warning' }, t(error)) : null,
+      snapshot ? h(RouteList, { routes, contexts: snapshot.contexts, post, busy: !!busy }) : null,
       snapshot && !snapshot.contexts.length ? h('p', { className: 'theone-catalog-empty' }, t(status?.running ? 'catalog.emptyIndexing' : 'catalog.empty')) : null,
       h('div', { className: 'theone-catalog-groups' }, ...groups.map(group =>
         h('section', { key: group.id, className: 'theone-topic-group' },
@@ -434,12 +559,18 @@ export function apply(ctx: Context) {
           ...group.contextIds.flatMap(id => {
             const topic = snapshot?.contexts.find(c => c.id === id)
             if (!topic) return []
+            const constraints = snapshot?.linkage?.topics[id]?.constraints ?? ''
             return [h('article', { key: id, className: 'theone-topic-card' },
-              h('h3', null, topic.title), h('p', null, topic.summary), linkRow(id),
+              h('h3', null, topic.title), h('p', null, topic.summary),
+              topic.lastState ? h('p', { className: 'theone-topic-state' }, h('span', null, t('topic.state')), topic.lastState) : null,
+              constraints ? h('p', { className: 'theone-topic-state' }, h('span', null, t('topic.constraints')), constraints) : null,
+              linkRow(id),
               h('div', { className: 'theone-topic-actions' },
                 h('button', { type: 'button', disabled: !!busy, onClick: () => { void continueTopic(id) } }, t(busy === id ? 'topic.opening' : 'topic.continue')),
+                h('button', { type: 'button', 'aria-expanded': managing === id, onClick: () => setManaging(current => current === id ? undefined : id) }, t(managing === id ? 'manage.close' : 'manage.open')),
                 ...topic.sourceSessionIds.slice(0, 3).map((sessionId, i) => h('button', { key: sessionId, type: 'button', className: 'theone-source-link',
-                  onClick: () => { ctx.layout.beginNavigation(); ctx.uiWorkspace.openSession(sessionId as SessionId) } }, t('topic.source') + (topic.sourceSessionIds.length > 1 ? ' ' + (i + 1) : '')))))]
+                  onClick: () => { ctx.layout.beginNavigation(); ctx.uiWorkspace.openSession(sessionId as SessionId) } }, t('topic.source') + (topic.sourceSessionIds.length > 1 ? ' ' + (i + 1) : '')))),
+              managing === id ? h(TopicManager, { key: `${id}:${topic.title}:${topic.summary}:${constraints}`, topic, constraints, groups: snapshot!.groups, contexts: snapshot!.contexts, post, busy: !!busy }) : null)]
           }))))
     )
   }
@@ -513,7 +644,7 @@ button:has(.theone-nav[data-active=true]){border-color:color-mix(in srgb,var(--o
 const catalogCss = `
 button:has(.theone-catalog-entry)>span:not(:has(.theone-catalog-entry)){display:none}
 .theone-catalog{padding:32px;max-width:1180px;margin:auto;box-sizing:border-box;height:100%;overflow:auto;color:var(--dsw-alias-label-primary)}
-.theone-catalog-header{display:flex;justify-content:space-between;align-items:center;gap:16px}.theone-catalog h1{font-size:24px;margin:0 0 8px}.theone-catalog-header p,.theone-catalog-status,.theone-group-summary{opacity:.65;margin:0 0 18px;line-height:1.6}.theone-catalog button{border:1px solid #8883;border-radius:9px;padding:8px 13px;background:transparent;color:inherit;cursor:pointer;font:inherit;white-space:nowrap}.theone-catalog button:disabled{opacity:.5;cursor:default}.theone-catalog-groups{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,310px),1fr));gap:20px}.theone-topic-group{border:1px solid #8882;border-radius:16px;padding:20px;background:#88805}.theone-topic-group h2{font-size:18px;margin:0 0 8px}.theone-topic-group h2 span{font-size:13px;opacity:.5}.theone-topic-card{border-top:1px solid #8882;padding:16px 0}.theone-topic-card:last-child{padding-bottom:0}.theone-topic-card h3{font-size:15px;line-height:1.5;margin:0 0 7px}.theone-topic-card p{font-size:13px;line-height:1.7;opacity:.75;margin:0 0 12px;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}.theone-topic-actions{display:flex;gap:8px;flex-wrap:wrap}.theone-topic-actions button{font-size:12px}.theone-topic-actions .theone-source-link{border-color:transparent;opacity:.6}.theone-catalog-warning{background:#ff900011;padding:12px;border-radius:10px;font-size:13px}.theone-catalog-entry{display:flex;align-items:center;gap:10px;font-size:14px}.theone-catalog-empty{padding:40px 0;opacity:.65;line-height:1.8}.theone-catalog-tools{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.theone-topic-links{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 12px;font-size:12px}.theone-links-label,.theone-links-empty{opacity:.6}.theone-link-chip{display:inline-flex;align-items:center;gap:2px;border:1px solid #8883;border-radius:999px;padding:2px 4px 2px 9px}.theone-catalog .theone-link-chip button{border:0;padding:0 5px;opacity:.6;font-size:13px;line-height:1}.theone-topic-links select{font:inherit;font-size:12px;color:inherit;background:transparent;border:1px solid #8883;border-radius:8px;padding:2px 6px}.theone-link-private{display:inline-flex;align-items:center;gap:4px;opacity:.75;cursor:pointer}@media(max-width:640px){.theone-catalog{padding:20px}.theone-catalog-header{align-items:flex-start}.theone-catalog-header h1{font-size:21px}}
+.theone-catalog-header{display:flex;justify-content:space-between;align-items:center;gap:16px}.theone-catalog h1{font-size:24px;margin:0 0 8px}.theone-catalog-header p,.theone-catalog-status,.theone-group-summary{opacity:.65;margin:0 0 18px;line-height:1.6}.theone-catalog button{border:1px solid #8883;border-radius:9px;padding:8px 13px;background:transparent;color:inherit;cursor:pointer;font:inherit;white-space:nowrap}.theone-catalog button:disabled{opacity:.5;cursor:default}.theone-catalog-groups{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,310px),1fr));gap:20px}.theone-topic-group{border:1px solid #8882;border-radius:16px;padding:20px;background:#88805}.theone-topic-group h2{font-size:18px;margin:0 0 8px}.theone-topic-group h2 span{font-size:13px;opacity:.5}.theone-topic-card{border-top:1px solid #8882;padding:16px 0}.theone-topic-card:last-child{padding-bottom:0}.theone-topic-card h3{font-size:15px;line-height:1.5;margin:0 0 7px}.theone-topic-card p{font-size:13px;line-height:1.7;opacity:.75;margin:0 0 12px;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}.theone-topic-actions{display:flex;gap:8px;flex-wrap:wrap}.theone-topic-actions button{font-size:12px}.theone-topic-actions .theone-source-link{border-color:transparent;opacity:.6}.theone-catalog-warning{background:#ff900011;padding:12px;border-radius:10px;font-size:13px}.theone-catalog-entry{display:flex;align-items:center;gap:10px;font-size:14px}.theone-catalog-empty{padding:40px 0;opacity:.65;line-height:1.8}.theone-catalog-tools{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.theone-topic-links{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 12px;font-size:12px}.theone-links-label,.theone-links-empty{opacity:.6}.theone-link-chip{display:inline-flex;align-items:center;gap:2px;border:1px solid #8883;border-radius:999px;padding:2px 4px 2px 9px}.theone-catalog .theone-link-chip button{border:0;padding:0 5px;opacity:.6;font-size:13px;line-height:1}.theone-topic-links select{font:inherit;font-size:12px;color:inherit;background:transparent;border:1px solid #8883;border-radius:8px;padding:2px 6px}.theone-link-private{display:inline-flex;align-items:center;gap:4px;opacity:.75;cursor:pointer}.theone-topic-card .theone-topic-state{font-size:12px;opacity:.8;-webkit-line-clamp:3}.theone-topic-state span{opacity:.6;margin-right:4px}.theone-manage{display:flex;flex-direction:column;gap:10px;margin-top:12px;padding:14px;border:1px solid #8883;border-radius:12px;font-size:12px}.theone-create{flex-direction:row;flex-wrap:wrap;align-items:center;margin:0 0 18px}.theone-create input{flex:1;min-width:180px}.theone-manage-field{display:flex;flex-direction:column;gap:5px}.theone-manage-field>span{opacity:.65}.theone-manage input,.theone-manage textarea,.theone-manage select,.theone-routes select{font:inherit;font-size:12px;color:inherit;background:transparent;border:1px solid #8883;border-radius:8px;padding:6px 8px;box-sizing:border-box;min-width:0}.theone-manage textarea{resize:vertical;width:100%}.theone-manage-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.theone-manage-row select,.theone-manage-row input{flex:1;min-width:140px}.theone-manage-hint{opacity:.6;font-size:12px;line-height:1.6;margin:0}.theone-catalog .theone-danger{color:#c4402f;border-color:#c4402f55}.theone-routes{border:1px solid #8882;border-radius:16px;padding:14px 20px;margin:0 0 20px}.theone-routes summary{cursor:pointer;font-weight:500}.theone-routes summary span{opacity:.5;font-size:13px}.theone-routes ol{list-style:none;margin:12px 0 0;padding:0;display:flex;flex-direction:column;gap:10px}.theone-routes li{border-top:1px solid #8882;padding-top:10px;font-size:12px;display:flex;flex-direction:column;gap:5px}.theone-route-head{display:flex;gap:10px;min-width:0}.theone-route-head time{opacity:.55;flex:none}.theone-route-head q{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.theone-route-body{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.theone-route-body small{opacity:.6}.theone-route-fixed{opacity:.75}@media(max-width:640px){.theone-catalog{padding:20px}.theone-catalog-header{align-items:flex-start}.theone-catalog-header h1{font-size:21px}}
 `
 
 const settingsCss = `

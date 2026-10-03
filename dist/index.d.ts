@@ -17,6 +17,7 @@ export interface Config {
     maxDescriptorChars: number;
     maxResponseChars: number;
     routerMode?: 'rules' | 'llm';
+    /** @deprecated The direct DeepSeek router was removed; routing always uses DSH. Accepted and ignored. */
     routerTransport?: 'dsh' | 'legacy';
     historyCatalog?: boolean;
     catalogIntervalMs?: number;
@@ -54,13 +55,13 @@ declare module '@deepseek-ai/dsh-llm' {
     }
 }
 export default class TheOne extends Service {
-    private readonly config;
+    private config;
     static inject: string[];
     static Config: z<Config>;
     readonly store: ContextStore;
     readonly catalog?: HistoryCatalog;
     private readonly workers;
-    private readonly router?;
+    private router?;
     private readonly workerSelections;
     private active;
     private reservedGateway;
@@ -76,8 +77,15 @@ export default class TheOne extends Service {
     constructor(ctx: Context, config: Config);
     /** DSH Connection protects plugin routes inside its authenticated /api fence. */
     private registerCatalogChannel;
+    /** One topic-directory edit. Changes that remove a topic wait until no reply is running. */
+    private editTopics;
+    /** Existing DSH sessions a topic can take as history: not main chats and not topics' own Workers. */
+    private attachableSessions;
     /** Read only public options; never read or return the API key environment value. */
     settingsSnapshot(): Promise<SettingsSnapshot>;
+    private routerFor;
+    /** Saved settings take effect for the next message; only the background catalog waits for a restart. */
+    private applySettings;
     /** Capture before Web saves the gateway itself as DSH's new default. */
     captureDefaultModel(): void;
     private backingModel;
@@ -134,6 +142,14 @@ export default class TheOne extends Service {
     private registerWorkerTools;
     /** Mirror the routed Worker's steps into the main chat; tools execute exclusively in the Worker. */
     answer(options: GenerateOptions): AsyncIterable<StreamChunk>;
+    /** The message answered just before `inputId` in this main chat, with the topic it went to. */
+    private previousRoute;
+    /** Route a misrouted message again, never back to the topic it was wrongly given. */
+    private reroute;
+    /** The user moved a message to another topic: remember it, and teach that topic its terms. */
+    private applyCorrection;
+    /** The misrouted message, handed to the right topic with the user's correction. */
+    private correctedInput;
     /** Topic → when main chat last answered in it; quick alternation between two topics links them. */
     private lastRoute?;
     private learnFromRoute;

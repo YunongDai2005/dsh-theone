@@ -1,15 +1,18 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { HostConnectionService } from '@deepseek-ai/dsh-client-connection'
-import { FixtureModel, harness } from './harness.ts'
+import { FixtureModel, ask, harness } from './harness.ts'
 import type { SettingsSnapshot } from '../src/settings-types.ts'
 
 class CapacityModel extends FixtureModel {
   override async resolveModel(provider: string, model: string) {
     return { provider, id: model, name: model, context: { contextWindow: 16384 }, defaultMaxTokens: 512 }
+  }
+  override async listModels(provider: string) {
+    return [{ provider, id: 'fixture', name: 'Fixture' }, { provider, id: 'fixture-b', name: 'Fixture B' }]
   }
 }
 
@@ -19,10 +22,9 @@ test('settings expose all public runtime options without credentials, writes or 
   const secret = 'settings-private-credential-example'
   process.env.THEONE_SETTINGS_SECRET_TEST = secret
   const model = new CapacityModel()
-  const app = await harness(root, model, { theoneConfig: {
-    routerBaseUrl: `https://username:${secret}@example.com/v1?api_key=${secret}#${secret}`,
-    routerApiKeyEnv: 'THEONE_SETTINGS_SECRET_TEST', catalogIntervalMs: 45000,
-  } })
+  const app = await harness(root, model, { theoneConfig: { catalogIntervalMs: 45000,
+    // Retired settings of the removed direct router still load and are never shown.
+    routerTransport: 'legacy', routerBaseUrl: `https://username:${secret}@example.com/v1`, routerApiKeyEnv: 'THEONE_SETTINGS_SECRET_TEST' } })
   try {
     const connection = new HostConnectionService(app.ctx, [], undefined as never)
     const handler = connection.createSharedFetchHandler('/api')
@@ -33,10 +35,10 @@ test('settings expose all public runtime options without credentials, writes or 
     assert.equal(response.status, 200)
     assert.equal(response.headers.get('cache-control'), 'no-store')
     const settings: SettingsSnapshot = await response.json()
-    assert.equal(Object.keys(settings.values).length, 16)
+    assert.equal(Object.keys(settings.values).length, 12)
     assert.equal(settings.values.catalogIntervalMs, 45000)
-    assert.equal(settings.values.routerBaseUrl, 'https://example.com/v1')
-    assert.equal(settings.values.routerApiKeyEnv, 'THEONE_SETTINGS_SECRET_TEST')
+    // Every model DSH offers can be picked, except TheOne's own entry.
+    assert.deepEqual(settings.models, [{ provider: 'fixture', id: 'fixture', name: 'Fixture' }, { provider: 'fixture', id: 'fixture-b', name: 'Fixture B' }])
     assert.equal(JSON.stringify(settings).includes(secret), false)
     assert.equal(JSON.stringify(settings).includes('username'), false)
     assert.equal(settings.model?.contextWindow, 16384)
@@ -71,9 +73,10 @@ test('settings follow a remembered DSH model and remain readable when metadata i
   } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
 })
 
-test('settings save atomically, reject stale or invalid forms, and apply only after restart', async () => {
+test('settings save atomically, reject stale or invalid forms, and apply when saved', async () => {
   const root = await mkdtemp(join(tmpdir(), 'theone-settings-save-'))
-  let app = await harness(root, new CapacityModel())
+  const model = new CapacityModel()
+  let app = await harness(root, model)
   const connect = async () => {
     const connection = new HostConnectionService(app.ctx, [], undefined as never)
     const handler = connection.createSharedFetchHandler('/api')
@@ -85,60 +88,74 @@ test('settings save atomically, reject stale or invalid forms, and apply only af
   try {
     let put = await connect()
     const initial = await app.ctx.theone.settingsSnapshot()
-    const desired = { ...initial.savedValues, routerMode: 'llm', routerTransport: 'dsh', maxResponseChars: 12345,
-      workerProvider: null, workerModel: null, routerBaseUrl: 'https://api.deepseek.com' }
+    const catalogFile = join(root, 'manual.json')
+    await writeFile(catalogFile, JSON.stringify([{ id: 'manual-topic', title: '手工话题', summary: '人工整理', entities: ['手工'], keywords: [], lastState: '待开始' }]))
+    const desired = { ...initial.savedValues, maxResponseChars: 12345, routeNotice: 'all', linkScope: 'off',
+      workerProvider: 'fixture', workerModel: 'fixture-b', catalogIntervalMs: 120000, contextsPath: catalogFile }
     for (const invalid of [
-      { ...desired, databasePath: '/another/database.db' }, { ...desired, maxResponseChars: 127 },
+      { ...desired, databasePath: '/another/database.db' }, { ...desired, gatewayKey: 'another' }, { ...desired, maxResponseChars: 127 },
       { ...desired, historyCatalog: 'false' }, { ...desired, routerMode: 'unknown' },
       { ...desired, workerProvider: 'theone', workerModel: 'gateway' },
       { ...desired, workerProvider: 'fixture', workerModel: null },
-      { ...desired, routerBaseUrl: 'https://user:password@example.com' },
-      { ...desired, routerBaseUrl: 'https://example.com?key=secret' },
-      { ...desired, routerBaseUrl: 'http://example.com/v1' },
-      { ...desired, routerApiKeyEnv: 'actual-secret-value!' },
+      { ...desired, contextsPath: join(root, 'missing.json') }, { ...desired, contextsPath: '' },
       { ...desired, apiKey: 'private-key' },
-      { ...desired, routerTransport: 'legacy', routerApiKeyEnv: 'THEONE_TEST_MISSING_SETTINGS_KEY' },
     ]) assert.equal((await put(invalid, 0)).status, 400)
     assert.equal((await app.ctx.theone.settingsSnapshot()).revision, 0)
     assert.equal((await put(desired, 9)).status, 409)
     const saved = await put(desired, 0)
     assert.equal(saved.status, 200)
-    const pending: SettingsSnapshot = await saved.json()
-    assert.equal(pending.revision, 1)
-    assert.equal(pending.values.routerMode, 'rules')
-    assert.equal(pending.savedValues.routerMode, 'llm')
-    assert.equal(pending.restartRequired, true)
+    const applied: SettingsSnapshot = await saved.json()
+    assert.equal(applied.revision, 1)
+    // Everything but the background catalog applies at once.
+    assert.equal(applied.values.maxResponseChars, 12345)
+    assert.equal(applied.values.routeNotice, 'all')
+    assert.equal(applied.values.linkScope, 'off')
+    assert.equal(applied.values.workerModel, 'fixture-b')
+    assert.equal(applied.values.contextsPath, catalogFile)
+    assert.equal(applied.values.catalogIntervalMs, 60000)
+    assert.equal(applied.restartRequired, true)
+    assert.ok(app.ctx.theone.store.contexts().some(context => context.id === 'manual-topic'))
+    const reply = await ask(app.gateway, 'Qwen 的配置')
+    assert.equal(reply.output, '模拟回答：ctx_qwen_9070xt')
+    assert.equal(model.requests.at(-1)?.model, 'fixture-b')
+    assert.ok(reply.events.some(event => event.type === 'user/message' && event.data.source.kind === 'theone-route'))
     assert.equal((await put({ ...desired, maxResponseChars: 54321 }, 0)).status, 409)
     assert.equal((await app.ctx.theone.settingsSnapshot()).savedValues.maxResponseChars, 12345)
     await app.close()
     app = await harness(root, new CapacityModel())
     put = await connect()
     const restarted = await app.ctx.theone.settingsSnapshot()
-    assert.equal(restarted.values.routerMode, 'llm')
-    assert.equal(restarted.values.routerTransport, 'dsh')
+    assert.equal(restarted.values.catalogIntervalMs, 120000)
     assert.equal(restarted.values.maxResponseChars, 12345)
-    assert.equal(restarted.values.workerProvider, null)
+    assert.equal(restarted.values.contextsPath, catalogFile)
     assert.equal(restarted.restartRequired, false)
     assert.equal(restarted.revision, 1)
-    assert.equal((await put(restarted.savedValues, 1)).status, 200)
-    assert.equal((await app.ctx.theone.settingsSnapshot()).restartRequired, false)
+    assert.equal((await put({ ...restarted.savedValues, contextsPath: null, routerMode: 'llm' }, 1)).status, 200)
+    const cleared = await app.ctx.theone.settingsSnapshot()
+    assert.equal(cleared.values.contextsPath, null)
+    assert.equal(cleared.values.routerMode, 'llm')
+    assert.equal(cleared.restartRequired, false)
+    // Clearing the file keeps the topics it imported.
+    assert.ok(app.ctx.theone.store.contexts().some(context => context.id === 'manual-topic'))
   } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
 })
 
-test('saved settings whose legacy router cannot start fall back to the deployment configuration', async () => {
+test('saved settings load with retired keys, and an unreadable saved catalog file does not stop TheOne', async () => {
   const root = await mkdtemp(join(tmpdir(), 'theone-settings-fallback-'))
   let app = await harness(root, new CapacityModel())
   try {
     const initial = await app.ctx.theone.settingsSnapshot()
-    process.env.THEONE_TEST_REMOVED_KEY = 'present-at-save-time'
-    assert.ok(app.ctx.theone.store.saveSettings('test-gateway',
-      { ...initial.savedValues, routerMode: 'llm', routerTransport: 'legacy', routerApiKeyEnv: 'THEONE_TEST_REMOVED_KEY' }, 0))
+    assert.ok(app.ctx.theone.store.saveSettings('test-gateway', { ...initial.savedValues, maxResponseChars: 4321,
+      contextsPath: join(root, 'deleted.json'), routerTransport: 'legacy', routerApiKeyEnv: 'THEONE_TEST_REMOVED_KEY' } as never, 0))
     await app.close()
-    delete process.env.THEONE_TEST_REMOVED_KEY
     app = await harness(root, new CapacityModel())
     const restarted = await app.ctx.theone.settingsSnapshot()
-    assert.equal(restarted.values.routerMode, 'rules')
-    assert.equal(restarted.savedValues.routerTransport, 'legacy')
-    assert.equal(restarted.restartRequired, true)
-  } finally { delete process.env.THEONE_TEST_REMOVED_KEY; await app.close(); await rm(root, { recursive: true, force: true }) }
+    assert.equal(restarted.values.maxResponseChars, 4321)
+    assert.equal(restarted.restartRequired, false)
+    assert.equal('routerTransport' in restarted.savedValues, false)
+    assert.ok(app.ctx.theone.store.saveSettings('test-gateway', { ...initial.savedValues, maxResponseChars: 5 }, 1))
+    await app.close()
+    app = await harness(root, new CapacityModel())
+    assert.equal((await app.ctx.theone.settingsSnapshot()).values.maxResponseChars, 100000)
+  } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
 })

@@ -38,3 +38,22 @@ export function continuesCurrent(text: string): boolean {
   const input = text.trim()
   return input.length <= 16 && /^(?:继续(?:说|写|做)?|接着(?:说|写|做|来)?|然后呢?|还有呢|好的?|好吧|可以|行|嗯+|对的?|是的|没问题|收到|谢谢|多谢|辛苦了|为什么|为啥|怎么说|详细(?:点|些|一点|说说)|展开(?:说说|讲讲)?|再详细(?:点|些|一点)?|ok(?:ay)?|yes|thanks?|thank you|go on|continue|why|more)[\s!！。.,，?？~～…]*$/i.test(input)
 }
+
+/**
+ * "Wrong topic" said right after a reply: the previous message belonged elsewhere. Returns what
+ * follows the phrase (often the right topic, e.g. "分错了，是论文的"), or undefined.
+ */
+export function spokenCorrection(text: string): string | undefined {
+  const match = /^\s*(?:不对[，,。！!\s]*)?(?:你)?(?:分错(?:话题)?了?|放错(?:话题|地方)了?|不是(?:这个|这件事的?)话题|不属于这个话题|话题(?:不对|错了)|(?:that|this)(?:'s| is| was) (?:the )?wrong topic|wrong topic)(?=$|[，,。.!！:：\s])[，,。.!！:：\s]*/i.exec(text)
+  return match ? text.slice(match[0].length).trim() : undefined
+}
+
+const FILLER = new Set(['这个', '那个', '一下', '帮我', '可以', '什么', '怎么', '我们', '你们', '现在', '然后', '还有', '这是', '那是', '是不是', 'the', 'and', 'for', 'with', 'this', 'that'])
+
+/** A few distinctive terms of a message, used to teach a topic what belongs to it. */
+export function topicTerms(text: string, limit = 6): string[] {
+  // Common particles split Chinese runs into the words around them.
+  const words = redactRoutingText(text).replace(/[的了和与及把在是吗呢吧也就都还要给让被]/g, ' ')
+  const terms = words.match(/[A-Za-z][A-Za-z0-9_.+#-]{2,}|[\u4e00-\u9fff]{2,8}/g) ?? []
+  return [...new Set(terms.filter(term => !FILLER.has(term.toLowerCase()) && !term.startsWith('REDACTED')))].slice(0, limit)
+}

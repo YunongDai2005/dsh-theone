@@ -16,7 +16,7 @@ test('only bare acknowledgements and "go on" skip the classifier', () => {
 
 test('a short continuation of the mounted topic answers without a routing call', { timeout: 30000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'theone-fast-keep-'))
-  const app = await harness(root, undefined, { routerMode: 'llm', routerTransport: 'dsh' })
+  const app = await harness(root, undefined, { routerMode: 'llm' })
   try {
     app.model.behavior = async function* (options) {
       if (options.system === ROUTING_PROMPT)
@@ -40,7 +40,7 @@ test('a short continuation of the mounted topic answers without a routing call',
 
 test('catalog review pages are classified concurrently with the same in-order result', { timeout: 30000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'theone-parallel-review-'))
-  const app = await harness(root, undefined, { routerMode: 'llm', routerTransport: 'dsh', historyCatalog: true })
+  const app = await harness(root, undefined, { routerMode: 'llm', historyCatalog: true })
   try {
     await app.ctx.theone.catalog!.refresh()
     app.ctx.theone.store.seed(Array.from({ length: 40 }, (_, i) => ({ id: `page-${String(i).padStart(3, '0')}`, title: `历史项目 ${i}`, summary: '不同的项目', entities: [], keywords: [], lastState: '待续' })))

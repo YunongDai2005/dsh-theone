@@ -42,7 +42,7 @@ export class FixtureModel extends LlmAdapter {
   }
 }
 
-export async function harness(root: string, model = new FixtureModel(), options: { databasePath?: string | null; descriptorPath?: string; compression?: 'none' | 'zstd'; queryPath?: string; routerMode?: 'rules' | 'llm'; routerTransport?: 'dsh' | 'legacy'; autoModel?: boolean; defaultProvider?: string; historyCatalog?: boolean; theoneConfig?: Partial<Config> } = {}) {
+export async function harness(root: string, model = new FixtureModel(), options: { databasePath?: string | null; descriptorPath?: string; compression?: 'none' | 'zstd'; queryPath?: string; routerMode?: 'rules' | 'llm'; autoModel?: boolean; defaultProvider?: string; historyCatalog?: boolean; theoneConfig?: Partial<Config> } = {}) {
   const ctx = new Context()
   try {
     await ctx.plugin(LlmRuntime)
@@ -59,7 +59,7 @@ export async function harness(root: string, model = new FixtureModel(), options:
     await ctx.plugin(TheOne, {
       databasePath: options.databasePath === null ? undefined : options.databasePath ?? join(root, 'contexts.db'), contextsPath: options.descriptorPath ?? contextsPath, gatewayKey: 'test-gateway',
       historyCatalog: options.historyCatalog ?? false,
-      routerMode: options.routerMode ?? 'rules', routerTransport: options.routerTransport ?? 'legacy',
+      routerMode: options.routerMode ?? 'rules',
       workerProvider: options.autoModel ? undefined : 'fixture', workerModel: options.autoModel ? undefined : 'fixture', maxDescriptorChars: 4000, maxResponseChars: 100000,
       ...options.theoneConfig,
     })

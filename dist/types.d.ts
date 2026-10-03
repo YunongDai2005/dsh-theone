@@ -26,6 +26,8 @@ export interface Decision {
     historyIndependent?: boolean;
     /** Other topics this request also draws on; the routed topic does the work. */
     relatedIds?: string[];
+    /** The user said message `correctionOf` went to the wrong topic; this route redoes it here. */
+    correctionOf?: string;
 }
 /** Relatedness between two topics: a user's choice (1 linked, -1 kept apart) or learned weight. */
 export interface TopicLink {
@@ -39,6 +41,23 @@ export interface RouteRecord {
     gatewayId: string;
     decision: Decision;
     status: 'planned' | 'running' | 'completed' | 'failed';
+}
+/** One routed main-chat message as the topic directory lists it. */
+export interface RouteView {
+    messageId: string;
+    decision: Decision;
+    status: RouteRecord['status'];
+    at: number;
+    /** Redacted start of the message. */
+    excerpt: string;
+    receipt?: {
+        mode: 'rules' | 'llm';
+        model?: string;
+        elapsedMs?: number;
+        errorCode?: string;
+    };
+    /** The topic the user said it belonged to instead. */
+    correctedTo?: string;
 }
 /** Inclusive raw-event ranges reviewed for a historical Context. */
 export type SourceRange = {

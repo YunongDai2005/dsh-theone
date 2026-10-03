@@ -62,7 +62,7 @@ test('new-topic fallback avoids colliding titles and ignores recent assistant sp
 
 test('native gateway dispatches unsupported clarification as CREATE during partial indexing and search failure', {timeout:30000}, async () => {
   const root = await mkdtemp(join(tmpdir(),'theone-less-clarification-'))
-  const app = await harness(root,undefined,{routerMode:'llm',routerTransport:'dsh',historyCatalog:true})
+  const app = await harness(root,undefined,{routerMode:'llm',historyCatalog:true})
   try {
     app.ctx.theone.store.seed(Array.from({length:70},(_,i)=>({...contexts[0],id:`unrelated-${i}`,title:`无关项目 ${i}`})))
     app.ctx.theone.catalog!.candidates = async () => app.ctx.theone.store.contexts().slice(0,16)

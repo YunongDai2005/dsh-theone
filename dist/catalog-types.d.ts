@@ -30,6 +30,7 @@ export interface LinkageSnapshot {
     scope: 'off' | 'workspace' | 'auto';
     topics: Record<string, {
         private: boolean;
+        constraints?: string;
         related: TopicLinkView[];
     }>;
 }

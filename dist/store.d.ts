@@ -1,6 +1,11 @@
 import type { ModelSelection } from '@deepseek-ai/dsh-agent';
 import type { ExtractedTopic, HistoryPart, TopicGroup } from './catalog-types.ts';
-import type { ContextDescriptor, ContextUsage, Decision, RouteRecord, StoredContext, SourceRange, TopicLink } from './types.ts';
+import type { ContextDescriptor, ContextUsage, Decision, RouteRecord, RouteView, StoredContext, SourceRange, TopicLink } from './types.ts';
+/** A whole session attached by hand counts as reviewed from its first event to its last. */
+export declare const WHOLE_SESSION: {
+    startSeq: number;
+    endSeq: number;
+};
 /** Stores descriptors and routing metadata. Original conversation stays in DSH. */
 export declare class ContextStore {
     private readonly db;
@@ -33,7 +38,9 @@ export declare class ContextStore {
         throughSeq: number;
         status: string;
     } | undefined;
-    markIndex(sessionId: string, throughSeq: number, status: 'ready' | 'failed' | 'skipped', errorCode?: string): void;
+    markIndex(sessionId: string, throughSeq: number, status: 'ready' | 'failed' | 'skipped' | 'excluded', errorCode?: string): void;
+    /** A turn of a topic the user deleted; the catalog must not extract it again while it is unchanged. */
+    dismissedTurn(sessionId: string, seq: number): string | undefined;
     indexedTurn(sessionId: string, seq: number): {
         fingerprint: string;
         contextId: string;
@@ -95,5 +102,44 @@ export declare class ContextStore {
     /** Old unscoped historical mappings remain visible, but cannot be searched. */
     sourceRanges(contextId: string): SourceRange[];
     sources(contextId: string): string[];
+    /** What a route was decided from: a short redacted excerpt and the classifier's receipt. */
+    recordRouteDetail(messageId: string, excerpt: string, receipt: unknown): void;
+    /** This entry's latest routes, newest first. */
+    recentRoutes(gatewayKey: string, limit?: number): RouteView[];
+    /** Record that a message belonged to another topic; later routing learns from it. */
+    correctRoute(messageId: string, contextId: string, now?: number): void;
+    /** Recent corrections as examples for the classifier: this text belonged there, not here. */
+    corrections(gatewayKey: string, limit?: number): {
+        text: string;
+        wrongId?: string;
+        rightId: string;
+    }[];
+    private writeDescriptor;
+    private context;
+    /** Terms a correction showed belong to this topic, newest kept first. */
+    addKeywords(contextId: string, terms: string[]): void;
+    /** The user's own wording for a topic outranks what the catalog extracted. */
+    editTopic(contextId: string, change: {
+        title?: string;
+        summary?: string;
+        lastState?: string;
+    }): void;
+    createTopic(title: string, summary?: string): string;
+    /** Put a topic in another topic workspace, or a new one named `title`; null leaves it unassigned. */
+    moveTopic(contextId: string, target: {
+        groupId: string;
+    } | {
+        title: string;
+    } | null): void;
+    /** Attach a whole existing session to a topic as reviewed history its Worker may search. */
+    attachSession(contextId: string, sessionId: string): void;
+    /**
+     * Fold `sourceId` into `targetId`: its history, progress, summaries and links move over, and its
+     * own Worker session becomes searchable history of the target. The source topic is removed.
+     */
+    mergeTopics(sourceId: string, targetId: string): void;
+    /** Remove a topic and everything TheOne kept about it. DSH keeps the conversations themselves. */
+    deleteTopic(contextId: string): void;
+    private purge;
     close(): void;
 }

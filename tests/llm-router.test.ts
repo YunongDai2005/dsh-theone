@@ -5,14 +5,31 @@ import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import {randomUUID} from 'node:crypto'
 import {SessionId} from '@deepseek-ai/dsh-session'
-import {DeepSeekRouter,RouterFailure,validateRoutingDecision,routingPayload} from '../src/llm-router.ts'
-import {harness,ask} from './harness.ts'
+import {DshRouter,RouterFailure,ROUTING_PROMPT,validateRoutingDecision,routingPayload} from '../src/llm-router.ts'
+import {harness,ask,FixtureModel,textResponse} from './harness.ts'
 const catalog=[{id:'topic',title:'研究',summary:'研究工作',entities:['研究'],keywords:[],lastState:'进行中'},
  {id:'other',title:'购物',summary:'购物清单',entities:['购物'],keywords:[],lastState:'进行中'}]
 const input={text:'继续',contexts:catalog,currentId:'topic'}
 const decision={action:'EXISTING',contextId:'topic',title:null,question:null,reason:'继续当前工作'}
-function response(value:unknown,finish='stop') {
- return new Response(JSON.stringify({model:'deepseek-flash',choices:[{finish_reason:finish,message:{content:JSON.stringify(value)}}],usage:{prompt_tokens:20,completion_tokens:10,total_tokens:30}}),{headers:{'Content-Type':'application/json'}})
+type Chunk=import('@deepseek-ai/dsh-llm').StreamChunk
+/** A model service whose only model answers with `reply`; counts calls. */
+function service(reply:(options:{messages:unknown[];tools?:unknown;signal?:AbortSignal})=>AsyncIterable<Chunk>|Iterable<Chunk>){
+ const state={calls:0}
+ const llm={resolveModelInfo:async(provider:string,id:string)=>({provider,id,name:id}),
+  prepareCall:async(config:{provider:string;model:string})=>({config,stream:(options:{messages:unknown[];signal?:AbortSignal})=>{state.calls++;return reply(options)}})}
+ return {state,router:(now?:()=>number)=>new DshRouter(llm as never,()=>({provider:'fixture',model:'router-model'}),30000,now)}
+}
+const finished=(kind:string,status?:number):Chunk=>({type:'finish',reason:kind==='error'?{kind:'error',failure:{code:'HTTP',message:'private upstream text',status}}:{kind}} as Chunk)
+/** The model's own text worker reply; routing requests answer through `route`. */
+function routed(route:(payload:ReturnType<typeof routingPayload>,signal?:AbortSignal)=>Promise<unknown>){
+ return async function*(options:import('@deepseek-ai/dsh-llm').GenerateOptions):AsyncIterable<Chunk>{
+  if(options.system===ROUTING_PROMPT){
+   const text=(options.messages[0] as unknown as {content:{text:string}[]}).content[0].text
+   yield* textResponse(JSON.stringify(await route(JSON.parse(text),options.signal)));return
+  }
+  const descriptor=[...options.messages].reverse().find(message=>'source' in message && message.source?.kind==='theone-context')
+  yield* textResponse(`模拟回答：${descriptor && 'source' in descriptor && descriptor.source?.kind==='theone-context'?descriptor.source.contextId:'?'}`)
+ }
 }
 test('unknown targets and duplicate creations never reach the store',()=>{
  for(const value of [
@@ -27,102 +44,88 @@ test('unknown targets and duplicate creations never reach the store',()=>{
  assert.equal(validateRoutingDecision({action:'CREATE',contextId:null,title:'摄影',question:null,reason:'新事项'},input).action,'CREATE')
 })
 test('classification sends redacted bounded data and has no tools',async()=>{
- let calls=0
- const client=new DeepSeekRouter({apiKey:'test-only-key'},async(_url,init)=>{
-  calls++
-  const body=JSON.parse(String(init?.body))
-  assert.equal(body.model,'deepseek-flash')
-  assert.equal(body.thinking.type,'disabled')
-  assert.equal(body.tools,undefined)
-  assert.equal(body.messages.length,2)
-  assert.ok(!body.messages[1].content.includes('sk-testsecret0123456789012345'))
-  assert.ok(!body.messages[1].content.includes('private@example.com'))
-  assert.ok(!body.messages[1].content.includes('192.168.1.20'))
-  return response(decision)
+ const model=service(function*(options){
+  const body=JSON.stringify(options.messages)
+  assert.equal(options.tools,undefined)
+  assert.equal(options.messages.length,1)
+  for(const secret of ['sk-testsecret0123456789012345','private@example.com','192.168.1.20']) assert.ok(!body.includes(secret))
+  yield* textResponse(JSON.stringify(decision))
  })
- const result=await client.decide({...input,text:'继续 sk-testsecret0123456789012345',recent:[{role:'assistant',text:'联系 private@example.com 192.168.1.20'}]})
- assert.equal(result.decision.action,'KEEP');assert.equal(result.usage?.total_tokens,30);assert.equal(calls,1)
+ const result=await model.router().decide({...input,text:'继续 sk-testsecret0123456789012345',recent:[{role:'assistant',text:'联系 private@example.com 192.168.1.20'}]})
+ assert.equal(result.decision.action,'KEEP');assert.equal(result.model,'router-model');assert.equal(model.state.calls,1)
  assert.throws(()=>routingPayload({...input,text:'   '}),RouterFailure)
 })
-test('failed or truncated API output is not an executable route',async()=>{
- const truncated=new DeepSeekRouter({apiKey:'test'},async()=>response(decision,'length'))
+test('failed or truncated model output is not an executable route',async()=>{
+ const truncated=service(function*(){yield {type:'text-delta',index:0,text:'{"action"'} as Chunk;yield finished('length')}).router()
  await assert.rejects(truncated.decide(input),error=>error instanceof RouterFailure && error.code==='ROUTER_RESPONSE_INCOMPLETE')
- const failed=new DeepSeekRouter({apiKey:'test'},async()=>new Response('private upstream text',{status:401}))
- await assert.rejects(failed.decide(input),error=>error instanceof RouterFailure && error.message==='ROUTER_HTTP_ERROR' && error.meta?.httpStatus===401)
+ const failed=service(function*(){yield finished('error',401)}).router()
+ await assert.rejects(failed.decide(input),error=>error instanceof RouterFailure && error.code==='ROUTER_REQUEST_FAILED' && error.meta?.httpStatus===401 && !error.message.includes('private'))
 })
 test('unavailable routes cool down, probe again, and reset after success',async()=>{
- let time=1000,calls=0,status=403
- const client=new DeepSeekRouter({apiKey:'test'},async()=>{
-  calls++;return status===200?response(decision):new Response('{}',{status})
- },()=>time)
+ let time=1000,status=403
+ const model=service(function*(){if(status===200)yield* textResponse(JSON.stringify(decision));else yield finished('error',status)})
+ const client=model.router(()=>time)
  await assert.rejects(client.decide(input),error=>error instanceof RouterFailure && error.meta?.httpStatus===403)
  await assert.rejects(client.decide(input),error=>error instanceof RouterFailure && error.code==='ROUTER_CIRCUIT_OPEN' && error.meta?.retryAfterMs===60000)
- assert.equal(calls,1)
+ assert.equal(model.state.calls,1)
  time+=60000;status=200
  assert.equal((await client.decide(input)).decision.action,'KEEP')
  status=500
  for(let i=0;i<3;i++)await assert.rejects(client.decide(input),RouterFailure)
  await assert.rejects(client.decide(input),error=>error instanceof RouterFailure && error.code==='ROUTER_CIRCUIT_OPEN')
- assert.equal(calls,5)
+ assert.equal(model.state.calls,5)
 })
 test('caller cancellation does not mark the model unavailable',async()=>{
- let calls=0
  const controller=new AbortController()
- const client=new DeepSeekRouter({apiKey:'test'},async()=>{
-  calls++
-  if(calls===1){controller.abort();throw controller.signal.reason}
-  return response(decision)
+ const model=service(function*(){
+  if(model.state.calls===1){controller.abort();throw controller.signal.reason}
+  yield* textResponse(JSON.stringify(decision))
  })
+ const client=model.router()
  await assert.rejects(client.decide(input,controller.signal))
- assert.equal((await client.decide(input)).decision.action,'KEEP')
- assert.equal(calls,2)
+ for(let i=0;i<3;i++)assert.equal((await client.decide(input)).decision.action,'KEEP')
+ assert.equal(model.state.calls,4)
 })
 
 test('rebuilt Gateway recovers recent DSH references without copying chat into the routing database',async()=>{
  const root=await mkdtemp(join(tmpdir(),'theone-router-recovery-'))
- const previousFetch=globalThis.fetch,previousKey=process.env.THEONE_ROUTER_API_KEY
- process.env.THEONE_ROUTER_API_KEY='test-only'
  const payloads:ReturnType<typeof routingPayload>[]=[]
- globalThis.fetch=async(_url,init)=>{
-  const body=JSON.parse(String(init?.body));payloads.push(JSON.parse(body.messages[1].content))
-  return response({...decision,contextId:'ctx_qwen_9070xt'})
- }
- let app=await harness(root,undefined,{routerMode:'llm'})
+ const model=new FixtureModel()
+ model.behavior=routed(async payload=>{payloads.push(payload);return {...decision,contextId:'ctx_qwen_9070xt'}})
+ let app=await harness(root,model,{routerMode:'llm'})
  try{
   await ask(app.gateway,'Qwen 需要检查 ROCm 配置')
   const old=app.gateway.id
-  await app.close();app=await harness(root,undefined,{routerMode:'llm'})
+  await app.close();app=await harness(root,model,{routerMode:'llm'})
   assert.deepEqual(app.ctx.theone.store.recentGatewayIds('another-entry',app.gateway.id),[])
   assert.deepEqual(app.ctx.theone.store.recentGatewayIds('test-gateway',app.gateway.id),[old])
-  const result=await ask(app.gateway,'继续刚才的配置检查')
+  const result=await ask(app.gateway,'检查一下 Qwen 的配置结果')
   assert.equal(result.end?.data.reason.kind,'completed')
   assert.ok(payloads.at(-1)!.recent?.some(message=>message.role==='user' && message.text==='Qwen 需要检查 ROCm 配置'))
   assert.ok(payloads.at(-1)!.recent?.some(message=>message.role==='assistant' && message.text.includes('ctx_qwen_9070xt')))
   assert.equal(app.ctx.theone.store.route(result.input.id)?.decision.action,'KEEP')
  }finally{
-  await app.close();globalThis.fetch=previousFetch
-  if(previousKey===undefined)delete process.env.THEONE_ROUTER_API_KEY;else process.env.THEONE_ROUTER_API_KEY=previousKey
+  await app.close()
   await rm(root,{recursive:true,force:true})
  }
 })
-test('gateway reserves admission during LLM classification; cancellation and invalid output preserve state', {timeout:30000},async()=>{
+test('gateway reserves admission during LLM classification; cancellation preserves state and invalid output falls back to rules', {timeout:30000},async()=>{
  const root=await mkdtemp(join(tmpdir(),'theone-llm-'))
- const previousFetch=globalThis.fetch,previousKey=process.env.THEONE_ROUTER_API_KEY
  const entered=Promise.withResolvers<void>()
  let behavior:'pending'|'invalid'|'valid'='pending'
- globalThis.fetch=async(_url,init)=>{
+ const model=new FixtureModel()
+ model.behavior=routed(async(_payload,signal)=>{
   if(behavior==='pending') {
    entered.resolve()
    await new Promise<void>(resolve=>{
-    if(init?.signal?.aborted)resolve();else init?.signal?.addEventListener('abort',()=>resolve(),{once:true})
+    if(signal?.aborted)resolve();else signal?.addEventListener('abort',()=>resolve(),{once:true})
    })
-   init?.signal?.throwIfAborted()
+   signal?.throwIfAborted()
   }
-  return response({action:'EXISTING',contextId:behavior==='invalid'?'unknown':'ctx_qwen_9070xt',title:null,question:null,reason:'测试路由'})
- }
- process.env.THEONE_ROUTER_API_KEY='test-only-no-network'
+  return {action:'EXISTING',contextId:behavior==='invalid'?'unknown':'ctx_qwen_9070xt',title:null,question:null,reason:'测试路由'}
+ })
  // Router receipts live on notices; this test shows every notice to read them.
- const app=await harness(root,undefined,{routerMode:'llm',theoneConfig:{routeNotice:'all'}})
+ const app=await harness(root,model,{routerMode:'llm',theoneConfig:{routeNotice:'all'}})
  try {
   const pending=ask(app.gateway,'Qwen')
   await entered.promise
@@ -134,11 +137,14 @@ test('gateway reserves admission during LLM classification; cancellation and inv
   const cancelled=await pending
   assert.equal(cancelled.end?.data.reason.kind,'aborted')
   assert.equal(app.ctx.theone.store.route(cancelled.input.id),undefined)
+  // An unusable classification is not a question back: the rules route it instead.
   behavior='invalid'
   const invalid=await ask(app.gateway,'Qwen')
-  assert.equal(app.ctx.theone.store.route(invalid.input.id)?.decision.action,'CLARIFY')
-  assert.equal(app.ctx.theone.store.current('test-gateway'),undefined)
-  assert.equal(app.model.requests.length,0)
+  const fallback=app.ctx.theone.store.route(invalid.input.id)?.decision
+  assert.equal(fallback?.action,'MOUNT')
+  assert.equal(fallback?.contextId,'ctx_qwen_9070xt')
+  assert.equal(fallback?.reason,'router-fallback:ROUTER_INVALID_DECISION')
+  assert.equal(invalid.output,'模拟回答：ctx_qwen_9070xt')
   const invalidNotice=invalid.events.find(event=>event.type==='user/message' && event.data.source.kind==='theone-route')
   assert.ok(invalidNotice?.type==='user/message' && invalidNotice.data.source.kind==='theone-route')
   assert.equal(invalidNotice.data.source.router?.errorCode,'ROUTER_INVALID_DECISION')
@@ -147,11 +153,10 @@ test('gateway reserves admission during LLM classification; cancellation and inv
   assert.equal(valid.output,'模拟回答：ctx_qwen_9070xt')
   const notice=valid.events.find(event=>event.type==='user/message' && event.data.source.kind==='theone-route')
   assert.ok(notice?.type==='user/message' && notice.data.source.kind==='theone-route')
-  assert.equal(notice.data.source.router?.model,'deepseek-flash')
-  assert.equal(notice.data.source.router?.promptTokens,20)
+  assert.equal(notice.data.source.router?.model,'fixture')
+  assert.equal(notice.data.source.router?.promptTokens,10)
  }finally{
-  await app.close();globalThis.fetch=previousFetch
-  if(previousKey===undefined)delete process.env.THEONE_ROUTER_API_KEY;else process.env.THEONE_ROUTER_API_KEY=previousKey
+  await app.close()
   await rm(root,{recursive:true,force:true})
  }
 })

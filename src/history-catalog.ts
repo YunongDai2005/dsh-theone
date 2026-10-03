@@ -124,7 +124,7 @@ export class HistoryCatalog {
     for (const record of records) {
       signal.throwIfAborted()
       const sessionId = record.header.id
-      if (record.header.origin === 'subagent' || this.store.isGateway(sessionId)) {
+      if (record.header.origin === 'subagent' || this.store.isGateway(sessionId) || this.store.indexState(sessionId)?.status === 'excluded') {
         this.status.skipped++; this.status.pending--; continue
       }
       const live = this.ctx.agents.get(sessionId)
@@ -147,7 +147,8 @@ export class HistoryCatalog {
         }
         const { parts, summaries } = historyParts(log.events)
         if (!parts.length) { this.store.markIndex(sessionId, through, 'ready'); this.status.skipped++; this.status.pending--; continue }
-        const changed = parts.filter(part => this.store.indexedTurn(sessionId, part.seq)?.fingerprint !== part.fingerprint)
+        const changed = parts.filter(part => this.store.indexedTurn(sessionId, part.seq)?.fingerprint !== part.fingerprint &&
+          this.store.dismissedTurn(sessionId, part.seq) !== part.fingerprint)
         const owned = this.store.contexts().find(context => context.workingSessionId === sessionId)
         const title = clean((await this.ctx.sessionQuery.readTitle(sessionId, signal))?.title ?? '', 120)
         for (let offset = 0; offset < changed.length; offset += 8) {

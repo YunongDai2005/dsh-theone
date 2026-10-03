@@ -4,7 +4,10 @@ import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { randomUUID, createHash } from 'node:crypto'
 import type { ExtractedTopic, HistoryPart, TopicGroup } from './catalog-types.ts'
-import type { ContextDescriptor, ContextUsage, Decision, RouteRecord, StoredContext, SourceRange, TopicLink } from './types.ts'
+import type { ContextDescriptor, ContextUsage, Decision, RouteRecord, RouteView, StoredContext, SourceRange, TopicLink } from './types.ts'
+
+/** A whole session attached by hand counts as reviewed from its first event to its last. */
+export const WHOLE_SESSION = { startSeq: 0, endSeq: Number.MAX_SAFE_INTEGER }
 
 /** Stores descriptors and routing metadata. Original conversation stays in DSH. */
 export class ContextStore {
@@ -86,6 +89,12 @@ export class ContextStore {
       );
       CREATE TABLE IF NOT EXISTS briefing_seen (
         reader TEXT NOT NULL, source TEXT NOT NULL, seen_at INTEGER NOT NULL, PRIMARY KEY(reader, source)
+      );
+      CREATE TABLE IF NOT EXISTS dismissed_turns (
+        session_id TEXT NOT NULL, user_seq INTEGER NOT NULL, fingerprint TEXT NOT NULL, PRIMARY KEY(session_id, user_seq)
+      );
+      CREATE TABLE IF NOT EXISTS route_details (
+        message_id TEXT PRIMARY KEY, excerpt TEXT NOT NULL, receipt TEXT, corrected_to TEXT, corrected_at INTEGER
       );
     `)
   }
@@ -189,8 +198,14 @@ export class ContextStore {
     return row ? { throughSeq: Number(row.through_seq), status: String(row.status) } : undefined
   }
 
-  markIndex(sessionId: string, throughSeq: number, status: 'ready' | 'failed' | 'skipped', errorCode?: string): void {
+  markIndex(sessionId: string, throughSeq: number, status: 'ready' | 'failed' | 'skipped' | 'excluded', errorCode?: string): void {
     this.db.prepare('INSERT OR REPLACE INTO history_index VALUES (?, ?, ?, ?)').run(sessionId, throughSeq, status, errorCode ?? null)
+  }
+
+  /** A turn of a topic the user deleted; the catalog must not extract it again while it is unchanged. */
+  dismissedTurn(sessionId: string, seq: number): string | undefined {
+    const row = this.db.prepare('SELECT fingerprint FROM dismissed_turns WHERE session_id = ? AND user_seq = ?').get(sessionId, seq)
+    return row ? String(row.fingerprint) : undefined
   }
 
   indexedTurn(sessionId: string, seq: number): { fingerprint: string; contextId: string } | undefined {
@@ -468,6 +483,167 @@ export class ContextStore {
 
   sources(contextId: string): string[] {
     return [...new Set(this.sourceRanges(contextId).map(source => source.sessionId))]
+  }
+
+  /** What a route was decided from: a short redacted excerpt and the classifier's receipt. */
+  recordRouteDetail(messageId: string, excerpt: string, receipt: unknown): void {
+    this.db.prepare('INSERT OR IGNORE INTO route_details(message_id, excerpt, receipt) VALUES (?, ?, ?)').run(messageId, excerpt, JSON.stringify(receipt))
+  }
+
+  /** This entry's latest routes, newest first. */
+  recentRoutes(gatewayKey: string, limit = 20): RouteView[] {
+    return this.db.prepare(`SELECT r.message_id, r.decision, r.status, r.created_at, d.excerpt, d.receipt, d.corrected_to
+      FROM routing_events r JOIN gateway_sessions gs ON gs.gateway_id = r.gateway_id
+      LEFT JOIN route_details d ON d.message_id = r.message_id
+      WHERE gs.gateway_key = ? ORDER BY r.rowid DESC LIMIT ?`).all(gatewayKey, limit).map(row => ({
+        messageId: String(row.message_id), decision: JSON.parse(String(row.decision)) as Decision, status: String(row.status) as RouteView['status'],
+        at: Date.parse(String(row.created_at).replace(' ', 'T') + 'Z'), excerpt: row.excerpt == null ? '' : String(row.excerpt),
+        ...(row.receipt ? { receipt: JSON.parse(String(row.receipt)) } : {}), ...(row.corrected_to ? { correctedTo: String(row.corrected_to) } : {}),
+      }))
+  }
+
+  /** Record that a message belonged to another topic; later routing learns from it. */
+  correctRoute(messageId: string, contextId: string, now = Date.now()): void {
+    if (!this.route(messageId)) throw new Error('Unknown route')
+    if (!this.contexts().some(context => context.id === contextId)) throw new Error('Unknown Context')
+    this.db.prepare(`INSERT INTO route_details(message_id, excerpt, corrected_to, corrected_at) VALUES (?, '', ?, ?)
+      ON CONFLICT(message_id) DO UPDATE SET corrected_to = excluded.corrected_to, corrected_at = excluded.corrected_at`).run(messageId, contextId, now)
+  }
+
+  /** Recent corrections as examples for the classifier: this text belonged there, not here. */
+  corrections(gatewayKey: string, limit = 5): { text: string; wrongId?: string; rightId: string }[] {
+    const known = new Set(this.contexts().map(context => context.id))
+    return this.db.prepare(`SELECT d.excerpt, d.corrected_to, r.decision FROM route_details d
+      JOIN routing_events r ON r.message_id = d.message_id JOIN gateway_sessions gs ON gs.gateway_id = r.gateway_id
+      WHERE gs.gateway_key = ? AND d.corrected_to IS NOT NULL AND d.excerpt != '' ORDER BY d.corrected_at DESC LIMIT ?`).all(gatewayKey, limit * 2)
+      .flatMap(row => {
+        const wrongId = (JSON.parse(String(row.decision)) as Decision).contextId
+        const rightId = String(row.corrected_to)
+        // A message moved back where it first went teaches nothing.
+        return known.has(rightId) && wrongId !== rightId ? [{ text: String(row.excerpt), ...(wrongId && known.has(wrongId) ? { wrongId } : {}), rightId }] : []
+      }).slice(0, limit)
+  }
+
+  private writeDescriptor(context: StoredContext): void {
+    const { workingSessionId: _, ...descriptor } = context
+    this.db.prepare('UPDATE contexts SET descriptor = ? WHERE id = ?').run(JSON.stringify(descriptor), context.id)
+  }
+
+  private context(contextId: string): StoredContext {
+    const context = this.contexts().find(item => item.id === contextId)
+    if (!context) throw new Error('Unknown Context')
+    return context
+  }
+
+  /** Terms a correction showed belong to this topic, newest kept first. */
+  addKeywords(contextId: string, terms: string[]): void {
+    const context = this.context(contextId)
+    const seen = new Set<string>()
+    const keywords = [...terms, ...context.keywords].filter(term => {
+      const key = term.toLowerCase()
+      if (!term.trim() || seen.has(key)) return false
+      seen.add(key); return true
+    }).slice(0, 40)
+    this.writeDescriptor({ ...context, keywords })
+  }
+
+  /** The user's own wording for a topic outranks what the catalog extracted. */
+  editTopic(contextId: string, change: { title?: string; summary?: string; lastState?: string }): void {
+    const context = this.context(contextId)
+    const title = change.title?.trim()
+    if (title !== undefined && (!title || title.length > 80 || this.contexts().some(other => other.id !== contextId && other.title.toLowerCase() === title.toLowerCase())))
+      throw new Error('Invalid topic title')
+    const summary = change.summary?.trim()
+    if (summary !== undefined && (!summary || summary.length > 2000)) throw new Error('Invalid topic summary')
+    this.writeDescriptor({ ...context, ...(title ? { title } : {}), ...(summary ? { summary } : {}) })
+    // A hand-written summary is kept like a compaction summary: re-indexing will not overwrite it.
+    if (summary) this.db.prepare("INSERT OR REPLACE INTO context_summary_updates(context_id, session_id, summary_seq, end_seq, summary) VALUES (?, 'user', 0, 0, ?)").run(contextId, summary)
+  }
+
+  createTopic(title: string, summary?: string): string {
+    const name = title.trim()
+    if (!name || name.length > 80 || this.contexts().some(context => context.title.toLowerCase() === name.toLowerCase())) throw new Error('Invalid topic title')
+    const id = randomUUID()
+    this.seed([{ id, title: name, summary: summary?.trim() || '新话题，尚无历史摘要。', entities: [], keywords: [name], lastState: '等待首次执行' }])
+    return id
+  }
+
+  /** Put a topic in another topic workspace, or a new one named `title`; null leaves it unassigned. */
+  moveTopic(contextId: string, target: { groupId: string } | { title: string } | null): void {
+    this.context(contextId)
+    if (target === null) { this.db.prepare('DELETE FROM topic_group_members WHERE context_id = ?').run(contextId); return }
+    let groupId: string
+    if ('groupId' in target) {
+      if (!this.db.prepare('SELECT 1 FROM topic_groups WHERE id = ?').get(target.groupId)) throw new Error('Unknown topic workspace')
+      groupId = target.groupId
+    } else {
+      const title = target.title.trim()
+      if (!title || title.length > 80) throw new Error('Invalid topic workspace title')
+      const normalized = title.normalize('NFKC').toLowerCase().replace(/\s+/g, '')
+      groupId = 'group-' + createHash('sha256').update(normalized).digest('hex').slice(0, 20)
+      this.db.prepare('INSERT OR IGNORE INTO topic_groups VALUES (?, ?, ?, ?)').run(groupId, title, '', normalized)
+    }
+    this.db.prepare('INSERT OR REPLACE INTO topic_group_members VALUES (?, ?)').run(contextId, groupId)
+  }
+
+  /** Attach a whole existing session to a topic as reviewed history its Worker may search. */
+  attachSession(contextId: string, sessionId: string): void {
+    this.addSource(contextId, sessionId, WHOLE_SESSION)
+  }
+
+  /**
+   * Fold `sourceId` into `targetId`: its history, progress, summaries and links move over, and its
+   * own Worker session becomes searchable history of the target. The source topic is removed.
+   */
+  mergeTopics(sourceId: string, targetId: string): void {
+    if (sourceId === targetId) throw new Error('Cannot merge a topic into itself')
+    const source = this.context(sourceId), target = this.context(targetId)
+    this.db.exec('BEGIN IMMEDIATE')
+    try {
+      const merged = (a: string[], b: string[]) => [...new Map([...a, ...b].map(term => [term.toLowerCase(), term])).values()].slice(0, 40)
+      this.writeDescriptor({ ...target, entities: merged(target.entities, source.entities), keywords: merged(target.keywords, source.keywords) })
+      this.db.prepare('INSERT OR IGNORE INTO context_source_ranges SELECT ?, session_id, start_seq, end_seq FROM context_source_ranges WHERE context_id = ?').run(targetId, sourceId)
+      // The source's own Worker conversation is now reviewed history of the target, not a new catalog source.
+      this.markIndex(source.workingSessionId, Number.MAX_SAFE_INTEGER, 'excluded')
+      this.db.prepare('INSERT OR IGNORE INTO context_source_ranges VALUES (?, ?, ?, ?)').run(targetId, source.workingSessionId, WHOLE_SESSION.startSeq, WHOLE_SESSION.endSeq)
+      for (const table of ['history_turns', 'context_state_updates']) this.db.prepare(`UPDATE ${table} SET context_id = ? WHERE context_id = ?`).run(targetId, sourceId)
+      this.db.prepare('UPDATE OR IGNORE context_summary_updates SET context_id = ? WHERE context_id = ?').run(targetId, sourceId)
+      this.db.prepare('UPDATE gateway_state SET context_id = ? WHERE context_id = ?').run(targetId, sourceId)
+      this.db.prepare('UPDATE route_details SET corrected_to = ? WHERE corrected_to = ?').run(targetId, sourceId)
+      const rules = [this.constraints(targetId)?.text, this.constraints(sourceId)?.text].filter(Boolean)
+      if (rules.length) this.setConstraints(targetId, rules.join('\n').slice(0, 400))
+      for (const link of this.links(sourceId)) {
+        const other = link.a === sourceId ? link.b : link.a
+        if (other === targetId) continue
+        if (link.manual) this.setManualLink(targetId, other, link.manual)
+        if (link.weight > 0) this.learnLink(targetId, other, link.weight)
+      }
+      this.purge(sourceId)
+      this.db.exec('COMMIT')
+    } catch (error) { this.db.exec('ROLLBACK'); throw error }
+  }
+
+  /** Remove a topic and everything TheOne kept about it. DSH keeps the conversations themselves. */
+  deleteTopic(contextId: string): void {
+    const context = this.context(contextId)
+    this.db.exec('BEGIN IMMEDIATE')
+    try {
+      // The catalog would otherwise find the same conversation again and bring the topic back.
+      this.db.prepare('INSERT OR REPLACE INTO dismissed_turns SELECT session_id, user_seq, fingerprint FROM history_turns WHERE context_id = ?').run(contextId)
+      this.markIndex(context.workingSessionId, Number.MAX_SAFE_INTEGER, 'excluded')
+      this.purge(contextId); this.db.exec('COMMIT')
+    }
+    catch (error) { this.db.exec('ROLLBACK'); throw error }
+  }
+
+  private purge(contextId: string): void {
+    for (const table of ['topic_group_members', 'history_turns', 'context_origins', 'context_sources', 'context_source_ranges',
+      'gateway_state', 'context_state_updates', 'context_summary_updates', 'topic_flags', 'compaction_digests'])
+      this.db.prepare(`DELETE FROM ${table} WHERE context_id = ?`).run(contextId)
+    this.db.prepare('DELETE FROM topic_links WHERE a = ? OR b = ?').run(contextId, contextId)
+    this.db.prepare('DELETE FROM briefing_seen WHERE reader = ? OR source = ?').run(contextId, contextId)
+    this.db.prepare('UPDATE route_details SET corrected_to = NULL, corrected_at = NULL WHERE corrected_to = ?').run(contextId)
+    this.db.prepare('DELETE FROM contexts WHERE id = ?').run(contextId)
   }
 
   close(): void { this.db.close() }

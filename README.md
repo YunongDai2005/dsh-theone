@@ -38,7 +38,9 @@ Each new message is matched to the current topic, an earlier topic, or a new one
 
 - By default the model you selected in DSH makes one short classification (thinking off, at most 2,048 tokens, 30-second timeout), with candidates recalled from the catalog through DSH full-text search. With no credible match it starts a new topic rather than asking whether it is new.
 - When one message draws on several topics ("put the Qwen benchmark into the paper"), the topic doing the work gets it and the others come along as reference, instead of a question back.
-- It only asks when you refer to an earlier chat it cannot find, or it truly cannot tell which one you mean. A failed decision never switches topics or starts a Worker.
+- It only asks when you refer to an earlier chat it cannot find, or it truly cannot tell which one you mean.
+- A picture or file sent without words stays with the current topic. If the classification call fails, rules decide, and when they are unsure the conversation stays in the current topic.
+- Landed in the wrong topic? Say "wrong topic, it's the paper one" and the previous message is redone there, or move it under **Recent topic routing** in the topic directory. TheOne remembers the correction and routes similar messages there from then on.
 - Rule-based routing (`THEONE_ROUTER_MODE=rules`) makes no model calls.
 
 ## Topic linking
@@ -65,20 +67,23 @@ The topic directory shows what each topic is linked to and why. You can link top
 
 In the background TheOne reads your existing DSH sessions, builds a topic catalog, and groups related topics into **topic workspaces** (open them from the sidebar). It reuses DSH's compaction summaries where available and skips sessions that have not changed. With a long history, the first pass takes some time and API quota. Set `THEONE_HISTORY_CATALOG=false` to turn it off.
 
+Each topic card shows its latest progress and constraints. Under **Manage** you can rename a topic, edit its summary and constraints, move it to another workspace, merge it into another topic, attach an existing DSH session as history it can search, or delete it (DSH keeps the conversations; the catalog will not bring it back). **+ New topic** starts one by hand. **Recent topic routing** lists where each message went, why, with which model and how long it took.
+
 ## Settings
 
-Right-click the TheOne button in the sidebar and choose **Settings**. Changes apply after DSH restarts.
+Right-click the TheOne button in the sidebar and choose **Settings**. Changes apply when saved; only the history catalog settings wait for a DSH restart.
 
 | Setting | What it does |
 | --- | --- |
-| Topic notices | How main chat shows topic changes: hidden, one line only when the topic changes (default), or on every message |
+| Topic notices | How main chat shows topic changes: hidden, one line only when the topic changes (default), or on every message with the reason |
 | Linking scope | Learn automatically (default), same workspace only, or off |
-| Model | Follow DSH (default) or pin the Workers' model; a pinned model takes precedence over main chat's selector |
+| Model | Follow DSH (default) or pin the Workers' model from any model configured in DSH; a pinned model takes precedence over main chat's selector |
 | Routing | LLM decision (default) or rule-based |
 | History catalog | On/off and rescan interval |
 | Limits | Topic descriptor length; reply length per Worker step, thinking included |
+| Manual catalog file | Optional JSON file of hand-written topics, imported when saved |
 
-Optional environment variables: `THEONE_DATABASE_PATH`, `THEONE_CONTEXTS_PATH` (a hand-written catalog JSON), `THEONE_GATEWAY_KEY`, and `THEONE_WORKER_PROVIDER` / `THEONE_WORKER_MODEL` (set both). Only the legacy direct router (`THEONE_ROUTER_TRANSPORT=legacy`) reads `THEONE_ROUTER_API_KEY`.
+The database location and entry identifier switch TheOne to different data, so they are set only through environment variables: `THEONE_DATABASE_PATH` and `THEONE_GATEWAY_KEY`. Also optional: `THEONE_CONTEXTS_PATH` and `THEONE_WORKER_PROVIDER` / `THEONE_WORKER_MODEL` (set both).
 
 ## Data and privacy
 
@@ -93,7 +98,7 @@ Optional environment variables: `THEONE_DATABASE_PATH`, `THEONE_CONTEXTS_PATH` (
 - New topics write files under `~/.dsh/theone/gateway`; you cannot yet choose a project folder for a new topic.
 - Main chat stores copies of tool calls, so its log grows with use; entry-log rotation is not implemented yet.
 - The main chat is remembered per browser: another browser or the desktop app gets its own main chat, sharing the same topics. Only one DSH process should use a database at a time.
-- Image output is not forwarded yet; there is no vector search.
+- Image output is not forwarded yet; there is no vector search. Topics cannot be split yet.
 - Main chat shows tool cards without running them because TheOne sits first in DSH's tool pipeline. If another plugin also places itself first, it may see these mirrored calls, but no tool runs twice.
 
 ## Development
@@ -108,4 +113,4 @@ npm test
 
 Tests use the real DSH runtime (AgentLoop, Session, SQLite, JSONL persistence, compaction) with a simulated model, and call no external API. `npm run pack:plugin` builds the install package; `npm run install:local` and `npm run start:local` run a separate DSH profile in `~/.dsh-theone`.
 
-Service API: `ctx.theone.searchHistoryDetailed(contextId, query, limit)` searches a topic's reviewed history; attach an existing session by hand with `store.addSource(contextId, sessionId, { startSeq, endSeq })`. Earlier acceptance records: [v0.1](./docs/plugin-v0.1.md) and [v0.2](./docs/plugin-v0.2.md).
+Service API: `ctx.theone.searchHistoryDetailed(contextId, query, limit)` searches a topic's reviewed history; `store.addSource(contextId, sessionId, { startSeq, endSeq })` attaches part of a session. Earlier acceptance records: [v0.1](./docs/plugin-v0.1.md) and [v0.2](./docs/plugin-v0.2.md).

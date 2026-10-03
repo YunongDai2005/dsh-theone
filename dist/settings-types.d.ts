@@ -11,10 +11,6 @@ export interface SettingsSnapshot {
         maxDescriptorChars: number;
         maxResponseChars: number;
         routerMode: 'rules' | 'llm';
-        routerTransport: 'dsh' | 'legacy';
-        routerBaseUrl: string;
-        routerModel: string;
-        routerApiKeyEnv: string;
         linkScope: 'off' | 'workspace' | 'auto';
         routeNotice: 'hidden' | 'switch' | 'all';
     };
@@ -24,12 +20,23 @@ export interface SettingsSnapshot {
         contextWindow?: number;
         defaultMaxTokens?: number;
     } | null;
+    /** Every model DSH currently offers, except TheOne itself. */
+    models: {
+        provider: string;
+        id: string;
+        name: string;
+    }[];
     modelUnavailable: boolean;
     savedValues: EditableSettings;
     revision: number;
+    /** Saved settings that apply only after DSH restarts; everything else applies when saved. */
     restartRequired: boolean;
 }
-export declare const EDITABLE_SETTINGS_KEYS: readonly ["workerProvider", "workerModel", "routerMode", "routerTransport", "historyCatalog", "catalogIntervalMs", "maxDescriptorChars", "maxResponseChars", "routerBaseUrl", "routerModel", "routerApiKeyEnv", "linkScope", "routeNotice"];
+export declare const EDITABLE_SETTINGS_KEYS: readonly ["workerProvider", "workerModel", "routerMode", "historyCatalog", "catalogIntervalMs", "maxDescriptorChars", "maxResponseChars", "linkScope", "routeNotice", "contextsPath"];
+/** The background catalog is started once; these take effect after DSH restarts. */
+export declare const RESTART_SETTINGS_KEYS: readonly ["historyCatalog", "catalogIntervalMs"];
+/** Settings of the removed direct router; forms saved by older versions may still carry them. */
+export declare const RETIRED_SETTINGS_KEYS: readonly ["routerTransport", "routerBaseUrl", "routerModel", "routerApiKeyEnv"];
 /** Added after the first release; settings saved before them take their defaults. */
 export declare const SETTINGS_DEFAULTS: {
     readonly linkScope: "auto";

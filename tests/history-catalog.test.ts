@@ -77,7 +77,7 @@ async function source(app: Awaited<ReturnType<typeof harness>>, root: string, ..
 test('catalog incrementally indexes DSH histories, splits mixed sessions and groups related independent topics', { timeout: 60000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'theone-catalog-'))
   const model = fixture()
-  let app = await harness(root, model, { routerMode: 'llm', routerTransport: 'dsh' })
+  let app = await harness(root, model, { routerMode: 'llm' })
   let catalog = new HistoryCatalog(app.ctx, app.ctx.theone.store, () => ({ provider: 'fixture', model: 'fixture' }))
   try {
     const mixed = await source(app, root, '论文方法：视频注意力设计 sk-syntheticprivate1234567890', '显卡部署：配置 Qwen')
@@ -107,7 +107,7 @@ test('catalog incrementally indexes DSH histories, splits mixed sessions and gro
     assert.equal(catalog.snapshot().contexts.filter(c => c.title === '论文实验').length, 1)
     assert.equal(catalog.snapshot().groups.find(g => g.title === '论文研究')!.contextIds.length, 2)
     await catalog.close(); await app.close()
-    app = await harness(root, model, { routerMode: 'llm', routerTransport: 'dsh' })
+    app = await harness(root, model, { routerMode: 'llm' })
     catalog = new HistoryCatalog(app.ctx, app.ctx.theone.store, () => ({ provider: 'fixture', model: 'fixture' }))
     await catalog.refresh()
     snapshot = catalog.snapshot()
@@ -212,7 +212,7 @@ test('related groups remain separate from per-topic working sessions', () => {
 test('unresolved history stays blocked until repaired, while a standalone download can run during indexing', { timeout: 30000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'theone-catalog-admission-'))
   const model = fixture()
-  const app = await harness(root, model, { routerMode: 'llm', routerTransport: 'dsh', historyCatalog: true })
+  const app = await harness(root, model, { routerMode: 'llm', historyCatalog: true })
   try {
     const old = await source(app, root, '论文方法：历史项目')
     const originalRead = app.ctx.sessionQuery.readSession.bind(app.ctx.sessionQuery)
@@ -259,7 +259,7 @@ test('unresolved history stays blocked until repaired, while a standalone downlo
 test('candidate miss is reviewed against remaining catalog before an implicit new topic is created', { timeout: 30000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'theone-catalog-review-'))
   const model = fixture()
-  const app = await harness(root, model, { routerMode: 'llm', routerTransport: 'dsh', historyCatalog: true })
+  const app = await harness(root, model, { routerMode: 'llm', historyCatalog: true })
   try {
     await app.ctx.theone.catalog!.refresh()
     app.ctx.theone.store.seed(Array.from({ length: 22 }, (_, i) => ({ id: 'old-' + String(i).padStart(3, '0'), title: '独立事项' + i, summary: '历史项目', entities: [], keywords: [], lastState: '待续' })))
@@ -284,7 +284,7 @@ test('candidate miss is reviewed against remaining catalog before an implicit ne
 
 test('history search failure yields clarification and does not dispatch a new Worker', { timeout: 30000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'theone-catalog-search-failure-'))
-  const app = await harness(root, fixture(), { routerMode: 'llm', routerTransport: 'dsh', historyCatalog: true })
+  const app = await harness(root, fixture(), { routerMode: 'llm', historyCatalog: true })
   try {
     await app.ctx.theone.catalog!.refresh()
     app.ctx.theone.catalog!.candidates = async () => { throw new Error('private backend details') }
@@ -305,7 +305,7 @@ test('broken native FTS still routes known topics and admits independent CREATE'
       yield* textResponse(JSON.stringify({ action: 'CREATE', contextId: null, title: JSON.parse(text).text, question: null, reason: '无匹配目录' }))
     else yield* base(options)
   }
-  const app = await harness(root, model, { historyCatalog: true, routerMode: 'llm', routerTransport: 'dsh' })
+  const app = await harness(root, model, { historyCatalog: true, routerMode: 'llm' })
   try {
     const target = { id: 'topic-paper', title: '论文方法', summary: '论文的研究方法', entities: ['论文'], keywords: ['论文方法'], lastState: '进行中' }
     app.ctx.theone.store.seed([target, ...Array.from({ length: 20 }, (_, i) => ({ ...target, id: `filler-${i}`, title: `无关话题 ${i}`, entities: [], keywords: [] }))])
@@ -333,7 +333,7 @@ test('broken native FTS still routes known topics and admits independent CREATE'
 test('large-catalog review limits do not stop standalone tasks or bypass unresolved-history clarification', { timeout: 30000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'theone-catalog-review-limit-'))
   const model = fixture()
-  const app = await harness(root, model, { routerMode:'llm', routerTransport:'dsh', historyCatalog:true })
+  const app = await harness(root, model, { routerMode:'llm', historyCatalog:true })
   try {
     await app.ctx.theone.catalog!.refresh()
     app.ctx.theone.store.seed(Array.from({length:70},(_,i)=>({id:`large-${i}`,title:`历史项目 ${i}`,summary:'一个不同的项目',entities:[],keywords:[],lastState:'待续'})))

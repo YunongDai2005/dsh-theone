@@ -53,7 +53,7 @@ test('routing disables supported deep thinking without changing Worker or provid
       yield* textResponse('Worker keeps user model defaults')
     }
   }
-  const app = await harness(root,model,{routerMode:'llm',routerTransport:'dsh'})
+  const app = await harness(root,model,{routerMode:'llm'})
   try {
     assert.equal((await ask(app.gateway,'继续 Qwen 配置')).output,'Worker keeps user model defaults')
     assert.equal((await app.ctx.llm.resolveModelInfo('fixture','fixture')).reasoning?.defaultEffort,'high')
@@ -66,7 +66,7 @@ test('native routing and Worker share DSH model; gateway selection persists thro
   model.behavior = async function* (options) {
     yield* textResponse(options.system === ROUTING_PROMPT ? JSON.stringify(decision) : '工作继续')
   }
-  let app = await harness(root, model, { routerMode: 'llm', routerTransport: 'dsh', autoModel: true })
+  let app = await harness(root, model, { routerMode: 'llm', autoModel: true })
   const setDefault = (value: ReturnType<typeof app.ctx.agentDefaultModel.currentSelection>) => {
     app.ctx.agentDefaultModel.currentSelection = () => value
   }
@@ -81,7 +81,7 @@ test('native routing and Worker share DSH model; gateway selection persists thro
     assert.equal(app.ctx.theone.store.rememberedModel('test-gateway')?.model, 'user-configured-model')
     await app.close()
     model.requests = []
-    app = await harness(root, model, { routerMode: 'llm', routerTransport: 'dsh', autoModel: true, defaultProvider: 'theone' })
+    app = await harness(root, model, { routerMode: 'llm', autoModel: true, defaultProvider: 'theone' })
     const second = await ask(app.gateway, '继续配置')
     assert.equal(second.output, '工作继续')
     assert.equal(app.ctx.theone.store.route(second.input.id)?.decision.action, 'KEEP')
@@ -122,7 +122,7 @@ test('native routing rejects invalid or truncated results, and cools down authen
 
 test('native routing cancellation preserves mount and never starts a Worker', { timeout: 30000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'theone-dsh-cancel-'))
-  const app = await harness(root, undefined, { routerMode: 'llm', routerTransport: 'dsh', autoModel: true })
+  const app = await harness(root, undefined, { routerMode: 'llm', autoModel: true })
   try {
     let entered!: () => void
     const started = new Promise<void>(resolve => { entered = resolve })
@@ -142,7 +142,7 @@ test('native routing cancellation preserves mount and never starts a Worker', { 
 
 test('missing backing model asks for DSH selection without dispatching or changing state', async () => {
   const root = await mkdtemp(join(tmpdir(), 'theone-dsh-missing-'))
-  const app = await harness(root, undefined, { routerMode: 'llm', routerTransport: 'dsh', autoModel: true, defaultProvider: 'theone' })
+  const app = await harness(root, undefined, { routerMode: 'llm', autoModel: true, defaultProvider: 'theone' })
   try {
     const result = await ask(app.gateway, '继续配置')
     assert.match(result.output, /DSH.*聊天模型/, JSON.stringify(result.end))
