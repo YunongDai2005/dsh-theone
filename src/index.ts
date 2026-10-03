@@ -31,6 +31,7 @@ import { EDITABLE_SETTINGS_KEYS, RESTART_SETTINGS_KEYS, type EditableSettings, t
 import { validateSettings } from './settings.ts'
 import { RESTART_CODE, WorkerRun } from './run.ts'
 import { buildBriefing, LINK_SIGNAL, relatedTopics, type LinkScope } from './linkage.ts'
+import { PACKAGE_NAME, Updater, type PluginInstaller } from './update.ts'
 
 function redactDescriptor(text: string): string {
   return text.replace(/\bsk-[a-zA-Z0-9_-]{16,}|\bBearer\s+\S+/gi, '[REDACTED]')
@@ -136,6 +137,11 @@ function settingsConfig(values: EditableSettings): Partial<Config> {
   return { ...values, workerProvider: values.workerProvider ?? undefined, workerModel: values.workerModel ?? undefined, contextsPath: values.contextsPath ?? undefined }
 }
 
+function readOwnVersion(): string {
+  try { return String((JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version?: unknown }).version ?? '0.0.0') }
+  catch { return '0.0.0' }
+}
+
 function readDescriptors(path: string): ContextDescriptor[] {
   const value: unknown = JSON.parse(readFileSync(path, 'utf8'))
   if (!Array.isArray(value)) throw new Error('contextsPath must contain a JSON array')
@@ -182,6 +188,8 @@ export default class TheOne extends Service {
   private readonly closing = new Map<string, Promise<void>>()
   /** A model the user picked in main chat's own model selector; it answers through the Workers. */
   private pickedModel?: ModelSelection
+  /** Update checks and one-click install through DSH's plugin manager. */
+  readonly updater: Updater
   /** Sessions whose current step answers through TheOne; only these refuse to run tools themselves. */
   private readonly throughTheOne = new WeakMap<Agent, boolean>()
 
@@ -204,6 +212,13 @@ export default class TheOne extends Service {
     }
     descriptors ??= config.contextsPath ? readDescriptors(config.contextsPath) : []
     this.gatewayDirectory = resolve(dirname(databasePath), 'gateway')
+    this.updater = new Updater(readOwnVersion(), () => {
+      // The profile's package.json records how this plugin was installed (GitHub, npm or a local path).
+      const dir = (ctx as unknown as { profileContext?: { dir?: string } }).profileContext?.dir
+      if (!dir) return undefined
+      try { return (JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as { dependencies?: Record<string, string> }).dependencies?.[PACKAGE_NAME] }
+      catch { return undefined }
+    })
     ctx.effect(() => async () => {
       try { await Promise.all([...this.workers.values()].map(handle => handle.dispose())) }
       finally { await this.catalog?.close(); this.store.close() }
@@ -524,6 +539,13 @@ export default class TheOne extends Service {
           const code = error instanceof Error && /^[A-Z_]+$/.test(error.message) ? error.message : 'INVALID_INPUT'
           return Response.json({ error: code }, { status: code === 'GATEWAY_BUSY' ? 409 : 400 })
         }
+      } }))
+      // Is a newer TheOne out, and install it with DSH's plugin manager (it loads after a restart).
+      child.effect(() => connection.fetch!.register({ path: '/api/theone/update', methods: ['GET', 'POST'], requestBody: 'buffered', fetch: async request => {
+        const status = request.method === 'POST'
+          ? await this.updater.install(this.ctx.get('pluginManager') as PluginInstaller | undefined)
+          : await this.updater.status(new URL(request.url).searchParams.has('force'))
+        return Response.json(status, { headers: { 'cache-control': 'no-store' } })
       } }))
       child.effect(() => connection.fetch!.register({ path: '/api/theone/sessions', methods: ['GET'], requestBody: 'buffered', fetch: async () =>
         Response.json({ sessions: await this.attachableSessions() }, { headers: { 'cache-control': 'no-store' } }) }))

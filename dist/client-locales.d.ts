@@ -5,6 +5,14 @@ export declare const zh: {
     readonly 'gateway.opening': "正在打开 TheOne 主聊天…";
     readonly 'gateway.error': "主聊天暂时无法打开，请检查 DSH 连接和 TheOne 插件状态。";
     readonly retry: "重试";
+    readonly 'update.available': "更新";
+    readonly 'update.installing': "更新中…";
+    readonly 'update.restart': "重启生效";
+    readonly 'update.failed': "更新失败";
+    readonly 'update.hint': "当前 {current}，可更新到 {latest}。点击一键更新，重启 DSH 后生效。";
+    readonly 'update.manualHint': "当前 {current}，最新 {latest}。这份插件不是从 GitHub 或 npm 安装的，请在「插件」页面重新安装。";
+    readonly 'update.restartHint': "已更新，重启 DSH 后生效。";
+    readonly 'update.failedHint': "更新没有完成（{error}）。点击重试，或在「插件」页面重新安装。";
     readonly 'settings.title': "TheOne 设置";
     readonly 'settings.menu': "设置";
     readonly 'settings.subtitle': "查看当前生效的配置和各项用途。";

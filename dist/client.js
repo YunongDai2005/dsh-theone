@@ -88,6 +88,14 @@ var zh = {
   "gateway.opening": "\u6B63\u5728\u6253\u5F00 TheOne \u4E3B\u804A\u5929\u2026",
   "gateway.error": "\u4E3B\u804A\u5929\u6682\u65F6\u65E0\u6CD5\u6253\u5F00\uFF0C\u8BF7\u68C0\u67E5 DSH \u8FDE\u63A5\u548C TheOne \u63D2\u4EF6\u72B6\u6001\u3002",
   "retry": "\u91CD\u8BD5",
+  "update.available": "\u66F4\u65B0",
+  "update.installing": "\u66F4\u65B0\u4E2D\u2026",
+  "update.restart": "\u91CD\u542F\u751F\u6548",
+  "update.failed": "\u66F4\u65B0\u5931\u8D25",
+  "update.hint": "\u5F53\u524D {current}\uFF0C\u53EF\u66F4\u65B0\u5230 {latest}\u3002\u70B9\u51FB\u4E00\u952E\u66F4\u65B0\uFF0C\u91CD\u542F DSH \u540E\u751F\u6548\u3002",
+  "update.manualHint": "\u5F53\u524D {current}\uFF0C\u6700\u65B0 {latest}\u3002\u8FD9\u4EFD\u63D2\u4EF6\u4E0D\u662F\u4ECE GitHub \u6216 npm \u5B89\u88C5\u7684\uFF0C\u8BF7\u5728\u300C\u63D2\u4EF6\u300D\u9875\u9762\u91CD\u65B0\u5B89\u88C5\u3002",
+  "update.restartHint": "\u5DF2\u66F4\u65B0\uFF0C\u91CD\u542F DSH \u540E\u751F\u6548\u3002",
+  "update.failedHint": "\u66F4\u65B0\u6CA1\u6709\u5B8C\u6210\uFF08{error}\uFF09\u3002\u70B9\u51FB\u91CD\u8BD5\uFF0C\u6216\u5728\u300C\u63D2\u4EF6\u300D\u9875\u9762\u91CD\u65B0\u5B89\u88C5\u3002",
   "settings.title": "TheOne \u8BBE\u7F6E",
   "settings.menu": "\u8BBE\u7F6E",
   "settings.subtitle": "\u67E5\u770B\u5F53\u524D\u751F\u6548\u7684\u914D\u7F6E\u548C\u5404\u9879\u7528\u9014\u3002",
@@ -257,6 +265,14 @@ var en = {
   "gateway.opening": "Opening TheOne main chat\u2026",
   "gateway.error": "Main chat could not open. Check your DSH connection and TheOne plugin status.",
   "retry": "Retry",
+  "update.available": "Update",
+  "update.installing": "Updating\u2026",
+  "update.restart": "Restart to apply",
+  "update.failed": "Update failed",
+  "update.hint": "You have {current}; {latest} is available. Click to update; it applies after DSH restarts.",
+  "update.manualHint": "You have {current}; {latest} is available. This copy was not installed from GitHub or npm, so reinstall it from the Plugins page.",
+  "update.restartHint": "Updated. Restart DSH to apply it.",
+  "update.failedHint": "The update did not finish ({error}). Click to retry, or reinstall from the Plugins page.",
   "settings.title": "TheOne settings",
   "settings.menu": "Settings",
   "settings.subtitle": "Review active configuration and what each option does.",
@@ -497,9 +513,79 @@ function apply(ctx) {
       });
     });
   });
+  let update;
+  const updateListeners = /* @__PURE__ */ new Set();
+  const setUpdate = (value) => {
+    update = value;
+    for (const listener of updateListeners) listener();
+  };
+  const subscribeUpdate = (listener) => {
+    updateListeners.add(listener);
+    return () => {
+      updateListeners.delete(listener);
+    };
+  };
+  const readUpdate = async (method = "GET") => {
+    try {
+      const response = await fetch("/api/theone/update", { method, signal: lifetime.signal, cache: "no-store" });
+      if (response.ok) setUpdate(await response.json());
+    } catch {
+    }
+  };
+  ctx.effect(() => {
+    void readUpdate();
+    const timer = setInterval(() => {
+      void readUpdate();
+    }, 6 * 36e5);
+    return () => clearInterval(timer);
+  });
+  function UpdateButton() {
+    const t2 = useText();
+    const status = (0, import_react.useSyncExternalStore)(subscribeUpdate, () => update);
+    if (!status || !status.available && !status.state) return null;
+    const label = status.state === "installing" ? t2("update.installing") : status.state === "restart" ? t2("update.restart") : status.state === "failed" ? t2("update.failed") : t2("update.available");
+    const title = status.state === "restart" ? t2("update.restartHint") : status.state === "failed" ? t2("update.failedHint", { error: status.error ?? "" }) : status.installable ? t2("update.hint", { current: status.current, latest: status.latest ?? "" }) : t2("update.manualHint", { current: status.current, latest: status.latest ?? "" });
+    const act = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (status.state === "installing" || status.state === "restart") return;
+      if (!status.installable) {
+        window.open("https://github.com/YunongDai2005/dsh-theone#readme", "_blank", "noopener");
+        return;
+      }
+      setUpdate({ ...status, state: "installing" });
+      void readUpdate("POST");
+    };
+    return (0, import_react.createElement)(
+      "span",
+      {
+        className: "theone-update",
+        role: "button",
+        tabIndex: 0,
+        title,
+        "aria-label": title,
+        "data-state": status.state ?? "available",
+        onClick: act,
+        onPointerDown: (event) => event.stopPropagation(),
+        onKeyDown: (event) => {
+          if (event.key === "Enter" || event.key === " ") act(event);
+        }
+      },
+      status.state === "installing" ? (0, import_react.createElement)("span", { className: "theone-update-spin", "aria-hidden": true }) : null,
+      label,
+      !status.state && status.latest ? (0, import_react.createElement)("small", null, `v${status.latest}`) : null
+    );
+  }
+  const symbol = () => (0, import_react.createElement)(
+    "svg",
+    { className: "theone-symbol", viewBox: "0 0 20 20", width: 20, height: 20, "aria-hidden": true, focusable: false },
+    (0, import_react.createElement)("circle", { cx: 10, cy: 10, r: 8.6, fill: "none", stroke: "currentColor", strokeWidth: 1.4 }),
+    (0, import_react.createElement)("circle", { cx: 10, cy: 10, r: 2.4, fill: "currentColor" })
+  );
   function SidebarEntry({ size }) {
     const t2 = useText();
     const marker = (0, import_react.useRef)(null);
+    const pending = (0, import_react.useSyncExternalStore)(subscribeUpdate, () => !!update?.available && !update.state);
     const id = (0, import_react.useSyncExternalStore)(navigation.subscribe, navigation.getSnapshot);
     const sessions = (0, import_react.useSyncExternalStore)(ctx.sessions.list.subscribe, ctx.sessions.list.getSnapshot);
     const panel = (0, import_react.useSyncExternalStore)(ctx.layout.panelInfo.subscribe, ctx.layout.panelInfo.getSnapshot);
@@ -606,7 +692,7 @@ function apply(ctx) {
     return (0, import_react.createElement)(
       "span",
       { ref: marker, className: "theone-nav", translate: "no", "data-wide": size === 16, "data-active": active },
-      (0, import_react.createElement)("span", { className: "theone-symbol" }),
+      (0, import_react.createElement)("span", { className: "theone-symbol-wrap" }, symbol(), size !== 16 && pending ? (0, import_react.createElement)("span", { className: "theone-update-dot", "aria-hidden": true }) : null),
       size === 16 && (0, import_react.createElement)(
         "span",
         { className: "theone-entry-copy" },
@@ -622,7 +708,8 @@ function apply(ctx) {
           (0, import_react.createElement)("span", { className: "theone-entry-label" }, t2("gateway.label"))
         ),
         (0, import_react.createElement)("span", { className: "theone-entry-sub" }, t2("gateway.subtitle"))
-      )
+      ),
+      size === 16 && (0, import_react.createElement)(UpdateButton)
     );
   }
   function GatewayPanel() {
@@ -1317,17 +1404,17 @@ function apply(ctx) {
   ctx.effect(() => {
     const style = document.createElement("style");
     style.dataset.plugin = "dsh-theone-gateway-row";
-    const update = () => {
+    const update2 = () => {
       const id = navigation.getSnapshot();
       style.textContent = id ? `[role="treeitem"][data-row-key="${CSS.escape(`session:${id}`)}"]{display:none!important}` : "";
     };
-    update();
-    const unsubscribe = navigation.subscribe(update);
-    window.addEventListener("storage", update);
+    update2();
+    const unsubscribe = navigation.subscribe(update2);
+    window.addEventListener("storage", update2);
     document.head.append(style);
     return () => {
       unsubscribe();
-      window.removeEventListener("storage", update);
+      window.removeEventListener("storage", update2);
       style.remove();
     };
   });
@@ -1355,9 +1442,21 @@ button:has(.theone-nav[data-wide=true])>span:not(:has(.theone-nav)){display:none
 button:has(.theone-nav):hover{background:var(--one-tint);border-color:color-mix(in srgb,var(--one-accent) 40%,var(--one-line))}
 button:has(.theone-nav[data-active=true]){border-color:color-mix(in srgb,var(--one-accent) 40%,var(--one-line))}
 .theone-nav{display:flex;align-items:center;gap:10px;color:var(--one-accent);font-family:inherit;position:relative;z-index:1}
-.theone-symbol{width:18px;height:18px;border:1px solid currentColor;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;flex:none}
-.theone-symbol:after{content:'';width:4px;height:4px;border-radius:50%;background:currentColor}
-.theone-nav[data-wide=true] .theone-symbol{margin:0 3px}
+.theone-symbol-wrap{position:relative;display:inline-flex;flex:none;width:20px;height:20px}
+.theone-nav .theone-symbol{display:block;width:20px;height:20px;flex:none;overflow:visible;border:0;border-radius:0;background:none}
+.theone-nav[data-wide=true] .theone-symbol-wrap{margin:0 2px}
+.theone-update-dot{position:absolute;top:-2px;right:-2px;width:7px;height:7px;border-radius:50%;background:#e8590c;box-shadow:0 0 0 2px var(--one-tint)}
+button:has(.theone-nav[data-wide=true])>span:has(.theone-nav){flex:1;min-width:0}
+.theone-nav[data-wide=true]{width:100%}
+.theone-update{margin-left:auto;align-self:center;display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border-radius:999px;border:1px solid color-mix(in srgb,var(--one-accent) 45%,transparent);background:color-mix(in srgb,var(--one-accent) 12%,transparent);color:var(--one-accent);font-size:12px;line-height:16px;white-space:nowrap;cursor:pointer;transition:background 150ms ease}
+.theone-update:hover{background:color-mix(in srgb,var(--one-accent) 22%,transparent)}
+.theone-update:focus-visible{outline:2px solid var(--one-accent);outline-offset:2px}
+.theone-update small{font-size:11px;opacity:.75}
+.theone-update[data-state=installing],.theone-update[data-state=restart]{cursor:default}
+.theone-update[data-state=failed]{color:#d9480f;border-color:#d9480f66;background:#d9480f14}
+.theone-update-spin{width:10px;height:10px;border-radius:50%;border:1.5px solid currentColor;border-right-color:transparent;animation:theone-spin 800ms linear infinite}
+@keyframes theone-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.theone-update-spin{animation:none}}
 .theone-entry-copy{display:flex;flex-direction:column;align-items:flex-start;gap:2px}
 .theone-entry-title{display:flex;align-items:center;gap:9px;line-height:22px}
 .theone-wordmark{display:inline-flex;align-items:baseline;gap:1px;white-space:nowrap}

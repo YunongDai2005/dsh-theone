@@ -13,6 +13,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { MainPanelId, PanelInfo } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { CatalogContext, CatalogSnapshot, LinkageSnapshot, TopicGroup } from './catalog-types.ts'
 import type { RouteView } from './types.ts'
+import type { UpdateStatus } from './update.ts'
 import { EDITABLE_SETTINGS_KEYS, type EditableSettings, type SettingsSnapshot } from './settings-types.ts'
 import { GatewayNavigation } from './client-navigation.ts'
 import { zh, en, type TheOneLocaleKey } from './client-locales.ts'
@@ -88,9 +89,58 @@ export function apply(ctx: Context) {
     })
   })
 
+  /** Shared update status: checked when the sidebar mounts and every six hours after. */
+  let update: UpdateStatus | undefined
+  const updateListeners = new Set<() => void>()
+  const setUpdate = (value: UpdateStatus) => { update = value; for (const listener of updateListeners) listener() }
+  const subscribeUpdate = (listener: () => void) => { updateListeners.add(listener); return () => { updateListeners.delete(listener) } }
+  const readUpdate = async (method: 'GET' | 'POST' = 'GET') => {
+    try {
+      const response = await fetch('/api/theone/update', { method, signal: lifetime.signal, cache: 'no-store' })
+      if (response.ok) setUpdate(await response.json() as UpdateStatus)
+    } catch { /* Offline: the button simply stays hidden. */ }
+  }
+  ctx.effect(() => {
+    void readUpdate()
+    const timer = setInterval(() => { void readUpdate() }, 6 * 3600000)
+    return () => clearInterval(timer)
+  })
+
+  /** One-click update on the right of the entry; it shows only when there is something to do. */
+  function UpdateButton() {
+    const t = useText()
+    const status = useSyncExternalStore(subscribeUpdate, () => update)
+    if (!status || (!status.available && !status.state)) return null
+    const label = status.state === 'installing' ? t('update.installing') : status.state === 'restart' ? t('update.restart')
+      : status.state === 'failed' ? t('update.failed') : t('update.available')
+    const title = status.state === 'restart' ? t('update.restartHint')
+      : status.state === 'failed' ? t('update.failedHint', { error: status.error ?? '' })
+      : status.installable ? t('update.hint', { current: status.current, latest: status.latest ?? '' })
+      : t('update.manualHint', { current: status.current, latest: status.latest ?? '' })
+    const act = (event: React.SyntheticEvent) => {
+      // The entry itself is a button that opens main chat; this click is only the update's.
+      event.preventDefault(); event.stopPropagation()
+      if (status.state === 'installing' || status.state === 'restart') return
+      if (!status.installable) { window.open('https://github.com/YunongDai2005/dsh-theone#readme', '_blank', 'noopener'); return }
+      setUpdate({ ...status, state: 'installing' })
+      void readUpdate('POST')
+    }
+    return h('span', { className: 'theone-update', role: 'button', tabIndex: 0, title, 'aria-label': title, 'data-state': status.state ?? 'available',
+      onClick: act, onPointerDown: (event: React.PointerEvent) => event.stopPropagation(),
+      onKeyDown: (event: React.KeyboardEvent) => { if (event.key === 'Enter' || event.key === ' ') act(event) } },
+      status.state === 'installing' ? h('span', { className: 'theone-update-spin', 'aria-hidden': true }) : null, label,
+      !status.state && status.latest ? h('small', null, `v${status.latest}`) : null)
+  }
+
+  /** The One mark: a ring around a dot, drawn so host styles cannot reshape it. */
+  const symbol = () => h('svg', { className: 'theone-symbol', viewBox: '0 0 20 20', width: 20, height: 20, 'aria-hidden': true, focusable: false },
+    h('circle', { cx: 10, cy: 10, r: 8.6, fill: 'none', stroke: 'currentColor', strokeWidth: 1.4 }),
+    h('circle', { cx: 10, cy: 10, r: 2.4, fill: 'currentColor' }))
+
   function SidebarEntry({size}: PropsRuntime<'sidebar.panellist'>) {
     const t = useText()
     const marker = useRef<HTMLSpanElement>(null)
+    const pending = useSyncExternalStore(subscribeUpdate, () => !!update?.available && !update.state)
     const id = useSyncExternalStore(navigation.subscribe,navigation.getSnapshot)
     const sessions = useSyncExternalStore<SessionListState>(ctx.sessions.list.subscribe,ctx.sessions.list.getSnapshot)
     const panel = useSyncExternalStore<PanelInfo>(ctx.layout.panelInfo.subscribe,ctx.layout.panelInfo.getSnapshot)
@@ -174,13 +224,14 @@ export function apply(ctx: Context) {
       }
     }, [active, size])
     return h('span',{ref:marker,className:'theone-nav',translate:'no','data-wide':size === 16,'data-active':active},
-      h('span',{className:'theone-symbol'}),
+      h('span',{className:'theone-symbol-wrap'},symbol(),size !== 16 && pending ? h('span',{className:'theone-update-dot','aria-hidden':true}) : null),
       size === 16 && h('span',{className:'theone-entry-copy'},
         h('span',{className:'theone-entry-title'},
           h('span',{className:'theone-wordmark',translate:'no'},h('span',{className:'theone-word-the'},'The'),
             h('span',{className:'theone-word-one'},'One',h('span',{className:'theone-word-dot'}))),
           h('span',{className:'theone-entry-label'},t('gateway.label'))),
-        h('span',{className:'theone-entry-sub'},t('gateway.subtitle'))))
+        h('span',{className:'theone-entry-sub'},t('gateway.subtitle'))),
+      size === 16 && h(UpdateButton))
   }
 
   function GatewayPanel() {
@@ -626,9 +677,21 @@ button:has(.theone-nav[data-wide=true])>span:not(:has(.theone-nav)){display:none
 button:has(.theone-nav):hover{background:var(--one-tint);border-color:color-mix(in srgb,var(--one-accent) 40%,var(--one-line))}
 button:has(.theone-nav[data-active=true]){border-color:color-mix(in srgb,var(--one-accent) 40%,var(--one-line))}
 .theone-nav{display:flex;align-items:center;gap:10px;color:var(--one-accent);font-family:inherit;position:relative;z-index:1}
-.theone-symbol{width:18px;height:18px;border:1px solid currentColor;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;flex:none}
-.theone-symbol:after{content:'';width:4px;height:4px;border-radius:50%;background:currentColor}
-.theone-nav[data-wide=true] .theone-symbol{margin:0 3px}
+.theone-symbol-wrap{position:relative;display:inline-flex;flex:none;width:20px;height:20px}
+.theone-nav .theone-symbol{display:block;width:20px;height:20px;flex:none;overflow:visible;border:0;border-radius:0;background:none}
+.theone-nav[data-wide=true] .theone-symbol-wrap{margin:0 2px}
+.theone-update-dot{position:absolute;top:-2px;right:-2px;width:7px;height:7px;border-radius:50%;background:#e8590c;box-shadow:0 0 0 2px var(--one-tint)}
+button:has(.theone-nav[data-wide=true])>span:has(.theone-nav){flex:1;min-width:0}
+.theone-nav[data-wide=true]{width:100%}
+.theone-update{margin-left:auto;align-self:center;display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border-radius:999px;border:1px solid color-mix(in srgb,var(--one-accent) 45%,transparent);background:color-mix(in srgb,var(--one-accent) 12%,transparent);color:var(--one-accent);font-size:12px;line-height:16px;white-space:nowrap;cursor:pointer;transition:background 150ms ease}
+.theone-update:hover{background:color-mix(in srgb,var(--one-accent) 22%,transparent)}
+.theone-update:focus-visible{outline:2px solid var(--one-accent);outline-offset:2px}
+.theone-update small{font-size:11px;opacity:.75}
+.theone-update[data-state=installing],.theone-update[data-state=restart]{cursor:default}
+.theone-update[data-state=failed]{color:#d9480f;border-color:#d9480f66;background:#d9480f14}
+.theone-update-spin{width:10px;height:10px;border-radius:50%;border:1.5px solid currentColor;border-right-color:transparent;animation:theone-spin 800ms linear infinite}
+@keyframes theone-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.theone-update-spin{animation:none}}
 .theone-entry-copy{display:flex;flex-direction:column;align-items:flex-start;gap:2px}
 .theone-entry-title{display:flex;align-items:center;gap:9px;line-height:22px}
 .theone-wordmark{display:inline-flex;align-items:baseline;gap:1px;white-space:nowrap}

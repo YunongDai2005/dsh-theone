@@ -9,6 +9,7 @@ import type { RouterReceipt } from './llm-router.ts';
 import type { LinkageSnapshot } from './catalog-types.ts';
 import { type SettingsSnapshot } from './settings-types.ts';
 import { type LinkScope } from './linkage.ts';
+import { Updater } from './update.ts';
 export interface Config {
     databasePath?: string;
     contextsPath?: string;
@@ -75,6 +76,8 @@ export default class TheOne extends Service {
     private readonly closing;
     /** A model the user picked in main chat's own model selector; it answers through the Workers. */
     private pickedModel?;
+    /** Update checks and one-click install through DSH's plugin manager. */
+    readonly updater: Updater;
     /** Sessions whose current step answers through TheOne; only these refuse to run tools themselves. */
     private readonly throughTheOne;
     constructor(ctx: Context, config: Config);
