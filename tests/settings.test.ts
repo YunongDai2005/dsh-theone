@@ -165,7 +165,8 @@ test('pinning the background model tells DSH to re-read main chat\'s model detai
   const app = await harness(root, new CapacityModel(), { autoModel: true })
   try {
     let updates = 0
-    (app.ctx.on as unknown as (name: string, listener: () => void) => void)('llm/adapters-updated', () => { updates++ })
+    const on = app.ctx.on.bind(app.ctx) as unknown as (name: string, listener: () => void) => void
+    on('llm/adapters-updated', () => { updates++ })
     const connection = new HostConnectionService(app.ctx, [], undefined as never)
     const handler = connection.createSharedFetchHandler('/api')
     await new Promise<void>(resolve => setImmediate(resolve))
