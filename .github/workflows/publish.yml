@@ -1,42 +1,87 @@
 name: Publish to npm
 
+# Two ways to release:
+# - Push `.github/release-notes/v<version>.md` (first line `# <title>`) to main with the matching
+#   package version: this workflow tags the commit, creates the GitHub Release with the plugin
+#   archive attached, and publishes to npm.
+# - Publish a GitHub Release by hand whose tag matches the package version: this workflow publishes to npm.
 on:
   release:
     types: [published]
+  push:
+    branches: [main]
+    paths: ['.github/release-notes/**']
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: npm-publish-${{ github.event.release.tag_name }}
+  group: npm-publish-${{ github.event.release.tag_name || github.ref }}
   cancel-in-progress: false
 
 jobs:
   publish:
-    if: ${{ !github.event.release.prerelease }}
+    if: ${{ github.event_name != 'release' || !github.event.release.prerelease }}
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       id-token: write
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ github.event.release.tag_name || github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
           cache: npm
-      - name: Require the release tag to match the package version
+      - name: Decide what to release
+        id: plan
         env:
+          EVENT: ${{ github.event_name }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
-        run: |
-          node --input-type=module -e 'import fs from "node:fs"; const pkg = JSON.parse(fs.readFileSync("package.json", "utf8")); if (process.env.RELEASE_TAG !== `v${pkg.version}`) throw new Error("Release tag must be v" + pkg.version);'
-      - run: npm install --global npm@11
-      - run: npm ci --ignore-scripts
-      - run: npm run typecheck
-      - run: npm test
-      - run: npm run pack:plugin
-      - name: Publish the checked plugin archive
+          GH_TOKEN: ${{ github.token }}
         run: |
           VERSION=$(node -p 'JSON.parse(require("node:fs").readFileSync("package.json", "utf8")).version')
-          npm publish ".dsh-test/dsh-theone-${VERSION}.tgz" --access public --provenance --registry=https://registry.npmjs.org/
+          TAG="v${VERSION}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          if [ "$EVENT" = "release" ]; then
+            [ "$RELEASE_TAG" = "$TAG" ] || { echo "Release tag must be ${TAG}"; exit 1; }
+            echo "create=false" >> "$GITHUB_OUTPUT"
+          else
+            NOTES=".github/release-notes/${TAG}.md"
+            if [ ! -f "$NOTES" ]; then echo "No ${NOTES}; nothing to release."; echo "skip=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+            if gh release view "$TAG" >/dev/null 2>&1; then echo "${TAG} is already released."; echo "create=false" >> "$GITHUB_OUTPUT"
+            else echo "create=true" >> "$GITHUB_OUTPUT"; fi
+            echo "notes=${NOTES}" >> "$GITHUB_OUTPUT"
+          fi
+          if npm view "dsh-theone@${VERSION}" version --registry=https://registry.npmjs.org/ >/dev/null 2>&1; then
+            echo "dsh-theone@${VERSION} is already on npm."; echo "published=true" >> "$GITHUB_OUTPUT"
+          else echo "published=false" >> "$GITHUB_OUTPUT"; fi
+      - if: ${{ steps.plan.outputs.skip != 'true' }}
+        run: npm install --global npm@11
+      - if: ${{ steps.plan.outputs.skip != 'true' }}
+        run: npm ci --ignore-scripts
+      - if: ${{ steps.plan.outputs.skip != 'true' }}
+        run: npm run typecheck
+      - if: ${{ steps.plan.outputs.skip != 'true' }}
+        run: npm test
+      - if: ${{ steps.plan.outputs.skip != 'true' }}
+        run: npm run pack:plugin
+      - name: Create the GitHub Release with the plugin archive
+        if: ${{ steps.plan.outputs.skip != 'true' && steps.plan.outputs.create == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.plan.outputs.tag }}
+          VERSION: ${{ steps.plan.outputs.version }}
+          NOTES: ${{ steps.plan.outputs.notes }}
+        run: |
+          TITLE=$(head -n 1 "$NOTES" | sed 's/^# *//')
+          tail -n +2 "$NOTES" > "$RUNNER_TEMP/notes.md"
+          gh release create "$TAG" ".dsh-test/dsh-theone-${VERSION}.tgz" --target "$GITHUB_SHA" --title "$TITLE" --notes-file "$RUNNER_TEMP/notes.md"
+      - name: Publish the checked plugin archive
+        if: ${{ steps.plan.outputs.skip != 'true' && steps.plan.outputs.published != 'true' }}
+        env:
+          VERSION: ${{ steps.plan.outputs.version }}
+        run: npm publish ".dsh-test/dsh-theone-${VERSION}.tgz" --access public --provenance --registry=https://registry.npmjs.org/

@@ -29,6 +29,8 @@ After the first publication, open the package settings on npmjs.com and add a Gi
 
 No npm token needs to be stored in GitHub. The workflow uses GitHub's temporary OIDC credentials and publishes with provenance.
 
+Releases can also be made without opening GitHub: push `.github/release-notes/v<version>.md` (first line `# <title>`, then the notes) to `main` together with the matching package version. The workflow tags that commit, creates the GitHub Release with the plugin archive attached, and publishes to npm. It skips anything already released or already on npm.
+
 Merge `.github/workflows/publish.yml` into the default branch before creating a release. Update the package and lockfile version together, then publish a non-prerelease GitHub Release whose tag exactly matches the package version, for example `v0.3.10`. The workflow checks the tag, installs dependencies, checks types, runs tests, builds and publishes the checked archive. Reusing an already published npm version will fail.
 
 For the initial `0.3.9` published locally, do not trigger another npm publication of the same version. Start automatic releases with the next version.
