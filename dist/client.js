@@ -100,6 +100,16 @@ var zh = {
   "update.available": "\u66F4\u65B0",
   "update.installing": "\u66F4\u65B0\u4E2D\u2026",
   "update.restart": "\u91CD\u542F\u751F\u6548",
+  "update.waiting": "\u65B0\u7248\u672C",
+  "update.waitingHint": "\u6709\u65B0\u7248\u672C {latest}\uFF0C\u53D1\u5E03\u8FD8\u4E0D\u6EE1 24 \u5C0F\u65F6\u3002\u70B9\u51FB\u67E5\u770B\u5982\u4F55\u73B0\u5728\u5B89\u88C5\u3002",
+  "age.title": "\u65B0\u7248\u672C\u53D1\u5E03\u8FD8\u4E0D\u6EE1 24 \u5C0F\u65F6",
+  "age.why": "DSH \u7528 pnpm \u5B89\u88C5\u63D2\u4EF6\uFF0C\u5B83\u9ED8\u8BA4\u53EA\u5B89\u88C5\u53D1\u5E03\u6EE1 24 \u5C0F\u65F6\u7684\u7248\u672C\uFF0C\u7528\u6765\u9632\u8303\u88AB\u7BE1\u6539\u7684\u65B0\u5305\u3002TheOne {version} \u521A\u53D1\u5E03\u4E0D\u4E45\uFF0C\u6240\u4EE5\u6682\u65F6\u88C5\u4E0D\u4E0A\u3002",
+  "age.allowHow": "\u4F60\u53EF\u4EE5\u53EA\u4E3A TheOne \u653E\u884C\uFF1A\u5728\u8FD9\u4E2A DSH \u914D\u7F6E\u7684 pnpm \u8BBE\u7F6E\uFF08pnpm-workspace.yaml\uFF09\u91CC\u628A dsh-theone \u52A0\u5165\u4F8B\u5916\uFF0C\u7136\u540E\u7ACB\u5373\u5B89\u88C5\u3002\u5176\u4ED6\u63D2\u4EF6\u4ECD\u7136\u53D7 24 \u5C0F\u65F6\u89C4\u5219\u4FDD\u62A4\u3002",
+  "age.cannot": "\u5F53\u524D\u65E0\u6CD5\u81EA\u52A8\u4FEE\u6539\u8FD9\u4E2A DSH \u914D\u7F6E\u7684 pnpm \u8BBE\u7F6E\u3002\u53EF\u4EE5\u7B49\u5B83\u6EE1 24 \u5C0F\u65F6\uFF0C\u6216\u6539\u7528 GitHub \u5730\u5740\u91CD\u65B0\u5B89\u88C5\u3002",
+  "age.readyAt": "\u4E0D\u653E\u884C\u7684\u8BDD\uFF0C{time} \u4E4B\u540E\u5C31\u80FD\u76F4\u63A5\u66F4\u65B0\u3002",
+  "age.wait": "\u7B49\u6EE1 24 \u5C0F\u65F6",
+  "age.allow": "\u653E\u884C\u5E76\u66F4\u65B0",
+  "age.ok": "\u77E5\u9053\u4E86",
   "update.reloading": "\u6B63\u5728\u91CD\u65B0\u52A0\u8F7D\u2026",
   "update.reloadingHint": "TheOne \u6B63\u5728\u7528\u65B0\u7248\u672C\u91CD\u65B0\u52A0\u8F7D\uFF0CDSH \u4E0D\u9700\u8981\u91CD\u542F\uFF1B\u5B8C\u6210\u540E\u9875\u9762\u4F1A\u81EA\u52A8\u5237\u65B0\u3002",
   "update.busy": "\u6709\u56DE\u590D\u6B63\u5728\u8FDB\u884C\uFF0C\u7B49\u5B83\u7ED3\u675F\u540E\u518D\u70B9\u66F4\u65B0\u3002",
@@ -292,6 +302,16 @@ var en = {
   "update.available": "Update",
   "update.installing": "Updating\u2026",
   "update.restart": "Restart to apply",
+  "update.waiting": "New version",
+  "update.waitingHint": "{latest} is out but less than 24 hours old. Click to see how to install it now.",
+  "age.title": "This version is less than 24 hours old",
+  "age.why": "DSH installs plugins with pnpm, which by default only installs versions published at least 24 hours ago, as a guard against tampered packages. TheOne {version} was published recently, so it cannot be installed yet.",
+  "age.allowHow": "You can exempt TheOne only: dsh-theone is added to the exceptions in this DSH profile's pnpm settings (pnpm-workspace.yaml) and installed now. Other plugins keep the 24-hour rule.",
+  "age.cannot": "This DSH profile's pnpm settings cannot be changed from here. Wait 24 hours, or reinstall from the GitHub address.",
+  "age.readyAt": "Without the exemption, you can update after {time}.",
+  "age.wait": "Wait 24 hours",
+  "age.allow": "Exempt and update",
+  "age.ok": "OK",
   "update.reloading": "Reloading\u2026",
   "update.reloadingHint": "TheOne is reloading with the new version; DSH keeps running, and the page refreshes when it is done.",
   "update.busy": "A reply is in progress. Update once it finishes.",
@@ -555,9 +575,14 @@ function apply(ctx) {
       updateListeners.delete(listener);
     };
   };
-  const readUpdate = async (method = "GET") => {
+  const readUpdate = async (method = "GET", body) => {
     try {
-      const response = await fetch("/api/theone/update", { method, signal: lifetime.signal, cache: "no-store" });
+      const response = await fetch("/api/theone/update", {
+        method,
+        signal: lifetime.signal,
+        cache: "no-store",
+        ...body ? { headers: { "content-type": "application/json" }, body: JSON.stringify(body) } : {}
+      });
       if (response.ok || response.status === 409) setUpdate(await response.json());
       if (update?.state === "reloading") void awaitReload(update.current);
     } catch {
@@ -584,16 +609,78 @@ function apply(ctx) {
     }, 6 * 36e5);
     return () => clearInterval(timer);
   });
+  function openReleaseAgeDialog(status) {
+    const backdrop = document.createElement("div");
+    backdrop.className = "theone-dialog-backdrop";
+    backdrop.setAttribute("translate", "no");
+    const card = document.createElement("div");
+    card.className = "theone-dialog";
+    card.setAttribute("role", "dialog");
+    card.setAttribute("aria-modal", "true");
+    const title = document.createElement("h2");
+    title.id = "theone-dialog-title";
+    title.textContent = t("age.title");
+    card.setAttribute("aria-labelledby", title.id);
+    const paragraph = (text, className) => {
+      const p = document.createElement("p");
+      p.textContent = text;
+      if (className) p.className = className;
+      return p;
+    };
+    const version = status.waiting?.version ?? status.latest ?? "";
+    card.append(title, paragraph(t("age.why", { version })), paragraph(t(status.canExempt ? "age.allowHow" : "age.cannot")));
+    if (status.waiting) card.append(paragraph(t("age.readyAt", { time: new Date(status.waiting.readyAt).toLocaleString(localeSnapshot().active, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) }), "theone-dialog-note"));
+    const footer = document.createElement("div");
+    footer.className = "theone-dialog-actions";
+    const button = (text, primary, act) => {
+      const element = document.createElement("button");
+      element.type = "button";
+      element.textContent = text;
+      if (primary) element.className = "theone-dialog-primary";
+      element.addEventListener("click", act);
+      footer.append(element);
+      return element;
+    };
+    const close = () => {
+      backdrop.remove();
+      document.removeEventListener("keydown", keydown, true);
+    };
+    const keydown = (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        close();
+      }
+    };
+    button(t(status.canExempt ? "age.wait" : "age.ok"), !status.canExempt, close);
+    const allow = status.canExempt ? button(t("age.allow"), true, () => {
+      close();
+      setUpdate({ ...status, state: "installing", error: void 0 });
+      void readUpdate("POST", { allowFresh: true });
+    }) : void 0;
+    card.append(footer);
+    backdrop.append(card);
+    backdrop.addEventListener("pointerdown", (event) => {
+      if (event.target === backdrop) close();
+    });
+    document.addEventListener("keydown", keydown, true);
+    document.body.append(backdrop);
+    (allow ?? footer.querySelector("button"))?.focus();
+  }
   function UpdateButton() {
     const t2 = useText();
     const status = (0, import_react.useSyncExternalStore)(subscribeUpdate, () => update);
-    if (!status || !status.available && !status.state) return null;
-    const label = status.state === "installing" ? t2("update.installing") : status.state === "reloading" ? t2("update.reloading") : status.state === "restart" ? t2("update.restart") : status.state === "failed" ? t2("update.failed") : t2("update.available");
-    const title = status.error === "GATEWAY_BUSY" ? t2("update.busy") : status.state === "reloading" ? t2("update.reloadingHint") : status.state === "restart" ? t2("update.restartHint") : status.state === "failed" ? status.error === "MINIMUM_RELEASE_AGE" ? t2("update.tooNew") : status.error === "NETWORK" ? t2("update.network") : t2("update.failedHint", { error: status.error ?? "" }) : status.installable ? t2("update.hint", { current: status.current, latest: status.latest ?? "" }) : t2("update.manualHint", { current: status.current, latest: status.latest ?? "" });
+    const waiting = !!status?.waiting && !status.available && !status.state;
+    if (!status || !status.available && !status.state && !waiting) return null;
+    const label = waiting ? t2("update.waiting") : status.state === "installing" ? t2("update.installing") : status.state === "reloading" ? t2("update.reloading") : status.state === "restart" ? t2("update.restart") : status.state === "failed" ? t2("update.failed") : t2("update.available");
+    const title = waiting ? t2("update.waitingHint", { latest: status.waiting.version }) : status.error === "GATEWAY_BUSY" ? t2("update.busy") : status.state === "reloading" ? t2("update.reloadingHint") : status.state === "restart" ? t2("update.restartHint") : status.state === "failed" ? status.error === "MINIMUM_RELEASE_AGE" ? t2("update.tooNew") : status.error === "NETWORK" ? t2("update.network") : t2("update.failedHint", { error: status.error ?? "" }) : status.installable ? t2("update.hint", { current: status.current, latest: status.latest ?? "" }) : t2("update.manualHint", { current: status.current, latest: status.latest ?? "" });
     const act = (event) => {
       event.preventDefault();
       event.stopPropagation();
       if (status.state === "installing" || status.state === "reloading" || status.state === "restart") return;
+      if (waiting || status.state === "failed" && status.error === "MINIMUM_RELEASE_AGE") {
+        openReleaseAgeDialog(status);
+        return;
+      }
       if (!status.installable) {
         window.open("https://github.com/YunongDai2005/dsh-theone#readme", "_blank", "noopener");
         return;
@@ -609,7 +696,7 @@ function apply(ctx) {
         tabIndex: 0,
         title,
         "aria-label": title,
-        "data-state": status.state ?? "available",
+        "data-state": waiting ? "waiting" : status.state ?? "available",
         onClick: act,
         onPointerDown: (event) => event.stopPropagation(),
         onKeyDown: (event) => {
@@ -618,7 +705,7 @@ function apply(ctx) {
       },
       status.state === "installing" || status.state === "reloading" ? (0, import_react.createElement)("span", { className: "theone-update-spin", "aria-hidden": true }) : null,
       label,
-      !status.state && status.latest ? (0, import_react.createElement)("small", null, `v${status.latest}`) : null
+      !status.state && (waiting ? status.waiting.version : status.latest) ? (0, import_react.createElement)("small", null, `v${waiting ? status.waiting.version : status.latest}`) : null
     );
   }
   const symbol = () => (0, import_react.createElement)(
@@ -1718,6 +1805,18 @@ button:has(.theone-nav[data-wide=true])>span:has(.theone-nav){flex:1;min-width:0
 .theone-update small{font-size:11px;opacity:.75}
 .theone-update[data-state=installing],.theone-update[data-state=reloading],.theone-update[data-state=restart]{cursor:default}
 .theone-update[data-state=failed]{color:#d9480f;border-color:#d9480f66;background:#d9480f14}
+.theone-update[data-state=waiting]{opacity:.8;border-style:dashed}
+.theone-dialog-backdrop{position:fixed;inset:0;z-index:10001;display:flex;align-items:center;justify-content:center;padding:16px;background:#0008}
+.theone-dialog{width:min(440px,100%);box-sizing:border-box;padding:22px 22px 18px;border:1px solid var(--dsw-alias-border-l2,#ffffff1f);border-radius:16px;background:var(--dsw-specific-sidebar-fill,#232326);color:var(--dsw-alias-label-primary,#e8e8ea);box-shadow:0 16px 48px #0005;font:inherit;font-size:14px;line-height:1.65}
+.theone-dialog h2{margin:0 0 10px;font-size:17px}
+.theone-dialog p{margin:0 0 10px;color:var(--dsw-alias-label-secondary,#a0a0a6)}
+.theone-dialog .theone-dialog-note{font-size:13px}
+.theone-dialog-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:16px}
+.theone-dialog-actions button{padding:8px 14px;border:1px solid var(--dsw-alias-border-l2,#ffffff1f);border-radius:9px;background:transparent;color:inherit;font:inherit;cursor:pointer}
+.theone-dialog-actions button:hover{background:var(--dsw-alias-interactive-bg-hover,#ffffff12)}
+.theone-dialog-actions .theone-dialog-primary{border-color:transparent;background:#3b6fb0;color:#fff}
+.theone-dialog-actions .theone-dialog-primary:hover{background:#4a7fc0}
+.theone-dialog-actions button:focus-visible{outline:2px solid #4a7fc0;outline-offset:2px}
 .theone-update-spin{width:10px;height:10px;border-radius:50%;border:1.5px solid currentColor;border-right-color:transparent;animation:theone-spin 800ms linear infinite}
 @keyframes theone-spin{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){.theone-update-spin{animation:none}}

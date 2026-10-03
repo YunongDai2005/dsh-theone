@@ -232,13 +232,14 @@ export default class TheOne extends Service {
     }
     descriptors ??= config.contextsPath ? readDescriptors(config.contextsPath) : []
     this.gatewayDirectory = resolve(dirname(databasePath), 'gateway')
+    const profileDir = () => (ctx as unknown as { profileContext?: { dir?: string } }).profileContext?.dir
     this.updater = new Updater(readOwnVersion(), () => {
       // The profile's package.json records how this plugin was installed (GitHub, npm or a local path).
-      const dir = (ctx as unknown as { profileContext?: { dir?: string } }).profileContext?.dir
+      const dir = profileDir()
       if (!dir) return undefined
       try { return (JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as { dependencies?: Record<string, string> }).dependencies?.[PACKAGE_NAME] }
       catch { return undefined }
-    })
+    }, fetch, Date.now, () => { const dir = profileDir(); return dir ? join(dir, 'pnpm-workspace.yaml') : undefined })
     ctx.effect(() => async () => {
       try { await Promise.all([...this.workers.values()].map(handle => handle.dispose())) }
       finally { await this.catalog?.close(); this.store.close() }
@@ -569,6 +570,14 @@ export default class TheOne extends Service {
         const manager = this.ctx.get('pluginManager') as (PluginInstaller & { setBundleEnabled?(name: string, enabled: boolean): Promise<{ application: string }> }) | undefined
         // With DSH's hot reload, switching the bundle off and on loads the new version without a DSH restart.
         const live = !!this.ctx.get('hmr') && typeof manager?.setBundleEnabled === 'function'
+        if (request.method === 'POST') {
+          // The user chose to let TheOne skip pnpm's one-day wait; only this package is exempted.
+          const body = await request.json().catch(() => ({})) as { allowFresh?: unknown }
+          if (body?.allowFresh === true) {
+            try { this.updater.allowFresh() }
+            catch (error) { return Response.json({ ...await this.updater.status(), error: error instanceof Error && /^[A-Z_]+$/.test(error.message) ? error.message : 'EXEMPT_FAILED' }, { status: 400 }) }
+          }
+        }
         const status = request.method === 'POST'
           ? await this.updater.install(manager, live ? bundle => reloadBundle(manager!, bundle) : undefined)
           : await this.updater.status(new URL(request.url).searchParams.has('force'))

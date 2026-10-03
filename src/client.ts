@@ -94,9 +94,10 @@ export function apply(ctx: Context) {
   const updateListeners = new Set<() => void>()
   const setUpdate = (value: UpdateStatus) => { update = value; for (const listener of updateListeners) listener() }
   const subscribeUpdate = (listener: () => void) => { updateListeners.add(listener); return () => { updateListeners.delete(listener) } }
-  const readUpdate = async (method: 'GET' | 'POST' = 'GET') => {
+  const readUpdate = async (method: 'GET' | 'POST' = 'GET', body?: Record<string, unknown>) => {
     try {
-      const response = await fetch('/api/theone/update', { method, signal: lifetime.signal, cache: 'no-store' })
+      const response = await fetch('/api/theone/update', { method, signal: lifetime.signal, cache: 'no-store',
+        ...(body ? { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : {}) })
       if (response.ok || response.status === 409) setUpdate(await response.json() as UpdateStatus)
       if (update?.state === 'reloading') void awaitReload(update.current)
     } catch { /* Offline: the button simply stays hidden. */ }
@@ -118,15 +119,51 @@ export function apply(ctx: Context) {
     return () => clearInterval(timer)
   })
 
+  /**
+   * pnpm only installs npm versions published a day ago. Explain that, and offer to exempt TheOne
+   * (only TheOne) so the update installs now.
+   */
+  function openReleaseAgeDialog(status: UpdateStatus) {
+    const backdrop = document.createElement('div')
+    backdrop.className = 'theone-dialog-backdrop'; backdrop.setAttribute('translate', 'no')
+    const card = document.createElement('div')
+    card.className = 'theone-dialog'; card.setAttribute('role', 'dialog'); card.setAttribute('aria-modal', 'true')
+    const title = document.createElement('h2'); title.id = 'theone-dialog-title'; title.textContent = t('age.title'); card.setAttribute('aria-labelledby', title.id)
+    const paragraph = (text: string, className?: string) => { const p = document.createElement('p'); p.textContent = text; if (className) p.className = className; return p }
+    const version = status.waiting?.version ?? status.latest ?? ''
+    card.append(title, paragraph(t('age.why', { version })), paragraph(t(status.canExempt ? 'age.allowHow' : 'age.cannot')))
+    if (status.waiting) card.append(paragraph(t('age.readyAt', { time: new Date(status.waiting.readyAt).toLocaleString(localeSnapshot().active, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) }), 'theone-dialog-note'))
+    const footer = document.createElement('div'); footer.className = 'theone-dialog-actions'
+    const button = (text: string, primary: boolean, act: () => void) => {
+      const element = document.createElement('button'); element.type = 'button'; element.textContent = text
+      if (primary) element.className = 'theone-dialog-primary'
+      element.addEventListener('click', act); footer.append(element); return element
+    }
+    const close = () => { backdrop.remove(); document.removeEventListener('keydown', keydown, true) }
+    const keydown = (event: KeyboardEvent) => { if (event.key === 'Escape') { event.preventDefault(); close() } }
+    button(t(status.canExempt ? 'age.wait' : 'age.ok'), !status.canExempt, close)
+    const allow = status.canExempt ? button(t('age.allow'), true, () => {
+      close(); setUpdate({ ...status, state: 'installing', error: undefined }); void readUpdate('POST', { allowFresh: true })
+    }) : undefined
+    card.append(footer); backdrop.append(card)
+    backdrop.addEventListener('pointerdown', event => { if (event.target === backdrop) close() })
+    document.addEventListener('keydown', keydown, true)
+    document.body.append(backdrop)
+    ;(allow ?? footer.querySelector('button'))?.focus()
+  }
+
   /** One-click update on the right of the entry; it shows only when there is something to do. */
   function UpdateButton() {
     const t = useText()
     const status = useSyncExternalStore(subscribeUpdate, () => update)
-    if (!status || (!status.available && !status.state)) return null
-    const label = status.state === 'installing' ? t('update.installing') : status.state === 'reloading' ? t('update.reloading')
+    // A newer npm version still inside pnpm's one-day wait is shown too, with the choice to install it now.
+    const waiting = !!status?.waiting && !status.available && !status.state
+    if (!status || (!status.available && !status.state && !waiting)) return null
+
+    const label = waiting ? t('update.waiting') : status.state === 'installing' ? t('update.installing') : status.state === 'reloading' ? t('update.reloading')
       : status.state === 'restart' ? t('update.restart')
       : status.state === 'failed' ? t('update.failed') : t('update.available')
-    const title = status.error === 'GATEWAY_BUSY' ? t('update.busy') : status.state === 'reloading' ? t('update.reloadingHint')
+    const title = waiting ? t('update.waitingHint', { latest: status.waiting!.version }) : status.error === 'GATEWAY_BUSY' ? t('update.busy') : status.state === 'reloading' ? t('update.reloadingHint')
       : status.state === 'restart' ? t('update.restartHint')
       : status.state === 'failed' ? (status.error === 'MINIMUM_RELEASE_AGE' ? t('update.tooNew') : status.error === 'NETWORK' ? t('update.network')
         : t('update.failedHint', { error: status.error ?? '' }))
@@ -136,15 +173,16 @@ export function apply(ctx: Context) {
       // The entry itself is a button that opens main chat; this click is only the update's.
       event.preventDefault(); event.stopPropagation()
       if (status.state === 'installing' || status.state === 'reloading' || status.state === 'restart') return
+      if (waiting || (status.state === 'failed' && status.error === 'MINIMUM_RELEASE_AGE')) { openReleaseAgeDialog(status); return }
       if (!status.installable) { window.open('https://github.com/YunongDai2005/dsh-theone#readme', '_blank', 'noopener'); return }
       setUpdate({ ...status, state: 'installing' })
       void readUpdate('POST')
     }
-    return h('span', { className: 'theone-update', role: 'button', tabIndex: 0, title, 'aria-label': title, 'data-state': status.state ?? 'available',
+    return h('span', { className: 'theone-update', role: 'button', tabIndex: 0, title, 'aria-label': title, 'data-state': waiting ? 'waiting' : status.state ?? 'available',
       onClick: act, onPointerDown: (event: React.PointerEvent) => event.stopPropagation(),
       onKeyDown: (event: React.KeyboardEvent) => { if (event.key === 'Enter' || event.key === ' ') act(event) } },
       status.state === 'installing' || status.state === 'reloading' ? h('span', { className: 'theone-update-spin', 'aria-hidden': true }) : null, label,
-      !status.state && status.latest ? h('small', null, `v${status.latest}`) : null)
+      !status.state && (waiting ? status.waiting!.version : status.latest) ? h('small', null, `v${waiting ? status.waiting!.version : status.latest}`) : null)
   }
 
   /** The One mark: a ring around a dot, drawn so host styles cannot reshape it. */
@@ -836,6 +874,18 @@ button:has(.theone-nav[data-wide=true])>span:has(.theone-nav){flex:1;min-width:0
 .theone-update small{font-size:11px;opacity:.75}
 .theone-update[data-state=installing],.theone-update[data-state=reloading],.theone-update[data-state=restart]{cursor:default}
 .theone-update[data-state=failed]{color:#d9480f;border-color:#d9480f66;background:#d9480f14}
+.theone-update[data-state=waiting]{opacity:.8;border-style:dashed}
+.theone-dialog-backdrop{position:fixed;inset:0;z-index:10001;display:flex;align-items:center;justify-content:center;padding:16px;background:#0008}
+.theone-dialog{width:min(440px,100%);box-sizing:border-box;padding:22px 22px 18px;border:1px solid var(--dsw-alias-border-l2,#ffffff1f);border-radius:16px;background:var(--dsw-specific-sidebar-fill,#232326);color:var(--dsw-alias-label-primary,#e8e8ea);box-shadow:0 16px 48px #0005;font:inherit;font-size:14px;line-height:1.65}
+.theone-dialog h2{margin:0 0 10px;font-size:17px}
+.theone-dialog p{margin:0 0 10px;color:var(--dsw-alias-label-secondary,#a0a0a6)}
+.theone-dialog .theone-dialog-note{font-size:13px}
+.theone-dialog-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:16px}
+.theone-dialog-actions button{padding:8px 14px;border:1px solid var(--dsw-alias-border-l2,#ffffff1f);border-radius:9px;background:transparent;color:inherit;font:inherit;cursor:pointer}
+.theone-dialog-actions button:hover{background:var(--dsw-alias-interactive-bg-hover,#ffffff12)}
+.theone-dialog-actions .theone-dialog-primary{border-color:transparent;background:#3b6fb0;color:#fff}
+.theone-dialog-actions .theone-dialog-primary:hover{background:#4a7fc0}
+.theone-dialog-actions button:focus-visible{outline:2px solid #4a7fc0;outline-offset:2px}
 .theone-update-spin{width:10px;height:10px;border-radius:50%;border:1.5px solid currentColor;border-right-color:transparent;animation:theone-spin 800ms linear infinite}
 @keyframes theone-spin{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){.theone-update-spin{animation:none}}

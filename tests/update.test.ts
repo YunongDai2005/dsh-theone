@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { compareVersions, installSource, RELEASE_AGE_MS, Updater, type PluginInstaller } from '../src/update.ts'
+import { compareVersions, installSource, RELEASE_AGE_MS, releaseAgeExemptions, Updater, withReleaseAgeExemption, type PluginInstaller } from '../src/update.ts'
 
 /** An npm registry answer: each version with its publication time. */
 const registry = (releases: Record<string, number>): typeof fetch => (async () => Response.json({
@@ -134,4 +134,44 @@ test('npm updates wait until pnpm accepts the version, and its refusal is explai
   const offline = new Updater('0.3.12', () => '0.3.12', registry({ '0.3.13': DAY_AGO }))
   const network = await offline.install({ installBundle: async () => ({ application: 'failed', packageResult: { output: 'GET https://registry.npmjs.org/x error (UND_ERR_DESTROYED)' } }) })
   assert.equal(network.error, 'NETWORK')
+})
+
+test('the release-age exemption is added to pnpm-workspace.yaml without disturbing anything else', () => {
+  assert.equal(withReleaseAgeExemption(''), 'minimumReleaseAgeExclude:\n  - dsh-theone\n')
+  const approved = 'onlyBuiltDependencies:\n  - esbuild\n'
+  assert.equal(withReleaseAgeExemption(approved), approved + 'minimumReleaseAgeExclude:\n  - dsh-theone\n')
+  const block = 'minimumReleaseAge: 1440\r\nminimumReleaseAgeExclude:\r\n    - left-pad\r\nonlyBuiltDependencies: []\r\n'
+  const added = withReleaseAgeExemption(block)
+  assert.equal(added, 'minimumReleaseAge: 1440\r\nminimumReleaseAgeExclude:\r\n    - left-pad\r\n    - dsh-theone\r\nonlyBuiltDependencies: []\r\n')
+  assert.deepEqual(releaseAgeExemptions(added), ['left-pad', 'dsh-theone'])
+  assert.equal(withReleaseAgeExemption(added), added)
+  assert.equal(withReleaseAgeExemption('minimumReleaseAgeExclude: [left-pad]\n'), 'minimumReleaseAgeExclude: ["left-pad", "dsh-theone"]\n')
+  assert.throws(() => withReleaseAgeExemption('minimumReleaseAgeExclude: left-pad\n'), /UNRECOGNISED_WORKSPACE/)
+})
+
+test('exempting TheOne installs the fresh version now, and only TheOne is exempted', async () => {
+  const { mkdtemp, readFile, rm, writeFile } = await import('node:fs/promises')
+  const { tmpdir } = await import('node:os')
+  const { join } = await import('node:path')
+  const root = await mkdtemp(join(tmpdir(), 'theone-exempt-'))
+  try {
+    const file = join(root, 'pnpm-workspace.yaml')
+    await writeFile(file, 'onlyBuiltDependencies:\n  - esbuild\n')
+    const published = Date.now() - 3600000
+    const updater = new Updater('0.3.13', () => '0.3.13', registry({ '0.3.13': DAY_AGO, '0.3.15': published }), Date.now, () => file)
+    const waiting = await updater.status()
+    assert.equal(waiting.available, false)
+    assert.equal(waiting.waiting?.version, '0.3.15')
+    assert.equal(waiting.exempt, false)
+    assert.equal(waiting.canExempt, true)
+    updater.allowFresh()
+    assert.equal(await readFile(file, 'utf8'), 'onlyBuiltDependencies:\n  - esbuild\nminimumReleaseAgeExclude:\n  - dsh-theone\n')
+    const specs: string[] = []
+    const installed = await updater.install({ installBundle: async spec => { specs.push(spec); return { application: 'restart-required' } } })
+    assert.deepEqual(specs, ['dsh-theone@0.3.15'])
+    assert.equal(installed.state, 'restart')
+    assert.equal(installed.exempt, true)
+    // Without a known profile there is nothing to edit.
+    assert.throws(() => new Updater('0.3.13', () => '0.3.13').allowFresh(), /NO_PROFILE/)
+  } finally { await rm(root, { recursive: true, force: true }) }
 })

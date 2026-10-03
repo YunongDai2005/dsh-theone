@@ -1,5 +1,48 @@
+import { readFileSync, renameSync, writeFileSync } from 'node:fs';
 export const REPOSITORY = 'YunongDai2005/dsh-theone';
 export const PACKAGE_NAME = 'dsh-theone';
+const EXCLUDE_KEY = 'minimumReleaseAgeExclude';
+const unquote = (value) => value.trim().replace(/^['"]|['"]$/g, '');
+/** The packages a pnpm-workspace.yaml exempts from the release-age rule (block or flow list). */
+export function releaseAgeExemptions(text) {
+    const lines = text.split(/\r?\n/);
+    const index = lines.findIndex(line => line.startsWith(`${EXCLUDE_KEY}:`));
+    if (index < 0)
+        return [];
+    const inline = lines[index].slice(EXCLUDE_KEY.length + 1).trim();
+    if (inline.startsWith('['))
+        return inline.replace(/^\[|\]$/g, '').split(',').map(unquote).filter(Boolean);
+    const items = [];
+    for (let line = index + 1; line < lines.length && /^\s+-/.test(lines[line]); line++)
+        items.push(unquote(lines[line].replace(/^\s+-\s*/, '')));
+    return items;
+}
+/**
+ * The same pnpm-workspace.yaml with `name` added to the release-age exemptions, every other line
+ * kept as it was. Throws for a layout it does not recognise rather than guess.
+ */
+export function withReleaseAgeExemption(text, name = PACKAGE_NAME) {
+    if (releaseAgeExemptions(text).includes(name))
+        return text;
+    const newline = text.includes('\r\n') ? '\r\n' : '\n';
+    const lines = text.split(/\r?\n/);
+    const index = lines.findIndex(line => line.startsWith(`${EXCLUDE_KEY}:`));
+    if (index < 0)
+        return `${text}${text && !/\r?\n$/.test(text) ? newline : ''}${EXCLUDE_KEY}:${newline}  - ${name}${newline}`;
+    const inline = lines[index].slice(EXCLUDE_KEY.length + 1).trim();
+    if (inline.startsWith('[') && inline.endsWith(']')) {
+        lines[index] = `${EXCLUDE_KEY}: [${[...releaseAgeExemptions(text), name].map(item => JSON.stringify(item)).join(', ')}]`;
+        return lines.join(newline);
+    }
+    if (inline)
+        throw new Error('UNRECOGNISED_WORKSPACE');
+    let end = index + 1;
+    while (end < lines.length && /^\s+-/.test(lines[end]))
+        end++;
+    const indent = end > index + 1 ? lines[index + 1].match(/^\s+/)[0] : '  ';
+    lines.splice(end, 0, `${indent}- ${name}`);
+    return lines.join(newline);
+}
 /**
  * pnpm, which DSH installs plugins with, refuses npm versions published less than a day ago
  * (minimumReleaseAge, a supply-chain safeguard). Updates from npm wait until then.
@@ -38,15 +81,56 @@ export class Updater {
     spec;
     fetcher;
     now;
+    workspace;
     checked;
     state;
     error;
     pending;
-    constructor(current, spec, fetcher = fetch, now = Date.now) {
+    /**
+     * @param workspace - this DSH profile's pnpm-workspace.yaml, where pnpm reads the release-age
+     * exemptions; undefined when the profile is unknown.
+     */
+    constructor(current, spec, fetcher = fetch, now = Date.now, workspace = () => undefined) {
         this.current = current;
         this.spec = spec;
         this.fetcher = fetcher;
         this.now = now;
+        this.workspace = workspace;
+    }
+    /** Whether pnpm in this profile already lets TheOne install versions under a day old. */
+    get exempt() {
+        const file = this.workspace();
+        if (!file)
+            return false;
+        try {
+            return releaseAgeExemptions(readFileSync(file, 'utf8')).includes(PACKAGE_NAME);
+        }
+        catch {
+            return false;
+        }
+    }
+    /** Exempt TheOne, and only TheOne, from pnpm's release-age rule in this profile. */
+    allowFresh() {
+        const file = this.workspace();
+        if (!file)
+            throw new Error('NO_PROFILE');
+        let text = '';
+        try {
+            text = readFileSync(file, 'utf8');
+        }
+        catch (error) {
+            if (error.code !== 'ENOENT')
+                throw error;
+        }
+        const next = withReleaseAgeExemption(text);
+        if (next === text)
+            return;
+        writeFileSync(`${file}.theone-tmp`, next, { mode: 0o600 });
+        renameSync(`${file}.theone-tmp`, file);
+        if (this.state === 'failed') {
+            this.state = undefined;
+            this.error = undefined;
+        }
     }
     get source() { return installSource(this.spec()); }
     /** The latest known status; checks again at most every six hours (or now, when forced). */
@@ -68,7 +152,7 @@ export class Updater {
         const status = await this.status();
         if (!status.available || !status.installable || !installer || this.state === 'installing' || this.state === 'reloading' || this.state === 'restart')
             return this.snapshot();
-        const spec = this.source === 'github' ? `github:${REPOSITORY}#${this.checked.sha}` : `${PACKAGE_NAME}@${this.checked.latest}`;
+        const spec = this.source === 'github' ? `github:${REPOSITORY}#${this.checked.sha}` : `${PACKAGE_NAME}@${status.latest}`;
         this.state = 'installing';
         this.error = undefined;
         try {
@@ -94,11 +178,15 @@ export class Updater {
         return this.snapshot();
     }
     snapshot() {
-        const latest = this.checked?.latest;
+        const exempt = this.source === 'npm' && this.exempt;
+        // Exempt from the release-age rule, the newest version is ready as soon as it is published.
+        const fresh = this.checked?.waiting && compareVersions(this.checked.waiting.version, this.current) > 0 ? this.checked.waiting : undefined;
+        const latest = exempt && fresh ? fresh.version : this.checked?.latest;
         const source = this.source;
         const available = !!latest && compareVersions(latest, this.current) > 0;
-        const waiting = this.checked?.waiting && compareVersions(this.checked.waiting.version, this.current) > 0 ? { waiting: this.checked.waiting } : {};
+        const waiting = fresh && !exempt ? { waiting: fresh } : {};
         return { current: this.current, ...(latest ? { latest } : {}), available, source, ...waiting,
+            ...(source === 'npm' ? { exempt, canExempt: !!this.workspace() } : {}),
             installable: available && (source === 'npm' || (source === 'github' && !!this.checked?.sha)),
             ...(this.state ? { state: this.state } : {}), ...(this.error ?? this.checked?.error ? { error: this.error ?? this.checked?.error } : {}) };
     }

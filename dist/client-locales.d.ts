@@ -17,6 +17,16 @@ export declare const zh: {
     readonly 'update.available': "更新";
     readonly 'update.installing': "更新中…";
     readonly 'update.restart': "重启生效";
+    readonly 'update.waiting': "新版本";
+    readonly 'update.waitingHint': "有新版本 {latest}，发布还不满 24 小时。点击查看如何现在安装。";
+    readonly 'age.title': "新版本发布还不满 24 小时";
+    readonly 'age.why': "DSH 用 pnpm 安装插件，它默认只安装发布满 24 小时的版本，用来防范被篡改的新包。TheOne {version} 刚发布不久，所以暂时装不上。";
+    readonly 'age.allowHow': "你可以只为 TheOne 放行：在这个 DSH 配置的 pnpm 设置（pnpm-workspace.yaml）里把 dsh-theone 加入例外，然后立即安装。其他插件仍然受 24 小时规则保护。";
+    readonly 'age.cannot': "当前无法自动修改这个 DSH 配置的 pnpm 设置。可以等它满 24 小时，或改用 GitHub 地址重新安装。";
+    readonly 'age.readyAt': "不放行的话，{time} 之后就能直接更新。";
+    readonly 'age.wait': "等满 24 小时";
+    readonly 'age.allow': "放行并更新";
+    readonly 'age.ok': "知道了";
     readonly 'update.reloading': "正在重新加载…";
     readonly 'update.reloadingHint': "TheOne 正在用新版本重新加载，DSH 不需要重启；完成后页面会自动刷新。";
     readonly 'update.busy': "有回复正在进行，等它结束后再点更新。";

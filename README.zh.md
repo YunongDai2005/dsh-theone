@@ -57,7 +57,7 @@
 2. 打开 **插件 → 添加插件**，粘贴 `https://github.com/YunongDai2005/dsh-theone`，点击安装。
 3. 点击左侧 **TheOne · 主聊天**，开始说话。
 
-命令行安装：`dsh plugin --profile web add github:YunongDai2005/dsh-theone --ignore-scripts`。兼容 DSH `0.2.0-rc.2` 与 Node.js 24；界面跟随 DSH 的语言（简体中文 / English）。也可以从 npm 安装 `dsh-theone`，但 DSH 的包管理器只接受发布满 24 小时的版本，所以用 GitHub 地址安装能最早拿到新版本。
+命令行安装：`dsh plugin --profile web add github:YunongDai2005/dsh-theone --ignore-scripts`。兼容 DSH `0.2.0-rc.2` 与 Node.js 24；界面跟随 DSH 的语言（简体中文 / English）。也可以从 npm 安装 `dsh-theone`，但 DSH 的包管理器只接受发布满 24 小时的版本，所以用 GitHub 地址安装能最早拿到新版本。遇到这种情况，「更新」按钮会说明原因，并可以只为 TheOne 放行、立即安装。
 
 > 非官方社区项目，由社区成员独立维护，与 DeepSeek 不存在隶属或背书关系。
 

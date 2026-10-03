@@ -57,7 +57,7 @@ Each project gets its own background session that reasons, runs tools and compac
 2. Open **Plugins → Add plugin**, paste `https://github.com/YunongDai2005/dsh-theone`, and install.
 3. Click **TheOne · Main chat** in the sidebar and start talking.
 
-From the command line: `dsh plugin --profile web add github:YunongDai2005/dsh-theone --ignore-scripts`. Works with DSH `0.2.0-rc.2` and Node.js 24; the interface follows DSH's language (English / Simplified Chinese). Installing `dsh-theone` from npm also works, but DSH's package manager only accepts a version once it has been published for 24 hours, so the GitHub address gets new versions first.
+From the command line: `dsh plugin --profile web add github:YunongDai2005/dsh-theone --ignore-scripts`. Works with DSH `0.2.0-rc.2` and Node.js 24; the interface follows DSH's language (English / Simplified Chinese). Installing `dsh-theone` from npm also works, but DSH's package manager only accepts a version once it has been published for 24 hours, so the GitHub address gets new versions first. When an update is newer than that, the Update button explains it and can exempt TheOne alone so it installs right away.
 
 > Unofficial community project, maintained independently. It is not affiliated with or endorsed by DeepSeek.
 

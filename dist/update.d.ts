@@ -19,7 +19,18 @@ export interface UpdateStatus {
         version: string;
         readyAt: number;
     };
+    /** TheOne is exempt from that rule in this DSH profile, so fresh versions install right away. */
+    exempt?: boolean;
+    /** Whether this profile's pnpm settings can be edited to grant that exemption. */
+    canExempt?: boolean;
 }
+/** The packages a pnpm-workspace.yaml exempts from the release-age rule (block or flow list). */
+export declare function releaseAgeExemptions(text: string): string[];
+/**
+ * The same pnpm-workspace.yaml with `name` added to the release-age exemptions, every other line
+ * kept as it was. Throws for a layout it does not recognise rather than guess.
+ */
+export declare function withReleaseAgeExemption(text: string, name?: string): string;
 /**
  * pnpm, which DSH installs plugins with, refuses npm versions published less than a day ago
  * (minimumReleaseAge, a supply-chain safeguard). Updates from npm wait until then.
@@ -51,11 +62,20 @@ export declare class Updater {
     private readonly spec;
     private readonly fetcher;
     private readonly now;
+    private readonly workspace;
     private checked?;
     private state?;
     private error?;
     private pending?;
-    constructor(current: string, spec: () => string | undefined, fetcher?: typeof fetch, now?: () => number);
+    /**
+     * @param workspace - this DSH profile's pnpm-workspace.yaml, where pnpm reads the release-age
+     * exemptions; undefined when the profile is unknown.
+     */
+    constructor(current: string, spec: () => string | undefined, fetcher?: typeof fetch, now?: () => number, workspace?: () => string | undefined);
+    /** Whether pnpm in this profile already lets TheOne install versions under a day old. */
+    get exempt(): boolean;
+    /** Exempt TheOne, and only TheOne, from pnpm's release-age rule in this profile. */
+    allowFresh(): void;
     get source(): UpdateSource;
     /** The latest known status; checks again at most every six hours (or now, when forced). */
     status(force?: boolean): Promise<UpdateStatus>;
