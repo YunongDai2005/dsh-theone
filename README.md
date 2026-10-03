@@ -45,7 +45,7 @@ Each project gets its own background session that reasons, runs tools and compac
 
 - **Feels native.** Thinking streams in its usual place from the first token, and tool cards, approvals, questions, todo lists, retries and mid-reply steering all work as usual.
 - **Related work connects; unrelated work stays out.** Related topics share progress automatically and TheOne learns which ones belong together from how you use them. A topic's constraints (say, "budget figures stay out of the paper") are attached verbatim every time, so compaction never drops them.
-- **Gets better with use.** Say "wrong topic" or click **Move to…** in the directory, and similar messages go to the right place from then on.
+- **Gets better with use.** Say "wrong topic" or click **Move to…** in the directory, and TheOne learns which terms tie that kind of message to the right topic (one small model call), so similar messages go there from then on. The directory shows how often routing was kept as is.
 - **Your old sessions become a topic directory.** After install it reads your existing sessions in the background, turns them into topics grouped into workspaces, and you pick up where you left off.
 - **Nothing extra to configure.** No separate API key: routing and the background sessions use the model you chose in DSH. When TheOne is the selected model, a **Background** button beside the model menu shows which model does the routing and the work, and switches it.
 
