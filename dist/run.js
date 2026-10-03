@@ -83,8 +83,12 @@ export class WorkerRun {
         }));
     }
     /** Give the Worker its context and input; the run ends when the Worker is idle again. */
-    start(context, input) {
-        this.worker.inject(context);
+    /** Related topics whose news this run's briefing carried, and those the Worker then looked up. */
+    briefed = [];
+    lookedUp = new Set();
+    start(contexts, input) {
+        for (const context of contexts)
+            this.worker.inject(context);
         this.worker.followup(input);
         this.settled = this.worker.whenIdle().then(() => undefined, error => {
             this.failure ??= error instanceof Error ? error : new Error(String(error));

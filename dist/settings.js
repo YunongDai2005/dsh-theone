@@ -1,11 +1,13 @@
-import { EDITABLE_SETTINGS_KEYS } from "./settings-types.js";
+import { EDITABLE_SETTINGS_KEYS, SETTINGS_DEFAULTS } from "./settings-types.js";
 /** Validate the entire editable form before committing any settings. */
 export function validateSettings(value) {
     const fail = () => { throw new Error('INVALID_SETTINGS'); };
     if (!value || typeof value !== 'object' || Array.isArray(value))
         return fail();
-    const row = value;
+    const row = { ...SETTINGS_DEFAULTS, ...value };
     if (Object.keys(row).length !== EDITABLE_SETTINGS_KEYS.length || Object.keys(row).some(k => !EDITABLE_SETTINGS_KEYS.includes(k)))
+        return fail();
+    if (!['off', 'workspace', 'auto'].includes(row.linkScope) || !['hidden', 'switch', 'all'].includes(row.routeNotice))
         return fail();
     const text = (key, max) => {
         const v = row[key];
@@ -43,5 +45,6 @@ export function validateSettings(value) {
     return { workerProvider, workerModel, routerMode: row.routerMode,
         routerTransport: row.routerTransport, historyCatalog: row.historyCatalog,
         catalogIntervalMs: number('catalogIntervalMs', 10000, 86400000), maxDescriptorChars: number('maxDescriptorChars', 128, 1000000),
-        maxResponseChars: number('maxResponseChars', 128, 10000000), routerBaseUrl: url.toString(), routerModel: text('routerModel', 256), routerApiKeyEnv };
+        maxResponseChars: number('maxResponseChars', 128, 10000000), routerBaseUrl: url.toString(), routerModel: text('routerModel', 256), routerApiKeyEnv,
+        linkScope: row.linkScope, routeNotice: row.routeNotice };
 }

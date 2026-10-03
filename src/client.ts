@@ -11,7 +11,7 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { MainPanelId, PanelInfo } from '@deepseek-ai/dsh-client-ui-layout/client'
-import type { CatalogSnapshot } from './catalog-types.ts'
+import type { CatalogSnapshot, LinkageSnapshot } from './catalog-types.ts'
 import { EDITABLE_SETTINGS_KEYS, type EditableSettings, type SettingsSnapshot } from './settings-types.ts'
 import { GatewayNavigation } from './client-navigation.ts'
 import { zh, en, type TheOneLocaleKey } from './client-locales.ts'
@@ -229,6 +229,7 @@ export function apply(ctx: Context) {
     const groups = [
       ['models', ['workerProvider', 'workerModel', 'routerMode', 'routerTransport']],
       ['history', ['historyCatalog', 'catalogIntervalMs']],
+      ['linkage', ['linkScope', 'routeNotice']],
       ['limits', ['maxDescriptorChars', 'maxResponseChars']],
       ['storage', ['databasePath', 'contextsPath', 'gatewayKey']],
       ['legacy', ['routerBaseUrl', 'routerModel', 'routerApiKeyEnv']],
@@ -237,6 +238,8 @@ export function apply(ctx: Context) {
       const value = snapshot!.values[key]
       if (value === null) return t(key === 'workerProvider' || key === 'workerModel' ? 'settings.follow' : 'settings.none')
       if (typeof value === 'boolean') return t(value ? 'settings.on' : 'settings.off')
+      if (key === 'linkScope') return t(`settings.scope.${value}` as TheOneLocaleKey)
+      if (key === 'routeNotice') return t(`settings.notice.${value}` as TheOneLocaleKey)
       if (key === 'catalogIntervalMs') return t('settings.seconds', { count: Number(value) / 1000 })
       return typeof value === 'number' ? value.toLocaleString(localeSnapshot().active) : value || t('settings.none')
     }
@@ -270,6 +273,10 @@ export function apply(ctx: Context) {
         h('select', { ...props, value, required: field === 'workerModel' && !!draft.workerProvider, onChange: (event: React.ChangeEvent<HTMLSelectElement>) => selectValue(event.target.value) },
           ...choices.map(choice => h('option', { key: choice.value, value: choice.value }, choice.label)))
       if (field === 'historyCatalog') return select(String(draft.historyCatalog), [{ value: 'true', label: t('settings.on') }, { value: 'false', label: t('settings.off') }], v => change(field, v === 'true'))
+      if (field === 'linkScope' || field === 'routeNotice') {
+        const values = field === 'linkScope' ? ['auto', 'workspace', 'off'] : ['switch', 'hidden', 'all']
+        return select(draft[field], values.map(value => ({ value, label: t(`settings.${field === 'linkScope' ? 'scope' : 'notice'}.${value}` as TheOneLocaleKey) })), v => change(field, v as never))
+      }
       if (field === 'routerMode' || field === 'routerTransport') {
         const values = field === 'routerMode' ? ['llm', 'rules'] : ['dsh', 'legacy']
         return select(draft[field], values.map(value => ({ value, label: t(`settings.${value === 'legacy' ? 'legacyCall' : value}` as TheOneLocaleKey) })), v => change(field, v))
@@ -361,6 +368,39 @@ export function apply(ctx: Context) {
       } catch { setError('catalog.continueError') }
       finally { setBusy(undefined) }
     }
+    async function editLinks(body: Record<string, unknown>) {
+      setBusy('links'); setError(undefined)
+      try {
+        const response = await fetch('/api/theone/links', { method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body), signal: lifetime.signal, cache: 'no-store' })
+        if (!response.ok) throw new Error('Links unavailable')
+        const linkage = await response.json() as LinkageSnapshot
+        setSnapshot(current => current && { ...current, linkage })
+      } catch { setError('link.error') }
+      finally { setBusy(undefined) }
+    }
+    /** Related topics with why they relate; the user can link, unlink or stop a topic sharing. */
+    function linkRow(id: string) {
+      const linkage = snapshot?.linkage
+      if (!linkage || linkage.scope === 'off') return null
+      const own = linkage.topics[id]
+      if (!own) return null
+      const related = new Set(own.related.map(topic => topic.id))
+      const others = snapshot!.contexts.filter(context => context.id !== id && !related.has(context.id))
+      return h('div', { className: 'theone-topic-links' },
+        h('span', { className: 'theone-links-label' }, t('link.label')),
+        own.related.length ? null : h('span', { className: 'theone-links-empty' }, t('link.none')),
+        ...own.related.map(topic => h('span', { key: topic.id, className: 'theone-link-chip', title: topic.reasons.map(reason => t(`link.reason.${reason}` as TheOneLocaleKey)).join(' · ') },
+          topic.title, h('button', { type: 'button', 'aria-label': t('link.remove'), title: t('link.remove'), disabled: !!busy,
+            onClick: () => { void editLinks({ action: 'unlink', a: id, b: topic.id }) } }, '×'))),
+        others.length ? h('select', { 'aria-label': t('link.add'), value: '', disabled: !!busy,
+          onChange: (event: React.ChangeEvent<HTMLSelectElement>) => { if (event.target.value) void editLinks({ action: 'link', a: id, b: event.target.value }) } },
+          h('option', { value: '' }, t('link.add')), ...others.map(context => h('option', { key: context.id, value: context.id }, context.title))) : null,
+        h('label', { className: 'theone-link-private', title: t('link.privateHint') },
+          h('input', { type: 'checkbox', checked: own.private, disabled: !!busy,
+            onChange: (event: React.ChangeEvent<HTMLInputElement>) => { void editLinks({ action: 'private', id, value: event.target.checked }) } }),
+          t('link.private')))
+    }
     async function refresh() {
       setBusy('refresh'); setError(undefined)
       try {
@@ -375,7 +415,11 @@ export function apply(ctx: Context) {
     return h('section', { className: 'theone-catalog', translate: 'no' },
       h('header', { className: 'theone-catalog-header' },
         h('div', null, h('h1', null, t('catalog.title')), h('p', null, t('catalog.subtitle'))),
-        h('button', { type: 'button', onClick: refresh, disabled: !!busy || status?.running }, t('catalog.refresh'))),
+        h('div', { className: 'theone-catalog-tools' },
+          snapshot?.linkage && snapshot.linkage.scope !== 'off' ? h('button', { type: 'button', disabled: !!busy, title: t('link.clearLearnedHint'),
+            onClick: () => { void editLinks({ action: 'clearLearned' }) } }, t('link.clearLearned')) : null,
+          h('button', { type: 'button', onClick: refresh, disabled: !!busy || status?.running }, t('catalog.refresh')))),
+      snapshot?.linkage?.scope === 'off' ? h('p', { className: 'theone-catalog-status' }, t('link.off')) : null,
       h('p', { className: 'theone-catalog-status', role: 'status' }, snapshot
         ? t('catalog.counts', { topics: snapshot.contexts.length, groups: snapshot.groups.length, topicSuffix: snapshot.contexts.length === 1 ? '' : 's', groupSuffix: snapshot.groups.length === 1 ? '' : 's' }) + ' · ' + (status?.running ? t('catalog.indexing') : status?.pending ? t('catalog.pending', { count: status.pending, sessionSuffix: status.pending === 1 ? '' : 's' }) : t('catalog.updated'))
         : t('catalog.reading')),
@@ -391,7 +435,7 @@ export function apply(ctx: Context) {
             const topic = snapshot?.contexts.find(c => c.id === id)
             if (!topic) return []
             return [h('article', { key: id, className: 'theone-topic-card' },
-              h('h3', null, topic.title), h('p', null, topic.summary),
+              h('h3', null, topic.title), h('p', null, topic.summary), linkRow(id),
               h('div', { className: 'theone-topic-actions' },
                 h('button', { type: 'button', disabled: !!busy, onClick: () => { void continueTopic(id) } }, t(busy === id ? 'topic.opening' : 'topic.continue')),
                 ...topic.sourceSessionIds.slice(0, 3).map((sessionId, i) => h('button', { key: sessionId, type: 'button', className: 'theone-source-link',
@@ -469,7 +513,7 @@ button:has(.theone-nav[data-active=true]){border-color:color-mix(in srgb,var(--o
 const catalogCss = `
 button:has(.theone-catalog-entry)>span:not(:has(.theone-catalog-entry)){display:none}
 .theone-catalog{padding:32px;max-width:1180px;margin:auto;box-sizing:border-box;height:100%;overflow:auto;color:var(--dsw-alias-label-primary)}
-.theone-catalog-header{display:flex;justify-content:space-between;align-items:center;gap:16px}.theone-catalog h1{font-size:24px;margin:0 0 8px}.theone-catalog-header p,.theone-catalog-status,.theone-group-summary{opacity:.65;margin:0 0 18px;line-height:1.6}.theone-catalog button{border:1px solid #8883;border-radius:9px;padding:8px 13px;background:transparent;color:inherit;cursor:pointer;font:inherit;white-space:nowrap}.theone-catalog button:disabled{opacity:.5;cursor:default}.theone-catalog-groups{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,310px),1fr));gap:20px}.theone-topic-group{border:1px solid #8882;border-radius:16px;padding:20px;background:#88805}.theone-topic-group h2{font-size:18px;margin:0 0 8px}.theone-topic-group h2 span{font-size:13px;opacity:.5}.theone-topic-card{border-top:1px solid #8882;padding:16px 0}.theone-topic-card:last-child{padding-bottom:0}.theone-topic-card h3{font-size:15px;line-height:1.5;margin:0 0 7px}.theone-topic-card p{font-size:13px;line-height:1.7;opacity:.75;margin:0 0 12px;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}.theone-topic-actions{display:flex;gap:8px;flex-wrap:wrap}.theone-topic-actions button{font-size:12px}.theone-topic-actions .theone-source-link{border-color:transparent;opacity:.6}.theone-catalog-warning{background:#ff900011;padding:12px;border-radius:10px;font-size:13px}.theone-catalog-entry{display:flex;align-items:center;gap:10px;font-size:14px}.theone-catalog-empty{padding:40px 0;opacity:.65;line-height:1.8}@media(max-width:640px){.theone-catalog{padding:20px}.theone-catalog-header{align-items:flex-start}.theone-catalog-header h1{font-size:21px}}
+.theone-catalog-header{display:flex;justify-content:space-between;align-items:center;gap:16px}.theone-catalog h1{font-size:24px;margin:0 0 8px}.theone-catalog-header p,.theone-catalog-status,.theone-group-summary{opacity:.65;margin:0 0 18px;line-height:1.6}.theone-catalog button{border:1px solid #8883;border-radius:9px;padding:8px 13px;background:transparent;color:inherit;cursor:pointer;font:inherit;white-space:nowrap}.theone-catalog button:disabled{opacity:.5;cursor:default}.theone-catalog-groups{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,310px),1fr));gap:20px}.theone-topic-group{border:1px solid #8882;border-radius:16px;padding:20px;background:#88805}.theone-topic-group h2{font-size:18px;margin:0 0 8px}.theone-topic-group h2 span{font-size:13px;opacity:.5}.theone-topic-card{border-top:1px solid #8882;padding:16px 0}.theone-topic-card:last-child{padding-bottom:0}.theone-topic-card h3{font-size:15px;line-height:1.5;margin:0 0 7px}.theone-topic-card p{font-size:13px;line-height:1.7;opacity:.75;margin:0 0 12px;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}.theone-topic-actions{display:flex;gap:8px;flex-wrap:wrap}.theone-topic-actions button{font-size:12px}.theone-topic-actions .theone-source-link{border-color:transparent;opacity:.6}.theone-catalog-warning{background:#ff900011;padding:12px;border-radius:10px;font-size:13px}.theone-catalog-entry{display:flex;align-items:center;gap:10px;font-size:14px}.theone-catalog-empty{padding:40px 0;opacity:.65;line-height:1.8}.theone-catalog-tools{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.theone-topic-links{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 12px;font-size:12px}.theone-links-label,.theone-links-empty{opacity:.6}.theone-link-chip{display:inline-flex;align-items:center;gap:2px;border:1px solid #8883;border-radius:999px;padding:2px 4px 2px 9px}.theone-catalog .theone-link-chip button{border:0;padding:0 5px;opacity:.6;font-size:13px;line-height:1}.theone-topic-links select{font:inherit;font-size:12px;color:inherit;background:transparent;border:1px solid #8883;border-radius:8px;padding:2px 6px}.theone-link-private{display:inline-flex;align-items:center;gap:4px;opacity:.75;cursor:pointer}@media(max-width:640px){.theone-catalog{padding:20px}.theone-catalog-header{align-items:flex-start}.theone-catalog-header h1{font-size:21px}}
 `
 
 const settingsCss = `

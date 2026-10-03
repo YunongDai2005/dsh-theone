@@ -39,7 +39,9 @@ var EDITABLE_SETTINGS_KEYS = [
   "maxResponseChars",
   "routerBaseUrl",
   "routerModel",
-  "routerApiKeyEnv"
+  "routerApiKeyEnv",
+  "linkScope",
+  "routeNotice"
 ];
 
 // src/client-navigation.ts
@@ -124,6 +126,17 @@ var zh = {
   "settings.models": "\u6A21\u578B\u4E0E\u8DEF\u7531",
   "settings.history": "\u5386\u53F2\u6574\u7406",
   "settings.limits": "\u5185\u5BB9\u9650\u5236",
+  "settings.linkage": "\u8BDD\u9898\u8054\u52A8",
+  "settings.linkScope": "\u8054\u52A8\u8303\u56F4",
+  "settings.help.linkScope": "\u76F8\u5173\u8BDD\u9898\u4E4B\u95F4\u5171\u4EAB\u8FDB\u5C55\u7684\u8303\u56F4\uFF1A\u5173\u95ED\u3001\u4EC5\u540C\u4E00\u8BDD\u9898\u5DE5\u4F5C\u533A\uFF0C\u6216\u6839\u636E\u4F7F\u7528\u60C5\u51B5\u81EA\u52A8\u5B66\u4E60\u3002\u624B\u52A8\u5173\u8054\u548C\u201C\u4E0D\u5171\u4EAB\u201D\u59CB\u7EC8\u4F18\u5148\u3002",
+  "settings.routeNotice": "\u8BDD\u9898\u63D0\u793A",
+  "settings.help.routeNotice": "\u4E3B\u804A\u5929\u91CC\u663E\u793A\u8BDD\u9898\u5207\u6362\u7684\u65B9\u5F0F\uFF1A\u9690\u85CF\u3001\u4EC5\u5207\u6362\u8BDD\u9898\u65F6\u663E\u793A\u4E00\u884C\uFF0C\u6216\u6BCF\u6761\u6D88\u606F\u90FD\u663E\u793A\u3002",
+  "settings.scope.off": "\u5173\u95ED",
+  "settings.scope.workspace": "\u4EC5\u540C\u4E00\u5DE5\u4F5C\u533A",
+  "settings.scope.auto": "\u81EA\u52A8\u5B66\u4E60",
+  "settings.notice.hidden": "\u9690\u85CF",
+  "settings.notice.switch": "\u4EC5\u5207\u6362\u65F6\u663E\u793A",
+  "settings.notice.all": "\u5168\u90E8\u663E\u793A",
   "settings.storage": "\u6570\u636E\u4E0E\u5165\u53E3",
   "settings.legacy": "\u65E7\u7248\u76F4\u63A5 API \u8C03\u7528",
   "settings.legacyHint": "\u4EE5\u4E0B\u9009\u9879\u4EC5\u5728\u8DEF\u7531\u65B9\u5F0F\u4E3A legacy \u65F6\u751F\u6548\u3002DSH \u8DEF\u7531\u65E0\u9700\u989D\u5916 API Key\u3002",
@@ -158,6 +171,22 @@ var zh = {
   "catalog.title": "\u8BDD\u9898\u5DE5\u4F5C\u533A",
   "catalog.subtitle": "\u76F8\u5173\u7684\u4E8B\u60C5\u653E\u5728\u4E00\u8D77\uFF0C\u968F\u65F6\u56DE\u5230\u4E3B\u804A\u5929\u7EE7\u7EED\u3002",
   "catalog.refresh": "\u6574\u7406\u5386\u53F2",
+  "link.label": "\u5173\u8054\uFF1A",
+  "link.none": "\u6682\u65E0\u5173\u8054\u8BDD\u9898",
+  "link.add": "\uFF0B \u5173\u8054\u8BDD\u9898",
+  "link.remove": "\u89E3\u9664\u5173\u8054\uFF08\u4EE5\u540E\u4E0D\u518D\u81EA\u52A8\u5173\u8054\uFF09",
+  "link.private": "\u4E0D\u5171\u4EAB",
+  "link.privateHint": "\u8FD9\u4E2A\u8BDD\u9898\u7684\u5185\u5BB9\u4E0D\u4F1A\u4F5C\u4E3A\u53C2\u8003\u63D0\u4F9B\u7ED9\u5176\u4ED6\u8BDD\u9898",
+  "link.clearLearned": "\u6E05\u7A7A\u5B66\u5230\u7684\u5173\u8054",
+  "link.clearLearnedHint": "\u5FD8\u8BB0\u81EA\u52A8\u5B66\u5230\u7684\u5173\u8054\uFF0C\u4FDD\u7559\u4F60\u624B\u52A8\u8BBE\u7F6E\u7684\u5173\u8054\u548C\u89E3\u9664",
+  "link.off": "\u8BDD\u9898\u8054\u52A8\u5DF2\u5173\u95ED\uFF0C\u53EF\u5728 TheOne \u8BBE\u7F6E\u4E2D\u5F00\u542F\u3002",
+  "link.error": "\u5173\u8054\u8BBE\u7F6E\u672A\u80FD\u4FDD\u5B58\uFF0C\u8BF7\u91CD\u8BD5\u3002",
+  "link.reason.manual": "\u624B\u52A8\u5173\u8054",
+  "link.reason.workspace": "\u540C\u4E00\u8BDD\u9898\u5DE5\u4F5C\u533A",
+  "link.reason.project": "\u540C\u4E00\u9879\u76EE\u76EE\u5F55",
+  "link.reason.entities": "\u6D89\u53CA\u76F8\u540C\u7684\u4E8B\u7269",
+  "link.reason.learned": "\u7ECF\u5E38\u4E00\u8D77\u4F7F\u7528",
+  "link.reason.request": "\u540C\u65F6\u88AB\u63D0\u5230",
   "catalog.reading": "\u6B63\u5728\u8BFB\u53D6\u8BDD\u9898\u2026",
   "catalog.counts": "{topics} \u4E2A\u8BDD\u9898 \xB7 {groups} \u4E2A\u5206\u7EC4",
   "catalog.indexing": "\u6B63\u5728\u6574\u7406\u5386\u53F2\u2026",
@@ -218,6 +247,17 @@ var en = {
   "settings.models": "Models and routing",
   "settings.history": "History organization",
   "settings.limits": "Content limits",
+  "settings.linkage": "Topic linking",
+  "settings.linkScope": "Linking scope",
+  "settings.help.linkScope": 'Where related topics share progress: off, within a topic workspace only, or learned from use. Manual links and "Do not share" always take precedence.',
+  "settings.routeNotice": "Topic notices",
+  "settings.help.routeNotice": "How main chat shows topic changes: hidden, one line when the topic changes, or on every message.",
+  "settings.scope.off": "Off",
+  "settings.scope.workspace": "Same workspace only",
+  "settings.scope.auto": "Learn automatically",
+  "settings.notice.hidden": "Hidden",
+  "settings.notice.switch": "Only on topic changes",
+  "settings.notice.all": "Always",
   "settings.storage": "Data and entry",
   "settings.legacy": "Legacy direct API calls",
   "settings.legacyHint": "These options apply only to legacy routing. DSH routing needs no additional API key.",
@@ -252,6 +292,22 @@ var en = {
   "catalog.title": "Topic workspaces",
   "catalog.subtitle": "Keep related topics together and pick up the conversation in main chat.",
   "catalog.refresh": "Organize history",
+  "link.label": "Related:",
+  "link.none": "No related topics",
+  "link.add": "+ Link a topic",
+  "link.remove": "Unlink (never link automatically again)",
+  "link.private": "Do not share",
+  "link.privateHint": "This topic is never given to other topics as reference",
+  "link.clearLearned": "Clear learned links",
+  "link.clearLearnedHint": "Forget automatically learned links; your own links and unlinks stay",
+  "link.off": "Topic linking is off. Turn it on in TheOne settings.",
+  "link.error": "The link change was not saved. Try again.",
+  "link.reason.manual": "Linked by you",
+  "link.reason.workspace": "Same topic workspace",
+  "link.reason.project": "Same project folder",
+  "link.reason.entities": "Mentions the same things",
+  "link.reason.learned": "Often used together",
+  "link.reason.request": "Mentioned together",
   "catalog.reading": "Loading topics\u2026",
   "catalog.counts": "{topics} topic{topicSuffix} \xB7 {groups} group{groupSuffix}",
   "catalog.indexing": "Organizing history\u2026",
@@ -533,6 +589,7 @@ function apply(ctx) {
     const groups = [
       ["models", ["workerProvider", "workerModel", "routerMode", "routerTransport"]],
       ["history", ["historyCatalog", "catalogIntervalMs"]],
+      ["linkage", ["linkScope", "routeNotice"]],
       ["limits", ["maxDescriptorChars", "maxResponseChars"]],
       ["storage", ["databasePath", "contextsPath", "gatewayKey"]],
       ["legacy", ["routerBaseUrl", "routerModel", "routerApiKeyEnv"]]
@@ -541,6 +598,8 @@ function apply(ctx) {
       const value = snapshot.values[key];
       if (value === null) return t2(key === "workerProvider" || key === "workerModel" ? "settings.follow" : "settings.none");
       if (typeof value === "boolean") return t2(value ? "settings.on" : "settings.off");
+      if (key === "linkScope") return t2(`settings.scope.${value}`);
+      if (key === "routeNotice") return t2(`settings.notice.${value}`);
       if (key === "catalogIntervalMs") return t2("settings.seconds", { count: Number(value) / 1e3 });
       return typeof value === "number" ? value.toLocaleString(localeSnapshot().active) : value || t2("settings.none");
     };
@@ -591,6 +650,10 @@ function apply(ctx) {
         ...choices.map((choice) => (0, import_react.createElement)("option", { key: choice.value, value: choice.value }, choice.label))
       );
       if (field === "historyCatalog") return select(String(draft.historyCatalog), [{ value: "true", label: t2("settings.on") }, { value: "false", label: t2("settings.off") }], (v) => change(field, v === "true"));
+      if (field === "linkScope" || field === "routeNotice") {
+        const values = field === "linkScope" ? ["auto", "workspace", "off"] : ["switch", "hidden", "all"];
+        return select(draft[field], values.map((value) => ({ value, label: t2(`settings.${field === "linkScope" ? "scope" : "notice"}.${value}`) })), (v) => change(field, v));
+      }
       if (field === "routerMode" || field === "routerTransport") {
         const values = field === "routerMode" ? ["llm", "rules"] : ["dsh", "legacy"];
         return select(draft[field], values.map((value) => ({ value, label: t2(`settings.${value === "legacy" ? "legacyCall" : value}`) })), (v) => change(field, v));
@@ -744,6 +807,80 @@ function apply(ctx) {
         setBusy(void 0);
       }
     }
+    async function editLinks(body) {
+      setBusy("links");
+      setError(void 0);
+      try {
+        const response = await fetch("/api/theone/links", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+          signal: lifetime.signal,
+          cache: "no-store"
+        });
+        if (!response.ok) throw new Error("Links unavailable");
+        const linkage = await response.json();
+        setSnapshot((current) => current && { ...current, linkage });
+      } catch {
+        setError("link.error");
+      } finally {
+        setBusy(void 0);
+      }
+    }
+    function linkRow(id) {
+      const linkage = snapshot?.linkage;
+      if (!linkage || linkage.scope === "off") return null;
+      const own = linkage.topics[id];
+      if (!own) return null;
+      const related = new Set(own.related.map((topic) => topic.id));
+      const others = snapshot.contexts.filter((context) => context.id !== id && !related.has(context.id));
+      return (0, import_react.createElement)(
+        "div",
+        { className: "theone-topic-links" },
+        (0, import_react.createElement)("span", { className: "theone-links-label" }, t2("link.label")),
+        own.related.length ? null : (0, import_react.createElement)("span", { className: "theone-links-empty" }, t2("link.none")),
+        ...own.related.map((topic) => (0, import_react.createElement)(
+          "span",
+          { key: topic.id, className: "theone-link-chip", title: topic.reasons.map((reason) => t2(`link.reason.${reason}`)).join(" \xB7 ") },
+          topic.title,
+          (0, import_react.createElement)("button", {
+            type: "button",
+            "aria-label": t2("link.remove"),
+            title: t2("link.remove"),
+            disabled: !!busy,
+            onClick: () => {
+              void editLinks({ action: "unlink", a: id, b: topic.id });
+            }
+          }, "\xD7")
+        )),
+        others.length ? (0, import_react.createElement)(
+          "select",
+          {
+            "aria-label": t2("link.add"),
+            value: "",
+            disabled: !!busy,
+            onChange: (event) => {
+              if (event.target.value) void editLinks({ action: "link", a: id, b: event.target.value });
+            }
+          },
+          (0, import_react.createElement)("option", { value: "" }, t2("link.add")),
+          ...others.map((context) => (0, import_react.createElement)("option", { key: context.id, value: context.id }, context.title))
+        ) : null,
+        (0, import_react.createElement)(
+          "label",
+          { className: "theone-link-private", title: t2("link.privateHint") },
+          (0, import_react.createElement)("input", {
+            type: "checkbox",
+            checked: own.private,
+            disabled: !!busy,
+            onChange: (event) => {
+              void editLinks({ action: "private", id, value: event.target.checked });
+            }
+          }),
+          t2("link.private")
+        )
+      );
+    }
     async function refresh() {
       setBusy("refresh");
       setError(void 0);
@@ -766,8 +903,21 @@ function apply(ctx) {
         "header",
         { className: "theone-catalog-header" },
         (0, import_react.createElement)("div", null, (0, import_react.createElement)("h1", null, t2("catalog.title")), (0, import_react.createElement)("p", null, t2("catalog.subtitle"))),
-        (0, import_react.createElement)("button", { type: "button", onClick: refresh, disabled: !!busy || status?.running }, t2("catalog.refresh"))
+        (0, import_react.createElement)(
+          "div",
+          { className: "theone-catalog-tools" },
+          snapshot?.linkage && snapshot.linkage.scope !== "off" ? (0, import_react.createElement)("button", {
+            type: "button",
+            disabled: !!busy,
+            title: t2("link.clearLearnedHint"),
+            onClick: () => {
+              void editLinks({ action: "clearLearned" });
+            }
+          }, t2("link.clearLearned")) : null,
+          (0, import_react.createElement)("button", { type: "button", onClick: refresh, disabled: !!busy || status?.running }, t2("catalog.refresh"))
+        )
       ),
+      snapshot?.linkage?.scope === "off" ? (0, import_react.createElement)("p", { className: "theone-catalog-status" }, t2("link.off")) : null,
       (0, import_react.createElement)("p", { className: "theone-catalog-status", role: "status" }, snapshot ? t2("catalog.counts", { topics: snapshot.contexts.length, groups: snapshot.groups.length, topicSuffix: snapshot.contexts.length === 1 ? "" : "s", groupSuffix: snapshot.groups.length === 1 ? "" : "s" }) + " \xB7 " + (status?.running ? t2("catalog.indexing") : status?.pending ? t2("catalog.pending", { count: status.pending, sessionSuffix: status.pending === 1 ? "" : "s" }) : t2("catalog.updated")) : t2("catalog.reading")),
       status?.failed ? (0, import_react.createElement)("p", { className: "theone-catalog-warning" }, t2("catalog.failed", { count: status.failed, sessionSuffix: status.failed === 1 ? "" : "s" })) : null,
       status?.searchUnavailable ? (0, import_react.createElement)("p", { className: "theone-catalog-warning" }, t2("catalog.searchUnavailable")) : null,
@@ -786,6 +936,7 @@ function apply(ctx) {
             { key: id, className: "theone-topic-card" },
             (0, import_react.createElement)("h3", null, topic.title),
             (0, import_react.createElement)("p", null, topic.summary),
+            linkRow(id),
             (0, import_react.createElement)(
               "div",
               { className: "theone-topic-actions" },
@@ -875,7 +1026,7 @@ button:has(.theone-nav[data-active=true]){border-color:color-mix(in srgb,var(--o
 var catalogCss = `
 button:has(.theone-catalog-entry)>span:not(:has(.theone-catalog-entry)){display:none}
 .theone-catalog{padding:32px;max-width:1180px;margin:auto;box-sizing:border-box;height:100%;overflow:auto;color:var(--dsw-alias-label-primary)}
-.theone-catalog-header{display:flex;justify-content:space-between;align-items:center;gap:16px}.theone-catalog h1{font-size:24px;margin:0 0 8px}.theone-catalog-header p,.theone-catalog-status,.theone-group-summary{opacity:.65;margin:0 0 18px;line-height:1.6}.theone-catalog button{border:1px solid #8883;border-radius:9px;padding:8px 13px;background:transparent;color:inherit;cursor:pointer;font:inherit;white-space:nowrap}.theone-catalog button:disabled{opacity:.5;cursor:default}.theone-catalog-groups{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,310px),1fr));gap:20px}.theone-topic-group{border:1px solid #8882;border-radius:16px;padding:20px;background:#88805}.theone-topic-group h2{font-size:18px;margin:0 0 8px}.theone-topic-group h2 span{font-size:13px;opacity:.5}.theone-topic-card{border-top:1px solid #8882;padding:16px 0}.theone-topic-card:last-child{padding-bottom:0}.theone-topic-card h3{font-size:15px;line-height:1.5;margin:0 0 7px}.theone-topic-card p{font-size:13px;line-height:1.7;opacity:.75;margin:0 0 12px;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}.theone-topic-actions{display:flex;gap:8px;flex-wrap:wrap}.theone-topic-actions button{font-size:12px}.theone-topic-actions .theone-source-link{border-color:transparent;opacity:.6}.theone-catalog-warning{background:#ff900011;padding:12px;border-radius:10px;font-size:13px}.theone-catalog-entry{display:flex;align-items:center;gap:10px;font-size:14px}.theone-catalog-empty{padding:40px 0;opacity:.65;line-height:1.8}@media(max-width:640px){.theone-catalog{padding:20px}.theone-catalog-header{align-items:flex-start}.theone-catalog-header h1{font-size:21px}}
+.theone-catalog-header{display:flex;justify-content:space-between;align-items:center;gap:16px}.theone-catalog h1{font-size:24px;margin:0 0 8px}.theone-catalog-header p,.theone-catalog-status,.theone-group-summary{opacity:.65;margin:0 0 18px;line-height:1.6}.theone-catalog button{border:1px solid #8883;border-radius:9px;padding:8px 13px;background:transparent;color:inherit;cursor:pointer;font:inherit;white-space:nowrap}.theone-catalog button:disabled{opacity:.5;cursor:default}.theone-catalog-groups{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,310px),1fr));gap:20px}.theone-topic-group{border:1px solid #8882;border-radius:16px;padding:20px;background:#88805}.theone-topic-group h2{font-size:18px;margin:0 0 8px}.theone-topic-group h2 span{font-size:13px;opacity:.5}.theone-topic-card{border-top:1px solid #8882;padding:16px 0}.theone-topic-card:last-child{padding-bottom:0}.theone-topic-card h3{font-size:15px;line-height:1.5;margin:0 0 7px}.theone-topic-card p{font-size:13px;line-height:1.7;opacity:.75;margin:0 0 12px;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}.theone-topic-actions{display:flex;gap:8px;flex-wrap:wrap}.theone-topic-actions button{font-size:12px}.theone-topic-actions .theone-source-link{border-color:transparent;opacity:.6}.theone-catalog-warning{background:#ff900011;padding:12px;border-radius:10px;font-size:13px}.theone-catalog-entry{display:flex;align-items:center;gap:10px;font-size:14px}.theone-catalog-empty{padding:40px 0;opacity:.65;line-height:1.8}.theone-catalog-tools{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.theone-topic-links{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 12px;font-size:12px}.theone-links-label,.theone-links-empty{opacity:.6}.theone-link-chip{display:inline-flex;align-items:center;gap:2px;border:1px solid #8883;border-radius:999px;padding:2px 4px 2px 9px}.theone-catalog .theone-link-chip button{border:0;padding:0 5px;opacity:.6;font-size:13px;line-height:1}.theone-topic-links select{font:inherit;font-size:12px;color:inherit;background:transparent;border:1px solid #8883;border-radius:8px;padding:2px 6px}.theone-link-private{display:inline-flex;align-items:center;gap:4px;opacity:.75;cursor:pointer}@media(max-width:640px){.theone-catalog{padding:20px}.theone-catalog-header{align-items:flex-start}.theone-catalog-header h1{font-size:21px}}
 `;
 var settingsCss = `
 .theone-settings{--one-settings-accent:#a75b1e}[data-ds-dark-theme] .theone-settings{--one-settings-accent:#93c8f3}

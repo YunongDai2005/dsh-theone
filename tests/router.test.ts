@@ -11,8 +11,9 @@ const cases = [
   ['继续', 'ctx_thesis', 'KEEP', 'ctx_thesis'],
   ['不是这个，是论文那个', 'ctx_qwen_9070xt', 'SWAP', 'ctx_thesis'],
   ['不是 Qwen，是论文那个', 'ctx_qwen_9070xt', 'SWAP', 'ctx_thesis'],
-  ['Qwen 跟论文结合一下', 'ctx_qwen_9070xt', 'CLARIFY', undefined],
-  ['这个跟论文结合一下', 'ctx_qwen_9070xt', 'CLARIFY', undefined],
+  ['Qwen 跟论文结合一下', 'ctx_qwen_9070xt', 'KEEP', 'ctx_qwen_9070xt'],
+  ['这个跟论文结合一下', 'ctx_qwen_9070xt', 'KEEP', 'ctx_qwen_9070xt'],
+  ['论文跟 Qwen 结合一下', undefined, 'MOUNT', 'ctx_thesis'],
   ['继续昨天那个', 'ctx_thesis', 'CLARIFY', undefined],
   ['不是这个，是另一个模型', 'ctx_qwen_9070xt', 'CLARIFY', undefined],
   ['我想开始学日语', undefined, 'CREATE', undefined],
@@ -27,6 +28,11 @@ for (const [input, current, action, contextId] of cases) {
     assert.equal(result.contextId, contextId)
   })
 }
+
+test('combining topics works in one and brings the other along instead of asking which', () => {
+  assert.deepEqual(resolveContext('这个跟论文结合一下', contexts, 'ctx_qwen_9070xt').relatedIds, ['ctx_thesis'])
+  assert.deepEqual(resolveContext('论文跟 Qwen 结合一下', contexts).relatedIds, ['ctx_qwen_9070xt'])
+})
 
 test('CREATE planning is atomic and idempotent; interrupted execution cannot repeat', () => {
   const store = new ContextStore(':memory:')

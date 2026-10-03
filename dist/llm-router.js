@@ -8,9 +8,10 @@ export const ROUTING_PROMPT = `你是会话话题路由器，只输出 JSON，�
 明确转向另一件事情时，仅在有明确相关证据时选已有话题。没有可信匹配、也没有依赖旧聊天的指代时，默认 CREATE，不要求用户确认“是不是新话题”。不能仅凭共享工具、泛泛关键词或猜测用户以前可能聊过，就强行关联旧话题。
 CREATE 时还要判断 historyIndependent：本轮输入给足目标和必要信息，无需尚未找到的旧聊天即可执行时为 true，例如提供完整链接要求下载音频、给出材料要求写作、明确提出新的学习计划。它不表示整个历史库已检索完，也不要求用户说“新话题”。“继续昨天那个”“用之前那个链接”等依赖缺失历史的信息为 false，应优先找到旧话题或澄清。近期助手说“还在整理”是系统状态，不是用户的任务目标，不要因此拦住后续信息完整的请求。
 区分“路由缺少历史信息”和“回答问题缺少事实信息”：陌生人名、事实不知道、人物可能重名、目标还需补充细节，都由 Worker 处理，不能因此 CLARIFY，也不能因此把 historyIndependent 设为 false。“余俊豪是安徽人吗？”在目录无可信匹配时应 CREATE，historyIndependent=true；不要编造“之前提到过”。明确命名的人物/地点/产品通常已经足够路由到新话题。
-CLARIFY 仅限：用户明确引用缺失旧聊天（如“继续上次那个”“用之前的链接”）；或者有两个以上确实相关的旧话题，选错会改变后续处理且近期消息无法判断。第二种必须在 candidateIds 列出至少两个相关目录 ID。弱相关候选不构成澄清理由。多件独立任务可在一个新会话交给 Worker 处理，不因任务多而追问。
+一句话要同时用到多个已有话题（结合、对比、把 A 的结果用到 B）时，不要 CLARIFY：选实际要做事的话题（EXISTING，或新事项 CREATE），把其余用到的目录 ID 放进 relatedIds（最多 3 个），由程序把它们作为参考资料一起带上。
+CLARIFY 仅限：用户明确引用缺失旧聊天（如“继续上次那个”“用之前的链接”）；或者用户只指一个话题，但有两个以上确实相关的旧话题都可能是它，选错会改变后续处理且近期消息无法判断。第二种必须在 candidateIds 列出至少两个相关目录 ID。弱相关候选不构成澄清理由。多件独立任务可在一个新会话交给 Worker 处理，不因任务多而追问。
 只判断语义选择：EXISTING 选择一个已有话题；CREATE 创建新话题；CLARIFY 请求澄清。已有话题的KEEP、MOUNT、SWAP由程序根据挂载状态计算，你不要输出这三个机械动作。currentId为null表示尚未挂载话题，近期对话不代表已经挂载。
-输出 JSON：{"action":"EXISTING|CREATE|CLARIFY","contextId":"已有目录ID或null","title":"CREATE时的新话题标题，否则null","question":"CLARIFY时的简短澄清问题，否则null","reason":"不超过120字的判断依据","historyIndependent":"CREATE时为boolean，其他为null","candidateIds":"CLARIFY时真正难以选择的多个目录ID数组，否则空数组"}。
+输出 JSON：{"action":"EXISTING|CREATE|CLARIFY","contextId":"已有目录ID或null","title":"CREATE时的新话题标题，否则null","question":"CLARIFY时的简短澄清问题，否则null","reason":"不超过120字的判断依据","historyIndependent":"CREATE时为boolean，其他为null","candidateIds":"CLARIFY时真正难以选择的多个目录ID数组，否则空数组","relatedIds":"EXISTING或CREATE时本轮同时用到的其他目录ID数组，否则空数组"}。
 不得编造目录ID。CREATE和CLARIFY的contextId必须为null。`;
 export function routingPayload(input) {
     const text = redactRoutingText(input.text).slice(0, 2000);
@@ -47,12 +48,19 @@ export function validateRoutingDecision(value, input) {
     const reason = row.reason.slice(0, 240);
     if (row.action !== 'CREATE' && row.historyIndependent != null)
         return fail();
+    if (row.relatedIds != null && (!Array.isArray(row.relatedIds) || row.relatedIds.some(id => typeof id !== 'string')))
+        return fail();
+    // Other topics the request draws on; ids outside the offered catalog are dropped, not trusted.
+    const related = (chosen) => {
+        const ids = [...new Set(row.relatedIds ?? [])].filter(id => id !== chosen && input.contexts.some(context => context.id === id)).slice(0, 3);
+        return ids.length ? { relatedIds: ids } : {};
+    };
     if (row.action === 'EXISTING') {
         if (typeof row.contextId !== 'string' || !input.contexts.some(context => context.id === row.contextId))
             return fail();
         if (row.title != null || row.question != null)
             return fail();
-        return { action: !input.currentId ? 'MOUNT' : row.contextId === input.currentId ? 'KEEP' : 'SWAP', contextId: row.contextId, reason };
+        return { action: !input.currentId ? 'MOUNT' : row.contextId === input.currentId ? 'KEEP' : 'SWAP', contextId: row.contextId, reason, ...related(row.contextId) };
     }
     if (row.contextId != null)
         return fail();
@@ -64,7 +72,7 @@ export function validateRoutingDecision(value, input) {
             return fail();
         if (row.historyIndependent != null && typeof row.historyIndependent !== 'boolean')
             return fail();
-        return { action: 'CREATE', title, reason,
+        return { action: 'CREATE', title, reason, ...related(),
             ...(!referencesHistory(input.text) ? { historyIndependent: true } : typeof row.historyIndependent === 'boolean' ? { historyIndependent: row.historyIndependent } : {}) };
     }
     if (row.action === 'CLARIFY') {

@@ -33,7 +33,7 @@ test('settings expose all public runtime options without credentials, writes or 
     assert.equal(response.status, 200)
     assert.equal(response.headers.get('cache-control'), 'no-store')
     const settings: SettingsSnapshot = await response.json()
-    assert.equal(Object.keys(settings.values).length, 14)
+    assert.equal(Object.keys(settings.values).length, 16)
     assert.equal(settings.values.catalogIntervalMs, 45000)
     assert.equal(settings.values.routerBaseUrl, 'https://example.com/v1')
     assert.equal(settings.values.routerApiKeyEnv, 'THEONE_SETTINGS_SECRET_TEST')

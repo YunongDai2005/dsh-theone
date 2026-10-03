@@ -7,6 +7,7 @@ export interface SettingsSnapshot {
     maxDescriptorChars: number; maxResponseChars: number
     routerMode: 'rules' | 'llm'; routerTransport: 'dsh' | 'legacy'
     routerBaseUrl: string; routerModel: string; routerApiKeyEnv: string
+    linkScope: 'off' | 'workspace' | 'auto'; routeNotice: 'hidden' | 'switch' | 'all'
   }
   model: { provider: string; model: string; contextWindow?: number; defaultMaxTokens?: number } | null
   modelUnavailable: boolean
@@ -16,5 +17,7 @@ export interface SettingsSnapshot {
 }
 
 export const EDITABLE_SETTINGS_KEYS = ['workerProvider', 'workerModel', 'routerMode', 'routerTransport', 'historyCatalog',
-  'catalogIntervalMs', 'maxDescriptorChars', 'maxResponseChars', 'routerBaseUrl', 'routerModel', 'routerApiKeyEnv'] as const
+  'catalogIntervalMs', 'maxDescriptorChars', 'maxResponseChars', 'routerBaseUrl', 'routerModel', 'routerApiKeyEnv', 'linkScope', 'routeNotice'] as const
+/** Added after the first release; settings saved before them take their defaults. */
+export const SETTINGS_DEFAULTS = { linkScope: 'auto', routeNotice: 'switch' } as const
 export type EditableSettings = Pick<SettingsSnapshot['values'], typeof EDITABLE_SETTINGS_KEYS[number]>

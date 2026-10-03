@@ -168,7 +168,8 @@ export class HistoryCatalog {
                     this.status.pending--;
                     continue;
                 }
-                if (log.events.some(e => e.type === 'user/message' && e.data.source.kind === 'theone-route')) {
+                // Main-chat sessions are TheOne's own; with notices hidden they carry no route marker.
+                if (this.store.isGateway(sessionId) || log.events.some(e => e.type === 'user/message' && e.data.source.kind === 'theone-route')) {
                     this.store.markIndex(sessionId, through, 'skipped');
                     this.status.skipped++;
                     this.status.pending--;

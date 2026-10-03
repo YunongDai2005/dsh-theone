@@ -5,7 +5,9 @@ import type { SessionEventWindow } from '@deepseek-ai/dsh-session-query';
 import { HistoryCatalog } from './history-catalog.ts';
 import { ContextStore } from './store.ts';
 import type { RouterReceipt } from './llm-router.ts';
+import type { LinkageSnapshot } from './catalog-types.ts';
 import { type SettingsSnapshot } from './settings-types.ts';
+import { type LinkScope } from './linkage.ts';
 export interface Config {
     databasePath?: string;
     contextsPath?: string;
@@ -21,6 +23,8 @@ export interface Config {
     routerBaseUrl?: string;
     routerModel?: string;
     routerApiKeyEnv?: string;
+    linkScope?: LinkScope;
+    routeNotice?: 'hidden' | 'switch' | 'all';
 }
 declare module '@deepseek-ai/cordis' {
     interface Context {
@@ -40,6 +44,12 @@ declare module '@deepseek-ai/dsh-llm' {
             kind: 'theone-context';
             form: 'recall';
             contextId: string;
+        };
+        'theone-links': {
+            kind: 'theone-links';
+            form: 'recall';
+            contextId: string;
+            related: string[];
         };
     }
 }
@@ -73,6 +83,8 @@ export default class TheOne extends Service {
     private backingModel;
     /** The entry has exactly the configured backing model's capacity, including DSH overrides. */
     gatewayModelInfo(provider?: string, signal?: AbortSignal): Promise<LlmResolvedModelInfo>;
+    /** This main chat's recent text turns, each attributed to the topic it was routed to. */
+    private recentMainChat;
     /** Recover bounded routing context from DSH references after the Gateway is rebuilt. */
     private recentMessages;
     /** Literal Unicode search over reviewed ranges; failures are isolated per source. */
@@ -97,11 +109,23 @@ export default class TheOne extends Service {
     /** The Worker runs under the permission mode chosen in main chat (sandbox and approval together). */
     private syncPermissions;
     private refreshCompactionSummary;
+    private get linkScope();
+    linkageSnapshot(): LinkageSnapshot;
+    /**
+     * Cross-topic reference for a Worker about to start: the recent main chat after a topic switch,
+     * and the news of related topics (plus those the request itself named). Undefined when empty.
+     */
+    private briefingFor;
     /**
      * No one views a Worker session, so its approval questions would fail closed. Ask in the
      * main chat whose turn the Worker is answering instead, naming the exact call being approved.
      */
     private forwardApprovals;
+    /**
+     * A topic another topic's Worker may read: never private or kept apart by the user, and within
+     * the linking scope. Reading it is evidence the two are related.
+     */
+    private readableTopic;
     /** Wait briefly for the main chat to log its mirror of a Worker tool call. */
     private mirroredCall;
     /** Questions the Worker asks the user (ask_user_question) are answered in the main chat, like approvals. */
@@ -110,6 +134,9 @@ export default class TheOne extends Service {
     private registerWorkerTools;
     /** Mirror the routed Worker's steps into the main chat; tools execute exclusively in the Worker. */
     answer(options: GenerateOptions): AsyncIterable<StreamChunk>;
+    /** Topic → when main chat last answered in it; quick alternation between two topics links them. */
+    private lastRoute?;
+    private learnFromRoute;
     /**
      * Settle a run when the main chat turn closes: record the outcome and free the gateway once the
      * Worker is idle. An abandoned (cancelled or failed) turn is recorded as failed immediately.

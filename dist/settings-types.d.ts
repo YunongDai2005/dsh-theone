@@ -15,6 +15,8 @@ export interface SettingsSnapshot {
         routerBaseUrl: string;
         routerModel: string;
         routerApiKeyEnv: string;
+        linkScope: 'off' | 'workspace' | 'auto';
+        routeNotice: 'hidden' | 'switch' | 'all';
     };
     model: {
         provider: string;
@@ -27,5 +29,10 @@ export interface SettingsSnapshot {
     revision: number;
     restartRequired: boolean;
 }
-export declare const EDITABLE_SETTINGS_KEYS: readonly ["workerProvider", "workerModel", "routerMode", "routerTransport", "historyCatalog", "catalogIntervalMs", "maxDescriptorChars", "maxResponseChars", "routerBaseUrl", "routerModel", "routerApiKeyEnv"];
+export declare const EDITABLE_SETTINGS_KEYS: readonly ["workerProvider", "workerModel", "routerMode", "routerTransport", "historyCatalog", "catalogIntervalMs", "maxDescriptorChars", "maxResponseChars", "routerBaseUrl", "routerModel", "routerApiKeyEnv", "linkScope", "routeNotice"];
+/** Added after the first release; settings saved before them take their defaults. */
+export declare const SETTINGS_DEFAULTS: {
+    readonly linkScope: "auto";
+    readonly routeNotice: "switch";
+};
 export type EditableSettings = Pick<SettingsSnapshot['values'], typeof EDITABLE_SETTINGS_KEYS[number]>;

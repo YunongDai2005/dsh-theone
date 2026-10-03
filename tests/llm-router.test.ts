@@ -121,7 +121,8 @@ test('gateway reserves admission during LLM classification; cancellation and inv
   return response({action:'EXISTING',contextId:behavior==='invalid'?'unknown':'ctx_qwen_9070xt',title:null,question:null,reason:'测试路由'})
  }
  process.env.THEONE_ROUTER_API_KEY='test-only-no-network'
- const app=await harness(root,undefined,{routerMode:'llm'})
+ // Router receipts live on notices; this test shows every notice to read them.
+ const app=await harness(root,undefined,{routerMode:'llm',theoneConfig:{routeNotice:'all'}})
  try {
   const pending=ask(app.gateway,'Qwen')
   await entered.promise

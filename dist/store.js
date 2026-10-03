@@ -70,6 +70,19 @@ export class ContextStore {
         PRIMARY KEY(gateway_key, gateway_id)
       );
       CREATE TABLE IF NOT EXISTS pinned_gateways (gateway_id TEXT PRIMARY KEY);
+      CREATE TABLE IF NOT EXISTS topic_links (
+        a TEXT NOT NULL, b TEXT NOT NULL, weight REAL NOT NULL DEFAULT 0,
+        manual INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL, PRIMARY KEY(a, b)
+      );
+      CREATE TABLE IF NOT EXISTS topic_flags (
+        context_id TEXT PRIMARY KEY, private INTEGER NOT NULL DEFAULT 0, constraints TEXT, constraints_at INTEGER
+      );
+      CREATE TABLE IF NOT EXISTS compaction_digests (
+        context_id TEXT PRIMARY KEY, summary TEXT NOT NULL, through_seq INTEGER NOT NULL, created_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS briefing_seen (
+        reader TEXT NOT NULL, source TEXT NOT NULL, seen_at INTEGER NOT NULL, PRIMARY KEY(reader, source)
+      );
     `);
     }
     settings(gatewayKey) {
@@ -271,6 +284,84 @@ export class ContextStore {
     }
     summaryUpdates(contextId) {
         return this.db.prepare('SELECT session_id AS sessionId, summary_seq AS summarySeq, end_seq AS endSeq, summary FROM context_summary_updates WHERE context_id = ? ORDER BY rowid').all(contextId);
+    }
+    /** Learned relatedness halves every two weeks without new evidence. */
+    static LINK_HALF_LIFE_MS = 14 * 86400000;
+    pair(a, b) { return a < b ? [a, b] : [b, a]; }
+    /** Link rows touching one topic (or all), with learned weight decayed to `now`. */
+    links(contextId, now = Date.now()) {
+        const rows = contextId === undefined ? this.db.prepare('SELECT * FROM topic_links').all()
+            : this.db.prepare('SELECT * FROM topic_links WHERE a = ? OR b = ?').all(contextId, contextId);
+        return rows.map(row => ({ a: String(row.a), b: String(row.b), manual: Number(row.manual),
+            weight: Number(row.weight) * 0.5 ** (Math.max(0, now - Number(row.updated_at)) / ContextStore.LINK_HALF_LIFE_MS) }));
+    }
+    /** Add learned evidence; a pair the user unlinked never learns back. */
+    learnLink(a, b, delta, now = Date.now()) {
+        if (a === b)
+            return;
+        const [x, y] = this.pair(a, b);
+        const existing = this.links(x, now).find(link => link.a === x && link.b === y);
+        if (existing?.manual === -1)
+            return;
+        const weight = Math.min(5, Math.max(0, (existing?.weight ?? 0) + delta));
+        this.db.prepare(`INSERT INTO topic_links(a, b, weight, manual, updated_at) VALUES (?, ?, ?, 0, ?)
+      ON CONFLICT(a, b) DO UPDATE SET weight = excluded.weight, updated_at = excluded.updated_at`).run(x, y, weight, now);
+    }
+    /** 1 links a pair permanently, -1 keeps it apart, 0 returns it to learning. */
+    setManualLink(a, b, manual, now = Date.now()) {
+        if (a === b)
+            throw new Error('A topic cannot link to itself');
+        const [x, y] = this.pair(a, b);
+        this.db.prepare(`INSERT INTO topic_links(a, b, weight, manual, updated_at) VALUES (?, ?, 0, ?, ?)
+      ON CONFLICT(a, b) DO UPDATE SET manual = excluded.manual, weight = CASE WHEN excluded.manual = -1 THEN 0 ELSE topic_links.weight END`).run(x, y, manual, now);
+    }
+    /** Forget learned relatedness; the user's own links and separations stay. */
+    clearLearnedLinks() {
+        this.db.exec('DELETE FROM topic_links WHERE manual = 0; UPDATE topic_links SET weight = 0');
+    }
+    setPrivate(contextId, value) {
+        this.db.prepare(`INSERT INTO topic_flags(context_id, private) VALUES (?, ?)
+      ON CONFLICT(context_id) DO UPDATE SET private = excluded.private`).run(contextId, value ? 1 : 0);
+    }
+    privateIds() {
+        return new Set(this.db.prepare('SELECT context_id FROM topic_flags WHERE private = 1').all().map(row => String(row.context_id)));
+    }
+    /** Project directory of every topic that came from an existing session. */
+    origins() {
+        return new Map(this.db.prepare('SELECT context_id, cwd FROM context_origins').all().map(row => [String(row.context_id), row.cwd ? String(row.cwd) : undefined]));
+    }
+    isPrivate(contextId) {
+        return !!this.db.prepare('SELECT 1 FROM topic_flags WHERE context_id = ? AND private = 1').get(contextId);
+    }
+    /** Standing rules for a topic, kept apart from summaries so compaction cannot drop them. */
+    setConstraints(contextId, text, now = Date.now()) {
+        const value = text?.trim() || null;
+        if (value && (value.length > 400 || /\bsk-[a-zA-Z0-9_-]{16,}|\bBearer\s+\S+/i.test(value)))
+            throw new Error('Invalid topic constraints');
+        this.db.prepare(`INSERT INTO topic_flags(context_id, constraints, constraints_at) VALUES (?, ?, ?)
+      ON CONFLICT(context_id) DO UPDATE SET constraints = excluded.constraints, constraints_at = excluded.constraints_at`).run(contextId, value, now);
+    }
+    constraints(contextId) {
+        const row = this.db.prepare('SELECT constraints, constraints_at FROM topic_flags WHERE context_id = ? AND constraints IS NOT NULL').get(contextId);
+        return row ? { text: String(row.constraints), at: Number(row.constraints_at) } : undefined;
+    }
+    /** The latest full compaction summary of a topic's Worker and how far it covers. */
+    saveDigest(contextId, summary, throughSeq, now = Date.now()) {
+        this.db.prepare(`INSERT INTO compaction_digests VALUES (?, ?, ?, ?) ON CONFLICT(context_id) DO UPDATE SET
+      summary = excluded.summary, through_seq = excluded.through_seq, created_at = excluded.created_at
+      WHERE excluded.through_seq > compaction_digests.through_seq`).run(contextId, summary.slice(0, 16000), throughSeq, now);
+    }
+    digest(contextId) {
+        const row = this.db.prepare('SELECT * FROM compaction_digests WHERE context_id = ?').get(contextId);
+        return row ? { summary: String(row.summary), throughSeq: Number(row.through_seq), at: Number(row.created_at) } : undefined;
+    }
+    /** When `reader` last received `source`'s state in a briefing. */
+    seen(reader, source) {
+        const row = this.db.prepare('SELECT seen_at FROM briefing_seen WHERE reader = ? AND source = ?').get(reader, source);
+        return row ? Number(row.seen_at) : undefined;
+    }
+    markSeen(reader, source, at) {
+        this.db.prepare(`INSERT INTO briefing_seen VALUES (?, ?, ?) ON CONFLICT(reader, source) DO UPDATE SET seen_at = excluded.seen_at`).run(reader, source, at);
     }
     route(messageId) {
         const row = this.db.prepare('SELECT * FROM routing_events WHERE message_id = ?').get(messageId);

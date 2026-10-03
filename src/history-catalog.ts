@@ -141,7 +141,8 @@ export class HistoryCatalog {
         const through = log.events.at(-1)?.seq ?? -1
         const previous = this.store.indexState(sessionId)
         if (previous?.status === 'ready' && previous.throughSeq === through) { this.status.indexed++; this.status.pending--; continue }
-        if (log.events.some(e => e.type === 'user/message' && e.data.source.kind === 'theone-route')) {
+        // Main-chat sessions are TheOne's own; with notices hidden they carry no route marker.
+        if (this.store.isGateway(sessionId) || log.events.some(e => e.type === 'user/message' && e.data.source.kind === 'theone-route')) {
           this.store.markIndex(sessionId, through, 'skipped'); this.status.skipped++; this.status.pending--; continue
         }
         const { parts, summaries } = historyParts(log.events)

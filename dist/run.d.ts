@@ -33,7 +33,10 @@ export declare class WorkerRun {
     settled: Promise<void>;
     constructor(ctx: Context, worker: Agent, gateway: Agent, inputId: string, maxChars: number, beforeToolCalls: (names: string[]) => void);
     /** Give the Worker its context and input; the run ends when the Worker is idle again. */
-    start(context: UserMessage, input: UserMessage): void;
+    /** Related topics whose news this run's briefing carried, and those the Worker then looked up. */
+    briefed: string[];
+    readonly lookedUp: Set<string>;
+    start(contexts: UserMessage[], input: UserMessage): void;
     /** Steering sent to the main chat during the reply reaches the Worker at its next step. */
     get canForward(): boolean;
     forward(message: UserMessage): void;

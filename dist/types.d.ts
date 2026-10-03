@@ -24,6 +24,15 @@ export interface Decision {
     question?: string;
     /** CREATE can proceed during indexing only when the request needs no missing history. */
     historyIndependent?: boolean;
+    /** Other topics this request also draws on; the routed topic does the work. */
+    relatedIds?: string[];
+}
+/** Relatedness between two topics: a user's choice (1 linked, -1 kept apart) or learned weight. */
+export interface TopicLink {
+    a: string;
+    b: string;
+    weight: number;
+    manual: 1 | 0 | -1;
 }
 export interface RouteRecord {
     messageId: string;
