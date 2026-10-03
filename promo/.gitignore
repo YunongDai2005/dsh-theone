@@ -1,0 +1,11 @@
+node_modules/
+*.m4a
+*.wav
+*.mp4
+*.jpg
+cues.json
+meta.json
+dsh-icons.js
+.extract.mjs
+face.png
+face_dark.png
