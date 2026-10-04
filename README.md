@@ -47,7 +47,7 @@ Each project gets its own background session that reasons, runs tools and compac
 - **Related work connects; unrelated work stays out.** Related topics share progress automatically and TheOne learns which ones belong together from how you use them. A topic's constraints (say, "budget figures stay out of the paper") are attached verbatim every time, so compaction never drops them.
 - **Gets better with use.** Say "wrong topic" or click **Move to…** in the directory, and TheOne learns which terms tie that kind of message to the right topic (one small model call), so similar messages go there from then on. The directory shows how often routing was kept as is.
 - **Your old sessions become a topic directory.** After install it reads your existing sessions in the background, turns them into topics grouped into workspaces, and you pick up where you left off.
-- **Nothing extra to configure.** No separate API key: routing and the background sessions use the model you chose in DSH. When TheOne is the selected model, a **Background** button beside the model menu shows which model does the routing and the work, and switches it.
+- **Nothing extra to configure.** No separate API key: routing and the background sessions use the model you chose in DSH. When TheOne is the selected model, a button with a layers icon appears beside the model menu: it shows which model does the routing and the work, and switches it.
 
 ![TheOne main chat and topic workspaces](https://raw.githubusercontent.com/YunongDai2005/dsh-theone/main/docs/images/theone-topic-workspaces-en.png)
 
@@ -57,7 +57,7 @@ Each project gets its own background session that reasons, runs tools and compac
 2. Open **Plugins → Add plugin**, paste `https://github.com/YunongDai2005/dsh-theone`, and install.
 3. Click **TheOne · Main chat** in the sidebar and start talking.
 
-From the command line: `dsh plugin --profile web add github:YunongDai2005/dsh-theone --ignore-scripts`. Works with DSH `0.2.0-rc.2` and Node.js 24; the interface follows DSH's language (English / Simplified Chinese). Installing `dsh-theone` from npm also works, but DSH's package manager only accepts a version once it has been published for 24 hours, so the GitHub address gets new versions first. When an update is newer than that, the Update button explains it and can exempt TheOne alone so it installs right away.
+From the command line: `dsh plugin --profile web add github:YunongDai2005/dsh-theone --ignore-scripts`. Works with DSH `0.2.0-rc.2` and Node.js 24; the interface follows DSH's language (English / Simplified Chinese). Installing `dsh-theone` from npm also works, but DSH's package manager only accepts a version once it has been published for 24 hours, so the GitHub address gets new versions first. When an update is newer than that, the update button explains it and can exempt TheOne alone so it installs right away.
 
 > Unofficial community project, maintained independently. It is not affiliated with or endorsed by DeepSeek.
 
@@ -106,7 +106,7 @@ The database location and entry identifier switch TheOne to different data, so t
 - A topic marked **Do not share** never appears in other topics' briefings, recent-chat excerpts or lookups.
 - Notices from the author are read from `https://yulid.org/theone/notice.json` with a plain request that sends none of your data; turn them off in Settings.
 - When main chat grows long, DSH compacts it through TheOne: frequently used topics keep longer summaries and their latest turns, rarely used ones keep a short status. This makes no model call.
-- When a new version is out, an **Update** button appears on the right of the TheOne entry in the sidebar: one click installs it through DSH's plugin manager and reloads TheOne in place, without restarting DSH (a DSH without plugin hot reload applies it at the next restart). Your topics stay in the database.
+- When a new version is out, a download icon appears on the right of the TheOne entry in the sidebar: one click installs it through DSH's plugin manager and reloads TheOne in place, without restarting DSH (a DSH without plugin hot reload applies it at the next restart). Your topics stay in the database.
 </details>
 
 <details>

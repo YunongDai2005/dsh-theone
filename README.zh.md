@@ -47,7 +47,7 @@
 - **相关的事会互通，无关的事互不打扰**：相关话题自动共享进展，并从你的使用中学习哪些话题有关联；话题的约束（比如「预算数字不能写进论文」）每次都原样带上，压缩不会把它丢掉。
 - **越用越准**：说「分错了」或在目录里点「改到…」，TheOne 会学到哪些词把这类消息和正确话题联系起来（只需一次很小的模型调用），类似的消息以后直接分对；话题目录里能看到分配的准确率。
 - **旧会话自动变成话题目录**：装上后它会在后台读取你已有的会话，整理成话题并按工作区分组，直接接着聊。
-- **零额外配置**：不用另填 API Key，路由和后台都用你在 DSH 里选好的模型。选中 TheOne 时，模型按钮旁边会出现 **后台** 按钮，显示并切换分配话题和干活用的模型。
+- **零额外配置**：不用另填 API Key，路由和后台都用你在 DSH 里选好的模型。选中 TheOne 时，模型按钮旁边会出现一个带图层图标的按钮，显示并切换分配话题和干活用的模型。
 
 ![TheOne 主聊天与话题工作区](https://raw.githubusercontent.com/YunongDai2005/dsh-theone/main/docs/images/theone-topic-workspaces-en.png)
 
@@ -57,7 +57,7 @@
 2. 打开 **插件 → 添加插件**，粘贴 `https://github.com/YunongDai2005/dsh-theone`，点击安装。
 3. 点击左侧 **TheOne · 主聊天**，开始说话。
 
-命令行安装：`dsh plugin --profile web add github:YunongDai2005/dsh-theone --ignore-scripts`。兼容 DSH `0.2.0-rc.2` 与 Node.js 24；界面跟随 DSH 的语言（简体中文 / English）。也可以从 npm 安装 `dsh-theone`，但 DSH 的包管理器只接受发布满 24 小时的版本，所以用 GitHub 地址安装能最早拿到新版本。遇到这种情况，「更新」按钮会说明原因，并可以只为 TheOne 放行、立即安装。
+命令行安装：`dsh plugin --profile web add github:YunongDai2005/dsh-theone --ignore-scripts`。兼容 DSH `0.2.0-rc.2` 与 Node.js 24；界面跟随 DSH 的语言（简体中文 / English）。也可以从 npm 安装 `dsh-theone`，但 DSH 的包管理器只接受发布满 24 小时的版本，所以用 GitHub 地址安装能最早拿到新版本。遇到这种情况，更新按钮会说明原因，并可以只为 TheOne 放行、立即安装。
 
 > 非官方社区项目，由社区成员独立维护，与 DeepSeek 不存在隶属或背书关系。
 
@@ -106,7 +106,7 @@
 - 标记为「不共享」的话题，不会出现在其他话题的简报、最近对话和查阅结果里。
 - 作者发布的公告从 `https://yulid.org/theone/notice.json` 读取，只是一次普通的下载，不发送你的任何数据；可以在设置里关闭。
 - 主聊天变长时，DSH 通过 TheOne 压缩它：常用话题保留较长摘要和最近几轮，不常用的只保留简短状态，不额外调用模型。
-- 有新版本时，左侧 TheOne 入口右边会出现 **更新** 按钮，点一下由 DSH 的插件管理器安装，并就地重新加载 TheOne，不用重启 DSH（不支持插件热加载的 DSH 会在下次启动时生效）；话题都保存在数据库里，不受影响。
+- 有新版本时，左侧 TheOne 入口右边会出现一个下载图标，点一下由 DSH 的插件管理器安装，并就地重新加载 TheOne，不用重启 DSH（不支持插件热加载的 DSH 会在下次启动时生效）；话题都保存在数据库里，不受影响。
 </details>
 
 <details>

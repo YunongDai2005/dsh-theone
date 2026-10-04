@@ -153,6 +153,22 @@ export function apply(ctx: Context) {
     ;(allow ?? footer.querySelector('button'))?.focus()
   }
 
+  /** Line icons (24-unit grid), drawn inline so host styles cannot reshape them; the text lives in title and aria-label. */
+  const ICONS = {
+    download: ['M12 4v11', 'M7 10l5 5 5-5', 'M5 20h14'],
+    restart: ['M20 12a8 8 0 1 1-2.34-5.66L20 8.5', 'M20 4v4.5h-4.5'],
+    alert: ['M3 12a9 9 0 1 0 18 0a9 9 0 1 0-18 0', 'M12 7.5v5.5', 'M12 16.5h.01'],
+    notice: ['M4 10v4h3l6 4V6L7 10H4z', 'M16.5 9a4 4 0 0 1 0 6', 'M19 6.5a7.5 7.5 0 0 1 0 11'],
+    external: ['M14 4h6v6', 'M20 4l-9 9', 'M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5'],
+    close: ['M6 6l12 12', 'M18 6L6 18'],
+    layers: ['M12 3.5l8.5 4.5-8.5 4.5L3.5 8z', 'M3.5 12.5l8.5 4.5 8.5-4.5', 'M3.5 16.5l8.5 4.5 8.5-4.5'],
+    chevron: ['M6 15l6-6 6 6'],
+    grid: ['M4 4h6.5v6.5H4z', 'M13.5 4H20v6.5h-6.5z', 'M4 13.5h6.5V20H4z', 'M13.5 13.5H20V20h-6.5z'],
+  } as const
+  const icon = (name: keyof typeof ICONS, size = 16) => h('svg', { className: 'theone-icon', viewBox: '0 0 24 24', width: size, height: size, fill: 'none',
+    stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true, focusable: false },
+    ...ICONS[name].map(d => h('path', { key: d, d })))
+
   /** One-click update on the right of the entry; it shows only when there is something to do. */
   function UpdateButton() {
     const t = useText()
@@ -164,12 +180,14 @@ export function apply(ctx: Context) {
     const label = waiting ? t('update.waiting') : status.state === 'installing' ? t('update.installing') : status.state === 'reloading' ? t('update.reloading')
       : status.state === 'restart' ? t('update.restart')
       : status.state === 'failed' ? t('update.failed') : t('update.available')
-    const title = waiting ? t('update.waitingHint', { latest: status.waiting!.version }) : status.error === 'GATEWAY_BUSY' ? t('update.busy') : status.state === 'reloading' ? t('update.reloadingHint')
+    const hint = waiting ? t('update.waitingHint', { latest: status.waiting!.version }) : status.error === 'GATEWAY_BUSY' ? t('update.busy') : status.state === 'reloading' ? t('update.reloadingHint')
       : status.state === 'restart' ? t('update.restartHint')
       : status.state === 'failed' ? (status.error === 'MINIMUM_RELEASE_AGE' ? t('update.tooNew') : status.error === 'NETWORK' ? t('update.network')
         : t('update.failedHint', { error: status.error ?? '' }))
       : status.installable ? t('update.hint', { current: status.current, latest: status.latest ?? '' })
       : t('update.manualHint', { current: status.current, latest: status.latest ?? '' })
+    // The button is only an icon; its state and the full explanation are in the tooltip.
+    const title = `${label} · ${hint}`
     const act = (event: React.SyntheticEvent) => {
       // The entry itself is a button that opens main chat; this click is only the update's.
       event.preventDefault(); event.stopPropagation()
@@ -182,8 +200,8 @@ export function apply(ctx: Context) {
     return h('span', { className: 'theone-update', role: 'button', tabIndex: 0, title, 'aria-label': title, 'data-state': waiting ? 'waiting' : status.state ?? 'available',
       onClick: act, onPointerDown: (event: React.PointerEvent) => event.stopPropagation(),
       onKeyDown: (event: React.KeyboardEvent) => { if (event.key === 'Enter' || event.key === ' ') act(event) } },
-      status.state === 'installing' || status.state === 'reloading' ? h('span', { className: 'theone-update-spin', 'aria-hidden': true }) : null, label,
-      !status.state && (waiting ? status.waiting!.version : status.latest) ? h('small', null, `v${waiting ? status.waiting!.version : status.latest}`) : null)
+      status.state === 'installing' || status.state === 'reloading' ? h('span', { className: 'theone-update-spin', 'aria-hidden': true })
+        : icon(status.state === 'restart' ? 'restart' : status.state === 'failed' ? 'alert' : 'download', 15))
   }
 
   /** The One mark: a ring around a dot, drawn so host styles cannot reshape it. */
@@ -404,9 +422,9 @@ export function apply(ctx: Context) {
     const title = failed ? t('bg.error') : t(pinned ? 'bg.hint' : 'bg.hintFollow', { model: label })
     return h('button', { ref: button, type: 'button', className: 'theone-bg', title, 'aria-label': title, 'aria-haspopup': 'menu', 'data-failed': failed, disabled: saving,
       onClick: () => { if (settings) open(); else readSettings().then(value => { setSettings(value) }, () => setFailed(true)) } },
-      h('span', { className: 'theone-bg-caption' }, t('bg.label')),
+      h('span', { className: 'theone-bg-caption', 'aria-hidden': true }, icon('layers', 15)),
       h('span', { className: 'theone-bg-text' }, label),
-      h('span', { className: 'theone-bg-chevron', 'aria-hidden': true }, saving ? '…' : '⌃'))
+      h('span', { className: 'theone-bg-chevron', 'aria-hidden': true }, saving ? '…' : icon('chevron', 12)))
   }
 
   /** Notices from TheOne's maintainer, shared by the dialog and the strip under the main chat input. */
@@ -467,10 +485,11 @@ export function apply(ctx: Context) {
     if ((state.pending ?? state.current)?.provider !== 'theone' || !notice) return null
     const title = localized(notice.title), body = localized(notice.body)
     return h('div', { className: 'theone-notice', role: 'status', translate: 'no' },
-      h('span', { className: 'theone-notice-tag' }, t('notice.label')),
+      h('span', { className: 'theone-notice-tag', title: t('notice.label'), 'aria-label': t('notice.label'), role: 'img' }, icon('notice', 14)),
       h('span', { className: 'theone-notice-text', title: `${title}\n${body}` }, h('strong', null, title), ' ', body),
-      notice.link ? h('button', { type: 'button', className: 'theone-notice-link', onClick: () => { window.open(notice.link, '_blank', 'noopener') } }, t('notice.more')) : null,
-      h('button', { type: 'button', className: 'theone-notice-close', 'aria-label': t('notice.close'), title: t('notice.close'), onClick: () => dismissNotice(notice.id) }, '×'))
+      notice.link ? h('button', { type: 'button', className: 'theone-notice-link', 'aria-label': t('notice.more'), title: t('notice.more'),
+        onClick: () => { window.open(notice.link, '_blank', 'noopener') } }, icon('external', 14)) : null,
+      h('button', { type: 'button', className: 'theone-notice-close', 'aria-label': t('notice.close'), title: t('notice.close'), onClick: () => dismissNotice(notice.id) }, icon('close', 14)))
   }
 
   // Beside main chat's model button, only while TheOne is the selected model.
@@ -913,7 +932,7 @@ export function apply(ctx: Context) {
     ctx.slots.register({name:'sidebar.panellist',id:panelId,order:-1000,label:()=>t('gateway.title')},SidebarEntry),
     ctx.slots.register({name:'sidebar.panellist',id:catalogPanelId,order:-999,label:()=>t('catalog.title')}, ({size}: PropsRuntime<'sidebar.panellist'>) => {
       const t = useText()
-      return h('span',{className:'theone-catalog-entry',translate:'no'},h('span',null,'▦'),size === 16 ? h('span',null,t('catalog.title')) : null)
+      return h('span',{className:'theone-catalog-entry',translate:'no'},icon('grid',16),size === 16 ? h('span',null,t('catalog.title')) : null)
     }),
   ])
 }
@@ -936,10 +955,10 @@ button:has(.theone-nav[data-active=true]){border-color:color-mix(in srgb,var(--o
 .theone-update-dot{position:absolute;top:-2px;right:-2px;width:7px;height:7px;border-radius:50%;background:#e8590c;box-shadow:0 0 0 2px var(--one-tint)}
 button:has(.theone-nav[data-wide=true])>span:has(.theone-nav){flex:1;min-width:0}
 .theone-nav[data-wide=true]{width:100%}
-.theone-update{margin-left:auto;align-self:center;display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border-radius:999px;border:1px solid color-mix(in srgb,var(--one-accent) 45%,transparent);background:color-mix(in srgb,var(--one-accent) 12%,transparent);color:var(--one-accent);font-size:12px;line-height:16px;white-space:nowrap;cursor:pointer;transition:background 150ms ease}
+.theone-icon{display:block;flex:none;overflow:visible}
+.theone-update{margin-left:auto;align-self:center;flex:none;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;box-sizing:border-box;padding:0;border-radius:50%;border:1px solid color-mix(in srgb,var(--one-accent) 45%,transparent);background:color-mix(in srgb,var(--one-accent) 12%,transparent);color:var(--one-accent);font-size:12px;line-height:16px;white-space:nowrap;cursor:pointer;transition:background 150ms ease}
 .theone-update:hover{background:color-mix(in srgb,var(--one-accent) 22%,transparent)}
 .theone-update:focus-visible{outline:2px solid var(--one-accent);outline-offset:2px}
-.theone-update small{font-size:11px;opacity:.75}
 .theone-update[data-state=installing],.theone-update[data-state=reloading],.theone-update[data-state=restart]{cursor:default}
 .theone-update[data-state=failed]{color:#d9480f;border-color:#d9480f66;background:#d9480f14}
 .theone-update[data-state=waiting]{opacity:.8;border-style:dashed}
@@ -956,23 +975,22 @@ button:has(.theone-nav[data-wide=true])>span:has(.theone-nav){flex:1;min-width:0
 .theone-dialog-actions button:focus-visible{outline:2px solid #4a7fc0;outline-offset:2px}
 .theone-dialog .theone-dialog-body{white-space:pre-wrap;color:var(--dsw-alias-label-primary,#e8e8ea)}
 .theone-notice{display:flex;align-items:center;gap:8px;margin:6px 4px 0;padding:6px 8px 6px 10px;border:1px solid var(--dsw-alias-border-l2,#ffffff1f);border-radius:10px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary,#a0a0a6);min-width:0}
-.theone-notice-tag{flex:none;padding:0 6px;border-radius:6px;background:#3b6fb033;color:#7fa9dd}
+.theone-notice-tag{flex:none;display:inline-flex;padding:3px;border-radius:6px;background:#3b6fb033;color:#7fa9dd}
 .theone-notice-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .theone-notice-text strong{color:var(--dsw-alias-label-primary,#e8e8ea);font-weight:500}
-.theone-notice button{flex:none;border:0;background:transparent;color:inherit;font:inherit;cursor:pointer;padding:2px 6px;border-radius:6px}
+.theone-notice button{flex:none;display:inline-flex;border:0;background:transparent;color:inherit;font:inherit;cursor:pointer;padding:4px;border-radius:6px}
 .theone-notice button:hover{background:var(--dsw-alias-interactive-bg-hover,#ffffff12)}
 .theone-notice-link{color:#7fa9dd!important}
-.theone-notice-close{font-size:15px;line-height:1}
-.theone-update-spin{width:10px;height:10px;border-radius:50%;border:1.5px solid currentColor;border-right-color:transparent;animation:theone-spin 800ms linear infinite}
+.theone-update-spin{width:12px;height:12px;border-radius:50%;border:1.5px solid currentColor;border-right-color:transparent;animation:theone-spin 800ms linear infinite}
 @keyframes theone-spin{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){.theone-update-spin{animation:none}}
-.theone-entry-copy{display:flex;flex-direction:column;align-items:flex-start;gap:2px}
+.theone-entry-copy{display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-width:0}
 .theone-entry-title{display:flex;align-items:center;gap:9px;line-height:22px}
 .theone-wordmark{display:inline-flex;align-items:baseline;gap:1px;white-space:nowrap}
 .theone-word-the{font-size:12px;font-weight:400;letter-spacing:-.25px;color:var(--dsw-alias-label-secondary)}
 .theone-word-one{position:relative;font-family:ui-rounded,'SF Pro Rounded','Avenir Next',sans-serif;font-size:19px;line-height:1.15;font-weight:500;letter-spacing:-1px;transform:rotate(-4deg);padding-right:7px}
 .theone-word-dot{position:absolute;right:0;top:2px;width:4px;height:4px;border-radius:50%;background:currentColor}
-.theone-entry-label{font-size:12px;font-weight:400}
+.theone-entry-label{font-size:12px;font-weight:400;white-space:nowrap}
 .theone-entry-sub{font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary)}
 .theone-opening{padding:32px;color:var(--dsw-alias-label-primary);font:inherit}
 .theone-opening button{padding:8px 16px;font:inherit;color:inherit;background:var(--dsw-alias-interactive-bg-hover);border:1px solid var(--dsw-alias-border-l2);border-radius:8px;cursor:pointer}
@@ -991,7 +1009,7 @@ const composerCss = `
 .theone-bg:disabled{opacity:.6;cursor:default}
 .theone-bg-caption,.theone-bg-chevron{color:var(--dsw-alias-label-secondary)}
 .theone-bg-text{overflow:hidden;text-overflow:ellipsis;display:var(--dsh-composer-model-text-display,inline)}
-.theone-bg-chevron{font-size:11px}
+.theone-bg-caption,.theone-bg-chevron{display:inline-flex}
 .theone-bg[data-failed=true] .theone-bg-caption{color:#d9480f}
 .theone-bg-menu{position:fixed;z-index:10000;width:280px;max-height:min(420px,70vh);display:flex;flex-direction:column;padding:6px;border:1px solid var(--dsw-alias-border-l2);border-radius:14px;background:var(--dsw-specific-sidebar-fill);color:var(--dsw-alias-label-primary);box-shadow:0 10px 32px #0003;font:inherit;font-size:14px;box-sizing:border-box}
 .theone-bg-heading{padding:8px 10px 6px;font-size:12px;color:var(--dsw-alias-label-secondary)}

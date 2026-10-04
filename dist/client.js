@@ -681,13 +681,42 @@ function apply(ctx) {
     document.body.append(backdrop);
     (allow ?? footer.querySelector("button"))?.focus();
   }
+  const ICONS = {
+    download: ["M12 4v11", "M7 10l5 5 5-5", "M5 20h14"],
+    restart: ["M20 12a8 8 0 1 1-2.34-5.66L20 8.5", "M20 4v4.5h-4.5"],
+    alert: ["M3 12a9 9 0 1 0 18 0a9 9 0 1 0-18 0", "M12 7.5v5.5", "M12 16.5h.01"],
+    notice: ["M4 10v4h3l6 4V6L7 10H4z", "M16.5 9a4 4 0 0 1 0 6", "M19 6.5a7.5 7.5 0 0 1 0 11"],
+    external: ["M14 4h6v6", "M20 4l-9 9", "M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"],
+    close: ["M6 6l12 12", "M18 6L6 18"],
+    layers: ["M12 3.5l8.5 4.5-8.5 4.5L3.5 8z", "M3.5 12.5l8.5 4.5 8.5-4.5", "M3.5 16.5l8.5 4.5 8.5-4.5"],
+    chevron: ["M6 15l6-6 6 6"],
+    grid: ["M4 4h6.5v6.5H4z", "M13.5 4H20v6.5h-6.5z", "M4 13.5h6.5V20H4z", "M13.5 13.5H20V20h-6.5z"]
+  };
+  const icon = (name, size = 16) => (0, import_react.createElement)(
+    "svg",
+    {
+      className: "theone-icon",
+      viewBox: "0 0 24 24",
+      width: size,
+      height: size,
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth: 2,
+      strokeLinecap: "round",
+      strokeLinejoin: "round",
+      "aria-hidden": true,
+      focusable: false
+    },
+    ...ICONS[name].map((d) => (0, import_react.createElement)("path", { key: d, d }))
+  );
   function UpdateButton() {
     const t2 = useText();
     const status = (0, import_react.useSyncExternalStore)(subscribeUpdate, () => update);
     const waiting = !!status?.waiting && !status.available && !status.state;
     if (!status || !status.available && !status.state && !waiting) return null;
     const label = waiting ? t2("update.waiting") : status.state === "installing" ? t2("update.installing") : status.state === "reloading" ? t2("update.reloading") : status.state === "restart" ? t2("update.restart") : status.state === "failed" ? t2("update.failed") : t2("update.available");
-    const title = waiting ? t2("update.waitingHint", { latest: status.waiting.version }) : status.error === "GATEWAY_BUSY" ? t2("update.busy") : status.state === "reloading" ? t2("update.reloadingHint") : status.state === "restart" ? t2("update.restartHint") : status.state === "failed" ? status.error === "MINIMUM_RELEASE_AGE" ? t2("update.tooNew") : status.error === "NETWORK" ? t2("update.network") : t2("update.failedHint", { error: status.error ?? "" }) : status.installable ? t2("update.hint", { current: status.current, latest: status.latest ?? "" }) : t2("update.manualHint", { current: status.current, latest: status.latest ?? "" });
+    const hint = waiting ? t2("update.waitingHint", { latest: status.waiting.version }) : status.error === "GATEWAY_BUSY" ? t2("update.busy") : status.state === "reloading" ? t2("update.reloadingHint") : status.state === "restart" ? t2("update.restartHint") : status.state === "failed" ? status.error === "MINIMUM_RELEASE_AGE" ? t2("update.tooNew") : status.error === "NETWORK" ? t2("update.network") : t2("update.failedHint", { error: status.error ?? "" }) : status.installable ? t2("update.hint", { current: status.current, latest: status.latest ?? "" }) : t2("update.manualHint", { current: status.current, latest: status.latest ?? "" });
+    const title = `${label} \xB7 ${hint}`;
     const act = (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -718,9 +747,7 @@ function apply(ctx) {
           if (event.key === "Enter" || event.key === " ") act(event);
         }
       },
-      status.state === "installing" || status.state === "reloading" ? (0, import_react.createElement)("span", { className: "theone-update-spin", "aria-hidden": true }) : null,
-      label,
-      !status.state && (waiting ? status.waiting.version : status.latest) ? (0, import_react.createElement)("small", null, `v${waiting ? status.waiting.version : status.latest}`) : null
+      status.state === "installing" || status.state === "reloading" ? (0, import_react.createElement)("span", { className: "theone-update-spin", "aria-hidden": true }) : icon(status.state === "restart" ? "restart" : status.state === "failed" ? "alert" : "download", 15)
     );
   }
   const symbol = () => (0, import_react.createElement)(
@@ -1049,9 +1076,9 @@ function apply(ctx) {
           }, () => setFailed(true));
         }
       },
-      (0, import_react.createElement)("span", { className: "theone-bg-caption" }, t2("bg.label")),
+      (0, import_react.createElement)("span", { className: "theone-bg-caption", "aria-hidden": true }, icon("layers", 15)),
       (0, import_react.createElement)("span", { className: "theone-bg-text" }, label),
-      (0, import_react.createElement)("span", { className: "theone-bg-chevron", "aria-hidden": true }, saving ? "\u2026" : "\u2303")
+      (0, import_react.createElement)("span", { className: "theone-bg-chevron", "aria-hidden": true }, saving ? "\u2026" : icon("chevron", 12))
     );
   }
   let notices = [];
@@ -1157,13 +1184,19 @@ function apply(ctx) {
     return (0, import_react.createElement)(
       "div",
       { className: "theone-notice", role: "status", translate: "no" },
-      (0, import_react.createElement)("span", { className: "theone-notice-tag" }, t2("notice.label")),
+      (0, import_react.createElement)("span", { className: "theone-notice-tag", title: t2("notice.label"), "aria-label": t2("notice.label"), role: "img" }, icon("notice", 14)),
       (0, import_react.createElement)("span", { className: "theone-notice-text", title: `${title}
 ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
-      notice.link ? (0, import_react.createElement)("button", { type: "button", className: "theone-notice-link", onClick: () => {
-        window.open(notice.link, "_blank", "noopener");
-      } }, t2("notice.more")) : null,
-      (0, import_react.createElement)("button", { type: "button", className: "theone-notice-close", "aria-label": t2("notice.close"), title: t2("notice.close"), onClick: () => dismissNotice(notice.id) }, "\xD7")
+      notice.link ? (0, import_react.createElement)("button", {
+        type: "button",
+        className: "theone-notice-link",
+        "aria-label": t2("notice.more"),
+        title: t2("notice.more"),
+        onClick: () => {
+          window.open(notice.link, "_blank", "noopener");
+        }
+      }, icon("external", 14)) : null,
+      (0, import_react.createElement)("button", { type: "button", className: "theone-notice-close", "aria-label": t2("notice.close"), title: t2("notice.close"), onClick: () => dismissNotice(notice.id) }, icon("close", 14))
     );
   }
   ctx.inject(["slots", "modelDirectories"], (scope) => {
@@ -1912,7 +1945,7 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
     ctx.slots.register({ name: "sidebar.panellist", id: panelId, order: -1e3, label: () => t("gateway.title") }, SidebarEntry),
     ctx.slots.register({ name: "sidebar.panellist", id: catalogPanelId, order: -999, label: () => t("catalog.title") }, ({ size }) => {
       const t2 = useText();
-      return (0, import_react.createElement)("span", { className: "theone-catalog-entry", translate: "no" }, (0, import_react.createElement)("span", null, "\u25A6"), size === 16 ? (0, import_react.createElement)("span", null, t2("catalog.title")) : null);
+      return (0, import_react.createElement)("span", { className: "theone-catalog-entry", translate: "no" }, icon("grid", 16), size === 16 ? (0, import_react.createElement)("span", null, t2("catalog.title")) : null);
     })
   ]);
 }
@@ -1933,10 +1966,10 @@ button:has(.theone-nav[data-active=true]){border-color:color-mix(in srgb,var(--o
 .theone-update-dot{position:absolute;top:-2px;right:-2px;width:7px;height:7px;border-radius:50%;background:#e8590c;box-shadow:0 0 0 2px var(--one-tint)}
 button:has(.theone-nav[data-wide=true])>span:has(.theone-nav){flex:1;min-width:0}
 .theone-nav[data-wide=true]{width:100%}
-.theone-update{margin-left:auto;align-self:center;display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border-radius:999px;border:1px solid color-mix(in srgb,var(--one-accent) 45%,transparent);background:color-mix(in srgb,var(--one-accent) 12%,transparent);color:var(--one-accent);font-size:12px;line-height:16px;white-space:nowrap;cursor:pointer;transition:background 150ms ease}
+.theone-icon{display:block;flex:none;overflow:visible}
+.theone-update{margin-left:auto;align-self:center;flex:none;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;box-sizing:border-box;padding:0;border-radius:50%;border:1px solid color-mix(in srgb,var(--one-accent) 45%,transparent);background:color-mix(in srgb,var(--one-accent) 12%,transparent);color:var(--one-accent);font-size:12px;line-height:16px;white-space:nowrap;cursor:pointer;transition:background 150ms ease}
 .theone-update:hover{background:color-mix(in srgb,var(--one-accent) 22%,transparent)}
 .theone-update:focus-visible{outline:2px solid var(--one-accent);outline-offset:2px}
-.theone-update small{font-size:11px;opacity:.75}
 .theone-update[data-state=installing],.theone-update[data-state=reloading],.theone-update[data-state=restart]{cursor:default}
 .theone-update[data-state=failed]{color:#d9480f;border-color:#d9480f66;background:#d9480f14}
 .theone-update[data-state=waiting]{opacity:.8;border-style:dashed}
@@ -1953,23 +1986,22 @@ button:has(.theone-nav[data-wide=true])>span:has(.theone-nav){flex:1;min-width:0
 .theone-dialog-actions button:focus-visible{outline:2px solid #4a7fc0;outline-offset:2px}
 .theone-dialog .theone-dialog-body{white-space:pre-wrap;color:var(--dsw-alias-label-primary,#e8e8ea)}
 .theone-notice{display:flex;align-items:center;gap:8px;margin:6px 4px 0;padding:6px 8px 6px 10px;border:1px solid var(--dsw-alias-border-l2,#ffffff1f);border-radius:10px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary,#a0a0a6);min-width:0}
-.theone-notice-tag{flex:none;padding:0 6px;border-radius:6px;background:#3b6fb033;color:#7fa9dd}
+.theone-notice-tag{flex:none;display:inline-flex;padding:3px;border-radius:6px;background:#3b6fb033;color:#7fa9dd}
 .theone-notice-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .theone-notice-text strong{color:var(--dsw-alias-label-primary,#e8e8ea);font-weight:500}
-.theone-notice button{flex:none;border:0;background:transparent;color:inherit;font:inherit;cursor:pointer;padding:2px 6px;border-radius:6px}
+.theone-notice button{flex:none;display:inline-flex;border:0;background:transparent;color:inherit;font:inherit;cursor:pointer;padding:4px;border-radius:6px}
 .theone-notice button:hover{background:var(--dsw-alias-interactive-bg-hover,#ffffff12)}
 .theone-notice-link{color:#7fa9dd!important}
-.theone-notice-close{font-size:15px;line-height:1}
-.theone-update-spin{width:10px;height:10px;border-radius:50%;border:1.5px solid currentColor;border-right-color:transparent;animation:theone-spin 800ms linear infinite}
+.theone-update-spin{width:12px;height:12px;border-radius:50%;border:1.5px solid currentColor;border-right-color:transparent;animation:theone-spin 800ms linear infinite}
 @keyframes theone-spin{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){.theone-update-spin{animation:none}}
-.theone-entry-copy{display:flex;flex-direction:column;align-items:flex-start;gap:2px}
+.theone-entry-copy{display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-width:0}
 .theone-entry-title{display:flex;align-items:center;gap:9px;line-height:22px}
 .theone-wordmark{display:inline-flex;align-items:baseline;gap:1px;white-space:nowrap}
 .theone-word-the{font-size:12px;font-weight:400;letter-spacing:-.25px;color:var(--dsw-alias-label-secondary)}
 .theone-word-one{position:relative;font-family:ui-rounded,'SF Pro Rounded','Avenir Next',sans-serif;font-size:19px;line-height:1.15;font-weight:500;letter-spacing:-1px;transform:rotate(-4deg);padding-right:7px}
 .theone-word-dot{position:absolute;right:0;top:2px;width:4px;height:4px;border-radius:50%;background:currentColor}
-.theone-entry-label{font-size:12px;font-weight:400}
+.theone-entry-label{font-size:12px;font-weight:400;white-space:nowrap}
 .theone-entry-sub{font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary)}
 .theone-opening{padding:32px;color:var(--dsw-alias-label-primary);font:inherit}
 .theone-opening button{padding:8px 16px;font:inherit;color:inherit;background:var(--dsw-alias-interactive-bg-hover);border:1px solid var(--dsw-alias-border-l2);border-radius:8px;cursor:pointer}
@@ -1986,7 +2018,7 @@ var composerCss = `
 .theone-bg:disabled{opacity:.6;cursor:default}
 .theone-bg-caption,.theone-bg-chevron{color:var(--dsw-alias-label-secondary)}
 .theone-bg-text{overflow:hidden;text-overflow:ellipsis;display:var(--dsh-composer-model-text-display,inline)}
-.theone-bg-chevron{font-size:11px}
+.theone-bg-caption,.theone-bg-chevron{display:inline-flex}
 .theone-bg[data-failed=true] .theone-bg-caption{color:#d9480f}
 .theone-bg-menu{position:fixed;z-index:10000;width:280px;max-height:min(420px,70vh);display:flex;flex-direction:column;padding:6px;border:1px solid var(--dsw-alias-border-l2);border-radius:14px;background:var(--dsw-specific-sidebar-fill);color:var(--dsw-alias-label-primary);box-shadow:0 10px 32px #0003;font:inherit;font-size:14px;box-sizing:border-box}
 .theone-bg-heading{padding:8px 10px 6px;font-size:12px;color:var(--dsw-alias-label-secondary)}
