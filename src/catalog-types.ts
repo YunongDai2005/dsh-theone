@@ -1,10 +1,13 @@
 import type { ContextDescriptor } from './types.ts'
 
 export interface TopicGroup { id: string; title: string; summary: string; contextIds: string[] }
-export interface CatalogContext extends ContextDescriptor { workingSessionId: string; sourceSessionIds: string[] }
+/** Every conversation a topic draws on is gone from disk (`orphaned`) or archived in DSH (`archived`). */
+export type HiddenReason = 'orphaned' | 'archived'
+/** `hidden` says why routing and briefings skip this topic; the directory still lists it. */
+export interface CatalogContext extends ContextDescriptor { workingSessionId: string; sourceSessionIds: string[]; hidden?: HiddenReason }
 export interface CatalogStatus {
   running: boolean; scanned: number; indexed: number; skipped: number; failed: number
-  pending: number; lastCompletedAt?: number; searchUnavailable?: boolean
+  pending: number; lastCompletedAt?: number; searchUnavailable?: boolean; hidden?: number
 }
 export type LinkReasonName = 'manual' | 'workspace' | 'project' | 'entities' | 'learned' | 'request'
 export interface TopicLinkView { id: string; title: string; reasons: LinkReasonName[] }

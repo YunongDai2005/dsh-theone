@@ -53,9 +53,18 @@ export function routingPayload(input: RoutingInput): Omit<RoutingInput, 'current
   const offered = new Set(input.contexts.map(context => context.id))
   const corrections = (input.corrections ?? []).filter(item => offered.has(item.rightId)).slice(0, 5)
     .map(item => ({ text: redactRoutingText(item.text).slice(0, 200), rightId: item.rightId, ...(item.wrongId && offered.has(item.wrongId) ? { wrongId: item.wrongId } : {}) }))
-  const payload = {text, contexts, currentId:input.currentId ?? null, recent, historyIncomplete: input.historyIncomplete ?? false, ...(corrections.length ? { corrections } : {})}
-  if ((input.currentId && !input.contexts.some(context=>context.id===input.currentId)) || !text.trim() || JSON.stringify(payload).length > 24000) throw new RouterFailure('ROUTER_INPUT_INVALID')
+  const payload = {text, contexts, currentId: mounted(input, contexts), recent, historyIncomplete: input.historyIncomplete ?? false, ...(corrections.length ? { corrections } : {})}
+  if (!text.trim() || JSON.stringify(payload).length > 24000) throw new RouterFailure('ROUTER_INPUT_INVALID')
   return payload
+}
+
+/**
+ * The current topic, or null when it is no longer among the candidates — a topic drops out as soon
+ * as every conversation it draws on is gone or archived. Routing then reads as "nothing mounted",
+ * instead of failing the request over a topic the classifier was never offered.
+ */
+function mounted(input: RoutingInput, contexts: ContextDescriptor[]): string | null {
+  return input.currentId && contexts.some(context => context.id === input.currentId) ? input.currentId : null
 }
 
 export class RouterFailure extends Error {
@@ -157,7 +166,7 @@ export class DshRouter implements RoutingRouter {
       if (!stopped) throw new RouterFailure('ROUTER_RESPONSE_INCOMPLETE')
       // Providers without JSON mode may wrap a single JSON object in a code fence.
       const json = output.trim().replace(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/, '$1').trim()
-      const decision = validateRoutingDecision(JSON.parse(json), input)
+      const decision = validateRoutingDecision(JSON.parse(json), { ...input, currentId: payload.currentId ?? undefined })
       this.failures = 0; this.blockedUntil = 0
       return { decision, model: call.config.model, elapsedMs: Math.round(performance.now() - start), usage }
     } catch (error) {

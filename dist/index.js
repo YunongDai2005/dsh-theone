@@ -606,8 +606,14 @@ export default class TheOne extends Service {
                         return Response.json({ prepared: true, workspaceId: null });
                     } }));
             });
-            child.effect(() => connection.fetch.register({ path: '/api/theone/catalog', methods: ['GET'], requestBody: 'buffered', fetch: async () => Response.json({ ...this.catalog?.snapshot() ?? { groups: this.store.groups(), contexts: this.store.contexts().map(c => ({ ...c, sourceSessionIds: this.store.sources(c.id) })),
-                        status: { running: false, scanned: 0, indexed: 0, skipped: 0, failed: 0, pending: 0 } }, linkage: this.linkageSnapshot() }, { headers: { 'cache-control': 'no-store' } }) }));
+            child.effect(() => connection.fetch.register({ path: '/api/theone/catalog', methods: ['GET'], requestBody: 'buffered', fetch: async () => {
+                    const hidden = this.store.hiddenReasons();
+                    const fallback = { groups: this.store.groups(),
+                        contexts: this.store.contexts().map(c => ({ ...c, sourceSessionIds: this.store.sources(c.id),
+                            ...(hidden.has(c.id) ? { hidden: hidden.get(c.id) } : {}) })),
+                        status: { running: false, scanned: 0, indexed: 0, skipped: 0, failed: 0, pending: 0, hidden: hidden.size } };
+                    return Response.json({ ...this.catalog?.snapshot() ?? fallback, linkage: this.linkageSnapshot() }, { headers: { 'cache-control': 'no-store' } });
+                } }));
             // Recent routing decisions, and moving a misrouted message to the right topic.
             child.effect(() => connection.fetch.register({ path: '/api/theone/routes', methods: ['GET', 'POST'], requestBody: 'buffered', fetch: async (request) => {
                     if (request.method === 'POST') {
@@ -1526,7 +1532,10 @@ export default class TheOne extends Service {
     /** Topics with the terms corrections taught them added to their own keywords. */
     routingContexts() {
         const learned = this.store.learnedTerms();
-        return this.store.contexts().map(context => {
+        // A topic whose conversations are all gone from disk or archived stays in the directory but is
+        // never offered to the classifier, so a message cannot be routed to a Worker with nothing left.
+        const hidden = this.store.hiddenReasons();
+        return this.store.contexts().filter(context => !hidden.has(context.id)).map(context => {
             const terms = learned.get(context.id);
             if (!terms?.length)
                 return context;

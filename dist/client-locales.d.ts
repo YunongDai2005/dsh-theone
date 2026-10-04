@@ -149,6 +149,8 @@ export declare const zh: {
     readonly 'topic.source': "查看原会话";
     readonly 'topic.state': "进展：";
     readonly 'topic.constraints': "约束：";
+    readonly 'topic.hiddenOrphaned': "来源会话已从磁盘上消失：本话题不再参与路由，删除即可从目录移除。";
+    readonly 'topic.hiddenArchived': "来源会话已归档：本话题不再参与路由，取消归档或删除它即可。";
     readonly 'manage.open': "管理";
     readonly 'manage.close': "收起";
     readonly 'manage.title': "标题";

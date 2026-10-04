@@ -108,8 +108,10 @@ export class HistoryCatalog {
         this.schedule(1000); }
     async close() { this.abort.abort(); clearTimeout(this.timer); await this.run?.catch(() => { }); }
     snapshot() {
+        const hidden = this.store.hiddenReasons();
         return { status: { ...this.status }, groups: this.store.groups(),
-            contexts: this.store.contexts().map(context => ({ ...context, sourceSessionIds: this.store.sources(context.id) })) };
+            contexts: this.store.contexts().map(context => ({ ...context, sourceSessionIds: this.store.sources(context.id),
+                ...(hidden.has(context.id) ? { hidden: hidden.get(context.id) } : {}) })) };
     }
     get incomplete() { return !this.status.lastCompletedAt || (this.settledPending ?? 1) > 0 || !!this.status.searchUnavailable; }
     refresh() {
@@ -137,11 +139,18 @@ export class HistoryCatalog {
             return;
         }
         this.status.pending = records.length;
+        const archived = this.archivedSessionIds();
         let budget = this.batchBudget;
         for (const record of records) {
             signal.throwIfAborted();
             const sessionId = record.header.id;
             if (record.header.origin === 'subagent' || this.store.isGateway(sessionId) || this.store.indexState(sessionId)?.status === 'excluded') {
+                this.status.skipped++;
+                this.status.pending--;
+                continue;
+            }
+            // An archived conversation still sits on disk, but its topic must not be pulled back in.
+            if (archived.has(sessionId)) {
                 this.status.skipped++;
                 this.status.pending--;
                 continue;
@@ -227,7 +236,43 @@ export class HistoryCatalog {
             }
         }
         this.settledPending = this.status.pending;
+        this.reconcile(records, archived);
         this.status.lastCompletedAt = Date.now();
+    }
+    /** DSH's archive set, when a workspace registry is present. Empty means nothing is archived. */
+    archivedSessionIds() {
+        try {
+            const registry = this.ctx.get('workspaceRegistry');
+            const ids = registry?.archivedSessionIds;
+            return new Set(Array.isArray(ids) ? ids.filter((id) => typeof id === 'string') : []);
+        }
+        catch {
+            // A registry that is not ready yet must never fail a scan.
+            return new Set();
+        }
+    }
+    /**
+     * The scan only walks the conversations that still exist, so a topic whose sessions were deleted
+     * or archived would otherwise stay in the routing candidates forever. Hiding is recomputed whole
+     * on every scan, which keeps it reversible: restoring or unarchiving a conversation brings its
+     * topic back, and no topic is removed from the directory behind the reader's back.
+     */
+    reconcile(records, archived) {
+        const live = new Set(records.map(record => record.header.id));
+        const hidden = [];
+        for (const context of this.store.contexts()) {
+            const conversations = [context.workingSessionId, ...this.store.sources(context.id)];
+            // Only conversations the catalog has actually seen count: a Worker session exists on disk only
+            // once TheOne has run it, so an untouched placeholder must not look like a lost conversation.
+            const known = conversations.filter(sessionId => this.store.indexState(sessionId) !== undefined);
+            if (known.length && known.every(sessionId => archived.has(sessionId)))
+                hidden.push({ id: context.id, reason: 'archived' });
+            // Nothing left to read: every conversation is off disk, and at least one of them was indexed.
+            else if (known.length && !conversations.some(sessionId => live.has(sessionId)))
+                hidden.push({ id: context.id, reason: 'orphaned' });
+        }
+        this.store.replaceHidden(hidden);
+        this.status.hidden = hidden.length;
     }
     /**
      * Up to 16 topics worth showing the classifier. `contexts` may carry learned terms; `prior`
@@ -235,7 +280,8 @@ export class HistoryCatalog {
      */
     async candidates(text, currentId, signal, hints = {}) {
         this.status.searchUnavailable = false;
-        const all = hints.contexts ?? this.store.contexts();
+        const hidden = this.store.hiddenReasons();
+        const all = (hints.contexts ?? this.store.contexts()).filter(context => !hidden.has(context.id));
         if (all.length <= 16)
             return all;
         const normalized = text.toLowerCase();

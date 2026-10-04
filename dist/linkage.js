@@ -19,11 +19,13 @@ export function relatedTopics(store, contextId, scope, limit = 3, now = Date.now
     const ownEntities = new Set(self.entities.map(normalize).filter(term => term.length >= 2));
     // One read each, so the topic directory can compute every topic's links cheaply.
     const privateIds = store.privateIds();
+    // Topics whose conversations are gone or archived are kept in the directory but never briefed.
+    const hiddenIds = new Set(store.hiddenReasons().keys());
     const origins = store.origins();
     const ownCwd = origins.get(contextId);
     const result = [];
     for (const other of contexts) {
-        if (other.id === contextId || privateIds.has(other.id))
+        if (other.id === contextId || privateIds.has(other.id) || hiddenIds.has(other.id))
             continue;
         const link = links.get(other.id);
         if (link?.manual === -1)

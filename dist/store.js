@@ -97,6 +97,9 @@ export class ContextStore {
       CREATE TABLE IF NOT EXISTS route_details (
         message_id TEXT PRIMARY KEY, excerpt TEXT NOT NULL, receipt TEXT, corrected_to TEXT, corrected_at INTEGER
       );
+      CREATE TABLE IF NOT EXISTS hidden_contexts (
+        context_id TEXT PRIMARY KEY REFERENCES contexts(id), reason TEXT NOT NULL, detected_at INTEGER NOT NULL
+      );
     `);
     }
     settings(gatewayKey) {
@@ -681,6 +684,7 @@ export class ContextStore {
             'gateway_state', 'context_state_updates', 'context_summary_updates', 'topic_flags', 'compaction_digests', 'learned_terms'])
             this.db.prepare(`DELETE FROM ${table} WHERE context_id = ?`).run(contextId);
         this.db.prepare('DELETE FROM topic_links WHERE a = ? OR b = ?').run(contextId, contextId);
+        this.db.prepare('DELETE FROM hidden_contexts WHERE context_id = ?').run(contextId);
         this.db.prepare('DELETE FROM briefing_seen WHERE reader = ? OR source = ?').run(contextId, contextId);
         this.db.prepare('UPDATE route_details SET corrected_to = NULL, corrected_at = NULL WHERE corrected_to = ?').run(contextId);
         this.db.prepare('DELETE FROM contexts WHERE id = ?').run(contextId);
@@ -691,6 +695,30 @@ export class ContextStore {
     }
     dismissedNotices() {
         return new Set(this.db.prepare('SELECT id FROM dismissed_notices').all().map(row => String(row.id)));
+    }
+    /**
+     * Topics kept in the directory but hidden from routing and briefings: every conversation they can
+     * draw on is gone from disk (`orphaned`) or archived in DSH (`archived`). The catalog scan
+     * recomputes this set, so restoring a conversation or unarchiving it brings the topic back.
+     */
+    hiddenReasons() {
+        return new Map(this.db.prepare('SELECT context_id, reason FROM hidden_contexts').all()
+            .map(row => [String(row.context_id), String(row.reason)]));
+    }
+    /** Replace the hidden set in one write, so a scan never leaves a stale entry behind. */
+    replaceHidden(entries, now = Date.now()) {
+        this.db.exec('BEGIN IMMEDIATE');
+        try {
+            this.db.prepare('DELETE FROM hidden_contexts').run();
+            const insert = this.db.prepare('INSERT OR REPLACE INTO hidden_contexts VALUES (?, ?, ?)');
+            for (const entry of entries)
+                insert.run(entry.id, entry.reason, now);
+            this.db.exec('COMMIT');
+        }
+        catch (error) {
+            this.db.exec('ROLLBACK');
+            throw error;
+        }
     }
     close() { this.db.close(); }
 }
