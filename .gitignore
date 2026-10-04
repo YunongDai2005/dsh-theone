@@ -21,3 +21,9 @@ scripts/*history*
 scripts/evaluate-*
 scripts/retrieve-*
 scripts/test-live-llm-gateway.ts
+eval/.cache/
+eval/data/*-dry/
+eval/data/**/predictions/
+eval/test/__pycache__/
+eval/__pycache__/
+!eval/data/*/sessions.jsonl
