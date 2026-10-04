@@ -40,10 +40,11 @@ export async function routeSession(session, { mode, policy, client }) {
     else {
       try {
         const payload = routingPayload(input)
-        const before = { ...client.usage }
-        const answer = await client.complete({ system: ROUTING_PROMPT, user: JSON.stringify(payload), maxTokens: 2048, json: true, tag: `route:${session.session_id}:${turn.i}:${mode}:${policy}` })
-        usage = { input: client.usage.input - before.input, output: client.usage.output - before.output, cache_hit: client.usage.cacheHit - before.cacheHit }
-        decision = validateRoutingDecision(answer, input)
+        // Calls run concurrently, so each call's tokens come from its own response, not the running total.
+        const answer = await client.complete({ system: ROUTING_PROMPT, user: JSON.stringify(payload), maxTokens: 2048, json: true, details: true, tag: `route:${session.session_id}:${turn.i}:${mode}:${policy}` })
+        if (answer.usage) usage = { input: answer.usage.input ?? 0, output: answer.usage.output ?? 0, cache_hit: answer.usage.cached ?? 0 }
+        if (answer.cached) via = 'cache'
+        decision = validateRoutingDecision(answer.value, input)
       } catch (failure) {
         error = String(failure.code ?? failure.message).slice(0, 120)
         if (policy === 'theone') { decision = resolveContext(turn.text, contexts, current); via = 'rules' }

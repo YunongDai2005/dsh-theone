@@ -188,12 +188,14 @@ def evaluate(sessions, predictions, split="dev"):
                 strict[1] += 1
             lenient[0] += ok or (t["ambiguous"] and judge not in (None, "ambiguous", "none") and o["mapped"] == judge)
             lenient[1] += 1
-            for bucket, key in ((by_action, t["gold"]["action"]), (by_lang, session["lang"])):
-                bucket[key][0] += ok
-                bucket[key][1] += 1
-            for tag in t["tags"]:
-                by_tag[tag][0] += ok
-                by_tag[tag][1] += 1
+            # Breakdowns use the same messages as strict accuracy.
+            if not t["ambiguous"]:
+                for bucket, key in ((by_action, t["gold"]["action"]), (by_lang, session["lang"])):
+                    bucket[key][0] += ok
+                    bucket[key][1] += 1
+                for tag in t["tags"]:
+                    by_tag[tag][0] += ok
+                    by_tag[tag][1] += 1
             # A switch is any change of thread between consecutive thread messages.
             gold_switch = prev_gold is not None and gold != prev_gold
             pred_switch = prev_pred is not None and o["pred"] != prev_pred and o["pred"] not in SPECIAL

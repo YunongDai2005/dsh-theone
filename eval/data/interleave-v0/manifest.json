@@ -1,0 +1,31 @@
+{
+  "version": "interleave-v0",
+  "model": "deepseek-flash",
+  "seed": 1,
+  "sessions": 50,
+  "failed": [],
+  "messages": 2466,
+  "ambiguous": 335,
+  "leaks": 0,
+  "options": {
+    "langs": [
+      "zh",
+      "en"
+    ],
+    "minThreads": 3,
+    "maxThreads": 5,
+    "minTurns": 40,
+    "maxTurns": 60,
+    "chunk": 8,
+    "judge": true
+  },
+  "usage": {
+    "calls": 728,
+    "cached": 0,
+    "input": 398500,
+    "cacheHit": 287228,
+    "output": 127301,
+    "cost": 0.18786616799999997
+  },
+  "generatedAt": "2026-10-04T17:43:58.403Z"
+}

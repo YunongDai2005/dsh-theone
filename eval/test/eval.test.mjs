@@ -103,3 +103,12 @@ test('an OpenAI-compatible endpoint works too: chat/completions, bearer key, usa
     server.close()
   }
 })
+
+test('each routed message carries its own tokens even when sessions run concurrently', async () => {
+  const client = await createClient({ fake, concurrency: 4 })
+  const sessions = await generate({ sessions: 3, seed: 9, client: await createClient({ fake }) })
+  const rows = (await Promise.all(sessions.map(session => routeSession(session, { mode: 'open', policy: 'llm', client })))).flat()
+  // Deltas of a shared running total would count other sessions' calls and add up to far more.
+  assert.equal(rows.reduce((sum, row) => sum + row.usage.input, 0), client.usage.input)
+  assert.ok(rows.every(row => row.via === 'llm' && row.usage.input > 0))
+})

@@ -57,7 +57,7 @@ export async function createClient({ model = process.env.EVAL_MODEL ?? 'deepseek
    * One completion. Returns the text; JSON is parsed when json is true (a fenced block is accepted).
    * @param request - { system, user, maxTokens, temperature, json, tag }
    */
-  async function complete({ system, user, maxTokens = 2048, temperature, json = false, tag = '' }) {
+  async function complete({ system, user, maxTokens = 2048, temperature, json = false, tag = '', details = false }) {
     // No temperature means the provider's default, as TheOne's own calls do.
     const sampling = { model, max_tokens: maxTokens, ...(temperature === undefined ? {} : { temperature }) }
     const body = openai
@@ -68,24 +68,26 @@ export async function createClient({ model = process.env.EVAL_MODEL ?? 'deepseek
     for (let attempt = 0; ; attempt++) {
       const hash = createHash('sha256').update(JSON.stringify([fake ? 'fake' : base, body, tag])).digest('hex').slice(0, 24)
       const file = cacheDir && join(cacheDir, `${hash}.json`)
-      let text
-      if (file && existsSync(file)) { text = JSON.parse(readFileSync(file, 'utf8')).text; usage.add({}, true) }
+      let text, used, cached = false
+      // EVAL_REFRESH=1 asks the model again (to measure tokens and latency) but still saves the answers.
+      if (file && existsSync(file) && !process.env.EVAL_REFRESH) { ({ text, usage: used } = JSON.parse(readFileSync(file, 'utf8'))); cached = true; usage.add({}, true) }
       else {
         await slot()
         try {
-          if (fakeAnswer) { text = await fakeAnswer({ system, user, tag }); usage.add({ input: Math.ceil((system.length + user.length) / 3), output: Math.ceil(text.length / 3) }) }
+          if (fakeAnswer) { text = await fakeAnswer({ system, user, tag }); used = { input: Math.ceil((system.length + user.length) / 3), output: Math.ceil(text.length / 3) } }
           else if (openai) {
             const response = await send(body)
             text = String(response.choices?.[0]?.message?.content ?? '')
             const u = response.usage ?? {}
-            usage.add({ input: u.prompt_tokens, cached: u.prompt_tokens_details?.cached_tokens ?? u.prompt_cache_hit_tokens, output: u.completion_tokens })
+            used = { input: u.prompt_tokens, cached: u.prompt_tokens_details?.cached_tokens ?? u.prompt_cache_hit_tokens, output: u.completion_tokens }
           } else {
             const response = await send(body)
             text = response.content.filter(block => block.type === 'text').map(block => block.text).join('')
             const u = response.usage ?? {}
             // Anthropic-style input_tokens leaves out the tokens read from cache.
-            usage.add({ input: (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0), cached: u.cache_read_input_tokens, output: u.output_tokens })
+            used = { input: (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0), cached: u.cache_read_input_tokens, output: u.output_tokens }
           }
+          usage.add(used)
         } finally { release() }
       }
       let value = text
@@ -96,8 +98,9 @@ export async function createClient({ model = process.env.EVAL_MODEL ?? 'deepseek
           continue
         }
       }
-      if (file && !existsSync(file)) writeFileSync(file, JSON.stringify({ text }))
-      return value
+      if (file && !cached) writeFileSync(file, JSON.stringify({ text, usage: used }))
+      // With details, this call's own tokens (as first measured, for a cached answer) and whether it was cached.
+      return details ? { value, usage: used, cached } : value
     }
   }
 
