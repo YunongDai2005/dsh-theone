@@ -86,6 +86,8 @@ export class WorkerRun {
     /** Related topics whose news this run's briefing carried, and those the Worker then looked up. */
     briefed = [];
     lookedUp = new Set();
+    /** The Worker recorded facts itself this run, so no extraction is needed afterwards. */
+    recordedFacts = false;
     start(contexts, input) {
         for (const context of contexts)
             this.worker.inject(context);

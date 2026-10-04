@@ -33,10 +33,11 @@ export function validateSettings(value, fallback = {}) {
     if ((workerProvider === null) !== (workerModel === null) || workerProvider === 'theone')
         return fail();
     const contextsPath = row.contextsPath === null ? null : text('contextsPath', 4096);
-    if (typeof row.notices !== 'boolean')
+    if (typeof row.notices !== 'boolean' || typeof row.factLinks !== 'boolean' || typeof row.factExtraction !== 'boolean')
         return fail();
     return { workerProvider, workerModel, routerMode: row.routerMode, historyCatalog: row.historyCatalog,
         catalogIntervalMs: number('catalogIntervalMs', 10000, 86400000), maxDescriptorChars: number('maxDescriptorChars', 128, 1000000),
         maxResponseChars: number('maxResponseChars', 128, 10000000),
-        linkScope: row.linkScope, routeNotice: row.routeNotice, contextsPath, notices: row.notices };
+        linkScope: row.linkScope, routeNotice: row.routeNotice, contextsPath, notices: row.notices,
+        factLinks: row.factLinks, factExtraction: row.factExtraction };
 }

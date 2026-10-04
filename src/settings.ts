@@ -26,9 +26,10 @@ export function validateSettings(value: unknown, fallback: Partial<EditableSetti
   const workerModel = row.workerModel === null ? null : text('workerModel', 256)
   if ((workerProvider === null) !== (workerModel === null) || workerProvider === 'theone') return fail()
   const contextsPath = row.contextsPath === null ? null : text('contextsPath', 4096)
-  if (typeof row.notices !== 'boolean') return fail()
+  if (typeof row.notices !== 'boolean' || typeof row.factLinks !== 'boolean' || typeof row.factExtraction !== 'boolean') return fail()
   return { workerProvider, workerModel, routerMode: row.routerMode as EditableSettings['routerMode'], historyCatalog: row.historyCatalog,
     catalogIntervalMs: number('catalogIntervalMs', 10000, 86400000), maxDescriptorChars: number('maxDescriptorChars', 128, 1000000),
     maxResponseChars: number('maxResponseChars', 128, 10000000),
-    linkScope: row.linkScope as EditableSettings['linkScope'], routeNotice: row.routeNotice as EditableSettings['routeNotice'], contextsPath, notices: row.notices }
+    linkScope: row.linkScope as EditableSettings['linkScope'], routeNotice: row.routeNotice as EditableSettings['routeNotice'], contextsPath, notices: row.notices,
+    factLinks: row.factLinks, factExtraction: row.factExtraction }
 }

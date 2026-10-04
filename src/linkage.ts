@@ -54,6 +54,22 @@ export function relatedTopics(store: ContextStore, contextId: string, scope: Lin
   return result.sort((a, b) => b.score - a.score).slice(0, limit)
 }
 
+/**
+ * Whether `source` may share with `reader` right now, read from current settings every time: never
+ * when linking is off, a private topic, or a pair the user kept apart; within the same workspace only
+ * (unless linked by hand) in workspace scope. Undefined means allowed; otherwise the reason.
+ */
+export function mayShare(store: ContextStore, scope: LinkScope, source: string, reader: string): 'off' | 'unknown' | 'private' | 'workspace' | undefined {
+  if (scope === 'off') return 'off'
+  if (!store.contexts().some(context => context.id === source)) return 'unknown'
+  if (source === reader) return undefined
+  const link = store.links(source).find(item => item.a === reader || item.b === reader)
+  if (store.isPrivate(source) || link?.manual === -1) return 'private'
+  if (scope === 'workspace' && link?.manual !== 1 &&
+    !store.groups().some(group => group.contextIds.includes(reader) && group.contextIds.includes(source))) return 'workspace'
+  return undefined
+}
+
 const stamp = (ms: number) => new Date(ms).toISOString().slice(0, 16).replace('T', ' ') + ' UTC'
 const sqlTime = (text: string) => Date.parse(String(text).replace(' ', 'T') + 'Z')
 const clip = (text: string, max: number) => text.length > max ? text.slice(0, max - 1) + '…' : text
@@ -90,6 +106,8 @@ export interface Briefing { text: string; shown: string[] }
  */
 export function buildBriefing(store: ContextStore, input: {
   context: StoredContext; related: RelatedTopic[]; recent: RecentMessage[]; now?: number; budget?: number
+  /** Changes to facts this topic used before, and confirmed facts this request uses (shared facts only). */
+  notices?: string[]; facts?: string[]
 }): Briefing | undefined {
   const now = input.now ?? Date.now()
   const budget = input.budget ?? 6000
@@ -99,6 +117,8 @@ export function buildBriefing(store: ContextStore, input: {
   let worthSending = false
   const own = store.constraints(input.context.id)
   if (own) { parts.push(`本话题的约束（必须遵守）：${own.text}`); worthSending = true }
+  if (input.notices?.length) { parts.push(['你之前用到的其他话题要点有变化，以此为准：', ...input.notices].join('\n')); worthSending = true }
+  if (input.facts?.length) { parts.push(['本轮用到的其他话题要点（引用资料，是用户确认过的值）：', ...input.facts].join('\n')); worthSending = true }
   if (input.recent.length) {
     let room = 1500
     const lines: string[] = []

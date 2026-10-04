@@ -39,7 +39,9 @@ var EDITABLE_SETTINGS_KEYS = [
   "linkScope",
   "routeNotice",
   "contextsPath",
-  "notices"
+  "notices",
+  "factLinks",
+  "factExtraction"
 ];
 
 // src/client-navigation.ts
@@ -91,6 +93,10 @@ var zh = {
   "retry": "\u91CD\u8BD5",
   "settings.other": "\u5176\u4ED6",
   "settings.notices": "\u663E\u793A\u516C\u544A",
+  "settings.factLinks": "\u5171\u4EAB\u5DF2\u786E\u8BA4\u7684\u8981\u70B9\uFF08\u5B9E\u9A8C\uFF09",
+  "settings.help.factLinks": "\u8BDD\u9898\u4E4B\u95F4\u53EA\u5171\u4EAB\u7528\u6237\u4EB2\u81EA\u786E\u8BA4\u8FC7\u7684\u8981\u70B9\uFF08\u6570\u5B57\u3001\u51B3\u5B9A\u3001\u6587\u4EF6\u4F4D\u7F6E\uFF09\uFF0C\u5E26\u7248\u672C\u548C\u51FA\u5904\uFF1B\u8981\u70B9\u6539\u4E86\u6216\u64A4\u56DE\u4E86\uFF0C\u7528\u5230\u5B83\u7684\u8BDD\u9898\u4F1A\u6536\u5230\u63D0\u793A\u3002\u9ED8\u8BA4\u5173\u95ED\uFF0C\u91CD\u542F DSH \u540E\u751F\u6548\u3002",
+  "settings.factExtraction": "\u81EA\u52A8\u8BB0\u5F55\u8981\u70B9\uFF08\u5B9E\u9A8C\uFF09",
+  "settings.help.factExtraction": "\u5F00\u542F\u300C\u5171\u4EAB\u5DF2\u786E\u8BA4\u7684\u8981\u70B9\u300D\u540E\uFF0C\u6BCF\u8F6E\u7ED3\u675F\u591A\u7528\u4E00\u6B21\u5C0F\u6A21\u578B\u8C03\u7528\uFF0C\u8865\u8BB0\u540E\u53F0\u4F1A\u8BDD\u6CA1\u8BB0\u4E0B\u7684\u8981\u70B9\uFF1B\u540C\u6837\u53EA\u6709\u7528\u6237\u786E\u8BA4\u8FC7\u7684\u624D\u4F1A\u5171\u4EAB\u3002\u9ED8\u8BA4\u5173\u95ED\uFF0C\u91CD\u542F DSH \u540E\u751F\u6548\u3002",
   "settings.help.notices": "\u663E\u793A TheOne \u4F5C\u8005\u53D1\u5E03\u7684\u516C\u544A\uFF08\u65B0\u7248\u672C\u3001\u91CD\u8981\u63D0\u9192\u7B49\uFF09\u3002\u53EA\u4ECE yulid.org \u8BFB\u53D6\u4E00\u4E2A\u516C\u544A\u6587\u4EF6\uFF0C\u4E0D\u53D1\u9001\u4EFB\u4F55\u4F60\u7684\u6570\u636E\u3002",
   "notice.label": "\u516C\u544A",
   "notice.more": "\u67E5\u770B\u8BE6\u60C5",
@@ -302,6 +308,10 @@ var en = {
   "retry": "Retry",
   "settings.other": "Other",
   "settings.notices": "Show notices",
+  "settings.factLinks": "Share confirmed facts (experimental)",
+  "settings.help.factLinks": "Topics share only facts the user confirmed (figures, decisions, file locations), with version and source; when one changes or is withdrawn, topics that used it are told. Off by default; takes effect after DSH restarts.",
+  "settings.factExtraction": "Record facts automatically (experimental)",
+  "settings.help.factExtraction": "With shared facts on, one small model call after each turn records facts the topic session left out; again only facts the user confirmed are shared. Off by default; takes effect after DSH restarts.",
   "settings.help.notices": "Show notices from TheOne's author (new versions, important reminders). TheOne only reads one notice file from yulid.org and sends none of your data.",
   "notice.label": "Notice",
   "notice.more": "Read more",
@@ -1275,7 +1285,7 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
     const groups = [
       ["models", ["workerProvider", "workerModel", "routerMode"]],
       ["history", ["historyCatalog", "catalogIntervalMs"]],
-      ["linkage", ["linkScope", "routeNotice"]],
+      ["linkage", ["linkScope", "routeNotice", "factLinks", "factExtraction"]],
       ["limits", ["maxDescriptorChars", "maxResponseChars"]],
       ["storage", ["contextsPath", "databasePath", "gatewayKey"]],
       ["other", ["notices"]]
@@ -1335,7 +1345,7 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
         { ...props, value, required: field === "workerModel" && !!draft.workerProvider, onChange: (event) => selectValue(event.target.value) },
         ...choices.map((choice) => (0, import_react.createElement)("option", { key: choice.value, value: choice.value }, choice.label))
       );
-      if (field === "historyCatalog" || field === "notices") return select(String(draft[field]), [{ value: "true", label: t2("settings.on") }, { value: "false", label: t2("settings.off") }], (v) => change(field, v === "true"));
+      if (field === "historyCatalog" || field === "notices" || field === "factLinks" || field === "factExtraction") return select(String(draft[field]), [{ value: "true", label: t2("settings.on") }, { value: "false", label: t2("settings.off") }], (v) => change(field, v === "true"));
       if (field === "linkScope" || field === "routeNotice") {
         const values = field === "linkScope" ? ["auto", "workspace", "off"] : ["switch", "hidden", "all"];
         return select(draft[field], values.map((value) => ({ value, label: t2(`settings.${field === "linkScope" ? "scope" : "notice"}.${value}`) })), (v) => change(field, v));

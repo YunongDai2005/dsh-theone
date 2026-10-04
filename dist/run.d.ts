@@ -36,6 +36,8 @@ export declare class WorkerRun {
     /** Related topics whose news this run's briefing carried, and those the Worker then looked up. */
     briefed: string[];
     readonly lookedUp: Set<string>;
+    /** The Worker recorded facts itself this run, so no extraction is needed afterwards. */
+    recordedFacts: boolean;
     start(contexts: UserMessage[], input: UserMessage): void;
     /** Steering sent to the main chat during the reply reaches the Worker at its next step. */
     get canForward(): boolean;

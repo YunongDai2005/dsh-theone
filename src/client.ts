@@ -552,7 +552,7 @@ export function apply(ctx: Context) {
     const groups = [
       ['models', ['workerProvider', 'workerModel', 'routerMode']],
       ['history', ['historyCatalog', 'catalogIntervalMs']],
-      ['linkage', ['linkScope', 'routeNotice']],
+      ['linkage', ['linkScope', 'routeNotice', 'factLinks', 'factExtraction']],
       ['limits', ['maxDescriptorChars', 'maxResponseChars']],
       ['storage', ['contextsPath', 'databasePath', 'gatewayKey']],
       ['other', ['notices']],
@@ -595,7 +595,7 @@ export function apply(ctx: Context) {
       const select = (value: string, choices: { value: string; label: string }[], selectValue: (value: string) => void) =>
         h('select', { ...props, value, required: field === 'workerModel' && !!draft.workerProvider, onChange: (event: React.ChangeEvent<HTMLSelectElement>) => selectValue(event.target.value) },
           ...choices.map(choice => h('option', { key: choice.value, value: choice.value }, choice.label)))
-      if (field === 'historyCatalog' || field === 'notices') return select(String(draft[field]), [{ value: 'true', label: t('settings.on') }, { value: 'false', label: t('settings.off') }], v => change(field, v === 'true'))
+      if (field === 'historyCatalog' || field === 'notices' || field === 'factLinks' || field === 'factExtraction') return select(String(draft[field]), [{ value: 'true', label: t('settings.on') }, { value: 'false', label: t('settings.off') }], v => change(field, v === 'true'))
       if (field === 'linkScope' || field === 'routeNotice') {
         const values = field === 'linkScope' ? ['auto', 'workspace', 'off'] : ['switch', 'hidden', 'all']
         return select(draft[field], values.map(value => ({ value, label: t(`settings.${field === 'linkScope' ? 'scope' : 'notice'}.${value}` as TheOneLocaleKey) })), v => change(field, v as never))

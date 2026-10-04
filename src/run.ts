@@ -77,6 +77,8 @@ export class WorkerRun {
   /** Related topics whose news this run's briefing carried, and those the Worker then looked up. */
   briefed: string[] = []
   readonly lookedUp = new Set<string>()
+  /** The Worker recorded facts itself this run, so no extraction is needed afterwards. */
+  recordedFacts = false
 
   start(contexts: UserMessage[], input: UserMessage): void {
     for (const context of contexts) this.worker.inject(context)

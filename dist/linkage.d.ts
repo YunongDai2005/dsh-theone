@@ -23,6 +23,12 @@ export declare const LINK_SIGNAL: {
  * project directory, shared entities) and grows with use; the user's links always count.
  */
 export declare function relatedTopics(store: ContextStore, contextId: string, scope: LinkScope, limit?: number, now?: number): RelatedTopic[];
+/**
+ * Whether `source` may share with `reader` right now, read from current settings every time: never
+ * when linking is off, a private topic, or a pair the user kept apart; within the same workspace only
+ * (unless linked by hand) in workspace scope. Undefined means allowed; otherwise the reason.
+ */
+export declare function mayShare(store: ContextStore, scope: LinkScope, source: string, reader: string): 'off' | 'unknown' | 'private' | 'workspace' | undefined;
 /** When a topic last changed in a way another topic should hear about. */
 export declare function lastChange(store: ContextStore, contextId: string): number;
 /**
@@ -46,4 +52,7 @@ export declare function buildBriefing(store: ContextStore, input: {
     recent: RecentMessage[];
     now?: number;
     budget?: number;
+    /** Changes to facts this topic used before, and confirmed facts this request uses (shared facts only). */
+    notices?: string[];
+    facts?: string[];
 }): Briefing | undefined;

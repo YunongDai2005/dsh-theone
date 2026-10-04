@@ -2,6 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
+import { FACT_KINDS, FACT_LIMITS, factKey, safe } from "./facts.js";
 /** Terms learned from corrections fade by half every 30 days unless they are confirmed again. */
 export const TERM_HALF_LIFE_MS = 30 * 86400000;
 /** A whole session attached by hand counts as reviewed from its first event to its last. */
@@ -96,6 +97,26 @@ export class ContextStore {
       CREATE TABLE IF NOT EXISTS dismissed_notices (id TEXT PRIMARY KEY, dismissed_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS route_details (
         message_id TEXT PRIMARY KEY, excerpt TEXT NOT NULL, receipt TEXT, corrected_to TEXT, corrected_at INTEGER
+      );
+      CREATE TABLE IF NOT EXISTS facts (
+        id TEXT PRIMARY KEY, context_id TEXT NOT NULL, key TEXT NOT NULL, label TEXT NOT NULL,
+        aliases TEXT NOT NULL DEFAULT '[]', kind TEXT NOT NULL CHECK (kind IN ('fact', 'decision', 'artifact')),
+        current_version INTEGER NOT NULL, merged_from TEXT, deleted_at INTEGER, last_used_at INTEGER,
+        UNIQUE (context_id, key)
+      );
+      CREATE TABLE IF NOT EXISTS fact_versions (
+        fact_id TEXT NOT NULL REFERENCES facts(id), version INTEGER NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('confirmed', 'proposed', 'retracted')),
+        value TEXT, evidence TEXT NOT NULL, origin TEXT NOT NULL CHECK (origin IN ('worker', 'extractor')),
+        created_at INTEGER NOT NULL, PRIMARY KEY (fact_id, version)
+      );
+      CREATE TABLE IF NOT EXISTS fact_deliveries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, context_id TEXT NOT NULL, fact_id TEXT NOT NULL, version INTEGER NOT NULL,
+        input_id TEXT, via TEXT NOT NULL CHECK (via IN ('route', 'lookup', 'notice')), at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS fact_dependencies (
+        context_id TEXT NOT NULL, fact_id TEXT NOT NULL, version_seen INTEGER NOT NULL,
+        first_at INTEGER NOT NULL, last_at INTEGER NOT NULL, PRIMARY KEY (context_id, fact_id)
       );
     `);
     }
@@ -652,6 +673,7 @@ export class ContextStore {
                 if (link.weight > 0)
                     this.learnLink(targetId, other, link.weight);
             }
+            this.mergeFacts(sourceId, targetId, source.title);
             this.purge(sourceId);
             this.db.exec('COMMIT');
         }
@@ -683,7 +705,181 @@ export class ContextStore {
         this.db.prepare('DELETE FROM topic_links WHERE a = ? OR b = ?').run(contextId, contextId);
         this.db.prepare('DELETE FROM briefing_seen WHERE reader = ? OR source = ?').run(contextId, contextId);
         this.db.prepare('UPDATE route_details SET corrected_to = NULL, corrected_at = NULL WHERE corrected_to = ?').run(contextId);
+        this.purgeFacts(contextId);
         this.db.prepare('DELETE FROM contexts WHERE id = ?').run(contextId);
+    }
+    // ---- Facts: a topic's settled items, versioned, with evidence. Runs inside the caller's transaction where one is open.
+    factQuery(where) {
+        return `SELECT f.*, v.status, v.value, v.evidence, v.origin, v.created_at FROM facts f
+      LEFT JOIN fact_versions v ON v.fact_id = f.id AND v.version = f.current_version WHERE ${where}`;
+    }
+    factFrom(row) {
+        return { id: String(row.id), contextId: String(row.context_id), key: String(row.key), label: String(row.label),
+            aliases: JSON.parse(String(row.aliases)), kind: String(row.kind), version: Number(row.current_version),
+            status: (row.status ? String(row.status) : 'retracted'), value: row.value == null ? null : String(row.value),
+            evidence: row.evidence ? JSON.parse(String(row.evidence)) : { sessionId: '', seq: null, speaker: 'unverified', quote: '' },
+            origin: (row.origin ? String(row.origin) : 'worker'), createdAt: Number(row.created_at ?? 0),
+            ...(row.deleted_at != null ? { deletedAt: Number(row.deleted_at) } : {}), ...(row.merged_from ? { mergedFrom: String(row.merged_from) } : {}) };
+    }
+    /** A fact's current state, also when its topic was deleted (then it has no value). */
+    fact(factId) {
+        const row = this.db.prepare(this.factQuery('f.id = ?')).get(factId);
+        return row && { ...this.factFrom(row), ...(row.last_used_at != null ? { lastUsedAt: Number(row.last_used_at) } : {}) };
+    }
+    /** One earlier version of a fact. */
+    factVersion(factId, version) {
+        const row = this.db.prepare(`SELECT f.*, v.status, v.value, v.evidence, v.origin, v.created_at, v.version AS current_version FROM facts f
+      JOIN fact_versions v ON v.fact_id = f.id WHERE f.id = ? AND v.version = ?`).get(factId, version);
+        return row && this.factFrom(row);
+    }
+    /** A topic's live facts (proposals included, retracted ones left out), most recently used first. */
+    facts(contextId) {
+        return this.db.prepare(this.factQuery("f.context_id = ? AND f.deleted_at IS NULL AND v.status != 'retracted' ORDER BY COALESCE(f.last_used_at, v.created_at) DESC")).all(contextId)
+            .map(row => this.factFrom(row));
+    }
+    /** Confirmed facts of every other live topic, the pool other topics may draw from. */
+    sharedFacts(excludeContextId) {
+        return this.db.prepare(this.factQuery("f.deleted_at IS NULL AND v.status = 'confirmed' AND f.context_id != ?")).all(excludeContextId ?? '')
+            .map(row => ({ ...this.factFrom(row), ...(row.last_used_at != null ? { lastUsedAt: Number(row.last_used_at) } : {}) }));
+    }
+    factByName(contextId, key) {
+        const exact = this.db.prepare(this.factQuery('f.context_id = ? AND f.key = ? AND f.deleted_at IS NULL')).get(contextId, key);
+        if (exact)
+            return this.factFrom(exact);
+        return this.facts(contextId).find(fact => fact.aliases.includes(key))
+            ?? this.db.prepare(this.factQuery("f.context_id = ? AND f.deleted_at IS NULL AND v.status = 'retracted'")).all(contextId)
+                .map(row => this.factFrom(row)).find(fact => fact.aliases.includes(key));
+    }
+    /** Refuse a write that is older than what the fact already holds. */
+    staleWrite(current, evidence, expectedVersion) {
+        if (expectedVersion !== undefined && expectedVersion !== current.version)
+            return 'stale';
+        // Within one session, evidence only moves forward: a slow write from an earlier turn cannot win.
+        if (current.evidence.sessionId === evidence.sessionId && current.evidence.seq != null && evidence.seq != null && evidence.seq < current.evidence.seq)
+            return 'older-evidence';
+        return undefined;
+    }
+    inTransaction(work) {
+        this.db.exec('BEGIN IMMEDIATE');
+        try {
+            const result = work();
+            this.db.exec('COMMIT');
+            return result;
+        }
+        catch (error) {
+            this.db.exec('ROLLBACK');
+            throw error;
+        }
+    }
+    addVersion(factId, version, status, value, evidence, origin, now) {
+        this.db.prepare('INSERT INTO fact_versions VALUES (?, ?, ?, ?, ?, ?, ?)').run(factId, version, status, value, JSON.stringify(evidence), origin, now);
+        this.db.prepare('UPDATE facts SET current_version = ? WHERE id = ?').run(version, factId);
+    }
+    /**
+     * Record a fact or a new value of it. Same fact means the given id, or the same folded name or alias
+     * within the topic; names are never matched loosely. The write is refused when it is stale, when its
+     * evidence is older than the current version's, or when a proposal would replace a confirmed value.
+     */
+    recordFact(contextId, write, now = Date.now()) {
+        this.context(contextId);
+        const label = safe(write.label, FACT_LIMITS.label), key = factKey(label), value = safe(write.value, FACT_LIMITS.value);
+        if (!key || !value || !FACT_KINDS.includes(write.kind))
+            return { outcome: 'rejected', reason: 'invalid' };
+        const evidence = { ...write.evidence, quote: safe(write.evidence.quote, FACT_LIMITS.quote) };
+        const aliasKeys = (names) => [...new Set(names.map(name => factKey(safe(name, FACT_LIMITS.alias))).filter(alias => alias && alias !== key))].slice(0, FACT_LIMITS.aliases);
+        return this.inTransaction(() => {
+            const current = write.factId ? this.fact(write.factId) : this.factByName(contextId, key);
+            if (write.factId && (!current || current.contextId !== contextId || current.deletedAt !== undefined))
+                return { outcome: 'rejected', reason: 'unknown-fact' };
+            if (!current) {
+                if (this.db.prepare('SELECT 1 FROM facts WHERE context_id = ? AND key = ?').get(contextId, key))
+                    return { outcome: 'rejected', reason: 'invalid' };
+                const id = 'fact_' + randomUUID().replaceAll('-', '').slice(0, 20);
+                this.db.prepare('INSERT INTO facts (id, context_id, key, label, aliases, kind, current_version) VALUES (?, ?, ?, ?, ?, ?, 0)')
+                    .run(id, contextId, key, label, JSON.stringify(aliasKeys(write.aliases ?? [])), write.kind);
+                this.addVersion(id, 1, write.status, value, evidence, write.origin, now);
+                return { outcome: 'created', fact: this.fact(id) };
+            }
+            const refused = this.staleWrite(current, evidence, write.expectedVersion)
+                ?? (current.status === 'confirmed' && write.status === 'proposed' ? 'keeps-confirmed' : undefined);
+            if (refused)
+                return { outcome: 'rejected', reason: refused, fact: current };
+            const aliases = [...new Set([...current.aliases, ...aliasKeys([...(write.aliases ?? []), ...(key !== current.key ? [label] : [])])])]
+                .filter(alias => alias !== current.key).slice(0, FACT_LIMITS.aliases);
+            this.db.prepare('UPDATE facts SET aliases = ? WHERE id = ?').run(JSON.stringify(aliases), current.id);
+            if (current.status === write.status && current.value === value)
+                return { outcome: 'unchanged', fact: this.fact(current.id) };
+            this.addVersion(current.id, current.version + 1, write.status, value, evidence, write.origin, now);
+            return { outcome: 'updated', fact: this.fact(current.id), previous: current };
+        });
+    }
+    /** The user said a fact no longer holds (or is not decided yet): a new version without a value. */
+    retractFact(contextId, factId, evidence, origin, expectedVersion, now = Date.now()) {
+        return this.inTransaction(() => {
+            const current = this.fact(factId);
+            if (!current || current.contextId !== contextId || current.deletedAt !== undefined)
+                return { outcome: 'rejected', reason: 'unknown-fact' };
+            const quoted = { ...evidence, quote: safe(evidence.quote, FACT_LIMITS.quote) };
+            const refused = this.staleWrite(current, quoted, expectedVersion);
+            if (refused)
+                return { outcome: 'rejected', reason: refused, fact: current };
+            if (current.status === 'retracted')
+                return { outcome: 'unchanged', fact: current };
+            this.addVersion(current.id, current.version + 1, 'retracted', null, quoted, origin, now);
+            return { outcome: 'retracted', fact: this.fact(current.id), previous: current };
+        });
+    }
+    /** A fact reached a topic (by routing, a lookup or a change notice): log it and note the version seen. */
+    recordDelivery(contextId, fact, via, inputId, now = Date.now()) {
+        this.db.prepare('INSERT INTO fact_deliveries (context_id, fact_id, version, input_id, via, at) VALUES (?, ?, ?, ?, ?, ?)').run(contextId, fact.id, fact.version, inputId ?? null, via, now);
+        this.db.prepare(`INSERT INTO fact_dependencies VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(context_id, fact_id) DO UPDATE SET version_seen = excluded.version_seen, last_at = excluded.last_at`).run(contextId, fact.id, fact.version, now, now);
+        if (via !== 'notice')
+            this.db.prepare('UPDATE facts SET last_used_at = ? WHERE id = ?').run(now, fact.id);
+    }
+    /** The facts a topic has been given, with the version it last saw. */
+    dependencies(contextId) {
+        return this.db.prepare('SELECT fact_id, version_seen FROM fact_dependencies WHERE context_id = ? ORDER BY first_at').all(contextId)
+            .map(row => ({ factId: String(row.fact_id), versionSeen: Number(row.version_seen) }));
+    }
+    forgetDependency(contextId, factId) {
+        this.db.prepare('DELETE FROM fact_dependencies WHERE context_id = ? AND fact_id = ?').run(contextId, factId);
+    }
+    /** Delivery log of a topic, oldest first. */
+    deliveries(contextId) {
+        return this.db.prepare('SELECT * FROM fact_deliveries WHERE context_id = ? ORDER BY id').all(contextId)
+            .map(row => ({ factId: String(row.fact_id), version: Number(row.version), via: String(row.via), ...(row.input_id ? { inputId: String(row.input_id) } : {}) }));
+    }
+    /**
+     * Facts of a merged topic move with their identity, so whoever depends on them keeps doing so. A name
+     * both topics use stays two facts: the incoming one is renamed after its topic; values never merge.
+     */
+    mergeFacts(sourceId, targetId, sourceTitle) {
+        for (const fact of this.db.prepare('SELECT id, key, label FROM facts WHERE context_id = ? AND deleted_at IS NULL').all(sourceId)) {
+            let key = String(fact.key), label = String(fact.label);
+            if (this.db.prepare('SELECT 1 FROM facts WHERE context_id = ? AND key = ?').get(targetId, key)) {
+                label = `${label}（来自 ${sourceTitle}）`.slice(0, FACT_LIMITS.label + 30);
+                key = factKey(label);
+                for (let n = 2; this.db.prepare('SELECT 1 FROM facts WHERE context_id = ? AND key = ?').get(targetId, key); n++)
+                    key = `${factKey(label)} ${n}`;
+            }
+            this.db.prepare('UPDATE facts SET context_id = ?, key = ?, label = ?, merged_from = ? WHERE id = ?').run(targetId, key, label, sourceId, String(fact.id));
+        }
+        this.db.prepare('INSERT OR IGNORE INTO fact_dependencies SELECT ?, fact_id, version_seen, first_at, last_at FROM fact_dependencies WHERE context_id = ?').run(targetId, sourceId);
+        this.db.prepare('DELETE FROM fact_dependencies WHERE context_id = ?').run(sourceId);
+        // A topic does not depend on its own facts.
+        this.db.prepare('DELETE FROM fact_dependencies WHERE context_id = ? AND fact_id IN (SELECT id FROM facts WHERE context_id = ?)').run(targetId, targetId);
+        this.db.prepare('UPDATE fact_deliveries SET context_id = ? WHERE context_id = ?').run(targetId, sourceId);
+    }
+    /**
+     * A deleted topic's facts lose their values and evidence; the identity stays as a tombstone so that
+     * topics which used them can be told once that they are gone. What the topic itself received goes.
+     */
+    purgeFacts(contextId, now = Date.now()) {
+        this.db.prepare('DELETE FROM fact_versions WHERE fact_id IN (SELECT id FROM facts WHERE context_id = ?)').run(contextId);
+        this.db.prepare("UPDATE facts SET deleted_at = ?, aliases = '[]', current_version = 0 WHERE context_id = ? AND deleted_at IS NULL").run(now, contextId);
+        this.db.prepare('DELETE FROM fact_dependencies WHERE context_id = ?').run(contextId);
+        this.db.prepare('DELETE FROM fact_deliveries WHERE context_id = ?').run(contextId);
     }
     /** Notices the user closed; they are not shown again on any browser. */
     dismissNotice(id, now = Date.now()) {

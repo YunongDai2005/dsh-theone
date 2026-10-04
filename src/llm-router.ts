@@ -2,6 +2,7 @@ import type LlmRuntime from '@deepseek-ai/dsh-llm'
 import type { ModelSelection } from '@deepseek-ai/dsh-agent'
 import type { ContextDescriptor, Decision } from './types.ts'
 import { newIndependentTopic, referencesHistory, redactRoutingText } from './routing-policy.ts'
+import { FACT_LIMITS, type FactCandidate } from './facts.ts'
 export { redactRoutingText } from './routing-policy.ts'
 
 export interface RecentMessage { role: 'user' | 'assistant'; text: string }
@@ -13,6 +14,8 @@ export interface RoutingInput {
   historyIncomplete?: boolean
   /** Messages the user moved to another topic after routing; similar ones belong there too. */
   corrections?: { text: string; wrongId?: string; rightId: string }[]
+  /** Confirmed facts of other topics this message may use; only with shared facts turned on. */
+  facts?: FactCandidate[]
 }
 export interface RouterUsage { prompt_tokens: number; completion_tokens: number; total_tokens: number; prompt_cache_hit_tokens?: number; prompt_cache_miss_tokens?: number }
 export interface RoutingResult { decision: Decision; model: string; elapsedMs: number; usage?: RouterUsage }
@@ -40,6 +43,13 @@ CLARIFY 仅限：用户明确引用缺失旧聊天（如“继续上次那个”
 输出 JSON：{"action":"EXISTING|CREATE|CLARIFY","contextId":"已有目录ID或null","title":"CREATE时的新话题标题，否则null","question":"CLARIFY时的简短澄清问题，否则null","reason":"不超过120字的判断依据","historyIndependent":"CREATE时为boolean，其他为null","candidateIds":"CLARIFY时真正难以选择的多个目录ID数组，否则空数组","relatedIds":"EXISTING或CREATE时本轮同时用到的其他目录ID数组，否则空数组"}。
 不得编造目录ID。CREATE和CLARIFY的contextId必须为null。`
 
+/** Added to the routing prompt only when facts are offered, so routing is unchanged otherwise. */
+export const FACTS_PROMPT = `
+symbols（可能没有）是其他话题里用户已确认的要点候选（来源话题、名称、值）。本轮请求确实要用到其中哪些，就把它们的 id 放进 imports（最多 ${FACT_LIMITS.imports} 个）；只是看起来相关、实际用不到的不要放。没有就输出空数组。imports 只影响参考资料，不影响话题选择。输出 JSON 时增加字段 "imports": [ids]。`
+
+/** The routing instructions for one request. */
+export const routingPrompt = (payload: object) => 'symbols' in payload && Array.isArray(payload.symbols) && payload.symbols.length ? ROUTING_PROMPT + FACTS_PROMPT : ROUTING_PROMPT
+
 export function routingPayload(input: RoutingInput): Omit<RoutingInput, 'currentId'> & {currentId:string|null} {
   const text = redactRoutingText(input.text).slice(0, 2000)
   const contexts = input.contexts.map(context => ({
@@ -53,7 +63,10 @@ export function routingPayload(input: RoutingInput): Omit<RoutingInput, 'current
   const offered = new Set(input.contexts.map(context => context.id))
   const corrections = (input.corrections ?? []).filter(item => offered.has(item.rightId)).slice(0, 5)
     .map(item => ({ text: redactRoutingText(item.text).slice(0, 200), rightId: item.rightId, ...(item.wrongId && offered.has(item.wrongId) ? { wrongId: item.wrongId } : {}) }))
-  const payload = {text, contexts, currentId:input.currentId ?? null, recent, historyIncomplete: input.historyIncomplete ?? false, ...(corrections.length ? { corrections } : {})}
+  // Candidates arrive within their size budget; names are cleaned again here, as everything sent is.
+  const symbols = (input.facts ?? []).slice(0, FACT_LIMITS.routerItems).map(fact => ({ id: fact.id, topic: redactRoutingText(fact.topic).slice(0, 40),
+    label: redactRoutingText(fact.label).slice(0, FACT_LIMITS.routerLabel), kind: fact.kind, value: redactRoutingText(fact.value).slice(0, FACT_LIMITS.routerValue) }))
+  const payload = {text, contexts, currentId:input.currentId ?? null, recent, historyIncomplete: input.historyIncomplete ?? false, ...(corrections.length ? { corrections } : {}), ...(symbols.length ? { symbols } : {})}
   if ((input.currentId && !input.contexts.some(context=>context.id===input.currentId)) || !text.trim() || JSON.stringify(payload).length > 24000) throw new RouterFailure('ROUTER_INPUT_INVALID')
   return payload
 }
@@ -71,6 +84,10 @@ export function validateRoutingDecision(value: unknown, input: RoutingInput): De
   const reason = row.reason.slice(0, 240)
   if (row.action !== 'CREATE' && row.historyIndependent != null) return fail()
   if (row.relatedIds != null && (!Array.isArray(row.relatedIds) || row.relatedIds.some(id => typeof id !== 'string'))) return fail()
+  // Facts it uses: only offered ids count. A malformed list is ignored rather than failing the route.
+  const offeredFacts = new Set((input.facts ?? []).map(fact => fact.id))
+  const imported = Array.isArray(row.imports) ? [...new Set(row.imports.filter((id): id is string => typeof id === 'string' && offeredFacts.has(id)))].slice(0, FACT_LIMITS.imports) : []
+  const imports = imported.length ? { imports: imported } : {}
   // Other topics the request draws on; ids outside the offered catalog are dropped, not trusted.
   const related = (chosen?: string) => {
     const ids = [...new Set((row.relatedIds as string[] | undefined) ?? [])].filter(id => id !== chosen && input.contexts.some(context => context.id === id)).slice(0, 3)
@@ -79,7 +96,7 @@ export function validateRoutingDecision(value: unknown, input: RoutingInput): De
   if (row.action==='EXISTING') {
     if (typeof row.contextId !== 'string' || !input.contexts.some(context => context.id===row.contextId)) return fail()
     if (row.title!=null || row.question!=null) return fail()
-    return {action:!input.currentId?'MOUNT':row.contextId===input.currentId?'KEEP':'SWAP',contextId:row.contextId,reason,...related(row.contextId)}
+    return {action:!input.currentId?'MOUNT':row.contextId===input.currentId?'KEEP':'SWAP',contextId:row.contextId,reason,...related(row.contextId),...imports}
   }
   if (row.contextId!=null) return fail()
   if (row.action==='CREATE') {
@@ -87,7 +104,7 @@ export function validateRoutingDecision(value: unknown, input: RoutingInput): De
     const title=row.title.trim()
     if (input.contexts.some(context=>context.title.toLowerCase()===title.toLowerCase())) return fail()
     if (row.historyIndependent != null && typeof row.historyIndependent !== 'boolean') return fail()
-    return {action:'CREATE',title,reason,...related(),
+    return {action:'CREATE',title,reason,...related(),...imports,
       ...(!referencesHistory(input.text) ? { historyIndependent: true } : typeof row.historyIndependent === 'boolean' ? {historyIndependent: row.historyIndependent} : {})}
   }
   if (row.action==='CLARIFY') {
@@ -134,7 +151,7 @@ export class DshRouter implements RoutingRouter {
         ...(offEffort ? { reasoningEffort: offEffort } : {}) }, bounded)
       bounded.throwIfAborted()
       let output = '', stopped = false
-      for await (const chunk of call.stream({ ...call.config, system: ROUTING_PROMPT,
+      for await (const chunk of call.stream({ ...call.config, system: routingPrompt(payload),
         messages: [{ role: 'user', content: [{ type: 'text', text: JSON.stringify(payload) }] }], signal: bounded })) {
         bounded.throwIfAborted()
         if (stopped) throw new RouterFailure('ROUTER_RESPONSE_INCOMPLETE')

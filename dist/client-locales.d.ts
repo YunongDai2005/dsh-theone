@@ -7,6 +7,10 @@ export declare const zh: {
     readonly retry: "重试";
     readonly 'settings.other': "其他";
     readonly 'settings.notices': "显示公告";
+    readonly 'settings.factLinks': "共享已确认的要点（实验）";
+    readonly 'settings.help.factLinks': "话题之间只共享用户亲自确认过的要点（数字、决定、文件位置），带版本和出处；要点改了或撤回了，用到它的话题会收到提示。默认关闭，重启 DSH 后生效。";
+    readonly 'settings.factExtraction': "自动记录要点（实验）";
+    readonly 'settings.help.factExtraction': "开启「共享已确认的要点」后，每轮结束多用一次小模型调用，补记后台会话没记下的要点；同样只有用户确认过的才会共享。默认关闭，重启 DSH 后生效。";
     readonly 'settings.help.notices': "显示 TheOne 作者发布的公告（新版本、重要提醒等）。只从 yulid.org 读取一个公告文件，不发送任何你的数据。";
     readonly 'notice.label': "公告";
     readonly 'notice.more': "查看详情";

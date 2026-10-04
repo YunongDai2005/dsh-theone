@@ -31,6 +31,10 @@ export interface Config {
     routeNotice?: 'hidden' | 'switch' | 'all';
     /** Show notices the maintainer publishes (read from a static file; nothing is sent). */
     notices?: boolean;
+    /** Experimental: topics share confirmed facts (a figure, a decision) with evidence and versions. */
+    factLinks?: boolean;
+    /** With factLinks: after each turn, a small model call proposes facts the Worker did not record. */
+    factExtraction?: boolean;
     /** Where notices are read from; for testing. */
     noticeUrl?: string;
 }
@@ -148,6 +152,16 @@ export default class TheOne extends Service {
      * Cross-topic reference for a Worker about to start: the recent main chat after a topic switch,
      * and the news of related topics (plus those the request itself named). Undefined when empty.
      */
+    /** Confirmed facts of other topics this message might use, best first, within budget. Ranking only. */
+    private factCandidates;
+    /**
+     * What a topic is told about facts before its Worker answers: changes to facts it used before
+     * (also on a plain "go on") and the facts this request imports. Every fact is checked here, against
+     * the topic finally chosen and the settings now; nothing is recorded until the briefing is sent.
+     */
+    private factDelivery;
+    /** The topic's own recorded facts, with ids and versions, for its Worker's descriptor. */
+    private ownFacts;
     private briefingFor;
     /**
      * No one views a Worker session, so its approval questions would fail closed. Ask in the
@@ -165,6 +179,8 @@ export default class TheOne extends Service {
     private forwardQuestions;
     /** Capability is scoped to the exact owned Worker; the model cannot select another Context. */
     private registerWorkerTools;
+    /** Recording facts with evidence, and looking up other topics' confirmed facts (shared facts only). */
+    private registerFactTools;
     /** Mirror the routed Worker's steps into the main chat; tools execute exclusively in the Worker. */
     answer(options: GenerateOptions): AsyncIterable<StreamChunk>;
     /** The message answered just before `inputId` in this main chat, with the topic it went to. */
@@ -173,6 +189,13 @@ export default class TheOne extends Service {
     private reroute;
     /** Learning from corrections in flight; tests and shutdown can wait for it. */
     learning: Promise<void>;
+    /** Fact extractions in flight, one queue per topic so they commit in turn order. */
+    private readonly extractions;
+    /** All extractions in flight; tests and shutdown can wait for it. */
+    get extracting(): Promise<void>;
+    /** Queue an extraction of the turn that just ended in `worker`'s topic. */
+    private queueExtraction;
+    private extractFacts;
     /**
      * The user moved a message to another topic: remember it, and teach both topics. The right topic
      * gains the message's distinctive terms and the wrong one loses them; `weight` is lower for

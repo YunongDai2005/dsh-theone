@@ -81,6 +81,8 @@ Right-click the TheOne button in the sidebar and choose **Settings**. Changes ap
 | --- | --- |
 | Topic notices | How main chat shows topic changes: hidden, one line only when the topic changes (default), or on every message with the reason |
 | Linking scope | Learn automatically (default), same workspace only, or off |
+| Share confirmed facts (experimental) | Off by default. Topics share only facts the user confirmed (a figure, a decision, where a file is), with version and source; a topic that used one is told when it changes or is withdrawn. Applies after a DSH restart |
+| Record facts automatically (experimental) | Off by default. With shared facts on, one small model call after each turn records facts the topic session left out; only user-confirmed ones are shared |
 | Model | Follow DSH (default) or pin the background model from any model configured in DSH; a pinned model takes precedence over main chat's selector |
 | Routing | LLM decision (default) or rule-based |
 | History catalog | On/off and rescan interval |

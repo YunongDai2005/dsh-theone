@@ -29,6 +29,8 @@ export interface Decision {
   historyIndependent?: boolean
   /** Other topics this request also draws on; the routed topic does the work. */
   relatedIds?: string[]
+  /** Confirmed facts of other topics this request uses (ids from the offered candidates). */
+  imports?: string[]
   /** The user said message `correctionOf` went to the wrong topic; this route redoes it here. */
   correctionOf?: string
 }
