@@ -49,6 +49,20 @@ python eval/baselines.py eval/data/interleave-v0/sessions.jsonl
 python eval/score.py eval/data/interleave-v0/sessions.jsonl eval/data/interleave-v0/predictions/*.jsonl
 ```
 
+Any OpenAI-compatible provider works as well (an aggregator, a proxy, a local server): give its
+address, key and model name instead of `DEEPSEEK_API_KEY`, and pass the same `--model` to every
+command so the runs are labelled by it:
+
+```sh
+export OPENAI_BASE_URL=https://provider.example/v1     # the address the provider documents, usually ending in /v1
+export OPENAI_API_KEY=sk-...
+node eval/generate.mjs --sessions 50 --model their-model-name
+node eval/run-router.mjs --mode closed --policy llm --model their-model-name
+```
+
+`EVAL_EXTRA_BODY='{"…": …}'` adds provider-specific fields to every request, for example to turn off
+a model's thinking.
+
 Try everything first with `--dry-run`: a fake model stands in, nothing is spent, and the output goes
 to `eval/data/interleave-v0-dry`. Every model answer is cached in `eval/.cache`, so a rerun or a crash
 halfway costs nothing twice. `--model deepseek-v4-pro` switches model; `EVAL_PRICES="in,cached,out"`

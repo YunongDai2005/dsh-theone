@@ -68,3 +68,38 @@ test('a malformed answer is asked again and never cached; a good one is served f
     assert.equal(client.usage.cached, 1)
   } finally { await rm(root, { recursive: true, force: true }) }
 })
+
+test('an OpenAI-compatible endpoint works too: chat/completions, bearer key, usage with cached tokens', async () => {
+  const { createServer } = await import('node:http')
+  const answer = (await import(fake)).default
+  const seen = []
+  const server = createServer(async (request, response) => {
+    let raw = ''
+    for await (const part of request) raw += part
+    const body = JSON.parse(raw)
+    seen.push({ url: request.url, auth: request.headers.authorization, body })
+    const [system, user] = body.messages
+    const text = await answer({ system: system.content, user: user.content, tag: system.content.includes('label which work thread') ? 'judge' : system.content.includes('design realistic test data') ? 'spec' : 'render' })
+    response.setHeader('content-type', 'application/json')
+    response.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content: text } }], usage: { prompt_tokens: 1000, completion_tokens: 100, prompt_tokens_details: { cached_tokens: 600 } } }))
+  })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  const saved = { ...process.env }
+  Object.assign(process.env, { OPENAI_API_KEY: 'test-key', OPENAI_BASE_URL: `http://127.0.0.1:${server.address().port}/v1/`, EVAL_EXTRA_BODY: '{"stream":false}' })
+  delete process.env.DEEPSEEK_API_KEY
+  try {
+    const client = await createClient({ model: 'some-model' })
+    const sessions = await generate({ sessions: 1, seed: 5, client })
+    assert.equal(sessions.length, 1)
+    assert.ok(seen.length > 3)
+    assert.ok(seen.every(call => call.url === '/v1/chat/completions' && call.auth === 'Bearer test-key'))
+    assert.ok(seen.every(call => call.body.model === 'some-model' && call.body.messages[0].role === 'system' && call.body.stream === false && !('thinking' in call.body)))
+    assert.equal(client.usage.input, seen.length * 1000)
+    assert.equal(client.usage.cacheHit, seen.length * 600)
+    // Without a model name an OpenAI-compatible provider is refused up front.
+    await assert.rejects(createClient({}), /--model/)
+  } finally {
+    process.env = saved
+    server.close()
+  }
+})
