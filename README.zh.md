@@ -18,18 +18,10 @@
 
 **TheOne 把这些都交给它。** 你只管在一个主聊天里说话：
 
-```text
-你：Qwen 在 9070 XT 上跑 FP8 还是报错
-    → Qwen / RX 9070 XT
-你：顺便把论文第三章的消融表补上
-    → 视频注意力论文
-你：把刚才 Qwen 的测速结果也放进去
-    → 视频注意力论文 · 参考：Qwen / RX 9070 XT
-你：分错了，是显卡那个的
-    → Qwen / RX 9070 XT        （上一条交给它重新处理，以后也记住了）
-```
-
-<sub>示意。默认只在切换话题时显示一行提示。</sub>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/YunongDai2005/dsh-theone/main/docs/images/theone-architecture-zh-dark.svg">
+  <img alt="TheOne 的结构：主聊天把每条消息交给分配话题，送到对应的后台会话，结果实时回到主聊天；话题目录保存进展、约束和关联" src="https://raw.githubusercontent.com/YunongDai2005/dsh-theone/main/docs/images/theone-architecture-zh-light.svg" width="100%">
+</picture>
 
 每件事都有自己的后台会话，在里面推理、调用工具、压缩上下文；你看到的始终是一个普通的对话。
 

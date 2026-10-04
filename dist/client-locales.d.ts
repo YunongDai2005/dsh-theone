@@ -39,6 +39,8 @@ export declare const zh: {
     readonly 'update.busy': "有回复正在进行，等它结束后再点更新。";
     readonly 'update.tooNew': "DSH 的安全策略只允许安装发布满 24 小时的版本，这一版还太新。过一阵再点一次即可。";
     readonly 'update.network': "连不上下载源，请检查网络后点击重试。";
+    readonly 'update.otherAge': "pnpm 拒绝安装：{names} 也是发布不满 24 小时的版本，不归 TheOne 放行。等它满 24 小时后再点一次。";
+    readonly 'update.ageStill': "已为 TheOne 放行，pnpm 仍然拒绝：{detail}。完整日志在 DSH 配置目录的 .plugin-manager/logs 里。";
     readonly 'update.failed': "更新失败";
     readonly 'update.hint': "当前 {current}，可更新到 {latest}。点击一键更新，不用重启 DSH。";
     readonly 'update.manualHint': "当前 {current}，最新 {latest}。这份插件不是从 GitHub 或 npm 安装的，请在「插件」页面重新安装。";

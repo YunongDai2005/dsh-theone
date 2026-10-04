@@ -12,8 +12,10 @@ export interface UpdateStatus {
     source: UpdateSource;
     /** installing → reloading (TheOne restarts itself; DSH keeps running), restart (applies after DSH restarts) or failed. */
     state?: 'installing' | 'reloading' | 'restart' | 'failed';
-    /** Why it failed: MINIMUM_RELEASE_AGE, NETWORK, or the plugin manager's own code. */
+    /** Why it failed: MINIMUM_RELEASE_AGE, OTHER_RELEASE_AGE (another package is too new), NETWORK, or the plugin manager's own code. */
     error?: string;
+    /** pnpm's own words about the failure, or the packages it refused. */
+    detail?: string;
     /** A newer npm version that pnpm will accept only once it is a day old, and when that is. */
     waiting?: {
         version: string;
@@ -31,6 +33,11 @@ export declare function releaseAgeExemptions(text: string): string[];
  * kept as it was. Throws for a layout it does not recognise rather than guess.
  */
 export declare function withReleaseAgeExemption(text: string, name?: string): string;
+/**
+ * The packages pnpm refused for being too new, as `name@version`, read from its output
+ * ("dsh-theone@0.3.13 was published at …").
+ */
+export declare function releaseAgeViolations(output: string): string[];
 /**
  * pnpm, which DSH installs plugins with, refuses npm versions published less than a day ago
  * (minimumReleaseAge, a supply-chain safeguard). Updates from npm wait until then.
@@ -66,6 +73,7 @@ export declare class Updater {
     private checked?;
     private state?;
     private error?;
+    private detail?;
     private pending?;
     /**
      * @param workspace - this DSH profile's pnpm-workspace.yaml, where pnpm reads the release-age
@@ -76,6 +84,8 @@ export declare class Updater {
     get exempt(): boolean;
     /** Exempt TheOne, and only TheOne, from pnpm's release-age rule in this profile. */
     allowFresh(): void;
+    /** Add exact `name@version` exemptions too, the form pnpm writes itself; returns whether the file changed. */
+    private exemptExact;
     get source(): UpdateSource;
     /** The latest known status; checks again at most every six hours (or now, when forced). */
     status(force?: boolean): Promise<UpdateStatus>;

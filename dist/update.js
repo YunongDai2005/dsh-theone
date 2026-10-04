@@ -44,6 +44,13 @@ export function withReleaseAgeExemption(text, name = PACKAGE_NAME) {
     return lines.join(newline);
 }
 /**
+ * The packages pnpm refused for being too new, as `name@version`, read from its output
+ * ("dsh-theone@0.3.13 was published at …").
+ */
+export function releaseAgeViolations(output) {
+    return [...new Set([...output.matchAll(/^\s*((?:@[\w.-]+\/)?[\w.-]+@\d[\w.+-]*) was published at/gm)].map(match => match[1]))];
+}
+/**
  * pnpm, which DSH installs plugins with, refuses npm versions published less than a day ago
  * (minimumReleaseAge, a supply-chain safeguard). Updates from npm wait until then.
  */
@@ -75,6 +82,8 @@ export function installSource(spec) {
     return 'other';
 }
 const HOUR = 3600000;
+const installed = (result) => result.application === 'applied' || result.application === 'restart-required';
+const outputOf = (result) => `${result.packageResult?.output ?? ''}\n${result.error?.message ?? ''}`;
 /** Checks for a newer TheOne and installs it through DSH's own plugin manager. */
 export class Updater {
     current;
@@ -85,6 +94,7 @@ export class Updater {
     checked;
     state;
     error;
+    detail;
     pending;
     /**
      * @param workspace - this DSH profile's pnpm-workspace.yaml, where pnpm reads the release-age
@@ -130,6 +140,25 @@ export class Updater {
         if (this.state === 'failed') {
             this.state = undefined;
             this.error = undefined;
+            this.detail = undefined;
+        }
+    }
+    /** Add exact `name@version` exemptions too, the form pnpm writes itself; returns whether the file changed. */
+    exemptExact(entries) {
+        const file = this.workspace();
+        if (!file)
+            return false;
+        try {
+            const text = readFileSync(file, 'utf8');
+            const next = entries.reduce((current, entry) => withReleaseAgeExemption(current, entry), text);
+            if (next === text)
+                return false;
+            writeFileSync(`${file}.theone-tmp`, next, { mode: 0o600 });
+            renameSync(`${file}.theone-tmp`, file);
+            return true;
+        }
+        catch {
+            return false;
         }
     }
     get source() { return installSource(this.spec()); }
@@ -155,9 +184,19 @@ export class Updater {
         const spec = this.source === 'github' ? `github:${REPOSITORY}#${this.checked.sha}` : `${PACKAGE_NAME}@${status.latest}`;
         this.state = 'installing';
         this.error = undefined;
+        this.detail = undefined;
         try {
-            const result = await installer.installBundle(spec, { enabled: true });
-            if (result.application === 'applied' || result.application === 'restart-required') {
+            let result = await installer.installBundle(spec, { enabled: true });
+            let output = outputOf(result);
+            // pnpm also checks the lockfile, where the installed TheOne may itself be under a day old. If an
+            // exempt TheOne is still refused, exempt the exact versions involved, as pnpm does, and try once more.
+            const refused = /MINIMUM_RELEASE_AGE/.test(output) ? releaseAgeViolations(output) : [];
+            if (!installed(result) && this.source === 'npm' && this.exempt && refused.length && refused.every(entry => entry.startsWith(`${PACKAGE_NAME}@`))
+                && this.exemptExact([...refused, `${PACKAGE_NAME}@${this.current}`, `${PACKAGE_NAME}@${status.latest}`])) {
+                result = await installer.installBundle(spec, { enabled: true });
+                output = outputOf(result);
+            }
+            if (installed(result)) {
                 this.state = reload ? 'reloading' : 'restart';
                 reload?.(result.bundle ?? PACKAGE_NAME);
             }
@@ -165,10 +204,12 @@ export class Updater {
                 this.state = 'failed';
                 const error = result.error;
                 // pnpm's own reasons are clearer than the plugin manager's generic failure.
-                const output = `${result.packageResult?.output ?? ''}\n${error?.message ?? ''}`;
-                this.error = /MINIMUM_RELEASE_AGE/.test(output) ? 'MINIMUM_RELEASE_AGE'
+                const violations = /MINIMUM_RELEASE_AGE/.test(output) ? releaseAgeViolations(output) : [];
+                const others = violations.filter(entry => !entry.startsWith(`${PACKAGE_NAME}@`));
+                this.error = others.length ? 'OTHER_RELEASE_AGE' : /MINIMUM_RELEASE_AGE/.test(output) ? 'MINIMUM_RELEASE_AGE'
                     : /UND_ERR|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|ERR_PNPM_META_FETCH_FAIL|network/i.test(output) ? 'NETWORK'
                         : String(error?.code ?? error?.message ?? result.application).slice(0, 120);
+                this.detail = (others.length ? others.join(', ') : output.match(/ERR_PNPM_\w+[^\n]*(?:\n[^\n]+)?/)?.[0] ?? '').trim().slice(0, 300) || undefined;
             }
         }
         catch (error) {
@@ -188,7 +229,8 @@ export class Updater {
         return { current: this.current, ...(latest ? { latest } : {}), available, source, ...waiting,
             ...(source === 'npm' ? { exempt, canExempt: !!this.workspace() } : {}),
             installable: available && (source === 'npm' || (source === 'github' && !!this.checked?.sha)),
-            ...(this.state ? { state: this.state } : {}), ...(this.error ?? this.checked?.error ? { error: this.error ?? this.checked?.error } : {}) };
+            ...(this.state ? { state: this.state } : {}), ...(this.error ?? this.checked?.error ? { error: this.error ?? this.checked?.error } : {}),
+            ...(this.detail ? { detail: this.detail } : {}) };
     }
     async check() {
         const signal = AbortSignal.timeout(10000);

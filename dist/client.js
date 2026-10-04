@@ -123,6 +123,8 @@ var zh = {
   "update.busy": "\u6709\u56DE\u590D\u6B63\u5728\u8FDB\u884C\uFF0C\u7B49\u5B83\u7ED3\u675F\u540E\u518D\u70B9\u66F4\u65B0\u3002",
   "update.tooNew": "DSH \u7684\u5B89\u5168\u7B56\u7565\u53EA\u5141\u8BB8\u5B89\u88C5\u53D1\u5E03\u6EE1 24 \u5C0F\u65F6\u7684\u7248\u672C\uFF0C\u8FD9\u4E00\u7248\u8FD8\u592A\u65B0\u3002\u8FC7\u4E00\u9635\u518D\u70B9\u4E00\u6B21\u5373\u53EF\u3002",
   "update.network": "\u8FDE\u4E0D\u4E0A\u4E0B\u8F7D\u6E90\uFF0C\u8BF7\u68C0\u67E5\u7F51\u7EDC\u540E\u70B9\u51FB\u91CD\u8BD5\u3002",
+  "update.otherAge": "pnpm \u62D2\u7EDD\u5B89\u88C5\uFF1A{names} \u4E5F\u662F\u53D1\u5E03\u4E0D\u6EE1 24 \u5C0F\u65F6\u7684\u7248\u672C\uFF0C\u4E0D\u5F52 TheOne \u653E\u884C\u3002\u7B49\u5B83\u6EE1 24 \u5C0F\u65F6\u540E\u518D\u70B9\u4E00\u6B21\u3002",
+  "update.ageStill": "\u5DF2\u4E3A TheOne \u653E\u884C\uFF0Cpnpm \u4ECD\u7136\u62D2\u7EDD\uFF1A{detail}\u3002\u5B8C\u6574\u65E5\u5FD7\u5728 DSH \u914D\u7F6E\u76EE\u5F55\u7684 .plugin-manager/logs \u91CC\u3002",
   "update.failed": "\u66F4\u65B0\u5931\u8D25",
   "update.hint": "\u5F53\u524D {current}\uFF0C\u53EF\u66F4\u65B0\u5230 {latest}\u3002\u70B9\u51FB\u4E00\u952E\u66F4\u65B0\uFF0C\u4E0D\u7528\u91CD\u542F DSH\u3002",
   "update.manualHint": "\u5F53\u524D {current}\uFF0C\u6700\u65B0 {latest}\u3002\u8FD9\u4EFD\u63D2\u4EF6\u4E0D\u662F\u4ECE GitHub \u6216 npm \u5B89\u88C5\u7684\uFF0C\u8BF7\u5728\u300C\u63D2\u4EF6\u300D\u9875\u9762\u91CD\u65B0\u5B89\u88C5\u3002",
@@ -332,6 +334,8 @@ var en = {
   "update.busy": "A reply is in progress. Update once it finishes.",
   "update.tooNew": "DSH only installs versions published at least 24 hours ago, as a safety policy, and this one is newer. Try again later.",
   "update.network": "Could not reach the download source. Check the network and click to retry.",
+  "update.otherAge": "pnpm refused: {names} is also less than 24 hours old, and only TheOne is exempted. Try again once it is a day old.",
+  "update.ageStill": "TheOne is exempted, but pnpm still refused: {detail}. The full log is in .plugin-manager/logs in the DSH profile folder.",
   "update.failed": "Update failed",
   "update.hint": "You have {current}; {latest} is available. Click to update without restarting DSH.",
   "update.manualHint": "You have {current}; {latest} is available. This copy was not installed from GitHub or npm, so reinstall it from the Plugins page.",
@@ -598,7 +602,7 @@ function apply(ctx) {
         cache: "no-store",
         ...body ? { headers: { "content-type": "application/json" }, body: JSON.stringify(body) } : {}
       });
-      if (response.ok || response.status === 409) setUpdate(await response.json());
+      if (response.ok || response.status === 409 || response.status === 400) setUpdate(await response.json());
       if (update?.state === "reloading") void awaitReload(update.current);
     } catch {
     }
@@ -715,13 +719,13 @@ function apply(ctx) {
     const waiting = !!status?.waiting && !status.available && !status.state;
     if (!status || !status.available && !status.state && !waiting) return null;
     const label = waiting ? t2("update.waiting") : status.state === "installing" ? t2("update.installing") : status.state === "reloading" ? t2("update.reloading") : status.state === "restart" ? t2("update.restart") : status.state === "failed" ? t2("update.failed") : t2("update.available");
-    const hint = waiting ? t2("update.waitingHint", { latest: status.waiting.version }) : status.error === "GATEWAY_BUSY" ? t2("update.busy") : status.state === "reloading" ? t2("update.reloadingHint") : status.state === "restart" ? t2("update.restartHint") : status.state === "failed" ? status.error === "MINIMUM_RELEASE_AGE" ? t2("update.tooNew") : status.error === "NETWORK" ? t2("update.network") : t2("update.failedHint", { error: status.error ?? "" }) : status.installable ? t2("update.hint", { current: status.current, latest: status.latest ?? "" }) : t2("update.manualHint", { current: status.current, latest: status.latest ?? "" });
+    const hint = waiting ? t2("update.waitingHint", { latest: status.waiting.version }) : status.error === "GATEWAY_BUSY" ? t2("update.busy") : status.state === "reloading" ? t2("update.reloadingHint") : status.state === "restart" ? t2("update.restartHint") : status.state === "failed" ? status.error === "OTHER_RELEASE_AGE" ? t2("update.otherAge", { names: status.detail ?? "" }) : status.error === "MINIMUM_RELEASE_AGE" ? status.exempt ? t2("update.ageStill", { detail: status.detail ?? "" }) : t2("update.tooNew") : status.error === "NETWORK" ? t2("update.network") : t2("update.failedHint", { error: status.detail ?? status.error ?? "" }) : status.installable ? t2("update.hint", { current: status.current, latest: status.latest ?? "" }) : t2("update.manualHint", { current: status.current, latest: status.latest ?? "" });
     const title = `${label} \xB7 ${hint}`;
     const act = (event) => {
       event.preventDefault();
       event.stopPropagation();
       if (status.state === "installing" || status.state === "reloading" || status.state === "restart") return;
-      if (waiting || status.state === "failed" && status.error === "MINIMUM_RELEASE_AGE") {
+      if (!status.exempt && (waiting || status.state === "failed" && status.error === "MINIMUM_RELEASE_AGE")) {
         openReleaseAgeDialog(status);
         return;
       }

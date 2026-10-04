@@ -99,7 +99,8 @@ export function apply(ctx: Context) {
     try {
       const response = await fetch('/api/theone/update', { method, signal: lifetime.signal, cache: 'no-store',
         ...(body ? { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : {}) })
-      if (response.ok || response.status === 409) setUpdate(await response.json() as UpdateStatus)
+      // A refused request (409 busy, 400 the exemption could not be written) still reports the status.
+      if (response.ok || response.status === 409 || response.status === 400) setUpdate(await response.json() as UpdateStatus)
       if (update?.state === 'reloading') void awaitReload(update.current)
     } catch { /* Offline: the button simply stays hidden. */ }
   }
@@ -182,8 +183,10 @@ export function apply(ctx: Context) {
       : status.state === 'failed' ? t('update.failed') : t('update.available')
     const hint = waiting ? t('update.waitingHint', { latest: status.waiting!.version }) : status.error === 'GATEWAY_BUSY' ? t('update.busy') : status.state === 'reloading' ? t('update.reloadingHint')
       : status.state === 'restart' ? t('update.restartHint')
-      : status.state === 'failed' ? (status.error === 'MINIMUM_RELEASE_AGE' ? t('update.tooNew') : status.error === 'NETWORK' ? t('update.network')
-        : t('update.failedHint', { error: status.error ?? '' }))
+      : status.state === 'failed' ? (status.error === 'OTHER_RELEASE_AGE' ? t('update.otherAge', { names: status.detail ?? '' })
+        : status.error === 'MINIMUM_RELEASE_AGE' ? (status.exempt ? t('update.ageStill', { detail: status.detail ?? '' }) : t('update.tooNew'))
+        : status.error === 'NETWORK' ? t('update.network')
+        : t('update.failedHint', { error: status.detail ?? status.error ?? '' }))
       : status.installable ? t('update.hint', { current: status.current, latest: status.latest ?? '' })
       : t('update.manualHint', { current: status.current, latest: status.latest ?? '' })
     // The button is only an icon; its state and the full explanation are in the tooltip.
@@ -192,7 +195,8 @@ export function apply(ctx: Context) {
       // The entry itself is a button that opens main chat; this click is only the update's.
       event.preventDefault(); event.stopPropagation()
       if (status.state === 'installing' || status.state === 'reloading' || status.state === 'restart') return
-      if (waiting || (status.state === 'failed' && status.error === 'MINIMUM_RELEASE_AGE')) { openReleaseAgeDialog(status); return }
+      // Once TheOne is exempt, asking again would not help; the tooltip says what pnpm still refuses.
+      if (!status.exempt && (waiting || (status.state === 'failed' && status.error === 'MINIMUM_RELEASE_AGE'))) { openReleaseAgeDialog(status); return }
       if (!status.installable) { window.open('https://github.com/YunongDai2005/dsh-theone#readme', '_blank', 'noopener'); return }
       setUpdate({ ...status, state: 'installing' })
       void readUpdate('POST')

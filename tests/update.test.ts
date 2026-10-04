@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { compareVersions, installSource, RELEASE_AGE_MS, releaseAgeExemptions, Updater, withReleaseAgeExemption, type PluginInstaller } from '../src/update.ts'
+import { compareVersions, installSource, RELEASE_AGE_MS, releaseAgeExemptions, releaseAgeViolations, Updater, withReleaseAgeExemption, type PluginInstaller } from '../src/update.ts'
 
 /** An npm registry answer: each version with its publication time. */
 const registry = (releases: Record<string, number>): typeof fetch => (async () => Response.json({
@@ -173,5 +173,33 @@ test('exempting TheOne installs the fresh version now, and only TheOne is exempt
     assert.equal(installed.exempt, true)
     // Without a known profile there is nothing to edit.
     assert.throws(() => new Updater('0.3.13', () => '0.3.13').allowFresh(), /NO_PROFILE/)
+  } finally { await rm(root, { recursive: true, force: true }) }
+})
+
+test('an exempt TheOne still refused by the lockfile check is retried with exact exemptions; other packages are named', async () => {
+  const { mkdtemp, readFile, rm, writeFile } = await import('node:fs/promises')
+  const { tmpdir } = await import('node:os')
+  const { join } = await import('node:path')
+  const root = await mkdtemp(join(tmpdir(), 'theone-exempt-'))
+  const refusal = (entry: string) => ({ application: 'failed', error: { code: 'operation-error' }, packageResult: {
+    output: `[ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION] 1 lockfile entries failed verification:\n  ${entry} was published at 2026-10-03T15:33:36.000Z, within the minimumReleaseAge cutoff` } })
+  try {
+    assert.deepEqual(releaseAgeViolations(refusal('@scope/pkg@1.2.0').packageResult.output), ['@scope/pkg@1.2.0'])
+    const file = join(root, 'pnpm-workspace.yaml')
+    await writeFile(file, 'minimumReleaseAgeExclude:\n  - dsh-theone\n')
+    const updater = new Updater('0.3.18', () => '0.3.18', registry({ '0.3.18': Date.now() - 7200000, '0.3.19': Date.now() - 3600000 }), Date.now, () => file)
+    let calls = 0
+    const status = await updater.install({ installBundle: async () => ++calls === 1 ? refusal('dsh-theone@0.3.18') : { application: 'restart-required' } })
+    assert.equal(calls, 2)
+    assert.equal(status.state, 'restart')
+    assert.deepEqual(releaseAgeExemptions(await readFile(file, 'utf8')), ['dsh-theone', 'dsh-theone@0.3.18', 'dsh-theone@0.3.19'])
+
+    // Another package that is too new is not TheOne's to exempt: no retry, and it is named.
+    const other = new Updater('0.3.18', () => '0.3.18', registry({ '0.3.18': Date.now() - 7200000, '0.3.19': Date.now() - 3600000 }), Date.now, () => file)
+    let tries = 0
+    const failed = await other.install({ installBundle: async () => { tries++; return refusal('@deepseek-ai/schemastery@3.19.0') } })
+    assert.equal(tries, 1)
+    assert.equal(failed.error, 'OTHER_RELEASE_AGE')
+    assert.equal(failed.detail, '@deepseek-ai/schemastery@3.19.0')
   } finally { await rm(root, { recursive: true, force: true }) }
 })

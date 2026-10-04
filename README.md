@@ -18,18 +18,10 @@ How many sessions are sitting in your DSH sidebar? Getting back to last week's w
 
 **TheOne takes care of that.** You just talk in one main chat:
 
-```text
-You: FP8 still crashes for Qwen on the 9070 XT
-     → Qwen / RX 9070 XT
-You: also fill in the ablation table in chapter 3 of the paper
-     → Video Attention Thesis
-You: and add the Qwen speed numbers from earlier
-     → Video Attention Thesis · reference: Qwen / RX 9070 XT
-You: wrong topic, that was the GPU one
-     → Qwen / RX 9070 XT        (the previous message is redone there, and remembered)
-```
-
-<sub>Illustration. By default, a one-line notice appears only when the topic changes.</sub>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/YunongDai2005/dsh-theone/main/docs/images/theone-architecture-en-dark.svg">
+  <img alt="How TheOne works: main chat sends each message through the router to its topic session; answers stream back, and the topic directory keeps progress, constraints and links" src="https://raw.githubusercontent.com/YunongDai2005/dsh-theone/main/docs/images/theone-architecture-en-light.svg" width="100%">
+</picture>
 
 Each project gets its own background session that reasons, runs tools and compacts on its own. What you see is always one ordinary conversation.
 

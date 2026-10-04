@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 640" width="1040" height="640" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei','Noto Sans CJK SC',Helvetica,Arial,sans-serif">
+<title>TheOne · 主聊天 — 分配话题 — 后台 DSH 会话</title>
+<defs>
+<marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#6cb2f0"/></marker>
+<marker id="m" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#9198a1"/></marker>
+<marker id="w" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#e8955a"/></marker>
+</defs>
+<rect width="1040" height="640" rx="16" fill="#0d1117"/>
+<circle cx="155" cy="62" r="24" fill="#11263b" stroke="#6cb2f0" stroke-width="1.5"/>
+<text x="155" y="68" font-size="16" fill="#6cb2f0" font-weight="600" text-anchor="middle">你</text>
+<path d="M155 88 L155 148" fill="none" stroke="#6cb2f0" stroke-width="2" marker-end="url(#a)"/>
+<rect x="40" y="150" width="230" height="180" rx="14" fill="#11263b" stroke="#6cb2f0" stroke-width="2"/>
+<text x="155" y="190" font-size="18" fill="#6cb2f0" font-weight="700" text-anchor="middle">TheOne · 主聊天</text>
+<text x="155" y="232" font-size="15" fill="#e6edf3" font-weight="400" text-anchor="middle">所有事</text>
+<text x="155" y="256" font-size="15" fill="#e6edf3" font-weight="400" text-anchor="middle">都在这一个对话里说</text>
+<text x="155" y="300" font-size="13" fill="#9198a1" font-weight="400" text-anchor="middle">思考 · 工具 · 回答</text>
+<rect x="360" y="150" width="250" height="180" rx="14" fill="#151b23" stroke="#3d444d" stroke-width="1.5"/>
+<text x="485" y="190" font-size="18" fill="#e6edf3" font-weight="700" text-anchor="middle">分配话题</text>
+<text x="485" y="228" font-size="14" fill="#e6edf3" font-weight="400" text-anchor="middle">接着当前 · 回到旧话题 · 开新话题</text>
+<text x="485" y="260" font-size="13" fill="#9198a1" font-weight="400" text-anchor="middle">一次简短模型调用</text>
+<text x="485" y="280" font-size="13" fill="#9198a1" font-weight="400" text-anchor="middle">+ 全文检索召回</text>
+<text x="485" y="310" font-size="13" fill="#9198a1" font-weight="400" text-anchor="middle">失败时规则兜底</text>
+<path d="M272 208 L356 208" fill="none" stroke="#6cb2f0" stroke-width="2" marker-end="url(#a)"/>
+<text x="314" y="198" font-size="13" fill="#9198a1" font-weight="400" text-anchor="middle">每条消息</text>
+<path d="M272 288 L356 288" fill="none" stroke="#e8955a" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#w)"/>
+<text x="314" y="310" font-size="12" fill="#e8955a" font-weight="400" text-anchor="middle">「分错了」</text>
+<text x="314" y="326" font-size="12" fill="#e8955a" font-weight="400" text-anchor="middle">→ 学习</text>
+<text x="705" y="128" font-size="14" fill="#9198a1" font-weight="600" text-anchor="start">后台 DSH 会话</text>
+<rect x="705" y="145" width="250" height="72" rx="14" fill="#151b23" stroke="#6cb2f0" stroke-width="2"/>
+<text x="725" y="175" font-size="16" fill="#e6edf3" font-weight="600" text-anchor="start">话题 A</text>
+<text x="725" y="199" font-size="13" fill="#9198a1" font-weight="400" text-anchor="start">独立上下文 · 工具 · 压缩</text>
+<rect x="705" y="235" width="250" height="72" rx="14" fill="#151b23" stroke="#3d444d" stroke-width="1.5"/>
+<text x="725" y="265" font-size="16" fill="#e6edf3" font-weight="600" text-anchor="start">话题 B</text>
+<text x="725" y="289" font-size="13" fill="#9198a1" font-weight="400" text-anchor="start">独立上下文 · 工具 · 压缩</text>
+<rect x="705" y="325" width="250" height="72" rx="14" fill="none" stroke="#3d444d" stroke-width="1.5" stroke-dasharray="6 5"/>
+<text x="830" y="367" font-size="15" fill="#9198a1" font-weight="600" text-anchor="middle">+ 新话题</text>
+<path d="M612 205 C650 200 660 181 701 181" fill="none" stroke="#6cb2f0" stroke-width="2" marker-end="url(#a)"/>
+<text x="655" y="176" font-size="12" fill="#6cb2f0" font-weight="400" text-anchor="middle">主话题</text>
+<path d="M612 240 C650 245 660 271 701 271" fill="none" stroke="#9198a1" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#m)"/>
+<text x="655" y="286" font-size="12" fill="#9198a1" font-weight="400" text-anchor="middle">参考</text>
+<path d="M612 290 C650 300 660 361 701 361" fill="none" stroke="#9198a1" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#m)"/>
+<path d="M925 140 L925 104 Q925 96 917 96 L278 96 Q270 96 270 104 L270 146" fill="none" stroke="#6cb2f0" stroke-width="2" marker-end="url(#a)"/>
+<text x="598" y="86" font-size="13" fill="#6cb2f0" font-weight="400" text-anchor="middle">思考、工具调用和回答实时回到主聊天</text>
+<rect x="360" y="470" width="595" height="130" rx="14" fill="#151b23" stroke="#3d444d" stroke-width="1.5"/>
+<ellipse cx="400" cy="508" rx="16" ry="6" fill="none" stroke="#9198a1" stroke-width="1.5"/>
+<path d="M384 508 v22 a16 6 0 0 0 32 0 v-22" fill="none" stroke="#9198a1" stroke-width="1.5"/>
+<text x="430" y="516" font-size="18" fill="#e6edf3" font-weight="700" text-anchor="start">话题目录</text>
+<text x="514" y="516" font-size="13" fill="#9198a1" font-weight="400" text-anchor="start">本地 SQLite</text>
+<text x="384" y="560" font-size="14" fill="#e6edf3" font-weight="400" text-anchor="start">话题与工作区 · 进展 · 摘要</text>
+<text x="384" y="584" font-size="14" fill="#e6edf3" font-weight="400" text-anchor="start">约束 · 关联 · 路由记录 · 学到的词</text>
+<path d="M485 334 L485 466" fill="none" stroke="#9198a1" stroke-width="2" marker-start="url(#m)" marker-end="url(#m)"/>
+<text x="497" y="410" font-size="12" fill="#9198a1" font-weight="400" text-anchor="start">候选话题 · 学到的词</text>
+<path d="M760 466 L760 401" fill="none" stroke="#9198a1" stroke-width="2" marker-end="url(#m)"/>
+<text x="748" y="432" font-size="12" fill="#9198a1" font-weight="400" text-anchor="end">参考简报：相关话题进展、</text>
+<text x="748" y="448" font-size="12" fill="#9198a1" font-weight="400" text-anchor="end">约束、主聊天最近几轮</text>
+<path d="M900 401 L900 466" fill="none" stroke="#9198a1" stroke-width="2" marker-end="url(#m)"/>
+<text x="912" y="440" font-size="12" fill="#9198a1" font-weight="400" text-anchor="start">进展 · 摘要</text>
+<rect x="40" y="490" width="230" height="90" rx="14" fill="#151b23" stroke="#3d444d" stroke-width="1.5" stroke-dasharray="6 5"/>
+<text x="155" y="528" font-size="15" fill="#e6edf3" font-weight="600" text-anchor="middle">已有的 DSH 会话</text>
+<text x="155" y="552" font-size="13" fill="#9198a1" font-weight="400" text-anchor="middle">在后台整理一次</text>
+<path d="M272 535 L356 535" fill="none" stroke="#9198a1" stroke-width="2" marker-end="url(#m)"/>
+<text x="314" y="525" font-size="12" fill="#9198a1" font-weight="400" text-anchor="middle">历史整理</text>
+</svg>
