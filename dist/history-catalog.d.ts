@@ -34,6 +34,15 @@ export declare class HistoryCatalog {
     get incomplete(): boolean;
     refresh(): Promise<void>;
     private scan;
+    /** DSH's archive set, when a workspace registry is present. Empty means nothing is archived. */
+    private archivedSessionIds;
+    /**
+     * The scan only walks the conversations that still exist, so a topic whose sessions were deleted
+     * or archived would otherwise stay in the routing candidates forever. Hiding is recomputed whole
+     * on every scan, which keeps it reversible: restoring or unarchiving a conversation brings its
+     * topic back, and no topic is removed from the directory behind the reader's back.
+     */
+    private reconcile;
     /**
      * Up to 16 topics worth showing the classifier. `contexts` may carry learned terms; `prior`
      * favours topics used recently, often, or together with the current one.

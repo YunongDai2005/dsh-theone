@@ -9,7 +9,9 @@ import { FACT_KINDS, FACT_LIMITS, factKey, factLine, findQuote, rankCandidates, 
 /** Confirmed facts this message might use, best first, within budget. Ranking only. */
 export function factCandidates(store: ContextStore, scope: LinkScope, text: string, recent: string[], currentId?: string): FactCandidate[] {
   if (scope === 'off') return []
-  const titles = new Map(store.contexts().map(context => [context.id, context.title]))
+  // A topic whose conversations are gone or archived offers nothing (see HistoryCatalog.reconcile).
+  const hidden = store.hiddenReasons()
+  const titles = new Map(store.contexts().filter(context => !hidden.has(context.id)).map(context => [context.id, context.title]))
   const related = new Map(currentId ? relatedTopics(store, currentId, scope, 10).map(topic => [topic.id, topic.score]) : [])
   // The current topic's own facts are candidates too: the message may be moving elsewhere with them.
   // A first filter for the topic in view; delivery checks again against the topic finally chosen.
@@ -32,7 +34,8 @@ export interface FactDelivery {
  * the topic finally chosen and the settings now; nothing is recorded until `commit`.
  */
 export function factDelivery(store: ContextStore, scope: LinkScope, contextId: string, imports: string[], inputId?: string): FactDelivery {
-  const titles = new Map(store.contexts().map(context => [context.id, context.title]))
+  const hidden = store.hiddenReasons()
+  const titles = new Map(store.contexts().filter(context => !hidden.has(context.id)).map(context => [context.id, context.title]))
   const allowed = (sourceId: string) => titles.has(sourceId) && !mayShare(store, scope, sourceId, contextId)
   const notices: { line: string; commit: () => void }[] = []
   const quiet: (() => void)[] = []

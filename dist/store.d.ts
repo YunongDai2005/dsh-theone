@@ -1,5 +1,5 @@
 import type { ModelSelection } from '@deepseek-ai/dsh-agent';
-import type { ExtractedTopic, HistoryPart, TopicGroup } from './catalog-types.ts';
+import type { ExtractedTopic, HiddenReason, HistoryPart, TopicGroup } from './catalog-types.ts';
 import type { ContextDescriptor, ContextUsage, Decision, RouteRecord, RouteView, StoredContext, SourceRange, TopicLink } from './types.ts';
 import { type FactEvidence, type FactKind, type FactView } from './facts.ts';
 /** A write to a topic's facts, after its evidence was checked against the session. */
@@ -251,5 +251,16 @@ export declare class ContextStore {
     /** Notices the user closed; they are not shown again on any browser. */
     dismissNotice(id: string, now?: number): void;
     dismissedNotices(): Set<string>;
+    /**
+     * Topics kept in the directory but hidden from routing and briefings: every conversation they can
+     * draw on is gone from disk (`orphaned`) or archived in DSH (`archived`). The catalog scan
+     * recomputes this set, so restoring a conversation or unarchiving it brings the topic back.
+     */
+    hiddenReasons(): Map<string, HiddenReason>;
+    /** Replace the hidden set in one write, so a scan never leaves a stale entry behind. */
+    replaceHidden(entries: readonly {
+        id: string;
+        reason: string;
+    }[], now?: number): void;
     close(): void;
 }
