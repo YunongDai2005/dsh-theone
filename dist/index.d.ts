@@ -35,6 +35,8 @@ export interface Config {
     factLinks?: boolean;
     /** With factLinks: after each turn, a small model call proposes facts the Worker did not record. */
     factExtraction?: boolean;
+    /** A routing card per topic, written in the background after its first replies; on unless turned off (tests). */
+    topicCards?: boolean;
     /** Where notices are read from; for testing. */
     noticeUrl?: string;
 }
@@ -191,6 +193,9 @@ export default class TheOne extends Service {
     get extracting(): Promise<void>;
     /** Queue an extraction of the turn that just ended in `worker`'s topic. */
     private queueExtraction;
+    /** Queue a routing card for this topic, after any extraction already queued for it. */
+    private queueCard;
+    private writeCard;
     private extractFacts;
     /**
      * The user moved a message to another topic: remember it, and teach both topics. The right topic
@@ -200,7 +205,10 @@ export default class TheOne extends Service {
     private applyCorrection;
     /** Ask the selected model, thinking off, for the few terms that tie a message to its topic. */
     private pickTerms;
-    /** Topics with the terms corrections taught them added to their own keywords. */
+    /**
+     * Topics as routing sees them: with the terms corrections taught them, and when each was last
+     * active. Topics set aside (untouched for longer than this user usually comes back) go last.
+     */
     private routingContexts;
     /**
      * Favour topics used recently or often, and those linked to the current one, when narrowing

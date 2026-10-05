@@ -22,6 +22,7 @@ import { RESTART_CODE, WorkerRun } from "./run.js";
 import { buildBriefing, LINK_SIGNAL, mayShare, relatedTopics } from "./linkage.js";
 import { evidenceEvents, FACT_KINDS, FACT_LIMITS, findQuote, rankCandidates, retracts, safe, verify } from "./facts.js";
 import { applyExtraction, EXTRACT_PROMPT, extractionPayload, factCandidates, factDelivery, ownFactsText } from "./fact-flow.js";
+import { activityLabel, CARD_AFTER_REPLIES, CARD_PROMPT, cardPayload, learnDormancy, parseCard } from "./topic-memory.js";
 import { PACKAGE_NAME, Updater } from "./update.js";
 import { NOTICE_URL, NoticeBoard } from "./notices.js";
 function redactDescriptor(text) {
@@ -173,6 +174,7 @@ export default class TheOne extends Service {
         notices: z.boolean().default(true),
         factLinks: z.boolean().default(false),
         factExtraction: z.boolean().default(false),
+        topicCards: z.boolean().default(true),
         noticeUrl: z.string(),
     });
     store;
@@ -1608,6 +1610,33 @@ export default class TheOne extends Service {
             this.extractions.delete(contextId); });
         this.extractions.set(contextId, job);
     }
+    /** Queue a routing card for this topic, after any extraction already queued for it. */
+    queueCard(worker, contextId) {
+        const events = evidenceEvents(worker.session.snapshotEvents());
+        const previous = this.extractions.get(contextId) ?? Promise.resolve();
+        const job = previous.then(() => this.writeCard(contextId, events)).catch(error => {
+            console.warn('TheOne could not update a topic card.', error);
+        }).finally(() => { if (this.extractions.get(contextId) === job)
+            this.extractions.delete(contextId); });
+        this.extractions.set(contextId, job);
+    }
+    async writeCard(contextId, events) {
+        const topic = this.store.contexts().find(context => context.id === contextId);
+        if (!topic)
+            return;
+        const payload = cardPayload({ ...topic, summary: redactDescriptor(topic.summary) }, events.map(event => ({ speaker: event.speaker, text: redactDescriptor(event.text) })));
+        if (!payload)
+            return;
+        const selection = this.backingModel();
+        let reasoningEffort;
+        try {
+            reasoningEffort = (await this.ctx.llm.resolveModelInfo(selection.provider, selection.model)).reasoning?.efforts.find(effort => effort.id === 'off')?.id;
+        }
+        catch { /* Default effort. */ }
+        const card = parseCard(await modelJson(this.ctx.llm, selection, CARD_PROMPT, payload, undefined, { maxTokens: 800, timeoutMs: 30000, ...(reasoningEffort ? { reasoningEffort } : {}) }), text => redactDescriptor(redactRoutingText(text)));
+        if (card)
+            this.store.applyCard(contextId, card);
+    }
     async extractFacts(sessionId, contextId, events, base) {
         const payload = extractionPayload(events, base);
         if (!payload)
@@ -1669,16 +1698,26 @@ export default class TheOne extends Service {
             return [];
         return value.filter((term) => typeof term === 'string' && term.trim().length >= 2 && term.trim().length <= 24).map(term => term.trim()).slice(0, 4);
     }
-    /** Topics with the terms corrections taught them added to their own keywords. */
-    routingContexts() {
+    /**
+     * Topics as routing sees them: with the terms corrections taught them, and when each was last
+     * active. Topics set aside (untouched for longer than this user usually comes back) go last.
+     */
+    routingContexts(now = Date.now()) {
         const learned = this.store.learnedTerms();
-        return this.store.contexts().map(context => {
+        const timeline = this.store.routeTimeline(this.config.gatewayKey);
+        const dormancy = learnDormancy(timeline);
+        const lastAt = new Map(timeline.map(route => [route.contextId, route.at]));
+        const dormant = new Set();
+        const contexts = this.store.contexts().map(context => {
             const terms = learned.get(context.id);
-            if (!terms?.length)
-                return context;
             const own = new Set(context.keywords.map(term => term.toLowerCase()));
-            return { ...context, keywords: [...context.keywords, ...terms.filter(term => !own.has(term.toLowerCase()))].slice(0, 40) };
+            const keywords = terms?.length ? [...context.keywords, ...terms.filter(term => !own.has(term.toLowerCase()))].slice(0, 40) : context.keywords;
+            const activity = activityLabel(lastAt.get(context.id), dormancy.perTopic.get(context.id) ?? dormancy.global, now);
+            if (activity.dormant)
+                dormant.add(context.id);
+            return { ...context, keywords, ...(activity.text ? { activity: activity.text } : {}) };
         });
+        return [...contexts.filter(context => !dormant.has(context.id)), ...contexts.filter(context => dormant.has(context.id))];
     }
     /**
      * Favour topics used recently or often, and those linked to the current one, when narrowing
@@ -1775,6 +1814,10 @@ export default class TheOne extends Service {
             // Off by default: a small model call after the turn, only when the Worker recorded nothing itself.
             if (contextId && !abandon && this.config.factLinks && this.config.factExtraction && this.router && !run.recordedFacts && !run.failure && run.outcome?.kind === 'completed')
                 this.queueExtraction(run.worker, contextId);
+            // A routing card after the topic's first reply and again once it is clearer; in the background, never shown.
+            if (contextId && !abandon && this.router && this.config.topicCards !== false && !run.failure && run.outcome?.kind === 'completed' &&
+                CARD_AFTER_REPLIES.includes(this.store.routeTimeline(this.config.gatewayKey).filter(route => route.contextId === contextId).length))
+                this.queueCard(run.worker, contextId);
             this.active = false;
             this.closing.delete(gatewayId);
         });

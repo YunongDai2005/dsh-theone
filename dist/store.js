@@ -184,6 +184,44 @@ export class ContextStore {
             recentCalls: Number(row.recent_calls), lastUsedAt: Date.parse(String(row.last_used).replace(' ', 'T') + 'Z'),
         }));
     }
+    /** Every completed route of this entry, oldest first, to the topic it really belonged to (after corrections). */
+    routeTimeline(gatewayKey) {
+        return this.db.prepare(`SELECT COALESCE(d.corrected_to, json_extract(r.decision, '$.contextId')) AS context_id, r.created_at
+      FROM routing_events r JOIN gateway_sessions gs ON gs.gateway_id = r.gateway_id
+      LEFT JOIN route_details d ON d.message_id = r.message_id
+      WHERE gs.gateway_key = ? AND r.status = 'completed' AND json_extract(r.decision, '$.action') != 'CLARIFY'
+      ORDER BY r.rowid`).all(gatewayKey).flatMap(row => row.context_id == null ? [] : [{
+                contextId: String(row.context_id), at: Date.parse(String(row.created_at).replace(' ', 'T') + 'Z')
+            }]);
+    }
+    /**
+     * A topic's routing card: other names and entities join its keywords, and its summary is replaced
+     * unless a compaction summary (written from the whole session) already took its place.
+     */
+    applyCard(contextId, card) {
+        this.db.exec('BEGIN IMMEDIATE');
+        try {
+            const context = this.contexts().find(item => item.id === contextId);
+            if (!context) {
+                this.db.exec('COMMIT');
+                return;
+            }
+            const { workingSessionId: _, ...descriptor } = context;
+            const merge = (first, then) => {
+                const seen = new Set();
+                return [...first, ...then].filter(term => { const key = term.toLowerCase(); return term && !seen.has(key) && seen.add(key); }).slice(0, 24);
+            };
+            const compacted = this.summaryUpdates(contextId).length > 0;
+            const summary = compacted ? descriptor.summary : [card.summary, card.open.length ? `待定：${card.open.join('；')}` : ''].filter(Boolean).join(' ').slice(0, 600);
+            this.db.prepare('UPDATE contexts SET descriptor = ? WHERE id = ?').run(JSON.stringify({ ...descriptor, summary,
+                keywords: merge(descriptor.keywords, card.aliases), entities: merge(card.entities, descriptor.entities) }), contextId);
+            this.db.exec('COMMIT');
+        }
+        catch (error) {
+            this.db.exec('ROLLBACK');
+            throw error;
+        }
+    }
     groups() {
         return this.db.prepare('SELECT * FROM topic_groups ORDER BY title').all().map(row => ({
             id: String(row.id), title: String(row.title), summary: String(row.summary),

@@ -50,6 +50,21 @@ export declare class ContextStore {
     current(gatewayKey: string): string | undefined;
     /** Successful uses only: retries, failed work and clarification never heat a topic. */
     contextUsage(gatewayKey: string, now?: number): ContextUsage[];
+    /** Every completed route of this entry, oldest first, to the topic it really belonged to (after corrections). */
+    routeTimeline(gatewayKey: string): {
+        contextId: string;
+        at: number;
+    }[];
+    /**
+     * A topic's routing card: other names and entities join its keywords, and its summary is replaced
+     * unless a compaction summary (written from the whole session) already took its place.
+     */
+    applyCard(contextId: string, card: {
+        summary: string;
+        aliases: string[];
+        entities: string[];
+        open: string[];
+    }): void;
     groups(): TopicGroup[];
     isGateway(sessionId: string): boolean;
     /** Record the fixed "TheOne · Main chat" entry; other sessions may also use TheOne and switch away. */

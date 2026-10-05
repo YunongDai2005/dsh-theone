@@ -61,6 +61,8 @@ export async function harness(root: string, model = new FixtureModel(), options:
       historyCatalog: options.historyCatalog ?? false,
       routerMode: options.routerMode ?? 'rules',
       workerProvider: options.autoModel ? undefined : 'fixture', workerModel: options.autoModel ? undefined : 'fixture', maxDescriptorChars: 4000, maxResponseChars: 100000,
+      // Topic cards add a background model call; tests that count calls opt in where they need them.
+      topicCards: false,
       ...options.theoneConfig,
     })
     const gateway = (await ctx.agents.create({

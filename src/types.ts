@@ -5,6 +5,8 @@ export interface ContextDescriptor {
   entities: string[]
   keywords: string[]
   lastState: string
+  /** Routing only, never stored: when the topic was last active ("3 小时前", "已搁置（12 天未动）"). */
+  activity?: string
 }
 
 export interface StoredContext extends ContextDescriptor {
