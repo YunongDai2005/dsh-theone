@@ -16,6 +16,12 @@
 
 How many sessions are sitting in your DSH sidebar? Getting back to last week's work means digging through them. Skip creating a new one and everything piles into a single session, where topics bleed into each other and the details vanish at the next compaction.
 
+If you've ever said any of these, TheOne was probably written for you:
+
+- "Where was that chat again?" Too many conversations, and the old one is nowhere to be found.
+- "Not starting a new chat for this, I'll just ask here." And one chat turns into a mess.
+- "I already told you that!" The AI forgot what you talked about.
+
 **TheOne takes care of that.** You just talk in one main chat:
 
 <picture>
