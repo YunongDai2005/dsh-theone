@@ -74,6 +74,28 @@ sets USD per million tokens for the cost line (default: V4.1 Flash peak prices, 
 assistant replies yet, so routing sees only the user's side; and in open mode a topic is described by
 the messages routed to it, where TheOne would also have the topic session's own progress notes.
 
+### Bursts: wait, then route what was sent together
+
+People often send several short messages before any reply ("3 of us", "one is elderly", "budget
+8000"). Routed one by one, each lacks context; routed together, they are one clear request.
+`--merge all` waits a short window after every message and routes everything that arrived in it as
+one request; `--merge adaptive` waits only after a message that seems to go on (open punctuation, a
+dangling "but/然后", or too short to route alone). The data has no send times, so arrivals are
+simulated: `--same` is the chance a message follows the previous one within the window when both
+belong to the same thread, `--cross` when they do not (bursts that change subject, which merging gets
+wrong). Run a few settings to see how much the answer depends on them:
+
+```sh
+node eval/run-router.mjs --mode open --policy theone                                  # baseline, from cache
+node eval/run-router.mjs --mode open --policy theone --merge all --same 0.35 --cross 0.05
+node eval/run-router.mjs --mode open --policy theone --merge all --same 0.35 --cross 0.15
+node eval/run-router.mjs --mode open --policy theone --merge adaptive --same 0.35 --cross 0.05
+python eval/score.py eval/data/interleave-v0/sessions.jsonl eval/data/interleave-v0/predictions/open-theone*.jsonl
+```
+
+The scorer adds a table: accuracy of messages routed alone, in a burst, and in a burst that spanned
+threads; the share of replies held for the window (the latency cost); and model calls per message.
+
 ## What the scores mean
 
 | Metric | Meaning |

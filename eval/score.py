@@ -152,6 +152,9 @@ def evaluate(sessions, predictions, split="dev"):
     mode = next((row.get("mode") for row in predictions if row.get("mode")), "closed")
     kinds, strict_kinds, strict, lenient = Counter(), Counter(), [0, 0], [0, 0]
     by_action, by_tag, by_lang = defaultdict(lambda: [0, 0]), defaultdict(lambda: [0, 0]), defaultdict(lambda: [0, 0])
+    # Burst runs (run-router --merge): accuracy of messages routed alone, in a burst, in a burst
+    # that spanned threads; and how many messages had their reply held for the waiting window.
+    by_burst, waited = defaultdict(lambda: [0, 0]), [0, 0]
     switch, refs = Counter(), [0, 0]
     fragments, merges, pairs = [], [], []
     tokens = Counter()
@@ -173,6 +176,9 @@ def evaluate(sessions, predictions, split="dev"):
             tokens["cache_hit"] += usage.get("cache_hit", 0)
             tokens["calls"] += 1 if usage else 0
             tokens["messages"] += 1
+            if "burst" in row:
+                waited[0] += bool(row.get("waited"))
+                waited[1] += 1
             if "elapsed_ms" in row and row.get("via", "llm") == "llm":
                 latency.append(row["elapsed_ms"])
             kinds[kind] += 1
@@ -196,6 +202,10 @@ def evaluate(sessions, predictions, split="dev"):
                 for tag in t["tags"]:
                     by_tag[tag][0] += ok
                     by_tag[tag][1] += 1
+                if "burst" in row:
+                    key = "single" if row["burst"] == 1 else "burst_mixed" if row.get("mixed") else "burst"
+                    by_burst[key][0] += ok
+                    by_burst[key][1] += 1
             # A switch is any change of thread between consecutive thread messages.
             gold_switch = prev_gold is not None and gold != prev_gold
             pred_switch = prev_pred is not None and o["pred"] != prev_pred and o["pred"] not in SPECIAL
@@ -239,6 +249,7 @@ def evaluate(sessions, predictions, split="dev"):
         "by_action": {k: rate(v) for k, v in sorted(by_action.items())},
         "by_tag": {k: rate(v) for k, v in sorted(by_tag.items())},
         "by_lang": {k: rate(v) for k, v in sorted(by_lang.items())},
+        **({"by_burst": {k: {"accuracy": rate(v), "n": v[1]} for k, v in sorted(by_burst.items())}, "waited_share": rate(waited)} if waited[1] else {}),
         "tokens_per_message": {k: round(tokens[k] / tokens["messages"], 1) for k in ("input", "output", "cache_hit")} if tokens["messages"] else {},
         "model_calls_share": round(tokens["calls"] / tokens["messages"], 3) if tokens["messages"] else None,
         "latency_ms": {"p50": latency[len(latency) // 2], "p90": latency[int(len(latency) * 0.9)]} if latency else None,
@@ -257,6 +268,12 @@ def table(results):
         cells = ["–" if r.get(k) is None else f"{r[k]:.3f}" if isinstance(r[k], float) else str(r[k]) for k, _ in cols]
         lines.append(f"| {name} | {r['mode']} | " + " | ".join(cells)
                      + f" | {r['switch']['f1']:.3f} | {r['bcubed']['f1']:.3f} | {r['tokens_per_message'].get('input', 0):.0f} |")
+    bursts = [(name, r) for name, r in results if r.get("by_burst")]
+    if bursts:
+        lines += ["", "| system | alone | in a burst | burst across threads | replies held | model calls/msg |", "|---|---|---|---|---|---|"]
+        for name, r in bursts:
+            cell = lambda key: (lambda v: f"{v['accuracy']:.3f} ({v['n']})" if v and v["accuracy"] is not None else "–")(r["by_burst"].get(key))
+            lines.append(f"| {name} | {cell('single')} | {cell('burst')} | {cell('burst_mixed')} | {r['waited_share']:.3f} | {r['model_calls_share']:.3f} |")
     return "\n".join(lines)
 
 

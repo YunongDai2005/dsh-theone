@@ -55,3 +55,16 @@ class ScoreTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BurstScoreTest(unittest.TestCase):
+    def test_burst_rows_are_broken_down_and_counted_once_per_call(self):
+        s = session()
+        preds = ["t1", "t1", "t2", "t2", "n1", "t1", "t2"]
+        rows_ = [{"session_id": "s", "i": i, "pred": p, "mode": "closed", "burst": 2 if i in (2, 3) else 1, "waited": i in (2, 3),
+                  **({"usage": {"input": 10}} if i != 3 else {})} for i, p in enumerate(preds)]
+        r = score.evaluate([s], rows_, "dev")
+        self.assertEqual(r["by_burst"]["burst"], {"accuracy": 1.0, "n": 2})
+        self.assertAlmostEqual(r["waited_share"], 2 / 7, places=3)
+        self.assertAlmostEqual(r["model_calls_share"], 6 / 7, places=3)
+        self.assertIn("in a burst", score.table([("x", r)]))

@@ -113,3 +113,29 @@ test('each routed message carries its own tokens even when sessions run concurre
   assert.equal(rows.reduce((sum, row) => sum + row.usage.input, 0), client.usage.input)
   assert.ok(rows.every(row => row.via === 'llm' && row.usage.input > 0))
 })
+
+test('bursts: arrivals are seeded, merging only takes what arrived while waiting, and a burst is one request', async () => {
+  const { planArrivals, groupUnits, expectsMore } = await import('../lib/bursts.mjs')
+  const client = await createClient({ fake })
+  const [session] = await generate({ sessions: 1, seed: 4, client, dataset: 'v0' })
+  const arrivals = planArrivals(session.turns, { same: 0.6, cross: 0.1, seed: 2 })
+  assert.deepEqual(planArrivals(session.turns, { same: 0.6, cross: 0.1, seed: 2 }), arrivals)
+  assert.equal(arrivals[0], false)
+  assert.ok(arrivals.some(Boolean))
+  assert.equal(groupUnits(session.turns, arrivals, 'none').length, session.turns.length)
+  const all = groupUnits(session.turns, arrivals, 'all')
+  assert.deepEqual(all.flatMap(unit => unit.turns), session.turns.map((_, i) => i))
+  for (const unit of all) unit.turns.slice(1).forEach(i => assert.equal(arrivals[i], true))
+  assert.ok(all.length < session.turns.length && all.every(unit => unit.turns.length <= 4))
+  // Adaptive waits only after a message that seems to go on.
+  assert.equal(expectsMore('然后'), true)
+  assert.equal(expectsMore('预算定在八千块，住宿你帮我看看。'), false)
+  assert.ok(groupUnits(session.turns, arrivals, 'adaptive').length >= all.length)
+  const rows = await routeSession(session, { mode: 'open', policy: 'llm', client, merge: 'all', bursts: { same: 0.6, cross: 0.1, seed: 2 } })
+  assert.equal(rows.length, session.turns.length)
+  for (const unit of all) {
+    const members = unit.turns.map(i => rows[i])
+    assert.ok(members.every(row => row.pred === members[0].pred && row.burst === unit.turns.length))
+    assert.ok(members.slice(1).every(row => !row.usage))
+  }
+})
