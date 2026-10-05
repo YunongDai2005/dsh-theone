@@ -22,6 +22,21 @@ const here = dirname(fileURLToPath(import.meta.url))
 export const VERSIONS = { v0: 'interleave-v0', v1: 'interleave-v1' }
 export const VERSION = VERSIONS.v1
 
+/** Independent checks that the rendered acceptance/withdrawal actually carries its planned event. */
+export function matchesFactStep(fact, user, assistant, states) {
+  if (!fact) return true
+  const { kind, value } = fact
+  const question = /[?？]|(吗|呢)\s*[。！!]?\s*$/.test(user.trim())
+  const refusal = /(不行|不要|不用|不同意|拒绝|换成|\b(no|not|reject|instead|prefer)\b|don'?t)/i.test(user)
+  if (kind === 'propose') return states(assistant, value) && !states(user, value)
+  // Broader than the plugin's acceptance vocabulary: phrases the implementation misses are tested.
+  if (kind === 'accept') return !states(user, value) && !question && !refusal &&
+    /(好的?|就按|就这样|就用|同意|没问题|照这个|照你|这么办|定了|\b(ok(ay)?|yes|sure|agreed?|deal)\b|sounds (good|reasonable)|go with|make it so|that'?ll do|works for me)/i.test(user)
+  if (kind === 'retract') return !question &&
+    /(撤回|取消|不再|未定|没定|没(?:有)?确定|先不定|待定|再决定|\b(undecided|withdrawn?|cancel(led|ed)?)\b|no longer|is off|not (yet )?(settled|decided)|decide later)/i.test(user)
+  return states(user, value) && !question && (kind !== 'reject' || refusal)
+}
+
 export async function generate(options) {
   const { sessions: count = 50, seed = 1, langs = ['zh', 'en'], minThreads = 3, maxThreads = 5, minTurns = 40, maxTurns = 60,
     chunk = 8, judge = true, dataset = 'v1', out, client, log = () => {} } = options
@@ -100,15 +115,7 @@ export async function generate(options) {
       const entry = turn => ({ n: turn.i, thread: turn.thread ?? 'ONE-OFF', action: turn.action, style: turn.style, refs: turn.refs,
         ...(turn.fact ? { fact: { key: turn.fact.key, kind: turn.fact.kind, ...(turn.fact.value == null ? {} : { value: turn.fact.value }), ...(turn.fact.kind === 'reject' ? { rejected: rejected(turn) } : {}) } } : {}) })
       // Did the exchange do what its fact step asked? Checked with the plugin's own matching.
-      const done = (turn, user, assistant) => {
-        if (!turn.fact) return true
-        const { kind, value } = turn.fact
-        if (kind === 'propose') return facts.states(assistant, value) && !facts.states(user, value)
-        // Not the plugin's own acceptance test: phrasings it misses must reach the benchmark.
-        if (kind === 'accept') return !facts.states(user, value) && !/[?？]\s*$/.test(user)
-        if (kind === 'retract') return true
-        return facts.states(user, value)
-      }
+      const done = (turn, user, assistant) => matchesFactStep(turn.fact, user, assistant, facts.states)
       for (let start = 0; start < plan.length; start += chunk) {
         const part = plan.slice(start, start + chunk)
         const answer = await client.complete({ system: RENDER_SYSTEM_V1, user: JSON.stringify({ lang, persona: spec.persona, threads: cards, previous: recent(), plan: part.map(entry) }),

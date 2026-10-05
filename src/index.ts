@@ -32,7 +32,7 @@ import { EDITABLE_SETTINGS_KEYS, RESTART_SETTINGS_KEYS, type EditableSettings, t
 import { validateSettings } from './settings.ts'
 import { RESTART_CODE, WorkerRun } from './run.ts'
 import { buildBriefing, LINK_SIGNAL, mayShare, relatedTopics, type LinkScope } from './linkage.ts'
-import { evidenceEvents, FACT_KINDS, FACT_LIMITS, findQuote, rankCandidates, safe, verify, type EvidenceEvent, type FactCandidate, type FactKind, type FactView } from './facts.ts'
+import { evidenceEvents, FACT_KINDS, FACT_LIMITS, findQuote, rankCandidates, retracts, safe, verify, type EvidenceEvent, type FactCandidate, type FactKind, type FactView } from './facts.ts'
 import { applyExtraction, EXTRACT_PROMPT, extractionPayload, factCandidates, factDelivery, ownFactsText } from './fact-flow.ts'
 import type { FactResult } from './store.ts'
 import { PACKAGE_NAME, Updater, type PluginInstaller } from './update.ts'
@@ -1249,7 +1249,7 @@ export default class TheOne extends Service {
             const label = factId ? this.store.fact(factId)?.label ?? factId : '?'
             if (!factId) return describe(label, { outcome: 'rejected', reason: 'unknown-fact' })
             const said = findQuote(events, quote, { speaker: 'user' })
-            if (!said) return { label, outcome: 'rejected', reason: 'a retraction needs the user’s own words, quoted exactly' }
+            if (!said || !retracts(quote) || !retracts(said.text)) return { label, outcome: 'rejected', reason: 'a retraction needs the user’s own words withdrawing the value, quoted exactly' }
             return describe(label, this.store.retractFact(contextId, factId, { sessionId: worker.id, seq: said.seq, speaker: 'user', quote }, 'worker', expectedVersion))
           }
           const label = text('label') ?? (factId ? this.store.fact(factId)?.label : undefined) ?? ''
@@ -1441,7 +1441,7 @@ export default class TheOne extends Service {
   private queueExtraction(worker: Agent, contextId: string): void {
     // What the topic knew when the turn ended: a later write to the same fact makes this one stale.
     const events = evidenceEvents(worker.session.snapshotEvents())
-    const base = this.store.facts(contextId)
+    const base = this.store.facts(contextId, true)
     const previous = this.extractions.get(contextId) ?? Promise.resolve()
     const job = previous.then(() => this.extractFacts(worker.id, contextId, events, base)).catch(error => {
       console.warn('TheOne could not extract facts from the last turn.', error)

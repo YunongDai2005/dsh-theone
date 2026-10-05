@@ -264,3 +264,28 @@ test('automatic extraction is off by default; when on, it records only confirmed
     assert.equal(extractions.length, 2)
   } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
 })
+
+test('the live extraction queue retains withdrawn identities so a new confirmation restores them', { timeout: 60000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'theone-facts-restore-'))
+  const { model } = world()
+  const routed = model.behavior!
+  model.behavior = async function* (options) {
+    if (options.system?.startsWith('你在帮一个话题记录已经确定下来的要点')) {
+      const payload = JSON.parse((options.messages[0] as unknown as { content: { text: string }[] }).content[0].text)
+      assert.equal(payload.facts[0].status, 'retracted')
+      yield* textResponse(JSON.stringify([{ label: '预算', kind: 'fact', value: '900', evidenceQuote: '预算重新定为 900 元' }]))
+      return
+    }
+    yield* routed(options)
+  }
+  const app = await harness(root, model, { routerMode: 'llm', theoneConfig: { factLinks: true, factExtraction: true } })
+  try {
+    const s = app.ctx.theone.store
+    const fact = s.recordFact(QWEN, { label: '预算', kind: 'fact', value: '800', status: 'confirmed', origin: 'worker',
+      evidence: { sessionId: 'old', seq: 1, speaker: 'user', quote: '预算 800' } }).fact!
+    s.retractFact(QWEN, fact.id, { sessionId: 'old', seq: 2, speaker: 'user', quote: '预算未定' }, 'worker')
+    await ask(app.gateway, 'Qwen 预算重新定为 900 元')
+    await app.ctx.theone.extracting
+    assert.deepEqual([s.fact(fact.id)?.status, s.fact(fact.id)?.value, s.fact(fact.id)?.version], ['confirmed', '900', 3])
+  } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
+})

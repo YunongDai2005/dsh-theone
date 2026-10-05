@@ -138,10 +138,16 @@ a proposal, "undecided", something else), the context tokens each strategy used,
 
 | Gate | Passes when, for `facts` |
 | --- | --- |
-| `beats_summary` | more probes right than `summary` |
+| `beats_summary` | more of the same, completely paired probes right than `summary` |
 | `stale_answers` | under 5% of `stale` probes answered with the old value |
-| `proposals_shared` | no delivered line carries a value that was only proposed |
-| `routing_unchanged` | offering facts changes the chosen topic for under 2% of requests |
+| `proposals_shared` | proposal/rejection probes and actual imports were measured; no delivered value is proposed or unrecognized for that fact |
+| `routing_unchanged` | under 2% changed, routing accuracy does not fall, and no routing errors occurred |
+
+Each strategy retains its own earlier probe answers and reference notes, including changes, so
+repeated probes exercise the same remembered facts as a live Worker. Delivery scoring matches both
+the source topic and the fact's name. Missing pairs, duplicate answers or failed extraction/session
+requests block release; the scorer exits with status 1 until all gates pass. Dry runs use a fake model
+and only validate the pipeline, not the release quality of a real model.
 
 What it does not cover yet: the Worker's own `theone_record` and `theone_lookup` calls (only the
 extractor writes facts here, so `facts` is a lower bound); related topics' digests in the briefing;

@@ -5,7 +5,8 @@ import { fileURLToPath } from 'node:url'
 import { buildSchedule, factState, planFactEpisodes } from '../lib/schedule.mjs'
 import { buildProbes } from '../lib/probes.mjs'
 import { createClient } from '../lib/llm.mjs'
-import { generate } from '../generate.mjs'
+import { generate, matchesFactStep } from '../generate.mjs'
+import { states } from '../../dist/facts.js'
 import { deliveryVerdict, judgeAnswer, runSession } from '../run-facts.mjs'
 
 const fake = join(dirname(fileURLToPath(import.meta.url)), 'fake-model.mjs')
@@ -14,6 +15,16 @@ const threads = [
   { id: 't2', facts: [{ key: 'c', value: 'P1', update: null, alternative: 'Q1' }] },
   { id: 't3', facts: [{ key: 'd', value: '7', update: '8', alternative: null }] },
 ]
+
+test('a rendered non-answer or missing withdrawal cannot become ground truth', () => {
+  const accepted = { kind: 'accept', value: '800' }, withdrawn = { kind: 'retract', value: null }
+  assert.equal(matchesFactStep(accepted, 'What is the weather tomorrow', 'Sunny', states), false)
+  assert.equal(matchesFactStep(accepted, 'no, not that one', 'Fine', states), false)
+  assert.equal(matchesFactStep(accepted, 'make it so', 'Done', states), true)
+  assert.equal(matchesFactStep(withdrawn, 'continue the plan', 'Done', states), false)
+  assert.equal(matchesFactStep(withdrawn, 'budget is off for now', 'Done', states), true)
+  assert.equal(factState([{ thread: 't', key: 'budget', turn: 0, status: 'confirmed', value: '800', miss: true }], 't', 'budget', 0), null)
+})
 
 test('fact episodes ride on the routing plan without changing it, and every answer follows its proposal', () => {
   const plan = buildSchedule(threads, 50, 4)
@@ -75,17 +86,17 @@ test('probes are asked by a topic that exists, about another one, with the right
 
 test('answers are judged against the value at that moment; decoys say which way they went wrong', () => {
   const timeline = [
-    { thread: 't1', key: 'a', turn: 1, kind: 'intro', status: 'confirmed', value: '800' },
-    { thread: 't1', key: 'a', turn: 5, kind: 'update', status: 'confirmed', value: '700' },
-    { thread: 't1', key: 'b', turn: 6, kind: 'propose', status: 'proposed', value: '周五' },
+    { thread: 't1', key: '预算', turn: 1, kind: 'intro', status: 'confirmed', value: '800' },
+    { thread: 't1', key: '预算', turn: 5, kind: 'update', status: 'confirmed', value: '700' },
+    { thread: 't1', key: '日期', turn: 6, kind: 'propose', status: 'proposed', value: '周五' },
   ]
-  const probe = { source: 't1', key: 'a', after: 6, gold: '700', decoys: ['800'] }
+  const probe = { source: 't1', key: '预算', after: 6, gold: '700', decoys: ['800'] }
   assert.equal(judgeAnswer('700 元', probe, timeline), 'correct')
   assert.equal(judgeAnswer('800', probe, timeline), 'stale')
   assert.equal(judgeAnswer('原来 800，现在 700', probe, timeline), 'stale')
   assert.equal(judgeAnswer('未确定', probe, timeline), 'missing')
   assert.equal(judgeAnswer('7000', probe, timeline), 'wrong')
-  const open = { source: 't1', key: 'b', after: 6, gold: null, decoys: ['周五'] }
+  const open = { source: 't1', key: '日期', after: 6, gold: null, decoys: ['周五'] }
   assert.equal(judgeAnswer('未确定', open, timeline), 'correct')
   assert.equal(judgeAnswer('Undecided.', open, timeline), 'correct')
   assert.equal(judgeAnswer('周五', open, timeline), 'proposal')
@@ -114,4 +125,48 @@ test('the facts run uses the plugin’s own flow: a careless extractor’s propo
   assert.ok(!rows.some(row => row.kind === 'error'))
   const accuracy = strategy => answers.filter(row => row.strategy === strategy && row.verdict === 'correct').length
   assert.ok(accuracy('facts') > accuracy('own'))
+})
+
+test('delivery scoring checks the named fact, not an equal value belonging to another fact', () => {
+  const timeline = [
+    { thread: 't1', key: 'budget', turn: 1, kind: 'intro', status: 'confirmed', value: '800' },
+    { thread: 't1', key: 'budget', turn: 2, kind: 'update', status: 'confirmed', value: '700' },
+    { thread: 't1', key: 'headcount', turn: 2, kind: 'intro', status: 'confirmed', value: '800' },
+  ]
+  const input = { titles: new Map([['Club', 't1']]), timeline, at: 2 }
+  assert.equal(deliveryVerdict('- 【Club】budget = 800（第 1 版）', input), 'stale')
+  assert.equal(deliveryVerdict('- 【Club】unknown = 700（第 1 版）', input), 'unknown')
+  assert.equal(judgeAnswer('未确定，也许是 700', { source: 't1', key: 'budget', after: 2, gold: '700', decoys: [] }, timeline), 'missing')
+})
+
+test('repeated probes retain facts previously delivered, including subsequent change notices', async () => {
+  const session = {
+    session_id: 'history', lang: 'en', threads: [
+      { id: 'a', title: 'Club', description: 'Club', facts: [{ key: 'budget' }] },
+      { id: 'b', title: 'Paper', description: 'Paper', facts: [] },
+    ],
+    turns: [
+      { i: 0, text: 'budget 800', assistant: 'Got it', gold: { thread: 'a' } },
+      { i: 1, text: 'Start paper', assistant: 'Got it', gold: { thread: 'b' } },
+      { i: 2, text: 'budget now 700', assistant: 'Got it', gold: { thread: 'a' } },
+    ],
+    timeline: [
+      { thread: 'a', key: 'budget', turn: 0, kind: 'intro', status: 'confirmed', value: '800' },
+      { thread: 'a', key: 'budget', turn: 2, kind: 'update', status: 'confirmed', value: '700' },
+    ],
+    probes: [1, 1, 2, 2].map((after, n) => ({ id: `p${n}`, after, thread: 'b', source: 'a', key: 'budget',
+      category: after === 1 ? 'cross' : 'stale', gold: after === 1 ? '800' : '700', decoys: after === 1 ? [] : ['800'], question: 'Paper needs Club budget' })),
+  }
+  const requests = []
+  const client = { complete: async ({ user, tag }) => {
+    const payload = JSON.parse(user)
+    if (tag.startsWith('extract')) return { value: [{ label: 'budget', kind: 'fact', value: payload.user.includes('700') ? '700' : '800', evidenceQuote: payload.user }], usage: {} }
+    if (tag.startsWith('route')) return { value: { action: 'EXISTING', contextId: 'b', title: null, question: null, reason: 'named', imports: (payload.symbols ?? []).map(fact => fact.id) }, usage: {} }
+    requests.push(payload)
+    return { value: 'undecided', usage: {} }
+  } }
+  await runSession(session, { client, strategies: ['facts'], routeTurns: 0 })
+  assert.ok(requests[1].conversation.some(message => /budget = 800/.test(message.text)))
+  assert.ok(requests[3].conversation.some(message => /800 → 700/.test(message.text)))
+  assert.ok(!requests[1].conversation.some(message => /800 → 700/.test(message.text)), 'future notes must not leak into past requests')
 })

@@ -20,7 +20,7 @@ import { EDITABLE_SETTINGS_KEYS, RESTART_SETTINGS_KEYS } from "./settings-types.
 import { validateSettings } from "./settings.js";
 import { RESTART_CODE, WorkerRun } from "./run.js";
 import { buildBriefing, LINK_SIGNAL, mayShare, relatedTopics } from "./linkage.js";
-import { evidenceEvents, FACT_KINDS, FACT_LIMITS, findQuote, rankCandidates, safe, verify } from "./facts.js";
+import { evidenceEvents, FACT_KINDS, FACT_LIMITS, findQuote, rankCandidates, retracts, safe, verify } from "./facts.js";
 import { applyExtraction, EXTRACT_PROMPT, extractionPayload, factCandidates, factDelivery, ownFactsText } from "./fact-flow.js";
 import { PACKAGE_NAME, Updater } from "./update.js";
 import { NOTICE_URL, NoticeBoard } from "./notices.js";
@@ -1383,8 +1383,8 @@ export default class TheOne extends Service {
                         if (!factId)
                             return describe(label, { outcome: 'rejected', reason: 'unknown-fact' });
                         const said = findQuote(events, quote, { speaker: 'user' });
-                        if (!said)
-                            return { label, outcome: 'rejected', reason: 'a retraction needs the user’s own words, quoted exactly' };
+                        if (!said || !retracts(quote) || !retracts(said.text))
+                            return { label, outcome: 'rejected', reason: 'a retraction needs the user’s own words withdrawing the value, quoted exactly' };
                         return describe(label, this.store.retractFact(contextId, factId, { sessionId: worker.id, seq: said.seq, speaker: 'user', quote }, 'worker', expectedVersion));
                     }
                     const label = text('label') ?? (factId ? this.store.fact(factId)?.label : undefined) ?? '';
@@ -1600,7 +1600,7 @@ export default class TheOne extends Service {
     queueExtraction(worker, contextId) {
         // What the topic knew when the turn ended: a later write to the same fact makes this one stale.
         const events = evidenceEvents(worker.session.snapshotEvents());
-        const base = this.store.facts(contextId);
+        const base = this.store.facts(contextId, true);
         const previous = this.extractions.get(contextId) ?? Promise.resolve();
         const job = previous.then(() => this.extractFacts(worker.id, contextId, events, base)).catch(error => {
             console.warn('TheOne could not extract facts from the last turn.', error);

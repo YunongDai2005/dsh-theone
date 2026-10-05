@@ -138,7 +138,7 @@ export declare class ContextStore {
      * over time, stay within 0–5, and a term that falls to nothing is forgotten.
      */
     learnTerms(contextId: string, terms: string[], delta: number, now?: number): void;
-    /** Each topic's learned terms that still count (weight ≥ 0.5 after fading), strongest first. */
+    /** Each topic's learned terms that still count (weight > 0.5 after fading), strongest first. */
     learnedTerms(now?: number, limit?: number): Map<string, string[]>;
     /** How routing has gone lately: of the last `limit` messages, how many were moved, asked about or routed by rules after a failure. */
     routeStats(gatewayKey: string, limit?: number): {
@@ -188,8 +188,8 @@ export declare class ContextStore {
     }) | undefined;
     /** One earlier version of a fact. */
     factVersion(factId: string, version: number): FactView | undefined;
-    /** A topic's live facts (proposals included, retracted ones left out), most recently used first. */
-    facts(contextId: string): FactView[];
+    /** A topic's live facts; include withdrawn identities when taking a write/extraction baseline. */
+    facts(contextId: string, includeRetracted?: boolean): FactView[];
     /** Confirmed facts of every other live topic, the pool other topics may draw from. */
     sharedFacts(excludeContextId?: string): (FactView & {
         lastUsedAt?: number;
@@ -197,6 +197,7 @@ export declare class ContextStore {
     private factByName;
     /** Refuse a write that is older than what the fact already holds. */
     private staleWrite;
+    private newerEvidence;
     private inTransaction;
     private addVersion;
     /**

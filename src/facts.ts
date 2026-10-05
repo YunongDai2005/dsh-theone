@@ -65,29 +65,43 @@ export function matchText(text: string): string {
   return redactRoutingText(text).normalize('NFKC').toLowerCase().replace(/(\d)[,，](?=\d{3}\b)/g, '$1').replace(/\s+/g, '')
 }
 
-/** Does `source` actually state `value`? Literally, by all of its numbers, or by most of its wording. */
+/** Literal evidence, with complete numeric tokens and units; similarity is for ranking, not proof. */
 export function states(source: string, value: string): boolean {
   const s = matchText(source), v = matchText(value)
   if (!v || !s) return false
-  if (s.includes(v)) return true
-  const numbers = v.match(/\d+(?:\.\d+)?/g)
-  if (numbers?.length) return numbers.every(number => s.includes(number))
-  const wanted = textFeatures(value), present = textFeatures(source)
-  if (!wanted.size) return false
-  let shared = 0
-  for (const feature of wanted) if (present.has(feature)) shared++
-  return shared / wanted.size >= 0.6
+  const numeric = /[+-]?\d+(?:\.\d+)?/g
+  const numbers = v.match(numeric) ?? []
+  const present = new Set(s.match(numeric) ?? [])
+  if (numbers.some(number => !present.has(number))) return false
+  return s.includes(v)
 }
 
-const NEGATION = /(不行|不可以|不好|不要|不用|别这样|算了|再想想|\bno\b|\bnot\b|\bdon'?t\b|\bnope\b)/i
-const ACCEPTANCE = /(好的?|行|可以|就按|就这样|就用|就它|同意|确定|定了|没问题|按你说的|\bok(ay)?\b|\byes\b|\bsure\b|sounds good|go with|let'?s (do|go|use)|\bagreed?\b|\bdeal\b|works for me|that works)/i
+const NEGATION = /(不行|不可以|不好|不要|不用|不能|不是|不再|不同意|不采用|不选|别这样|算了|再想想|\bno\b|\bnot\b|\bdon'?t\b|\bnope\b|rather than|instead of)/i
+const UNCERTAIN = /(未定|没定|没(?:有)?确定|未确认|未确定|不确定|暂定|待定|建议|假设|如果|或许|可能|\b(might|maybe|perhaps|suggest|suppose|if|undecided)\b)/i
+const QUESTION = /[?？]|(吗|呢)\s*[。！!]?\s*$/
+const ACCEPTANCE = /((?:^|[\s，,。.!！;；])(?:好的?|行|可以|确定|定了)(?=$|[\s，,。.!！;；]|就|按)|就按|就这样|就用|就它|同意|就这么定|没问题|按你说的|\bok(ay)?\b|\byes\b|\bsure\b|sounds good|go with|let'?s (do|go|use)|\bagreed?\b|\bdeal\b|works for me|that works)/i
 
 /** "ok, go with that": an explicit acceptance, without a refusal and not itself a question. */
 export function accepts(text: string): boolean {
-  return ACCEPTANCE.test(text) && !NEGATION.test(text) && !/(吗|呢|\?|？)\s*$/.test(text.trim())
+  return ACCEPTANCE.test(text) && !NEGATION.test(text) && !UNCERTAIN.test(text) && !QUESTION.test(text.trim())
 }
 
-export interface EvidenceEvent { seq: number; speaker: Speaker; text: string }
+/** A retraction needs words withdrawing or reopening a value, not merely any user quote. */
+export function retracts(text: string): boolean {
+  return !QUESTION.test(text.trim()) && /(撤回|取消|不再|不要|不用|未定|没定|没(?:有)?确定|未确认|未确定|不确定|先不定|待定|\b(withdraw|withdrawn|cancel|cancelled|canceled|undecided)\b|no longer|is off|not (yet )?(settled|decided))/i.test(text)
+}
+
+/** Check the actual sentence, including words a shortened model quote might have omitted. */
+function assertsValue(text: string, value: string, quote: string): boolean {
+  const needle = matchText(quote)
+  const clauses = text.replace(/(\d)[,，](?=\d{3}\b)/g, '$1').split(/(?<=[。！？!?;；\n])/).flatMap(sentence =>
+    sentence.split(/[,，]/).filter(clause => states(clause, value) &&
+      (matchText(clause).includes(needle) || needle.includes(matchText(clause))))
+      .map(clause => ({ text: clause, question: QUESTION.test(sentence.trim()) })))
+  return clauses.length > 0 && clauses.every(clause => !clause.question && !NEGATION.test(clause.text) && !UNCERTAIN.test(clause.text))
+}
+
+export interface EvidenceEvent { seq: number; speaker: Speaker; text: string; toolResult?: boolean; isError?: boolean }
 
 /**
  * The messages of a topic session that can serve as evidence, newest last: the user's own messages,
@@ -103,8 +117,7 @@ export function evidenceEvents(events: readonly SessionEvent[], limit = 200): Ev
     if (event.type === 'user/message' && event.data.source.kind === 'user') result.push({ seq: event.seq, speaker: 'user', text: text(event.data.content) })
     else if (event.type === 'assistant/message') result.push({ seq: event.seq, speaker: 'assistant', text: text(event.data.message.content) })
     else if (event.type === 'tool/result' && !own.has(String(event.data.message.source.callId)))
-      result.push({ seq: event.seq, speaker: 'tool', text: text(event.data.message.content as { type: string; text?: string }[]) })
-    else if (event.type === 'tool/call' && !own.has(String(event.data.callId))) result.push({ seq: event.seq, speaker: 'tool', text: `${event.data.name} ${event.data.arguments}` })
+      result.push({ seq: event.seq, speaker: 'tool', text: text(event.data.message.content as { type: string; text?: string }[]), toolResult: true, isError: event.data.message.isError === true })
   }
   return result.filter(item => item.text.trim()).slice(-limit)
 }
@@ -136,21 +149,23 @@ export function verify(input: { sessionId: string; events: readonly EvidenceEven
   const hit = findQuote(input.events, input.quote, { speaker: 'user' }) ?? findQuote(input.events, input.quote)
   if (!hit) return { status: 'proposed', reason: 'quote-not-found', evidence: { sessionId: input.sessionId, seq: null, speaker: 'unverified', quote } }
   const evidence: FactEvidence = { sessionId: input.sessionId, seq: hit.seq, speaker: hit.speaker, quote }
-  if (hit.speaker === 'user' && states(input.quote, input.value)) return { status: 'confirmed', evidence }
-  if (hit.speaker === 'user' && input.acceptsQuote && accepts(input.quote)) {
+  if (hit.speaker === 'user' && states(input.quote, input.value) && assertsValue(hit.text, input.value, input.quote)) return { status: 'confirmed', evidence }
+  if (hit.speaker === 'user' && input.acceptsQuote && accepts(input.quote) && accepts(hit.text)) {
     const proposal = findQuote(input.events, input.acceptsQuote, { speaker: 'assistant', before: hit.seq })
-    if (proposal && states(input.acceptsQuote, input.value))
+    const latest = input.events.findLast(event => event.speaker === 'assistant' && event.seq < hit.seq)
+    if (proposal && proposal.seq === latest?.seq && states(input.acceptsQuote, input.value))
       return { status: 'confirmed', evidence: { ...evidence, accepts: { seq: proposal.seq, quote: safe(input.acceptsQuote, FACT_LIMITS.quote) } } }
     return { status: 'proposed', reason: 'proposal-not-found', evidence }
   }
-  if (input.kind === 'artifact' && hit.speaker === 'tool' && states(hit.text, input.value)) return { status: 'confirmed', evidence }
+  if (input.kind === 'artifact' && hit.speaker === 'tool' && hit.toolResult && !hit.isError && states(hit.text, input.value)) return { status: 'confirmed', evidence }
   return { status: 'proposed', reason: hit.speaker === 'user' ? 'value-not-in-quote' : `said-by-${hit.speaker}`, evidence }
 }
 
 /** One fact as other topics are shown it: `【topic】label = value (version n, confirmed at …)`. */
 export function factLine(fact: FactView, topicTitle: string): string {
   const at = new Date(fact.createdAt).toISOString().slice(0, 16).replace('T', ' ') + ' UTC'
-  return `- 【${safe(topicTitle, 40)}】${safe(fact.label, FACT_LIMITS.label)} = ${safe(fact.value ?? '', FACT_LIMITS.value)}（第 ${fact.version} 版，用户确认于 ${at}）`
+  const confirmedBy = fact.evidence.speaker === 'tool' ? '工具验证于' : '用户确认于'
+  return `- 【${safe(topicTitle, 40)}】${safe(fact.label, FACT_LIMITS.label)} = ${safe(fact.value ?? '', FACT_LIMITS.value)}（第 ${fact.version} 版，${confirmedBy} ${at}）`
 }
 
 /** Lines up to a character budget, whole lines only. */
@@ -184,11 +199,11 @@ export function rankCandidates(facts: readonly (FactView & { topicTitle: string;
     return lexical > 0 || named > 0 ? [{ fact, score }] : []
   }).sort((a, b) => b.score - a.score)
   const result: FactCandidate[] = []
-  let used = 0
+  let used = 2 // The serialized array's brackets and commas count towards the router budget too.
   for (const { fact } of scored) {
     if (result.length >= FACT_LIMITS.routerItems) break
     const item = { id: fact.id, topic: clip(fact.topicTitle, 40), label: clip(fact.label, FACT_LIMITS.routerLabel), kind: fact.kind, value: safe(fact.value ?? '', FACT_LIMITS.routerValue) }
-    const size = JSON.stringify(item).length
+    const size = JSON.stringify(item).length + (result.length ? 1 : 0)
     if (used + size > FACT_LIMITS.routerBudget) break
     result.push(item); used += size
   }

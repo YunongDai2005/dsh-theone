@@ -27,7 +27,7 @@ test('only the user’s own words, or an explicit acceptance of a proposal, conf
     { seq: 4, speaker: 'assistant', text: '建议预算 800 元，茶点 260' },
     { seq: 5, speaker: 'user', text: '这个预算可以吗？' },
     { seq: 7, speaker: 'user', text: '好，就按你说的来' },
-    { seq: 8, speaker: 'tool', text: 'write_file {"path":"plan/budget.md"}' },
+    { seq: 8, speaker: 'tool', text: 'created plan/budget.md', toolResult: true, isError: false },
   ]
   // The assistant's suggestion alone is a proposal.
   const proposal = verify({ sessionId: 's', events, kind: 'fact', value: '800', quote: '建议预算 800 元' })
@@ -58,7 +58,8 @@ test('a newer value supersedes the old one; one current version per fact; propos
   assert.equal(first.outcome, 'created')
   const second = set(s, 'club', '700', said('w1', 20, '预算改成 700'), { expectedVersion: 1 })
   assert.deepEqual([second.outcome, second.fact?.version, second.fact?.value, second.previous?.value], ['updated', 2, '700', '800'])
-  assert.equal(set(s, 'club', '700', said('w1', 21, '还是 700')).outcome, 'unchanged')
+  // Replaying the same evidence is idempotent; a later reaffirmation advances the version.
+  assert.equal(set(s, 'club', '700', said('w1', 20, '预算改成 700')).outcome, 'unchanged')
   const proposal = s.recordFact('club', { label: '预算', kind: 'fact', value: '900', status: 'proposed', evidence: said('w1', 30, '建议 900', 'assistant'), origin: 'worker' })
   assert.deepEqual([proposal.outcome, proposal.reason], ['rejected', 'keeps-confirmed'])
   assert.equal(s.facts('club').length, 1)
@@ -89,7 +90,7 @@ test('retracting leaves no value; the fact is out of the shared pool and can be 
   assert.deepEqual([gone.outcome, gone.fact?.status, gone.fact?.value], ['retracted', 'retracted', null])
   assert.equal(s.sharedFacts().length, 0)
   assert.equal(s.facts('club').length, 0)
-  assert.equal(s.retractFact('club', fact.id, said('w1', 16, '没定'), 'worker').outcome, 'unchanged')
+  assert.equal(s.retractFact('club', fact.id, said('w1', 15, '预算还没定'), 'worker').outcome, 'unchanged')
   assert.equal(s.retractFact('jobs', fact.id, said('w1', 16, '没定'), 'worker').reason, 'unknown-fact')
   const again = set(s, 'club', '650', said('w1', 30, '预算定 650'))
   assert.deepEqual([again.outcome, again.fact?.id, again.fact?.version], ['updated', fact.id, 3])

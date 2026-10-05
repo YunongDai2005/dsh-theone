@@ -140,7 +140,7 @@ export function planFactEpisodes(turns, threads, seed) {
 export function factState(timeline, thread, key, at) {
   let value = null
   for (const event of timeline) {
-    if (event.thread !== thread || event.key !== key || event.turn > at) continue
+    if (event.miss || event.thread !== thread || event.key !== key || event.turn > at) continue
     if (event.status === 'confirmed') value = event.value
     else if (event.status === 'retracted') value = null
   }

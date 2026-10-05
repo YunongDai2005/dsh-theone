@@ -10,7 +10,7 @@ Gates, all on the facts strategy:
   beats_summary      more probes right than with a summary of the other topic
   stale_answers      under 5% of the probes asked after a value changed are answered with the old value
   proposals_shared   no unconfirmed value is ever delivered to another topic
-  routing_unchanged  offering facts changes the chosen topic for under 2% of requests
+  routing_unchanged  under 2% changed, without reducing routing accuracy or ignoring errors
 """
 from __future__ import annotations
 
@@ -49,6 +49,9 @@ def evaluate(rows):
     deliveries = [row for row in rows if row["kind"] == "delivery"]
     routes = [row for row in rows if row["kind"] == "route"]
     sessions = [row for row in rows if row["kind"] == "session"]
+    errors = sum(row["kind"] == "error" for row in rows)
+    identities = Counter((row.get("session_id", ""), row["probe"], row["strategy"]) for row in answers)
+    duplicates = sum(count - 1 for count in identities.values())
 
     strategies = {}
     for strategy in [name for name in STRATEGIES if any(row["strategy"] == name for row in answers)]:
@@ -84,7 +87,7 @@ def evaluate(rows):
     paired = None
     by_probe = defaultdict(dict)
     for row in answers:
-        by_probe[row["probe"]][row["strategy"]] = row["verdict"] == "correct"
+        by_probe[(row.get("session_id", ""), row["probe"])][row["strategy"]] = row["verdict"] == "correct"
     both = [item for item in by_probe.values() if "facts" in item and "summary" in item]
     if both:
         paired = {"n": len(both), "facts_only": sum(item["facts"] and not item["summary"] for item in both),
@@ -108,19 +111,25 @@ def evaluate(rows):
     facts, summary = strategies.get("facts"), strategies.get("summary")
     gates = {}
     if facts and summary:
-        gates["beats_summary"] = {"value": f"{facts['accuracy']:.3f} vs {summary['accuracy']:.3f}", "pass": facts["accuracy"] > summary["accuracy"]}
+        complete_pairs = len(both) == facts["n"] == summary["n"] and duplicates == 0
+        gates["beats_summary"] = {"value": f"{facts['accuracy']:.3f} vs {summary['accuracy']:.3f} ({len(both)} paired)",
+                                   "pass": complete_pairs and paired["facts_only"] > paired["summary_only"]}
     if facts:
         stale = facts["stale_answers"]
         gates["stale_answers"] = {"value": "no stale probes" if stale is None else f"{stale:.3f} of {facts['stale_probes']}",
                                   "pass": stale is not None and stale < LIMITS["stale_answers"]}
-        gates["proposals_shared"] = {"value": f"{delivered['proposal']} of {sum(delivered.values())} lines", "pass": delivered["proposal"] == 0}
+        proposal_probes = sum(facts["categories"].get(category, {}).get("n", 0) for category in ("proposal", "rejected"))
+        gates["proposals_shared"] = {"value": f"{delivered['proposal']} proposals, {delivered['unknown']} unknown of {sum(delivered.values())} lines; {proposal_probes} proposal/rejection probes",
+                                     "pass": bool(sum(imported.values())) and proposal_probes > 0 and delivered["proposal"] == 0 and delivered["unknown"] == 0}
     if routes:
         changed = routing["changed"]
         gates["routing_unchanged"] = {"value": "nothing offered" if changed is None else f"{changed:.3f} of {len(offered)} changed",
-                                      "pass": changed is not None and changed < LIMITS["routing_changed"]}
+                                      "pass": changed is not None and changed < LIMITS["routing_changed"] and routing["errors"] == 0
+                                      and routing["accuracy_with"] >= routing["accuracy_without"]}
     return {"strategies": strategies, "paired": paired, "deliveries": dict(delivered), "imported": dict(imported),
             "routing": routing, "tokens": dict(tokens), "gates": gates,
-            "passed": bool(gates) and all(gate["pass"] for gate in gates.values()) and len(gates) == 4}
+            "errors": errors + routing["errors"], "duplicate_answers": duplicates,
+            "passed": errors == 0 and duplicates == 0 and bool(gates) and all(gate["pass"] for gate in gates.values()) and len(gates) == 4}
 
 
 def fmt(value, digits=3):
@@ -150,6 +159,8 @@ def report(result):
     lines += ["", "| gate | value | pass |", "|---|---|---|"]
     for name, gate in result["gates"].items():
         lines.append(f"| {name} | {gate['value']} | {'yes' if gate['pass'] else 'NO'} |")
+    if result["errors"] or result["duplicate_answers"]:
+        lines += ["", f"Incomplete/invalid measurements: {result['errors']} errors, {result['duplicate_answers']} duplicate answers."]
     lines += ["", "All gates passed." if result["passed"] else "Gates not passed: keep shared facts off by default."]
     return "\n".join(lines)
 
@@ -161,7 +172,7 @@ def main(argv):
         return 2
     result = evaluate([row for path in paths for row in read_jsonl(path)])
     print(json.dumps(result, ensure_ascii=False, indent=2) if "--json" in argv else report(result))
-    return 0
+    return 0 if result["passed"] else 1
 
 
 if __name__ == "__main__":

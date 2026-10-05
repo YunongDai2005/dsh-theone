@@ -577,12 +577,12 @@ export class ContextStore {
     }
   }
 
-  /** Each topic's learned terms that still count (weight ≥ 0.5 after fading), strongest first. */
+  /** Each topic's learned terms that still count (weight > 0.5 after fading), strongest first. */
   learnedTerms(now = Date.now(), limit = 20): Map<string, string[]> {
     const result = new Map<string, { term: string; weight: number }[]>()
     for (const row of this.db.prepare('SELECT * FROM learned_terms').all() as { context_id: string; term: string; weight: number; updated_at: number }[]) {
       const weight = row.weight * 0.5 ** ((now - row.updated_at) / TERM_HALF_LIFE_MS)
-      if (weight < 0.5) continue
+      if (weight <= 0.5) continue
       result.set(row.context_id, [...result.get(row.context_id) ?? [], { term: row.term, weight }])
     }
     return new Map([...result].map(([id, terms]) => [id, terms.sort((a, b) => b.weight - a.weight).slice(0, limit).map(item => item.term)]))
@@ -765,9 +765,9 @@ export class ContextStore {
     return row && this.factFrom(row)
   }
 
-  /** A topic's live facts (proposals included, retracted ones left out), most recently used first. */
-  facts(contextId: string): FactView[] {
-    return (this.db.prepare(this.factQuery("f.context_id = ? AND f.deleted_at IS NULL AND v.status != 'retracted' ORDER BY COALESCE(f.last_used_at, v.created_at) DESC")).all(contextId) as Record<string, unknown>[])
+  /** A topic's live facts; include withdrawn identities when taking a write/extraction baseline. */
+  facts(contextId: string, includeRetracted = false): FactView[] {
+    return (this.db.prepare(this.factQuery(`f.context_id = ? AND f.deleted_at IS NULL ${includeRetracted ? '' : "AND v.status != 'retracted'"} ORDER BY COALESCE(f.last_used_at, v.created_at) DESC`)).all(contextId) as Record<string, unknown>[])
       .map(row => this.factFrom(row))
   }
 
@@ -793,6 +793,11 @@ export class ContextStore {
     return undefined
   }
 
+  private newerEvidence(current: FactView, evidence: FactEvidence): boolean {
+    return evidence.sessionId !== current.evidence.sessionId ||
+      (evidence.seq != null && (current.evidence.seq == null || evidence.seq > current.evidence.seq))
+  }
+
   private inTransaction<T>(work: () => T): T {
     this.db.exec('BEGIN IMMEDIATE')
     try { const result = work(); this.db.exec('COMMIT'); return result }
@@ -814,7 +819,7 @@ export class ContextStore {
     const label = safe(write.label, FACT_LIMITS.label), key = factKey(label), value = safe(write.value, FACT_LIMITS.value)
     if (!key || !value || !FACT_KINDS.includes(write.kind)) return { outcome: 'rejected', reason: 'invalid' }
     const evidence = { ...write.evidence, quote: safe(write.evidence.quote, FACT_LIMITS.quote) }
-    const aliasKeys = (names: string[]) => [...new Set(names.map(name => factKey(safe(name, FACT_LIMITS.alias))).filter(alias => alias && alias !== key))].slice(0, FACT_LIMITS.aliases)
+    const aliasKeys = (names: string[], exclude = key) => [...new Set(names.map(name => factKey(safe(name, FACT_LIMITS.alias))).filter(alias => alias && alias !== exclude))].slice(0, FACT_LIMITS.aliases)
     return this.inTransaction(() => {
       const current = write.factId ? this.fact(write.factId) : this.factByName(contextId, key)
       if (write.factId && (!current || current.contextId !== contextId || current.deletedAt !== undefined)) return { outcome: 'rejected', reason: 'unknown-fact' } as FactResult
@@ -829,10 +834,11 @@ export class ContextStore {
       const refused = this.staleWrite(current, evidence, write.expectedVersion)
         ?? (current.status === 'confirmed' && write.status === 'proposed' ? 'keeps-confirmed' : undefined)
       if (refused) return { outcome: 'rejected', reason: refused, fact: current } as FactResult
-      const aliases = [...new Set([...current.aliases, ...aliasKeys([...(write.aliases ?? []), ...(key !== current.key ? [label] : [])])])]
+      const aliases = [...new Set([...current.aliases, ...aliasKeys([...(write.aliases ?? []), ...(key !== current.key ? [label] : [])], current.key)])]
         .filter(alias => alias !== current.key).slice(0, FACT_LIMITS.aliases)
       this.db.prepare('UPDATE facts SET aliases = ? WHERE id = ?').run(JSON.stringify(aliases), current.id)
-      if (current.status === write.status && current.value === value) return { outcome: 'unchanged', fact: this.fact(current.id)! } as FactResult
+      // A later reaffirmation is a new version too: delayed writes must not undo the user's latest words.
+      if (current.status === write.status && current.value === value && !this.newerEvidence(current, evidence)) return { outcome: 'unchanged', fact: this.fact(current.id)! } as FactResult
       this.addVersion(current.id, current.version + 1, write.status, value, evidence, write.origin, now)
       return { outcome: 'updated', fact: this.fact(current.id)!, previous: current } as FactResult
     })
@@ -846,7 +852,7 @@ export class ContextStore {
       const quoted = { ...evidence, quote: safe(evidence.quote, FACT_LIMITS.quote) }
       const refused = this.staleWrite(current, quoted, expectedVersion)
       if (refused) return { outcome: 'rejected', reason: refused, fact: current } as FactResult
-      if (current.status === 'retracted') return { outcome: 'unchanged', fact: current } as FactResult
+      if (current.status === 'retracted' && !this.newerEvidence(current, quoted)) return { outcome: 'unchanged', fact: current } as FactResult
       this.addVersion(current.id, current.version + 1, 'retracted', null, quoted, origin, now)
       return { outcome: 'retracted', fact: this.fact(current.id)!, previous: current } as FactResult
     })

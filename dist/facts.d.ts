@@ -62,14 +62,18 @@ export declare const safe: (text: string, max: number) => string;
 export declare function factKey(label: string): string;
 /** Folded text for finding a quote inside a message: width, case, spacing and thousands separators. */
 export declare function matchText(text: string): string;
-/** Does `source` actually state `value`? Literally, by all of its numbers, or by most of its wording. */
+/** Literal evidence, with complete numeric tokens and units; similarity is for ranking, not proof. */
 export declare function states(source: string, value: string): boolean;
 /** "ok, go with that": an explicit acceptance, without a refusal and not itself a question. */
 export declare function accepts(text: string): boolean;
+/** A retraction needs words withdrawing or reopening a value, not merely any user quote. */
+export declare function retracts(text: string): boolean;
 export interface EvidenceEvent {
     seq: number;
     speaker: Speaker;
     text: string;
+    toolResult?: boolean;
+    isError?: boolean;
 }
 /**
  * The messages of a topic session that can serve as evidence, newest last: the user's own messages,

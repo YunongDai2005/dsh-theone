@@ -1,5 +1,5 @@
 import { LINK_SIGNAL, mayShare, relatedTopics } from "./linkage.js";
-import { FACT_KINDS, FACT_LIMITS, factKey, factLine, findQuote, rankCandidates, safe, verify, within } from "./facts.js";
+import { FACT_KINDS, FACT_LIMITS, factKey, factLine, findQuote, rankCandidates, retracts, safe, verify, within } from "./facts.js";
 /** Confirmed facts this message might use, best first, within budget. Ranking only. */
 export function factCandidates(store, scope, text, recent, currentId) {
     if (scope === 'off')
@@ -60,7 +60,7 @@ export function factDelivery(store, scope, contextId, imports, inputId) {
 }
 /** The topic's own recorded facts, with ids and versions, for its Worker's descriptor. */
 export function ownFactsText(store, contextId) {
-    const lines = store.facts(contextId).slice(0, FACT_LIMITS.ownItems).map(fact => `- [${fact.id} v${fact.version}] ${safe(fact.label, FACT_LIMITS.label)} = ${safe(fact.value ?? '', 120)}${fact.status === 'proposed' ? '（建议，用户未确认）' : ''}`);
+    const lines = store.facts(contextId, true).slice(0, FACT_LIMITS.ownItems).map(fact => `- [${fact.id} v${fact.version}] ${safe(fact.label, FACT_LIMITS.label)} = ${safe(fact.value ?? '', 120)}${fact.status === 'proposed' ? '（建议，用户未确认）' : fact.status === 'retracted' ? '（已撤回）' : ''}`);
     const kept = within(lines, FACT_LIMITS.ownBudget);
     return kept.length ? `\n本话题已记录的要点（更新或撤回时用 theone_record，带上 factId 和 expectedVersion）：\n${kept.join('\n')}` : '';
 }
@@ -77,9 +77,16 @@ export function extractionPayload(events, base) {
     // An accepted proposal is quoted from the reply before the user's words, so that reply is included.
     const previous = events.slice(0, lastUser).findLast(event => event.speaker === 'assistant');
     const user = events[lastUser].text, assistant = [previous?.text, ...events.slice(lastUser + 1).filter(event => event.speaker === 'assistant').map(event => event.text)].filter(Boolean).join('\n');
-    const known = within(base.map(fact => JSON.stringify({ factId: fact.id, version: fact.version, label: safe(fact.label, FACT_LIMITS.label), value: safe(fact.value ?? '', 120) })), FACT_LIMITS.extractionFacts);
+    const known = within(base.map(fact => JSON.stringify({ factId: fact.id, version: fact.version, status: fact.status, label: safe(fact.label, FACT_LIMITS.label), value: safe(fact.value ?? '', 120) })), FACT_LIMITS.extractionFacts);
     const room = FACT_LIMITS.extractionBudget - known.join('').length;
-    return { user: safe(user, Math.floor(room / 3)), assistant: safe(assistant, room - Math.floor(room / 3) - 200), facts: known.map(line => JSON.parse(line)) };
+    const payload = { user: safe(user, Math.floor(room / 3)), assistant: safe(assistant, room - Math.floor(room / 3) - 200), facts: known.map(line => JSON.parse(line)) };
+    // Escaping quotes, newlines and backslashes can double the serialized request size.
+    while (JSON.stringify(payload).length > FACT_LIMITS.extractionBudget) {
+        const field = payload.assistant.length >= payload.user.length ? 'assistant' : 'user';
+        const excess = JSON.stringify(payload).length - FACT_LIMITS.extractionBudget;
+        payload[field] = payload[field].slice(0, Math.max(0, payload[field].length - Math.ceil(excess / 2)));
+    }
+    return payload;
 }
 /**
  * Store what an extraction returned, by the same rules as a Worker's record: evidence is checked in
@@ -96,14 +103,14 @@ export function applyExtraction(store, input) {
         if (!item || typeof item !== 'object')
             continue;
         const text = (key) => typeof item[key] === 'string' ? item[key] : undefined;
-        const quote = text('evidenceQuote') ?? '', factId = text('factId'), label = text('label') ?? '';
+        const quote = text('evidenceQuote') ?? '', factId = text('factId'), label = text('label') ?? input.base.find(fact => fact.id === factId)?.label ?? '';
         // A name that did not exist when the turn ended must still not exist: expected version 0.
         const expectedVersion = factId ? byId.get(factId) : byName.get(factKey(label)) ?? 0;
         if (factId && expectedVersion === undefined)
             continue;
         if (item.op === 'retract') {
             const said = factId ? findQuote(input.events, quote, { speaker: 'user' }) : undefined;
-            if (said && store.retractFact(input.contextId, factId, { sessionId: input.sessionId, seq: said.seq, speaker: 'user', quote }, 'extractor', expectedVersion).outcome === 'retracted')
+            if (said && retracts(quote) && retracts(said.text) && store.retractFact(input.contextId, factId, { sessionId: input.sessionId, seq: said.seq, speaker: 'user', quote }, 'extractor', expectedVersion).outcome === 'retracted')
                 stored++;
             continue;
         }

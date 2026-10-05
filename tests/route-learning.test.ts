@@ -17,6 +17,10 @@ test('learned terms strengthen, fade, can be unlearned, and only count above a t
   try {
     store.seed([topic('a', '论文'), topic('b', '显卡')])
     const t0 = 1_000_000
+    store.learnTerms('b', ['显存设置'], 0.5, t0)
+    assert.equal(store.learnedTerms(t0).get('b'), undefined, 'one weak hint does not count even within the same millisecond')
+    store.learnTerms('b', ['显存设置'], 0.5, t0)
+    assert.deepEqual(store.learnedTerms(t0).get('b'), ['显存设置'])
     store.learnTerms('a', ['消融', '第三章', 'x'], 1, t0)
     assert.deepEqual(store.learnedTerms(t0).get('a'), ['消融', '第三章'])
     // Fading: after two half-lives a single confirmation is below the threshold.

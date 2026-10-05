@@ -20,7 +20,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { ContextStore } from '../dist/store.js'
-import { matchText, states } from '../dist/facts.js'
+import { factKey, matchText, states } from '../dist/facts.js'
 import { applyExtraction, EXTRACT_PROMPT, extractionPayload, factCandidates, factDelivery } from '../dist/fact-flow.js'
 import { buildBriefing } from '../dist/linkage.js'
 import { routingPayload, routingPrompt, validateRoutingDecision } from '../dist/llm-router.js'
@@ -41,11 +41,15 @@ const says = (text, value) => {
   return numbers(value).every(number => have.has(number)) && states(text, value)
 }
 /** Both say the same value: so "800 元" and "800" match, "800" and "8000" do not. */
-const same = (a, b) => says(a, b) && says(b, a)
+const same = (a, b) => {
+  // A bare amount and its display form (700 / 700 元) differ only by currency formatting.
+  const amount = value => matchText(value).replace(/^(?:[$￥¥])?([+-]?\d+(?:\.\d+)?)(?:元|yuan|dollars?)?$/, '$1')
+  return amount(a) === amount(b) || says(a, b) && says(b, a)
+}
 
 /** Values of one thread's facts as they stood right after turn `at`: current, proposed only, and superseded. */
-function valuesAt(timeline, thread, at) {
-  const events = timeline.filter(event => event.thread === thread && event.turn <= at && !event.miss)
+function valuesAt(timeline, thread, key, at) {
+  const events = timeline.filter(event => event.thread === thread && factKey(event.key) === factKey(key) && event.turn <= at && !event.miss)
   const keys = [...new Set(events.map(event => event.key))]
   const current = keys.map(key => factState(timeline, thread, key, at)).filter(value => value != null)
   const confirmed = events.filter(event => event.status === 'confirmed').map(event => event.value).filter(value => !current.some(item => same(item, value)))
@@ -56,10 +60,11 @@ function valuesAt(timeline, thread, at) {
 /** One delivered line: does it carry the value as it stands, a superseded one, or a mere proposal? */
 export function deliveryVerdict(line, { titles, timeline, at }) {
   const thread = titles.get(line.match(/【(.+?)】/)?.[1])
+  const label = line.match(/【.+?】(.+?)(?: = |：)/)?.[1]?.trim()
   const value = (line.match(/ = (.+?)（第/) ?? line.match(/→ (.+?)（第/) ?? line.match(/重新确认为 (.+?)（第/))?.[1]
   if (value === undefined) return 'withdrawn'
-  if (!thread) return 'unknown'
-  const values = valuesAt(timeline, thread, at)
+  if (!thread || !label) return 'unknown'
+  const values = valuesAt(timeline, thread, label, at)
   if (values.current.some(item => same(item, value))) return 'current'
   if (values.proposed.some(item => same(item, value))) return 'proposal'
   if (values.stale.some(item => same(item, value))) return 'stale'
@@ -72,7 +77,7 @@ export function judgeAnswer(answer, probe, timeline) {
   // A decoy contained in the right value ("120" in "1200") cannot be told apart and is not held against it.
   const decoy = probe.decoys.find(value => said(value) && !(probe.gold != null && says(probe.gold, value)))
   const undecided = UNDECIDED.test(answer)
-  if (probe.gold == null ? undecided && !decoy : said(probe.gold) && !decoy) return 'correct'
+  if (probe.gold == null ? undecided && !decoy : said(probe.gold) && !decoy && !undecided) return 'correct'
   if (decoy) return timeline.some(event => event.thread === probe.source && event.key === probe.key && event.status === 'confirmed' && event.turn <= probe.after && same(event.value, decoy)) ? 'stale' : 'proposal'
   return undecided ? 'missing' : 'wrong'
 }
@@ -85,107 +90,113 @@ export async function runSession(session, { client, strategies = STRATEGIES, rou
   const timeline = session.timeline ?? []
   const contexts = session.threads.map(thread => ({ id: thread.id, title: thread.title, summary: thread.description, entities: [], keywords: [], lastState: '' }))
   const store = new ContextStore(':memory:')
-  store.seed(contexts)
-  const withFacts = strategies.includes('facts')
-  const events = new Map(session.threads.map(thread => [thread.id, []]))
-  const chat = []
-  const probes = new Map()
-  for (const probe of session.probes ?? []) probes.set(probe.after, [...probes.get(probe.after) ?? [], probe])
-  const random = rng(session.turns.length * 7 + id.length)
-  const spent = { extract: 0, route: 0, summary: 0, answer: 0 }
-  const rows = []
-  let current, checked = 0, seq = 0
+  try {
+    store.seed(contexts)
+    const withFacts = strategies.includes('facts')
+    const events = new Map(session.threads.map(thread => [thread.id, []]))
+    const chat = []
+    // Each strategy keeps its own probe replies and reference messages, just as a live Worker does.
+    // Keeping only the original turns would acknowledge a delivery and then forget it at the next probe.
+    const histories = new Map(strategies.map(strategy => [strategy, new Map()]))
+    const probes = new Map()
+    for (const probe of session.probes ?? []) probes.set(probe.after, [...probes.get(probe.after) ?? [], probe])
+    const random = rng(session.turns.length * 7 + id.length)
+    const spent = { extract: 0, route: 0, summary: 0, answer: 0 }
+    const rows = []
+    let current, checked = 0, seq = 0
 
-  const route = async (input, tag) => {
-    try {
-      const payload = routingPayload(input)
-      const answer = await client.complete({ system: routingPrompt(payload), user: JSON.stringify(payload), maxTokens: 2048, json: true, details: true, tag })
-      spent.route += answer.usage?.input ?? 0
-      const decision = validateRoutingDecision(answer.value, input)
-      return { pred: decision.action === 'CREATE' ? 'CREATE' : decision.action === 'CLARIFY' ? 'CLARIFY' : decision.contextId, imports: decision.imports ?? [] }
-    } catch (error) { return { pred: 'ERROR', imports: [], error: String(error.code ?? error.message).slice(0, 120) } }
-  }
-  // The same request routed with the candidates offered and without: the topic chosen must not change.
-  const routeBoth = async (text, recent, gold, at, tag) => {
-    const input = { text, contexts, currentId: current, recent: recent.slice(-12) }
-    const offered = factCandidates(store, SCOPE, text, input.recent.map(message => message.text), current)
-    const [plain, offeredRoute] = await Promise.all([route(input, `route:${tag}:plain`), offered.length ? route({ ...input, facts: offered }, `route:${tag}:facts`) : undefined])
-    const withRoute = offeredRoute ?? plain
-    rows.push({ kind: 'route', session_id: id, at, item: tag, gold, offered: offered.length, without: plain.pred, with: withRoute.pred, imports: withRoute.imports.length,
-      ...(plain.error || withRoute.error ? { error: plain.error ?? withRoute.error } : {}) })
-    return withRoute
-  }
-  const conversation = list => list.flatMap(event => [{ role: event.speaker, text: event.text }])
+    const route = async (input, tag) => {
+      try {
+        const payload = routingPayload(input)
+        const answer = await client.complete({ system: routingPrompt(payload), user: JSON.stringify(payload), maxTokens: 2048, json: true, details: true, tag })
+        spent.route += answer.usage?.input ?? 0
+        const decision = validateRoutingDecision(answer.value, input)
+        return { pred: decision.action === 'CREATE' ? 'CREATE' : decision.action === 'CLARIFY' ? 'CLARIFY' : decision.contextId, imports: decision.imports ?? [] }
+      } catch (error) { return { pred: 'ERROR', imports: [], error: String(error.code ?? error.message).slice(0, 120) } }
+    }
+    // The same request routed with the candidates offered and without: the topic chosen must not change.
+    const routeBoth = async (text, recent, gold, at, tag) => {
+      const input = { text, contexts, currentId: current, recent: recent.slice(-12) }
+      const offered = factCandidates(store, SCOPE, text, input.recent.map(message => message.text), current)
+      const [plain, offeredRoute] = await Promise.all([route(input, `route:${tag}:plain`), offered.length ? route({ ...input, facts: offered }, `route:${tag}:facts`) : undefined])
+      const withRoute = offeredRoute ?? plain
+      rows.push({ kind: 'route', session_id: id, at, item: tag, gold, offered: offered.length, without: plain.pred, with: withRoute.pred, imports: withRoute.imports.length,
+        ...(plain.error || withRoute.error ? { error: plain.error ?? withRoute.error } : {}) })
+      return withRoute
+    }
+    const conversation = (list, extra) => [...list, ...extra].sort((a, b) => a.seq - b.seq)
+      .map(event => ({ role: event.speaker ?? event.role, text: event.text }))
 
-  const answerProbe = async probe => {
-    const reader = probe.thread, source = threads.get(probe.source)
-    const own = conversation(events.get(reader))
-    const zh = session.lang === 'zh'
-    const notes = {}
-    let delivery
-    if (strategies.includes('summary')) {
-      const exchanges = session.turns.filter(turn => turn.gold.thread === probe.source && turn.i <= probe.after).map(turn => ({ user: turn.text, assistant: turn.assistant }))
-      const answer = await client.complete({ system: SUMMARY_SYSTEM, user: JSON.stringify({ title: source.title, messages: exchanges }), maxTokens: 400, details: true, tag: `summary:${id}:${probe.source}:${probe.after}` })
-      spent.summary += answer.usage?.input ?? 0
-      notes.summary = `${zh ? '其他话题的摘要（引用资料）' : 'Summary of another topic (reference)'}：\n【${source.title}】${String(answer.value).trim()}`
-    }
-    if (withFacts) {
-      const routed = await routeBoth(probe.question, chat, reader, probe.after, `${probe.id}`)
-      delivery = factDelivery(store, SCOPE, reader, routed.imports, probe.id)
-      const briefing = buildBriefing(store, { context: store.contexts().find(context => context.id === reader), related: [], recent: [], notices: delivery.notices, facts: delivery.facts })
-      notes.facts = briefing?.text ?? ''
-      if (briefing) delivery.commit()
-      for (const line of [...delivery.notices, ...delivery.facts])
-        rows.push({ kind: 'delivery', session_id: id, probe: probe.id, at: probe.after, reader, notice: delivery.notices.includes(line), verdict: deliveryVerdict(line, { titles, timeline, at: probe.after }), line })
-    }
-    const label = threads.get(probe.source).facts.find(fact => fact.key === probe.key)?.key ?? probe.key
-    notes.oracle = `【${source.title}】${label}：${probe.gold ?? (zh ? '未确定' : 'undecided')}`
-    const contextFor = {
-      single: { notes: '', conversation: chat.slice() },
-      own: { notes: '', conversation: own },
-      summary: { notes: notes.summary, conversation: own },
-      facts: { notes: notes.facts, conversation: own },
-      oracle: { notes: notes.oracle, conversation: own },
-    }
-    await Promise.all(strategies.map(async strategy => {
-      const answer = await client.complete({ system: ANSWER_SYSTEM, user: JSON.stringify({ ...contextFor[strategy], question: probe.question }), maxTokens: 200, details: true, tag: `answer:${probe.id}:${strategy}` })
-      const text = String(answer.value).trim()
-      spent.answer += answer.usage?.input ?? 0
-      rows.push({ kind: 'answer', session_id: id, lang: session.lang, probe: probe.id, category: probe.category, strategy, at: probe.after, gold: probe.gold,
-        answer: text.slice(0, 300), verdict: judgeAnswer(text, probe, timeline), context_tokens: answer.usage?.input ?? 0, notes_chars: contextFor[strategy].notes?.length ?? 0 })
-    }))
-  }
-
-  for (const turn of session.turns) {
-    const thread = turn.gold.thread
-    // Routing with and without facts on a sample of the session's own turns that have candidates.
-    if (withFacts && thread && turn.i > 0 && checked < routeTurns && factCandidates(store, SCOPE, turn.text, chat.slice(-12).map(message => message.text), current).length && random() < 0.4) {
-      checked++
-      await routeBoth(turn.text, chat, thread, turn.i, `${id}:t${turn.i}`)
-    }
-    chat.push({ role: 'user', text: turn.text }, { role: 'assistant', text: turn.assistant ?? '' })
-    if (thread) {
-      const list = events.get(thread)
-      list.push({ seq: ++seq, speaker: 'user', text: turn.text }, { seq: ++seq, speaker: 'assistant', text: turn.assistant ?? '' })
-      current = thread
+    const answerProbe = async probe => {
+      const reader = probe.thread, source = threads.get(probe.source)
+      const zh = session.lang === 'zh'
+      const notes = {}
+      let delivery
+      if (strategies.includes('summary')) {
+        const exchanges = session.turns.filter(turn => turn.gold.thread === probe.source && turn.i <= probe.after).map(turn => ({ user: turn.text, assistant: turn.assistant }))
+        const answer = await client.complete({ system: SUMMARY_SYSTEM, user: JSON.stringify({ title: source.title, messages: exchanges }), maxTokens: 400, details: true, tag: `summary:${id}:${probe.source}:${probe.after}` })
+        spent.summary += answer.usage?.input ?? 0
+        notes.summary = `${zh ? '其他话题的摘要（引用资料）' : 'Summary of another topic (reference)'}：\n【${source.title}】${String(answer.value).trim()}`
+      }
       if (withFacts) {
-        // What the plugin does when a turn ends with extraction on, with the same checks and limits.
-        const base = store.facts(thread)
-        const payload = extractionPayload(list, base)
-        if (payload) {
-          try {
-            const answer = await client.complete({ system: EXTRACT_PROMPT, user: JSON.stringify(payload), maxTokens: 1024, json: true, details: true, tag: `extract:${id}:${turn.i}` })
-            spent.extract += answer.usage?.input ?? 0
-            applyExtraction(store, { sessionId: `${id}/${thread}`, contextId: thread, events: list, base, items: answer.value })
-          } catch (error) { rows.push({ kind: 'error', session_id: id, at: turn.i, step: 'extract', error: String(error.message).slice(0, 200) }) }
+        const routed = await routeBoth(probe.question, chat, reader, probe.after, `${probe.id}`)
+        delivery = factDelivery(store, SCOPE, reader, routed.imports, probe.id)
+        const briefing = buildBriefing(store, { context: store.contexts().find(context => context.id === reader), related: [], recent: [], notices: delivery.notices, facts: delivery.facts })
+        notes.facts = briefing?.text ?? ''
+        if (briefing) delivery.commit()
+        for (const line of [...delivery.notices, ...delivery.facts])
+          rows.push({ kind: 'delivery', session_id: id, probe: probe.id, at: probe.after, reader, notice: delivery.notices.includes(line), verdict: deliveryVerdict(line, { titles, timeline, at: probe.after }), line })
+      }
+      const label = threads.get(probe.source).facts.find(fact => fact.key === probe.key)?.key ?? probe.key
+      notes.oracle = `【${source.title}】${label}：${probe.gold ?? (zh ? '未确定' : 'undecided')}`
+      const probeSeq = ++seq
+      await Promise.all(strategies.map(async strategy => {
+        const history = histories.get(strategy), historyKey = strategy === 'single' ? 'single' : reader
+        const previous = history.get(historyKey) ?? []
+        const context = { notes: notes[strategy] ?? '', conversation: conversation(strategy === 'single' ? chat : events.get(reader), previous) }
+        const answer = await client.complete({ system: ANSWER_SYSTEM, user: JSON.stringify({ ...context, question: probe.question }), maxTokens: 200, details: true, tag: `answer:${probe.id}:${strategy}` })
+        const text = String(answer.value).trim()
+        history.set(historyKey, [...previous,
+          ...(context.notes ? [{ seq: probeSeq, role: 'user', text: context.notes }] : []),
+          { seq: probeSeq, role: 'user', text: probe.question }, { seq: probeSeq, role: 'assistant', text }])
+        spent.answer += answer.usage?.input ?? 0
+        rows.push({ kind: 'answer', session_id: id, lang: session.lang, probe: probe.id, category: probe.category, strategy, at: probe.after, gold: probe.gold,
+          answer: text.slice(0, 300), verdict: judgeAnswer(text, probe, timeline), context_tokens: answer.usage?.input ?? 0, notes_chars: context.notes.length })
+      }))
+    }
+
+    for (const turn of session.turns) {
+      const thread = turn.gold.thread
+      // Routing with and without facts on a sample of the session's own turns that have candidates.
+      if (withFacts && thread && turn.i > 0 && checked < routeTurns && factCandidates(store, SCOPE, turn.text, chat.slice(-12).map(message => message.text), current).length && random() < 0.4) {
+        checked++
+        await routeBoth(turn.text, chat, thread, turn.i, `${id}:t${turn.i}`)
+      }
+      const userSeq = ++seq, assistantSeq = ++seq
+      chat.push({ seq: userSeq, role: 'user', text: turn.text }, { seq: assistantSeq, role: 'assistant', text: turn.assistant ?? '' })
+      if (thread) {
+        const list = events.get(thread)
+        list.push({ seq: userSeq, speaker: 'user', text: turn.text }, { seq: assistantSeq, speaker: 'assistant', text: turn.assistant ?? '' })
+        current = thread
+        if (withFacts) {
+          // What the plugin does when a turn ends with extraction on, with the same checks and limits.
+          const base = store.facts(thread, true)
+          const payload = extractionPayload(list, base)
+          if (payload) {
+            try {
+              const answer = await client.complete({ system: EXTRACT_PROMPT, user: JSON.stringify(payload), maxTokens: 1024, json: true, details: true, tag: `extract:${id}:${turn.i}` })
+              spent.extract += answer.usage?.input ?? 0
+              applyExtraction(store, { sessionId: `${id}/${thread}`, contextId: thread, events: list, base, items: answer.value })
+            } catch (error) { rows.push({ kind: 'error', session_id: id, at: turn.i, step: 'extract', error: String(error.message).slice(0, 200) }) }
+          }
         }
       }
+      for (const probe of probes.get(turn.i) ?? []) await answerProbe(probe)
     }
-    for (const probe of probes.get(turn.i) ?? []) await answerProbe(probe)
-  }
-  const facts = session.threads.flatMap(thread => store.facts(thread.id).map(fact => ({ thread: thread.id, label: fact.label, status: fact.status, value: fact.value, version: fact.version })))
-  rows.push({ kind: 'session', session_id: id, lang: session.lang, probes: session.probes?.length ?? 0, tokens: spent, facts })
-  return rows
+    const facts = session.threads.flatMap(thread => store.facts(thread.id).map(fact => ({ thread: thread.id, label: fact.label, status: fact.status, value: fact.value, version: fact.version })))
+    rows.push({ kind: 'session', session_id: id, lang: session.lang, probes: session.probes?.length ?? 0, tokens: spent, facts })
+    return rows
+  } finally { store.close() }
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
@@ -207,12 +218,14 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   try {
     const failed = []
     const rows = (await Promise.all(sessions.map(session => runSession(session, { client, strategies, routeTurns: Number(values['route-turns']) }).catch(error => {
-      failed.push(session.session_id); console.error(`${session.session_id} skipped: ${error.message}`); return []
+      failed.push(session.session_id); console.error(`${session.session_id} skipped: ${error.message}`)
+      return [{ kind: 'error', session_id: session.session_id, step: 'session', error: String(error.message).slice(0, 200) }]
     })))).flat()
     mkdirSync(dirname(out), { recursive: true })
     writeFileSync(out, rows.map(row => JSON.stringify(row)).join('\n') + '\n')
     console.log(`${rows.filter(row => row.kind === 'answer').length} answers from ${sessions.length - failed.length} sessions → ${out}`)
     console.log(`Score: python3 eval/score_facts.py ${out}`)
     console.log(`Model: ${client.model} · ${client.usage}${dry ? ' (fake model: nothing was spent)' : ''}`)
+    if (failed.length || rows.some(row => row.kind === 'error' || row.kind === 'route' && row.error)) process.exitCode = 1
   } finally { clearInterval(timer) }
 }
