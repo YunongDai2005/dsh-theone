@@ -98,3 +98,51 @@ export function buildSchedule(threads, length, seed, options = {}) {
   }
   return turns
 }
+
+/**
+ * v1: how each fact of a thread comes about, laid over a plan from `buildSchedule`. Besides the user
+ * stating and later changing a value, the assistant proposes values the user then accepts or turns
+ * down, and some values are withdrawn. Returns new turns (the input is not changed) and the timeline
+ * of every fact: the ground truth of what was confirmed when.
+ * @param threads - [{ id, facts: [{ key, value, update, alternative }] }]
+ */
+export function planFactEpisodes(turns, threads, seed) {
+  const random = rng(seed ^ 0x5eed)
+  const kinds = { stated: 0.45, accepted: 0.2, rejected: 0.2, withdrawn: 0.15 }
+  const facts = new Map(threads.map(thread => [thread.id, (thread.facts ?? []).map(fact => {
+    let type = pick(random, kinds)
+    if (type === 'rejected' && !fact.alternative) type = 'stated'
+    const steps = type === 'stated' ? [{ kind: 'intro', value: fact.value }, ...(fact.update ? [{ kind: 'update', value: fact.update, gap: 8 }] : [])]
+      : type === 'accepted' ? [{ kind: 'propose', value: fact.value }, { kind: 'accept', value: fact.value, reply: true }]
+      : type === 'rejected' ? [{ kind: 'propose', value: fact.alternative }, { kind: 'reject', value: fact.value, reply: true }]
+      : [{ kind: 'intro', value: fact.value }, { kind: 'retract', value: null, gap: 8 }]
+    return { key: fact.key, type, steps, at: -Infinity }
+  })]))
+  const timeline = []
+  const out = turns.map(turn => {
+    const { fact: _, ...rest } = turn
+    if (!turn.thread) return rest
+    const list = facts.get(turn.thread)
+    // An answer to a proposal comes at the thread's very next message.
+    let chosen = list.find(fact => fact.steps[0]?.reply)
+    if (!chosen && (turn.action === 'new' || random() < 0.35)) chosen = list.find(fact => fact.steps.length && !fact.steps[0].reply && turn.i - fact.at >= (fact.steps[0].gap ?? 0))
+    if (!chosen) return rest
+    const step = chosen.steps.shift()
+    chosen.at = turn.i
+    const status = step.kind === 'propose' ? 'proposed' : step.kind === 'retract' ? 'retracted' : 'confirmed'
+    timeline.push({ thread: turn.thread, key: chosen.key, turn: turn.i, kind: step.kind, status, value: step.value })
+    return { ...rest, fact: { key: chosen.key, kind: step.kind, value: step.value } }
+  })
+  return { turns: out, timeline, types: Object.fromEntries([...facts].map(([id, list]) => [id, Object.fromEntries(list.map(fact => [fact.key, fact.type]))])) }
+}
+
+/** What was settled about one fact right after turn `at`: the confirmed value, or null if none. */
+export function factState(timeline, thread, key, at) {
+  let value = null
+  for (const event of timeline) {
+    if (event.thread !== thread || event.key !== key || event.turn > at) continue
+    if (event.status === 'confirmed') value = event.value
+    else if (event.status === 'retracted') value = null
+  }
+  return value
+}

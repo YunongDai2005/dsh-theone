@@ -152,15 +152,11 @@ export default class TheOne extends Service {
      * Cross-topic reference for a Worker about to start: the recent main chat after a topic switch,
      * and the news of related topics (plus those the request itself named). Undefined when empty.
      */
-    /** Confirmed facts of other topics this message might use, best first, within budget. Ranking only. */
+    /** Confirmed facts this message might use (see fact-flow). */
     private factCandidates;
-    /**
-     * What a topic is told about facts before its Worker answers: changes to facts it used before
-     * (also on a plain "go on") and the facts this request imports. Every fact is checked here, against
-     * the topic finally chosen and the settings now; nothing is recorded until the briefing is sent.
-     */
+    /** What a topic is told about facts before its Worker answers (see fact-flow). */
     private factDelivery;
-    /** The topic's own recorded facts, with ids and versions, for its Worker's descriptor. */
+    /** The topic's own recorded facts for its Worker's descriptor; empty unless shared facts are on. */
     private ownFacts;
     private briefingFor;
     /**

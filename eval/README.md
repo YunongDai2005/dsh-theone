@@ -5,8 +5,9 @@ work at once, and each message has to reach the right one. It measures how often
 right, how often it sends work into another thread's context (the pollution TheOne exists to avoid),
 and what routing costs.
 
-This is phase 1: the data generator, TheOne's router replayed on the data, baselines that need no
-model, and the scorer. Pollution probes, assistant replies and the Kaggle notebooks come next.
+Phase 1 (`interleave-v0`) measures routing: the data generator, TheOne's router replayed on the data,
+baselines that need no model, and the scorer. Phase 2 (`interleave-v1`, [below](#phase-2-shared-facts))
+adds the assistant's replies and measures whether one topic gets another topic's facts right.
 
 ## How the data is made
 
@@ -42,7 +43,7 @@ Needs Node.js 22+ (the one DSH runs on) and Python 3.10+. Nothing to install.
 # Windows PowerShell; on macOS/Linux use: export DEEPSEEK_API_KEY=sk-...
 $env:DEEPSEEK_API_KEY = "sk-..."
 
-node eval/generate.mjs --sessions 50                     # ≈ $1–2, a few minutes
+node eval/generate.mjs --sessions 50 --dataset v0        # ≈ $1–2, a few minutes
 node eval/run-router.mjs --mode closed --policy llm      # TheOne's prompt, topic list known up front
 node eval/run-router.mjs --mode open --policy theone     # topics created on the way, with TheOne's fast path and rules
 python eval/baselines.py eval/data/interleave-v0/sessions.jsonl
@@ -64,7 +65,7 @@ node eval/run-router.mjs --mode closed --policy llm --model their-model-name
 a model's thinking.
 
 Try everything first with `--dry-run`: a fake model stands in, nothing is spent, and the output goes
-to `eval/data/interleave-v0-dry`. Every model answer is cached in `eval/.cache`, so a rerun or a crash
+to `eval/data/interleave-v0-dry` (or `-v1-dry`). Every model answer is cached in `eval/.cache`, so a rerun or a crash
 halfway costs nothing twice. `--model deepseek-v4-pro` switches model; `EVAL_PRICES="in,cached,out"`
 sets USD per million tokens for the cost line (default: V4.1 Flash peak prices, October 2026).
 
@@ -86,6 +87,65 @@ the messages routed to it, where TheOne would also have the topic session's own 
 | `bcubed` | Clustering agreement between topics and threads. |
 | `refs_recall` | Share of messages drawing on another thread where the router named it as related. |
 | `tokens_per_message`, `latency_ms` | What routing costs. |
+
+## Phase 2: shared facts
+
+The question: when topic B needs a value settled in topic A (a budget, a date, who owns what), does
+it get the value as it stands now, and never one that was only suggested? This is the release gate
+for TheOne's shared facts (`docs/design/linker-step1.zh.md`), which stay off by default until it passes.
+
+**Data (`interleave-v1`).** The same plans as v0, with the assistant's reply to every message, and
+each fact given a life of its own: the user states it and maybe changes it later; or the assistant
+proposes a value and the user accepts it (without repeating it) or turns it down for another; or the
+user states it and later withdraws it. Every step is checked in the text with the plugin's own
+matching; an exchange that misses its step is rewritten once, and a fact whose step is still missing
+is tagged `fact-miss` and left out of the probes. Each session carries `timeline` (what was settled
+when: the ground truth) and up to eight `probes`: a question asked inside topic B, right after a given
+turn, about one fact of topic A. Probe categories:
+
+| Category | Asked | Right answer |
+| --- | --- | --- |
+| `cross` | after the value was settled | the value |
+| `stale` | by the same topic again, after the value changed or was withdrawn | the new value, or "undecided" |
+| `proposal` | right after the assistant proposed a value nobody accepted yet | the previous value, or "undecided" |
+| `rejected` | after the user turned a proposal down and chose another value | the user's value |
+| `accepted` | after the user accepted a proposal without repeating it | the proposed value |
+
+**Strategies.** Each probe is answered by the model five times, with different context:
+
+| Strategy | Context |
+| --- | --- |
+| `single` | the whole chat, every topic in one history (no routing) |
+| `own` | topic B's history only (routing without sharing) |
+| `summary` | B's history and a model-written summary of A up to that moment |
+| `facts` | B's history and what TheOne's shared facts deliver |
+| `oracle` | B's history and the true value |
+
+For `facts`, `run-facts.mjs` runs TheOne's code from `dist/`: the extractor after every turn (its
+prompt, payload, evidence checks and version guards), the candidates offered to routing, the router's
+`imports`, the delivery checks and version notices, and the briefing text a Worker would receive.
+Topics follow the gold labels, so routing mistakes do not blur the comparison. Routing is measured on
+its own: each probe and a sample of turns is routed with and without the facts offered.
+
+```sh
+node eval/generate.mjs --sessions 50                     # v1 data, ≈ $1–2
+node eval/run-facts.mjs                                  # dev split, ≈ $3–4
+python eval/score_facts.py eval/data/interleave-v1/facts/deepseek-flash.jsonl
+```
+
+The scorer prints accuracy by strategy and probe category, how wrong answers went wrong (an old value,
+a proposal, "undecided", something else), the context tokens each strategy used, and the gates:
+
+| Gate | Passes when, for `facts` |
+| --- | --- |
+| `beats_summary` | more probes right than `summary` |
+| `stale_answers` | under 5% of `stale` probes answered with the old value |
+| `proposals_shared` | no delivered line carries a value that was only proposed |
+| `routing_unchanged` | offering facts changes the chosen topic for under 2% of requests |
+
+What it does not cover yet: the Worker's own `theone_record` and `theone_lookup` calls (only the
+extractor writes facts here, so `facts` is a lower bound); related topics' digests in the briefing;
+private topics and workspace scope (every topic may share).
 
 ## Tests
 

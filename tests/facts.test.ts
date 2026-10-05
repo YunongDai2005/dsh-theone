@@ -154,3 +154,19 @@ test('candidates rank by wording and named topic, and stop at the size budget', 
   assert.ok(capped.length <= 12)
   assert.ok(JSON.stringify(capped).length <= 1200 + 2 * capped.length)
 })
+
+test('an extraction request carries the proposal being accepted and stays within budget', async () => {
+  const { extractionPayload } = await import('../src/fact-flow.ts')
+  const events: EvidenceEvent[] = [
+    { seq: 1, speaker: 'user', text: '预算怎么定' },
+    { seq: 2, speaker: 'assistant', text: '建议预算 800 元' },
+    { seq: 3, speaker: 'user', text: '好，就按你说的来' },
+    { seq: 4, speaker: 'assistant', text: '好的，已按 800 安排' },
+  ]
+  const payload = extractionPayload(events, [])!
+  assert.equal(payload.user, '好，就按你说的来')
+  assert.match(payload.assistant, /建议预算 800 元/)
+  const long = extractionPayload([{ seq: 1, speaker: 'user', text: 'x'.repeat(20000) }, { seq: 2, speaker: 'assistant', text: 'y'.repeat(20000) }], [])!
+  assert.ok(JSON.stringify(long).length <= 6000 + 100)
+  assert.equal(extractionPayload([{ seq: 1, speaker: 'assistant', text: 'hi' }], []), undefined)
+})

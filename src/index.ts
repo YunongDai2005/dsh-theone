@@ -32,7 +32,8 @@ import { EDITABLE_SETTINGS_KEYS, RESTART_SETTINGS_KEYS, type EditableSettings, t
 import { validateSettings } from './settings.ts'
 import { RESTART_CODE, WorkerRun } from './run.ts'
 import { buildBriefing, LINK_SIGNAL, mayShare, relatedTopics, type LinkScope } from './linkage.ts'
-import { evidenceEvents, FACT_KINDS, FACT_LIMITS, factKey, factLine, findQuote, rankCandidates, safe, verify, within, type EvidenceEvent, type FactCandidate, type FactKind, type FactView } from './facts.ts'
+import { evidenceEvents, FACT_KINDS, FACT_LIMITS, findQuote, rankCandidates, safe, verify, type EvidenceEvent, type FactCandidate, type FactKind, type FactView } from './facts.ts'
+import { applyExtraction, EXTRACT_PROMPT, extractionPayload, factCandidates, factDelivery, ownFactsText } from './fact-flow.ts'
 import type { FactResult } from './store.ts'
 import { PACKAGE_NAME, Updater, type PluginInstaller } from './update.ts'
 import { NOTICE_URL, NoticeBoard } from './notices.ts'
@@ -133,12 +134,6 @@ function descriptorJson(context: Pick<ContextDescriptor, 'title' | 'summary' | '
 const TERMS_PROMPT = `你在帮话题路由器从用户的更正中学习。用户确认这条 message 属于 rightTopic（而不是 wrongTopic）。
 从 message 原文中挑出最多 4 个能把它和 rightTopic 联系起来、又能和 wrongTopic 区分开的词语：项目名、术语、产品、人名、文件名等，每个 2–12 个字，必须在 message 中原样出现。
 不要选泛泛的词（如「帮我」「这个」「问题」），不要选 wrongTopic 的名字。只输出 JSON 字符串数组，例如 ["消融实验","第三章"]。`
-
-/** Optional extraction after a turn; every item it returns is checked like a Worker's own record. */
-const EXTRACT_PROMPT = `你在帮一个话题记录已经确定下来的要点：数字、日期、决定、文件或链接的位置。输入是本轮的用户消息 user、助手回答 assistant，以及本话题已记录的要点 facts（含 factId 和版本）。
-只记录用户亲口说出的值，或用户明确接受了助手提议的值（此时 acceptsQuote 填助手提议的原话）；助手自己的建议、推测、未定的事不要记录。
-每条都必须给出 evidenceQuote：本轮对话里能证明它的原话，逐字复制。已记录过的同一件事用它的 factId 更新；用户说某个值不再成立或还没定时，输出 op 为 "retract" 并给出用户原话。没有就输出空数组。
-只输出 JSON 数组，例如 [{"op":"set","factId":null,"label":"预算","kind":"fact","value":"800","evidenceQuote":"预算定为 800 元"}]。kind 只能是 fact、decision、artifact。`
 
 /** The first words of a new main chat, in the interface language. */
 function welcomeText(locale: string): string {
@@ -1025,67 +1020,19 @@ export default class TheOne extends Service {
    * Cross-topic reference for a Worker about to start: the recent main chat after a topic switch,
    * and the news of related topics (plus those the request itself named). Undefined when empty.
    */
-  /** Confirmed facts of other topics this message might use, best first, within budget. Ranking only. */
+  /** Confirmed facts this message might use (see fact-flow). */
   private factCandidates(text: string, recent: RecentMessage[], currentId?: string): FactCandidate[] {
-    if (this.linkScope === 'off') return []
-    const titles = new Map(this.store.contexts().map(context => [context.id, context.title]))
-    const related = new Map(currentId ? relatedTopics(this.store, currentId, this.linkScope, 10).map(topic => [topic.id, topic.score]) : [])
-    // The current topic's own facts are candidates too: the message may be moving elsewhere with them.
-    // A first filter for the topic in view; delivery checks again against the topic finally chosen.
-    const pool = this.store.sharedFacts().filter(fact => titles.has(fact.contextId) &&
-      (currentId ? !mayShare(this.store, this.linkScope, fact.contextId, currentId) : !this.store.isPrivate(fact.contextId)))
-      .map(fact => ({ ...fact, topicTitle: titles.get(fact.contextId)!, related: related.get(fact.contextId) ?? 0 }))
-    return rankCandidates(pool, [...recent.slice(-2).map(message => message.text), text].join('\n'))
+    return factCandidates(this.store, this.linkScope, text, recent.map(message => message.text), currentId)
   }
 
-  /**
-   * What a topic is told about facts before its Worker answers: changes to facts it used before
-   * (also on a plain "go on") and the facts this request imports. Every fact is checked here, against
-   * the topic finally chosen and the settings now; nothing is recorded until the briefing is sent.
-   */
+  /** What a topic is told about facts before its Worker answers (see fact-flow). */
   private factDelivery(contextId: string, imports: string[], inputId: string) {
-    const titles = new Map(this.store.contexts().map(context => [context.id, context.title]))
-    const allowed = (sourceId: string) => titles.has(sourceId) && !mayShare(this.store, this.linkScope, sourceId, contextId)
-    const notices: { line: string; commit: () => void }[] = []
-    const noticed = new Set<string>()
-    for (const dependency of this.store.dependencies(contextId)) {
-      const fact = this.store.fact(dependency.factId)
-      const label = safe(fact?.label ?? '一个要点', 40)
-      if (!fact || fact.deletedAt !== undefined || !allowed(fact.contextId)) {
-        // Only the name: a topic that may no longer share must not leak its new value.
-        notices.push({ line: `- 之前引用的「${label}」不再可用，不要再使用它之前的值。`, commit: () => this.store.forgetDependency(contextId, dependency.factId) })
-      } else if (fact.version > dependency.versionSeen) {
-        const title = safe(titles.get(fact.contextId)!, 40)
-        const before = this.store.factVersion(fact.id, dependency.versionSeen)
-        const line = fact.status !== 'confirmed' ? `- 【${title}】${label}：已撤回或目前没有确认的值，不要再使用之前的值。`
-          : before?.status === 'confirmed' ? `- 【${title}】${label}：${safe(before.value ?? '', 80)} → ${safe(fact.value ?? '', 80)}（第 ${fact.version} 版）`
-          : `- 【${title}】${label}：重新确认为 ${safe(fact.value ?? '', 80)}（第 ${fact.version} 版）`
-        notices.push({ line, commit: () => this.store.recordDelivery(contextId, fact, 'notice', inputId) })
-      } else continue
-      noticed.add(dependency.factId)
-    }
-    const facts: { line: string; commit: () => void }[] = []
-    for (const id of new Set(imports)) {
-      const fact = this.store.fact(id)
-      if (!fact || noticed.has(id) || fact.deletedAt !== undefined || fact.status !== 'confirmed' || fact.contextId === contextId || !allowed(fact.contextId)) continue
-      facts.push({ line: factLine(fact, titles.get(fact.contextId)!), commit: () => {
-        this.store.recordDelivery(contextId, fact, 'route', inputId)
-        this.store.learnLink(contextId, fact.contextId, LINK_SIGNAL.mention)
-      } })
-    }
-    const fit = (items: { line: string; commit: () => void }[], budget: number) => items.slice(0, within(items.map(item => item.line), budget).length)
-    const sentNotices = fit(notices, FACT_LIMITS.noticeBudget), sentFacts = fit(facts, FACT_LIMITS.briefingBudget)
-    return { notices: sentNotices.map(item => item.line), facts: sentFacts.map(item => item.line),
-      commit: () => { for (const item of [...sentNotices, ...sentFacts]) item.commit() } }
+    return factDelivery(this.store, this.linkScope, contextId, imports, inputId)
   }
 
-  /** The topic's own recorded facts, with ids and versions, for its Worker's descriptor. */
+  /** The topic's own recorded facts for its Worker's descriptor; empty unless shared facts are on. */
   private ownFacts(contextId: string): string {
-    if (!this.config.factLinks) return ''
-    const lines = this.store.facts(contextId).slice(0, FACT_LIMITS.ownItems).map(fact =>
-      `- [${fact.id} v${fact.version}] ${safe(fact.label, FACT_LIMITS.label)} = ${safe(fact.value ?? '', 120)}${fact.status === 'proposed' ? '（建议，用户未确认）' : ''}`)
-    const kept = within(lines, FACT_LIMITS.ownBudget)
-    return kept.length ? `\n本话题已记录的要点（更新或撤回时用 theone_record，带上 factId 和 expectedVersion）：\n${kept.join('\n')}` : ''
+    return this.config.factLinks ? ownFactsText(this.store, contextId) : ''
   }
 
   private async briefingFor(context: StoredContext, decision: Decision, gateway: Agent, inputId: string, signal?: AbortSignal) {
@@ -1503,37 +1450,13 @@ export default class TheOne extends Service {
   }
 
   private async extractFacts(sessionId: string, contextId: string, events: EvidenceEvent[], base: FactView[]): Promise<void> {
-    const lastUser = events.findLastIndex(event => event.speaker === 'user')
-    if (lastUser < 0) return
-    const user = events[lastUser].text, assistant = events.slice(lastUser + 1).filter(event => event.speaker === 'assistant').map(event => event.text).join('\n')
-    // Everything sent is cleaned first and the whole request stays within its budget.
-    const known = within(base.map(fact => JSON.stringify({ factId: fact.id, version: fact.version, label: safe(fact.label, FACT_LIMITS.label), value: safe(fact.value ?? '', 120) })), FACT_LIMITS.extractionFacts)
-    const room = FACT_LIMITS.extractionBudget - known.join('').length
-    const payload = { user: safe(user, Math.floor(room / 3)), assistant: safe(assistant, room - Math.floor(room / 3) - 200), facts: known.map(line => JSON.parse(line)) }
+    const payload = extractionPayload(events, base)
+    if (!payload) return
     const selection = this.backingModel()
     let reasoningEffort: ModelSelection['reasoningEffort']
     try { reasoningEffort = (await this.ctx.llm.resolveModelInfo(selection.provider, selection.model)).reasoning?.efforts.find(effort => effort.id === 'off')?.id } catch { /* Default effort. */ }
-    const value = await modelJson(this.ctx.llm, selection, EXTRACT_PROMPT, payload, undefined, { maxTokens: 1024, timeoutMs: 30000, ...(reasoningEffort ? { reasoningEffort } : {}) })
-    if (!Array.isArray(value)) return
-    const byId = new Map(base.map(fact => [fact.id, fact.version]))
-    const byName = new Map(base.flatMap(fact => [fact.key, ...fact.aliases].map(key => [key, fact.version] as const)))
-    for (const item of value.slice(0, FACT_LIMITS.recordItems) as Record<string, unknown>[]) {
-      if (!item || typeof item !== 'object') continue
-      const text = (key: string) => typeof item[key] === 'string' ? item[key] as string : undefined
-      const quote = text('evidenceQuote') ?? '', factId = text('factId'), label = text('label') ?? ''
-      // A name that did not exist when the turn ended must still not exist: expected version 0.
-      const expectedVersion = factId ? byId.get(factId) : byName.get(factKey(label)) ?? 0
-      if (factId && expectedVersion === undefined) continue
-      if (item.op === 'retract') {
-        const said = factId && findQuote(events, quote, { speaker: 'user' })
-        if (said) this.store.retractFact(contextId, factId!, { sessionId, seq: said.seq, speaker: 'user', quote }, 'extractor', expectedVersion)
-        continue
-      }
-      const kind = (FACT_KINDS.includes(item.kind as FactKind) ? item.kind : 'fact') as FactKind
-      const verdict = verify({ sessionId, events, kind, value: text('value') ?? '', quote, acceptsQuote: text('acceptsQuote') })
-      this.store.recordFact(contextId, { ...(factId ? { factId } : {}), label, kind, value: text('value') ?? '', status: verdict.status,
-        evidence: verdict.evidence, origin: 'extractor', expectedVersion })
-    }
+    const items = await modelJson(this.ctx.llm, selection, EXTRACT_PROMPT, payload, undefined, { maxTokens: 1024, timeoutMs: 30000, ...(reasoningEffort ? { reasoningEffort } : {}) })
+    applyExtraction(this.store, { sessionId, contextId, events, base, items })
   }
 
   /**

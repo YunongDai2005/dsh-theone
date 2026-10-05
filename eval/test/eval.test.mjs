@@ -79,7 +79,8 @@ test('an OpenAI-compatible endpoint works too: chat/completions, bearer key, usa
     const body = JSON.parse(raw)
     seen.push({ url: request.url, auth: request.headers.authorization, body })
     const [system, user] = body.messages
-    const text = await answer({ system: system.content, user: user.content, tag: system.content.includes('label which work thread') ? 'judge' : system.content.includes('design realistic test data') ? 'spec' : 'render' })
+    const text = await answer({ system: system.content, user: user.content, tag: system.content.includes('label which work thread') ? 'judge' : system.content.includes('design realistic test data') ? 'spec'
+      : system.content.includes('write a chat between') ? 'render1' : 'render' })
     response.setHeader('content-type', 'application/json')
     response.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content: text } }], usage: { prompt_tokens: 1000, completion_tokens: 100, prompt_tokens_details: { cached_tokens: 600 } } }))
   })

@@ -54,3 +54,41 @@ export function leaksTitle(text, title, lang) {
   const STOP = new Set(['about', 'their', 'there', 'which', 'would', 'plans', 'project', 'trip', 'new', 'with', 'from'])
   return name.split(/[^a-z0-9]+/).some(word => word.length >= 5 && !STOP.has(word) && new RegExp(`\\b${word}`).test(message))
 }
+
+// v1 adds the assistant's side and the life of each fact: stated, changed, proposed and accepted or
+// turned down, withdrawn. v0's prompts above stay as they are, so v0 can still be regenerated.
+
+export const SPEC_SYSTEM_V1 = SPEC_SYSTEM.replace('give at least one fact a non-null update',
+  'give at least one fact a non-null update; also give every fact "alternative": a different, equally plausible value an assistant might suggest instead (same form as value, not equal to value or update)')
+  .replace('"update": null}', '"update": null, "alternative": "..."}')
+
+export const RENDER_SYSTEM_V1 = `You write a chat between a person and an AI assistant, following a plan exactly. Output one JSON object only.
+
+The payload has the persona, the work threads (id, title, goal, description), the last exchanges already written (with their thread), and a plan: one entry per exchange to write now, in order. For each plan entry write the user's message and the assistant's reply.
+The user's message:
+- thread: the work thread the message belongs to; "ONE-OFF" means a quick self-contained question that belongs to none of the threads (a definition, a conversion, a translation, a small calculation)
+- action: new = opens this thread and says what they want; continue = keeps going on the same thread as the previous message; switch = moves to another thread used recently; return = comes back to a thread after a long time
+- style:
+  explicit = names the subject clearly in their own words (not necessarily the exact title)
+  cue = points to the thread only through one specific detail (a file, a person, a place), without naming the subject
+  pronoun = only vague references ("that one", "the thing from before", "那个", "之前那件事"), as people do; it must still make sense from the flow of the chat
+  implicit = a short follow-up that only works as a continuation of the previous message ("ok next step", "make it shorter", "这个不行"), with no topic words at all
+- refs: the message also uses something from these other threads (say what, e.g. "use the numbers from ... here")
+Write like a real person typing: mostly short (3 to 25 words, or 5 to 40 Chinese characters), casual, varied openings, sometimes without punctuation or with a small typo. Never mention thread ids or the words thread/topic/话题. Do not greet.
+The assistant's reply: 1 to 3 short sentences, helpful and concrete, about what the user just said; for ONE-OFF, just answer it. Outside the fact step below, the assistant never suggests or states a value for any of the threads' facts.
+fact (when present): what happens in this exchange to one fact of the thread, named by key. Write the given value exactly as given:
+  intro: the user states the fact's value
+  update: the user says the value has changed to value
+  propose: the user asks for advice on it or leaves it open, without giving any value; the assistant suggests value, clearly as a suggestion ("I'd go with …", "建议…")
+  accept: the user plainly accepts the assistant's earlier suggestion (value) without repeating the value, as a statement, not a question ("ok, go with that", "好，就按你说的来"); the assistant acknowledges without repeating it
+  reject: the user turns down the assistant's earlier suggestion (rejected) and states value instead ("no, …", "不行，…")
+  retract: the user says the fact is no longer settled (called off, back to open, decide later) without giving a new value; the assistant acknowledges
+Write in lang ("zh" = Simplified Chinese, "en" = English).
+Output: {"messages": [{"n": <plan n>, "user": "...", "assistant": "..."}]} with exactly one entry per plan entry.`
+
+/** A summary of one thread, for the summary baseline: what another topic would get instead of facts. */
+export const SUMMARY_SYSTEM = `You summarize one piece of work from a chat, for another assistant who will need its details later. Output plain text only.
+Give the goal and where things stand, with every concrete value (numbers, dates, names, amounts) as it stands now. Say when a value was changed, withdrawn, or only suggested and not yet agreed. At most 120 words, or 200 Chinese characters, in the chat's language.`
+
+export const ANSWER_SYSTEM = `You are the assistant in one topic of a person's chat. The payload has reference notes (possibly empty), this topic's conversation so far, and the user's new question.
+Answer the question in one short line with just the value, using only what the notes and the conversation say. If they do not settle it, answer with the word the question gives for "not settled". Do not guess.`
