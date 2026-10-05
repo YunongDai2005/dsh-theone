@@ -150,6 +150,7 @@ export declare const zh: {
     readonly 'catalog.unassignedSummary': "这些话题还在等待自动归类。";
     readonly 'topic.opening': "正在打开…";
     readonly 'topic.continue': "继续聊天";
+    readonly 'topic.continueHidden': "这个话题的原会话已不在（已删除或已归档），没有可以接着聊的内容。取消归档后即可继续。";
     readonly 'topic.source': "查看原会话";
     readonly 'topic.state': "进展：";
     readonly 'topic.constraints': "约束：";

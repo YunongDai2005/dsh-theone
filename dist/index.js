@@ -736,6 +736,9 @@ export default class TheOne extends Service {
                     }
                     if (!value || typeof value !== 'object' || !('contextId' in value) || typeof value.contextId !== 'string' || !this.store.contexts().some(c => c.id === value.contextId))
                         return Response.json({ error: 'UNKNOWN_CONTEXT' }, { status: 400 });
+                    // Its conversations are gone or archived: mounting it would only start an empty Worker.
+                    if (this.store.hiddenReasons().has(value.contextId))
+                        return Response.json({ error: 'TOPIC_HIDDEN' }, { status: 409 });
                     if (this.active || this.reservedGateway)
                         return Response.json({ error: 'GATEWAY_BUSY' }, { status: 409 });
                     this.store.mount(this.config.gatewayKey, value.contextId);

@@ -236,6 +236,7 @@ var zh = {
   "catalog.unassignedSummary": "\u8FD9\u4E9B\u8BDD\u9898\u8FD8\u5728\u7B49\u5F85\u81EA\u52A8\u5F52\u7C7B\u3002",
   "topic.opening": "\u6B63\u5728\u6253\u5F00\u2026",
   "topic.continue": "\u7EE7\u7EED\u804A\u5929",
+  "topic.continueHidden": "\u8FD9\u4E2A\u8BDD\u9898\u7684\u539F\u4F1A\u8BDD\u5DF2\u4E0D\u5728\uFF08\u5DF2\u5220\u9664\u6216\u5DF2\u5F52\u6863\uFF09\uFF0C\u6CA1\u6709\u53EF\u4EE5\u63A5\u7740\u804A\u7684\u5185\u5BB9\u3002\u53D6\u6D88\u5F52\u6863\u540E\u5373\u53EF\u7EE7\u7EED\u3002",
   "topic.source": "\u67E5\u770B\u539F\u4F1A\u8BDD",
   "topic.state": "\u8FDB\u5C55\uFF1A",
   "topic.constraints": "\u7EA6\u675F\uFF1A",
@@ -453,6 +454,7 @@ var en = {
   "catalog.unassignedSummary": "These topics are waiting to be grouped.",
   "topic.opening": "Opening\u2026",
   "topic.continue": "Continue chatting",
+  "topic.continueHidden": "This topic\u2019s conversations are gone (deleted or archived), so there is nothing to continue. Unarchive them to pick it up again.",
   "topic.source": "View original chat",
   "topic.state": "Progress:",
   "topic.constraints": "Constraints:",
@@ -1908,11 +1910,17 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
             (0, import_react.createElement)(
               "div",
               { className: "theone-topic-actions" },
-              (0, import_react.createElement)("button", { type: "button", disabled: !!busy, onClick: () => {
-                void continueTopic(id);
-              } }, t2(busy === id ? "topic.opening" : "topic.continue")),
+              // A hidden topic has nothing left to continue: its conversations are gone or archived.
+              (0, import_react.createElement)("button", {
+                type: "button",
+                disabled: !!busy || !!topic.hidden,
+                title: topic.hidden ? t2("topic.continueHidden") : void 0,
+                onClick: () => {
+                  void continueTopic(id);
+                }
+              }, t2(busy === id ? "topic.opening" : "topic.continue")),
               (0, import_react.createElement)("button", { type: "button", "aria-expanded": managing === id, onClick: () => setManaging((current) => current === id ? void 0 : id) }, t2(managing === id ? "manage.close" : "manage.open")),
-              ...topic.sourceSessionIds.slice(0, 3).map((sessionId, i) => (0, import_react.createElement)("button", {
+              ...(topic.hidden === "orphaned" ? [] : topic.sourceSessionIds).slice(0, 3).map((sessionId, i) => (0, import_react.createElement)("button", {
                 key: sessionId,
                 type: "button",
                 className: "theone-source-link",

@@ -894,9 +894,11 @@ export function apply(ctx: Context) {
               constraints ? h('p', { className: 'theone-topic-state' }, h('span', null, t('topic.constraints')), constraints) : null,
               linkRow(id),
               h('div', { className: 'theone-topic-actions' },
-                h('button', { type: 'button', disabled: !!busy, onClick: () => { void continueTopic(id) } }, t(busy === id ? 'topic.opening' : 'topic.continue')),
+                // A hidden topic has nothing left to continue: its conversations are gone or archived.
+                h('button', { type: 'button', disabled: !!busy || !!topic.hidden, title: topic.hidden ? t('topic.continueHidden') : undefined,
+                  onClick: () => { void continueTopic(id) } }, t(busy === id ? 'topic.opening' : 'topic.continue')),
                 h('button', { type: 'button', 'aria-expanded': managing === id, onClick: () => setManaging(current => current === id ? undefined : id) }, t(managing === id ? 'manage.close' : 'manage.open')),
-                ...topic.sourceSessionIds.slice(0, 3).map((sessionId, i) => h('button', { key: sessionId, type: 'button', className: 'theone-source-link',
+                ...(topic.hidden === 'orphaned' ? [] : topic.sourceSessionIds).slice(0, 3).map((sessionId, i) => h('button', { key: sessionId, type: 'button', className: 'theone-source-link',
                   onClick: () => { ctx.layout.beginNavigation(); ctx.uiWorkspace.openSession(sessionId as SessionId) } }, t('topic.source') + (topic.sourceSessionIds.length > 1 ? ' ' + (i + 1) : '')))),
               managing === id ? h(TopicManager, { key: `${id}:${topic.title}:${topic.summary}:${constraints}`, topic, constraints, groups: snapshot!.groups, contexts: snapshot!.contexts, post, busy: !!busy }) : null)]
           }))))
