@@ -97,8 +97,9 @@ for TheOne's shared facts (`docs/design/linker-step1.zh.md`), which stay off by 
 **Data (`interleave-v1`).** The same plans as v0, with the assistant's reply to every message, and
 each fact given a life of its own: the user states it and maybe changes it later; or the assistant
 proposes a value and the user accepts it (without repeating it) or turns it down for another; or the
-user states it and later withdraws it. Every step is checked in the text with the plugin's own
-matching; an exchange that misses its step is rewritten once, and a fact whose step is still missing
+user states it and later withdraws it. A model checks that each exchange does its step, by meaning
+rather than wording (word lists, or the plugin's own matching, would keep only the phrasings they
+recognise and flatter the result); an exchange that misses its step is rewritten once, and a fact whose step is still missing
 is tagged `fact-miss` and left out of the probes. Each session carries `timeline` (what was settled
 when: the ground truth) and up to eight `probes`: a question asked inside topic B, right after a given
 turn, about one fact of topic A. Probe categories:

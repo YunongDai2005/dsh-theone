@@ -5,8 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { buildSchedule, factState, planFactEpisodes } from '../lib/schedule.mjs'
 import { buildProbes } from '../lib/probes.mjs'
 import { createClient } from '../lib/llm.mjs'
-import { generate, matchesFactStep } from '../generate.mjs'
-import { states } from '../../dist/facts.js'
+import { generate } from '../generate.mjs'
 import { deliveryVerdict, judgeAnswer, runSession } from '../run-facts.mjs'
 
 const fake = join(dirname(fileURLToPath(import.meta.url)), 'fake-model.mjs')
@@ -16,13 +15,20 @@ const threads = [
   { id: 't3', facts: [{ key: 'd', value: '7', update: '8', alternative: null }] },
 ]
 
-test('a rendered non-answer or missing withdrawal cannot become ground truth', () => {
-  const accepted = { kind: 'accept', value: '800' }, withdrawn = { kind: 'retract', value: null }
-  assert.equal(matchesFactStep(accepted, 'What is the weather tomorrow', 'Sunny', states), false)
-  assert.equal(matchesFactStep(accepted, 'no, not that one', 'Fine', states), false)
-  assert.equal(matchesFactStep(accepted, 'make it so', 'Done', states), true)
-  assert.equal(matchesFactStep(withdrawn, 'continue the plan', 'Done', states), false)
-  assert.equal(matchesFactStep(withdrawn, 'budget is off for now', 'Done', states), true)
+test('an exchange the step check turns down, even after a rewrite, never becomes ground truth', async () => {
+  const { mkdtemp, writeFile, rm } = await import('node:fs/promises')
+  const { tmpdir } = await import('node:os')
+  const root = await mkdtemp(join(tmpdir(), 'theone-check-'))
+  try {
+    // The fake writer, with a checker that turns every fact step down.
+    const strict = join(root, 'strict.mjs')
+    await writeFile(strict, `import answer from ${JSON.stringify(fake)}\nexport default async request => request.tag.startsWith('check1:') ? JSON.stringify({ ok: false }) : answer(request)\n`)
+    const [session] = await generate({ sessions: 1, seed: 3, client: await createClient({ fake: strict }) })
+    const steps = session.turns.filter(turn => turn.fact)
+    assert.ok(steps.length > 0 && steps.every(turn => turn.tags.includes('fact-miss')))
+    assert.ok(session.timeline.every(event => event.miss))
+    assert.deepEqual(session.probes, [])
+  } finally { await rm(root, { recursive: true, force: true }) }
   assert.equal(factState([{ thread: 't', key: 'budget', turn: 0, status: 'confirmed', value: '800', miss: true }], 't', 'budget', 0), null)
 })
 

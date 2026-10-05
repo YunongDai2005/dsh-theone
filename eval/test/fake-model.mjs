@@ -60,6 +60,14 @@ export default async function answer({ user, tag }) {
     }
     return JSON.stringify({ messages: payload.plan.map(entry => ({ n: entry.n, ...write(entry) })) })
   }
+  if (step === 'check1') {
+    // Reads the fixed phrases the fake writer uses for each step.
+    const said = text => text.includes(payload.value)
+    const ok = { intro: said(payload.user), update: said(payload.user), reject: said(payload.user),
+      propose: said(payload.assistant) && !said(payload.user), accept: /好，就按你说的|go with that/.test(payload.user),
+      retract: /先不定了|is off/.test(payload.user) }[payload.step]
+    return JSON.stringify({ ok: !!ok, why: 'fake' })
+  }
   if (step === 'extract') {
     // Reads the fixed phrases above. It also records the assistant's suggestions, as a careless
     // extractor would, so the evidence check is exercised.

@@ -92,3 +92,16 @@ Give the goal and where things stand, with every concrete value (numbers, dates,
 
 export const ANSWER_SYSTEM = `You are the assistant in one topic of a person's chat. The payload has reference notes (possibly empty), this topic's conversation so far, and the user's new question.
 Answer the question in one short line with just the value, using only what the notes and the conversation say. If they do not settle it, answer with the word the question gives for "not settled". Do not guess.`
+
+/**
+ * Did a written exchange do what its fact step asked? Judged by meaning, by a model, so the data does
+ * not keep only the phrasings some word list (or the plugin itself) happens to recognise.
+ */
+export const STEP_CHECK_SYSTEM = `You check one exchange of a chat against what it was meant to do with one fact. Output one JSON object only: {"ok": true or false, "why": "a few words"}.
+The payload has the fact's key, the step, the value (for reject also the rejected suggestion), the user's message and the assistant's reply. Judge the meaning as a careful reader would, not the wording. The value must match in substance (same numbers, dates, names), though it may be phrased differently ("$400" and "400 a month", "学到第8课" and "已完成第8课").
+- intro: the user states the value as what they have decided. Asking for reassurance afterwards ("is that enough?") is fine; a value only asked about ("should it be 6 hours?") is not stated.
+- update: the user says the value is now value.
+- propose: the assistant suggests value, and the user has not given that value themselves.
+- accept: the user accepts the assistant's earlier suggestion of value (repeating the value is fine); not a question, not a refusal.
+- reject: the user turns down the suggestion (rejected) and chooses value instead.
+- retract: the user says the fact is no longer settled (called off, reopened, to be decided later) without choosing a new value.`

@@ -16,34 +16,17 @@ import { parseArgs } from 'node:util'
 import { buildSchedule, planFactEpisodes, rng } from './lib/schedule.mjs'
 import { buildProbes } from './lib/probes.mjs'
 import { createClient } from './lib/llm.mjs'
-import { DOMAINS, JUDGE_SYSTEM, RENDER_SYSTEM, RENDER_SYSTEM_V1, SPEC_SYSTEM, SPEC_SYSTEM_V1, leaksTitle } from './lib/prompts.mjs'
+import { DOMAINS, JUDGE_SYSTEM, RENDER_SYSTEM, RENDER_SYSTEM_V1, SPEC_SYSTEM, SPEC_SYSTEM_V1, STEP_CHECK_SYSTEM, leaksTitle } from './lib/prompts.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 export const VERSIONS = { v0: 'interleave-v0', v1: 'interleave-v1' }
 export const VERSION = VERSIONS.v1
-
-/** Independent checks that the rendered acceptance/withdrawal actually carries its planned event. */
-export function matchesFactStep(fact, user, assistant, states) {
-  if (!fact) return true
-  const { kind, value } = fact
-  const question = /[?？]|(吗|呢)\s*[。！!]?\s*$/.test(user.trim())
-  const refusal = /(不行|不要|不用|不同意|拒绝|换成|\b(no|not|reject|instead|prefer)\b|don'?t)/i.test(user)
-  if (kind === 'propose') return states(assistant, value) && !states(user, value)
-  // Broader than the plugin's acceptance vocabulary: phrases the implementation misses are tested.
-  if (kind === 'accept') return !states(user, value) && !question && !refusal &&
-    /(好的?|就按|就这样|就用|同意|没问题|照这个|照你|这么办|定了|\b(ok(ay)?|yes|sure|agreed?|deal)\b|sounds (good|reasonable)|go with|make it so|that'?ll do|works for me)/i.test(user)
-  if (kind === 'retract') return !question &&
-    /(撤回|取消|不再|未定|没定|没(?:有)?确定|先不定|待定|再决定|\b(undecided|withdrawn?|cancel(led|ed)?)\b|no longer|is off|not (yet )?(settled|decided)|decide later)/i.test(user)
-  return states(user, value) && !question && (kind !== 'reject' || refusal)
-}
 
 export async function generate(options) {
   const { sessions: count = 50, seed = 1, langs = ['zh', 'en'], minThreads = 3, maxThreads = 5, minTurns = 40, maxTurns = 60,
     chunk = 8, judge = true, dataset = 'v1', out, client, log = () => {} } = options
   if (!VERSIONS[dataset]) throw new Error(`Unknown dataset ${dataset}; use v0 or v1`)
   const v1 = dataset === 'v1'
-  // v1 checks that each exchange did what its fact step asked, with the plugin's own matching.
-  const facts = v1 ? await import('../dist/facts.js') : undefined
   const make = async index => {
     const random = rng(seed * 100003 + index)
     const lang = langs[index % langs.length]
@@ -114,8 +97,14 @@ export async function generate(options) {
       const rejected = turn => episodes.timeline.findLast(event => event.thread === turn.thread && event.key === turn.fact.key && event.kind === 'propose' && event.turn < turn.i)?.value
       const entry = turn => ({ n: turn.i, thread: turn.thread ?? 'ONE-OFF', action: turn.action, style: turn.style, refs: turn.refs,
         ...(turn.fact ? { fact: { key: turn.fact.key, kind: turn.fact.kind, ...(turn.fact.value == null ? {} : { value: turn.fact.value }), ...(turn.fact.kind === 'reject' ? { rejected: rejected(turn) } : {}) } } : {}) })
-      // Did the exchange do what its fact step asked? Checked with the plugin's own matching.
-      const done = (turn, user, assistant) => matchesFactStep(turn.fact, user, assistant, facts.states)
+      // Did the exchange do what its fact step asked? A model judges the meaning; see STEP_CHECK_SYSTEM.
+      const done = async (turn, user, assistant, attempt) => {
+        if (!turn.fact) return true
+        const { key, kind, value } = turn.fact
+        const verdict = await client.complete({ system: STEP_CHECK_SYSTEM, user: JSON.stringify({ key, step: kind, ...(value == null ? {} : { value }),
+          ...(kind === 'reject' ? { rejected: rejected(turn) } : {}), user, assistant }), json: true, temperature: 0, maxTokens: 200, tag: `check1:${id}:${turn.i}:${attempt}` })
+        return verdict?.ok === true
+      }
       for (let start = 0; start < plan.length; start += chunk) {
         const part = plan.slice(start, start + chunk)
         const answer = await client.complete({ system: RENDER_SYSTEM_V1, user: JSON.stringify({ lang, persona: spec.persona, threads: cards, previous: recent(), plan: part.map(entry) }),
@@ -126,7 +115,7 @@ export async function generate(options) {
           const title = turn.thread && threads.find(thread => thread.id === turn.thread).title
           const leaks = text => title && ['implicit', 'pronoun'].includes(turn.style) && leaksTitle(text, title, lang)
           // An exchange that names a subject it should not, or misses its fact step, is rewritten once.
-          if (!user || !assistant || leaks(user) || !done(turn, user, assistant)) {
+          if (!user || !assistant || leaks(user) || !await done(turn, user, assistant, 0)) {
             const retry = await client.complete({ system: RENDER_SYSTEM_V1, user: JSON.stringify({ lang, persona: spec.persona, threads: cards, previous: recent(), plan: [entry(turn)],
               note: 'Follow the fact step exactly, and do not use any word from the thread title in the user message unless the style is explicit or cue.' }), json: true, temperature: 1, maxTokens: 1000, tag: `rewrite1:${id}:${turn.i}` })
             const again = retry.messages?.[0] ?? {}
@@ -135,7 +124,7 @@ export async function generate(options) {
             if (!user || !assistant) throw new Error(`${id}: no exchange for turn ${turn.i}`)
             if (leaks(user)) turn.tags.push('leak')
             // The plan stays the ground truth; a step the text does not carry makes its fact unusable.
-            if (!done(turn, user, assistant)) turn.tags.push('fact-miss')
+            if (!await done(turn, user, assistant, 1)) turn.tags.push('fact-miss')
           }
           texts.push(user); replies.push(assistant)
         }
