@@ -47,12 +47,66 @@
 ## 30 秒装好
 
 1. 在 DSH 中配置好 API，选一个能正常聊天的模型。
-2. 打开 **插件 → 添加插件**，粘贴 `https://github.com/YunongDai2005/dsh-theone`，点击安装。
+2. 打开 **插件 → 添加插件**，在「包名或地址」里填 `dsh-theone`，点击安装。
 3. 点击左侧 **TheOne · 主聊天**，开始说话。
 
-命令行安装：`dsh plugin --profile web add github:YunongDai2005/dsh-theone --ignore-scripts`。兼容 DSH `0.2.0-rc.2` 与 Node.js 24；界面跟随 DSH 的语言（简体中文 / English）。也可以从 npm 安装 `dsh-theone`，但 DSH 的包管理器只接受发布满 24 小时的版本，所以用 GitHub 地址安装能最早拿到新版本。遇到这种情况，更新按钮会说明原因，并可以只为 TheOne 放行、立即安装。
+就这三步。兼容 DSH `0.2.0-rc.2` 与 Node.js 24；界面跟随 DSH 的语言（简体中文 / English）。
+
+<details>
+<summary><b>第一次用 DSH？手把手来一遍（约 3 分钟）</b></summary>
+
+不用懂代码，跟着做就行：
+
+1. **先让 DSH 自己能聊天。** 在 DSH 的设置里填好模型服务的 API Key（比如 DeepSeek 的），新建一个普通会话发一句「你好」。能收到回复，说明这一步好了。TheOne 用的就是这个模型，不用再填别的 Key。
+2. **装 TheOne。** 点左侧的 **插件**，再点 **添加插件**，在「包名或地址」一栏输入：
+
+   ```
+   dsh-theone
+   ```
+
+   点安装，等它跑完。
+3. **开始用。** 左侧会多出一个 **TheOne · 主聊天**。点进去，把你手头的事一件件说出来就行：今天的工作、周末的旅行、要写的论文……不用新建会话，也不用起名字。
+4. **以后更新。** 有新版本时，TheOne 入口右边会出现一个下载图标，点一下就装好，不用重启。
+5. **不想用了？** 在插件页卸载即可。你原来的 DSH 会话都还在，TheOne 只是帮你整理，从来不删它们。
+
+**可能遇到的小状况**
+
+- **提示版本「太新」、装不上：** DSH 默认只安装发布满 24 小时的版本，这是它的安全规则，不是出错。可以等一天再装，也可以改填 GitHub 地址 `https://github.com/YunongDai2005/dsh-theone`，马上就能装。
+- **装完左侧没看到 TheOne：** 重启一下 DSH。
+- **会不会很费钱：** 每条消息多一次很短的分类调用（关闭深度思考，输出不超过 2048 token），「好的」「继续」这类连调用都省了。装好后它会在后台把你已有的会话整理成话题目录，会话多的话，这一次会用掉一些额度；不需要的话可以在设置里关掉「历史整理」。
+</details>
+
+<details>
+<summary><b>命令行安装与其他方式</b></summary>
+
+- npm：`dsh plugin --profile web add dsh-theone --ignore-scripts`（桌面端把 `web` 换成 `desktop`）
+- GitHub（总是最新的 main）：`dsh plugin --profile web add github:YunongDai2005/dsh-theone --ignore-scripts`
+
+从 npm 安装的新版本要发布满 24 小时才装得上；遇到这种情况，更新按钮会说明原因，并可以只为 TheOne 放行、立即安装。
+</details>
 
 > 非官方社区项目，由社区成员独立维护，与 DeepSeek 不存在隶属或背书关系。
+
+## 它分得有多准
+
+口说无凭，我们做了一套公开评测 **InterleaveBench**：模拟一个人在同一个对话框里同时推进 3–5 件事（旅行、记账、论文、健身……），中英文各半，共 50 段对话、2466 条消息，每条消息属于哪件事都事先定好。再用 TheOne 自己的路由代码、DeepSeek V4.1 Flash 逐条重放（开发集 40 段；连人都分不清的消息不计分）：
+
+| 做法 | 分对的比例 |
+| --- | --- |
+| TheOne，事先给好话题列表 | **91.6%** |
+| TheOne，从零开始边聊边建话题（就是你第一次用的样子） | **86.6%** |
+| 关键词检索（BM25），事先给好话题列表 | 73.3% |
+| 什么都不分，全塞进一个会话 | 44.5% |
+| 关键词检索，从零开始 | 39.9% |
+| 每句话都开一个新话题 | 9.8% |
+
+几个值得一说的数字：
+
+- **把一件事的消息放进另一件事的话题**（最伤上下文的那种错）：从零开始时约占 3.7%。
+- 现在最主要的毛病是**太爱开新话题**：同一件事平均被拆成 2.1 个话题。0.3.21 的「话题卡片」就是冲着它去的。
+- 整套评测花了大约 1 美元。数据、代码和打分脚本都在 [`eval/`](./eval/README.md)，可以自己复现，换成别的模型也行。
+
+评测数据是模型按剧本生成的，而且这一版还没有助手回复，所以它衡量的是「能不能分对」，不代表真实聊天体验的全部。
 
 ## 它是怎么工作的
 
@@ -129,6 +183,19 @@ npm test
 测试使用真实的 DSH 运行时（AgentLoop、Session、SQLite、JSONL 持久化、压缩），只模拟模型，不调用外部 API。`npm run pack:plugin` 生成安装包；`npm run install:local` 和 `npm run start:local` 会在 `~/.dsh-theone` 启动一个独立的 DSH profile。
 
 服务接口：`ctx.theone.searchHistoryDetailed(contextId, query, limit)` 检索话题的已审核历史；`store.addSource(contextId, sessionId, { startSeq, endSeq })` 关联会话的一部分。旧版本验收记录见 [v0.1](./docs/plugin-v0.1.zh.md) 和 [v0.2](./docs/plugin-v0.2.zh.md)。
+</details>
+
+<details>
+<summary>🥚</summary>
+
+<br>
+
+恭喜，你找到了彩蛋。
+
+在评测里，TheOne 犯过一个很有人味的错：用户说「咖啡店秋季新品本来定 9 月 25 上，现在想推到 10 月 8 号」，它把这句话放进了「国庆云南六日游」，因为都在十月。
+
+我们还在调教它，0.3.21 的话题卡片就是这么来的。如果你也被它分错了，在主聊天里说一句「分错了」就行，它会记住，不会生气。
+
 </details>
 
 ---

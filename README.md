@@ -47,12 +47,66 @@ Each project gets its own background session that reasons, runs tools and compac
 ## Install in 30 seconds
 
 1. Configure an API in DSH and select a model that can chat.
-2. Open **Plugins → Add plugin**, paste `https://github.com/YunongDai2005/dsh-theone`, and install.
+2. Open **Plugins → Add plugin**, enter `dsh-theone` under *Package name or address*, and install.
 3. Click **TheOne · Main chat** in the sidebar and start talking.
 
-From the command line: `dsh plugin --profile web add github:YunongDai2005/dsh-theone --ignore-scripts`. Works with DSH `0.2.0-rc.2` and Node.js 24; the interface follows DSH's language (English / Simplified Chinese). Installing `dsh-theone` from npm also works, but DSH's package manager only accepts a version once it has been published for 24 hours, so the GitHub address gets new versions first. When an update is newer than that, the update button explains it and can exempt TheOne alone so it installs right away.
+That's it. Works with DSH `0.2.0-rc.2` and Node.js 24; the interface follows DSH's language (English / Simplified Chinese).
+
+<details>
+<summary><b>New to DSH? A step-by-step walkthrough (about 3 minutes)</b></summary>
+
+No coding needed:
+
+1. **Make sure DSH itself can chat.** Add your model provider's API key (DeepSeek's, for example) in DSH's settings, open an ordinary chat and say "hi". If it answers, you're set. TheOne uses that same model; there is no other key to enter.
+2. **Install TheOne.** Click **Plugins** in the sidebar, then **Add plugin**, and enter:
+
+   ```
+   dsh-theone
+   ```
+
+   Click install and wait for it to finish.
+3. **Start.** A new **TheOne · Main chat** appears in the sidebar. Open it and just talk about whatever is on your plate: today's work, the weekend trip, the paper you're writing. No new chats to create, nothing to name.
+4. **Updates.** When a new version is out, a download icon appears next to the TheOne entry. One click installs it, no restart.
+5. **Changed your mind?** Uninstall it on the Plugins page. Your DSH chats are all still there; TheOne organises them and never deletes them.
+
+**Small things you may run into**
+
+- **"Too new" and it won't install:** DSH only installs versions published at least 24 hours ago. That's a safety rule, not an error. Wait a day, or enter the GitHub address `https://github.com/YunongDai2005/dsh-theone` instead, which installs right away.
+- **No TheOne in the sidebar after installing:** restart DSH.
+- **Will it cost a lot?** Each message adds one short classification call (no deep thinking, at most 2,048 output tokens), and "ok" or "go on" skips even that. After installing, TheOne also organises your existing chats into a topic directory in the background; with many chats that first pass uses some of your quota. You can turn **History catalog** off in the settings.
+</details>
+
+<details>
+<summary><b>Command line and other sources</b></summary>
+
+- npm: `dsh plugin --profile web add dsh-theone --ignore-scripts` (use `desktop` instead of `web` for the desktop app)
+- GitHub (always the latest main): `dsh plugin --profile web add github:YunongDai2005/dsh-theone --ignore-scripts`
+
+A new version from npm installs once it has been published for 24 hours; when an update is newer than that, the update button explains it and can exempt TheOne alone so it installs right away.
+</details>
 
 > Unofficial community project, maintained independently. It is not affiliated with or endorsed by DeepSeek.
+
+## How well does it route?
+
+Claims are cheap, so we built a public benchmark, **InterleaveBench**: one person pushing 3–5 things forward in the same chat at once (a trip, a budget, a paper, a training plan…), half in Chinese and half in English, 50 conversations and 2,466 messages, each labelled in advance with the thing it belongs to. We replayed them message by message through TheOne's own routing code with DeepSeek V4.1 Flash (dev split, 40 conversations; messages even a careful human could not attribute are not scored):
+
+| Approach | Messages routed correctly |
+| --- | --- |
+| TheOne, topic list given up front | **91.6%** |
+| TheOne, starting from nothing and creating topics as it goes (your first day) | **86.6%** |
+| Keyword search (BM25), topic list given up front | 73.3% |
+| No routing, everything in one chat | 44.5% |
+| Keyword search, starting from nothing | 39.9% |
+| A new topic for every message | 9.8% |
+
+A few numbers worth knowing:
+
+- **A message landing in another thing's topic**, the mistake that hurts context most: about 3.7% when starting from nothing.
+- The main weakness today is **opening new topics too eagerly**: one thing ends up split over 2.1 topics on average. 0.3.21's topic cards go after exactly that.
+- The whole run cost about one US dollar. Data, code and scoring live in [`eval/`](./eval/README.md); reproduce it, or try another model.
+
+The conversations are model-written from a script and this version has no assistant replies, so it measures whether messages are routed right, not everything about how chatting feels.
 
 ## How it works
 
@@ -129,6 +183,20 @@ npm test
 Tests use the real DSH runtime (AgentLoop, Session, SQLite, JSONL persistence, compaction) with a simulated model, and call no external API. `npm run pack:plugin` builds the install package; `npm run install:local` and `npm run start:local` run a separate DSH profile in `~/.dsh-theone`.
 
 Service API: `ctx.theone.searchHistoryDetailed(contextId, query, limit)` searches a topic's reviewed history; `store.addSource(contextId, sessionId, { startSeq, endSeq })` attaches part of a session. Earlier acceptance records: [v0.1](./docs/plugin-v0.1.md) and [v0.2](./docs/plugin-v0.2.md).
+</details>
+
+
+<details>
+<summary>🥚</summary>
+
+<br>
+
+Congratulations, you found the easter egg.
+
+In the benchmark, TheOne once made a very human mistake. The user said "the café's autumn menu was due on September 25, let's push it to October 8", and TheOne filed it under the October holiday trip to Yunnan. Both were in October, after all.
+
+We're still training it; 0.3.21's topic cards came out of moments like this. If it ever files something of yours in the wrong place, just say "wrong topic" in the main chat. It will remember, and it won't take it personally.
+
 </details>
 
 ---
