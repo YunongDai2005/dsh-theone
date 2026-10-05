@@ -49,7 +49,11 @@ const same = (a, b) => {
 
 /** Values of one thread's facts as they stood right after turn `at`: current, proposed only, and superseded. */
 function valuesAt(timeline, thread, key, at) {
-  const events = timeline.filter(event => event.thread === thread && factKey(event.key) === factKey(key) && event.turn <= at && !event.miss)
+  const own = timeline.filter(event => event.thread === thread && event.turn <= at && !event.miss)
+  // The extractor names facts in its own words ("预算" for "活动预算"): when the name matches none of
+  // the thread's facts, the value is checked against all of them, which can only flag more lines.
+  const named = own.filter(event => factKey(event.key) === factKey(key))
+  const events = named.length ? named : own
   const keys = [...new Set(events.map(event => event.key))]
   const current = keys.map(key => factState(timeline, thread, key, at)).filter(value => value != null)
   const confirmed = events.filter(event => event.status === 'confirmed').map(event => event.value).filter(value => !current.some(item => same(item, value)))

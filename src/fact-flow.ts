@@ -35,6 +35,7 @@ export function factDelivery(store: ContextStore, scope: LinkScope, contextId: s
   const titles = new Map(store.contexts().map(context => [context.id, context.title]))
   const allowed = (sourceId: string) => titles.has(sourceId) && !mayShare(store, scope, sourceId, contextId)
   const notices: { line: string; commit: () => void }[] = []
+  const quiet: (() => void)[] = []
   const noticed = new Set<string>()
   for (const dependency of store.dependencies(contextId)) {
     const fact = store.fact(dependency.factId)
@@ -45,6 +46,8 @@ export function factDelivery(store: ContextStore, scope: LinkScope, contextId: s
     } else if (fact.version > dependency.versionSeen) {
       const title = safe(titles.get(fact.contextId)!, 40)
       const before = store.factVersion(fact.id, dependency.versionSeen)
+      // The same value said again (a reaffirmation is a new version): nothing to tell; move the mark on.
+      if (before && before.status === fact.status && before.value === fact.value) { quiet.push(() => store.recordDelivery(contextId, fact, 'notice', inputId)); continue }
       const line = fact.status !== 'confirmed' ? `- 【${title}】${label}：已撤回或目前没有确认的值，不要再使用之前的值。`
         : before?.status === 'confirmed' ? `- 【${title}】${label}：${safe(before.value ?? '', 80)} → ${safe(fact.value ?? '', 80)}（第 ${fact.version} 版）`
         : `- 【${title}】${label}：重新确认为 ${safe(fact.value ?? '', 80)}（第 ${fact.version} 版）`
@@ -64,7 +67,7 @@ export function factDelivery(store: ContextStore, scope: LinkScope, contextId: s
   const fit = (items: { line: string; commit: () => void }[], budget: number) => items.slice(0, within(items.map(item => item.line), budget).length)
   const sentNotices = fit(notices, FACT_LIMITS.noticeBudget), sentFacts = fit(facts, FACT_LIMITS.briefingBudget)
   return { notices: sentNotices.map(item => item.line), facts: sentFacts.map(item => item.line),
-    commit: () => { for (const item of [...sentNotices, ...sentFacts]) item.commit() } }
+    commit: () => { for (const item of [...sentNotices, ...sentFacts]) item.commit(); for (const mark of quiet) mark() } }
 }
 
 /** The topic's own recorded facts, with ids and versions, for its Worker's descriptor. */
@@ -92,7 +95,7 @@ export function extractionPayload(events: readonly EvidenceEvent[], base: readon
   const room = FACT_LIMITS.extractionBudget - known.join('').length
   const payload = { user: safe(user, Math.floor(room / 3)), assistant: safe(assistant, room - Math.floor(room / 3) - 200), facts: known.map(line => JSON.parse(line) as object) }
   // Escaping quotes, newlines and backslashes can double the serialized request size.
-  while (JSON.stringify(payload).length > FACT_LIMITS.extractionBudget) {
+  while (JSON.stringify(payload).length > FACT_LIMITS.extractionBudget && (payload.user || payload.assistant)) {
     const field = payload.assistant.length >= payload.user.length ? 'assistant' : 'user'
     const excess = JSON.stringify(payload).length - FACT_LIMITS.extractionBudget
     payload[field] = payload[field].slice(0, Math.max(0, payload[field].length - Math.ceil(excess / 2)))

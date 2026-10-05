@@ -107,6 +107,10 @@ test('answers are judged against the value at that moment; decoys say which way 
   assert.equal(verdict('- 【读书会】预算 = 800（第 1 版，用户确认于 2026-10-05 10:00 UTC）'), 'stale')
   assert.equal(verdict('- 【读书会】日期 = 周五（第 1 版，用户确认于 2026-10-05 10:00 UTC）'), 'proposal')
   assert.equal(verdict('- 【读书会】预算：已撤回或目前没有确认的值，不要再使用之前的值。'), 'withdrawn')
+  // The extractor's own name for a fact ("活动经费") falls back to all of the thread's facts.
+  assert.equal(verdict('- 【读书会】活动经费 = 800（第 1 版，用户确认于 2026-10-05 10:00 UTC）'), 'stale')
+  assert.equal(verdict('- 【读书会】活动经费 = 700（第 1 版，用户确认于 2026-10-05 10:00 UTC）'), 'current')
+  assert.equal(verdict('- 【读书会】见面时间 = 周五（第 1 版，用户确认于 2026-10-05 10:00 UTC）'), 'proposal')
 })
 
 test('the facts run uses the plugin’s own flow: a careless extractor’s proposals never reach another topic', async () => {
@@ -135,7 +139,9 @@ test('delivery scoring checks the named fact, not an equal value belonging to an
   ]
   const input = { titles: new Map([['Club', 't1']]), timeline, at: 2 }
   assert.equal(deliveryVerdict('- 【Club】budget = 800（第 1 版）', input), 'stale')
-  assert.equal(deliveryVerdict('- 【Club】unknown = 700（第 1 版）', input), 'unknown')
+  // A name the timeline does not know is checked against all of the thread's facts.
+  assert.equal(deliveryVerdict('- 【Club】spending cap = 700（第 1 版）', input), 'current')
+  assert.equal(deliveryVerdict('- 【Club】spending cap = 650（第 1 版）', input), 'unknown')
   assert.equal(judgeAnswer('未确定，也许是 700', { source: 't1', key: 'budget', after: 2, gold: '700', decoys: [] }, timeline), 'missing')
 })
 

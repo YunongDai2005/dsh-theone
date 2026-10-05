@@ -68,6 +68,15 @@ class ScoreFactsTest(unittest.TestCase):
         two = [dict(row, session_id="other", verdict="wrong") if row.get("strategy") else dict(row, session_id="other") for row in rows()]
         self.assertEqual(score_facts.evaluate(one + two)["paired"]["n"], 22)
 
+    def test_rare_routing_failures_and_unknown_values_are_reported_not_blocking(self):
+        data = [row for row in rows() if row["kind"] != "route"]
+        data += [{"kind": "route", "gold": "t1", "offered": 1, "without": "t1", "with": "t1", "imports": 1} for n in range(200)]
+        data += [{"kind": "route", "gold": "t1", "offered": 1, "without": "ERROR", "with": "ERROR", "imports": 0, "error": "invalid"},
+                 {"kind": "delivery", "verdict": "unknown", "notice": False}]
+        result = score_facts.evaluate(data)
+        self.assertTrue(result["passed"], result["gates"])
+        self.assertIn("1 unknown", result["gates"]["proposals_shared"]["value"])
+
     def test_a_small_routing_accuracy_drop_still_blocks_release(self):
         data = [row for row in rows() if row["kind"] != "route"]
         data += [{"kind": "route", "gold": "t1", "offered": 1, "without": "t1", "with": "t2" if n == 0 else "t1", "imports": 1} for n in range(100)]

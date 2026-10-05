@@ -28,20 +28,27 @@ export function states(source, value) {
     const s = matchText(source), v = matchText(value);
     if (!v || !s)
         return false;
-    const numeric = /[+-]?\d+(?:\.\d+)?/g;
-    const numbers = v.match(numeric) ?? [];
-    const present = new Set(s.match(numeric) ?? []);
-    if (numbers.some(number => !present.has(number)))
+    const present = new Set(numberTokens(source));
+    if (numberTokens(value).some(number => !present.has(number)))
         return false;
     return s.includes(v);
+}
+/**
+ * Whole numbers as written, read before spaces are folded away (so "12 3pm" is 12 and 3, not 123).
+ * A sign only where no digit precedes it, so "2026-10-05" holds 10 and 05, not -10 and -05.
+ */
+function numberTokens(text) {
+    return redactRoutingText(text).normalize('NFKC').replace(/(\d)[,，](?=\d{3}\b)/g, '$1').match(/(?<![\d.])[+-]?\d+(?:\.\d+)?/g) ?? [];
 }
 const NEGATION = /(不行|不可以|不好|不要|不用|不能|不是|不再|不同意|不采用|不选|别这样|算了|再想想|\bno\b|\bnot\b|\bdon'?t\b|\bnope\b|rather than|instead of)/i;
 const UNCERTAIN = /(未定|没定|没(?:有)?确定|未确认|未确定|不确定|暂定|待定|建议|假设|如果|或许|可能|\b(might|maybe|perhaps|suggest|suppose|if|undecided)\b)/i;
 const QUESTION = /[?？]|(吗|呢)\s*[。！!]?\s*$/;
 const ACCEPTANCE = /((?:^|[\s，,。.!！;；])(?:好的?|行|可以|确定|定了)(?=$|[\s，,。.!！;；]|就|按)|就按|就这样|就用|就它|同意|就这么定|没问题|按你说的|\bok(ay)?\b|\byes\b|\bsure\b|sounds good|go with|let'?s (do|go|use)|\bagreed?\b|\bdeal\b|works for me|that works)/i;
+/** Naming the assistant's suggestion ("就按你的建议", "your suggestion") is how an acceptance points at it. */
+const THEIR_SUGGESTION = /((?:你|您)(?:的|刚才的|说的)?(?:建议|提议|方案))|\byour (?:suggestion|proposal|idea)\b/gi;
 /** "ok, go with that": an explicit acceptance, without a refusal and not itself a question. */
 export function accepts(text) {
-    return ACCEPTANCE.test(text) && !NEGATION.test(text) && !UNCERTAIN.test(text) && !QUESTION.test(text.trim());
+    return ACCEPTANCE.test(text) && !NEGATION.test(text) && !UNCERTAIN.test(text.replace(THEIR_SUGGESTION, '')) && !QUESTION.test(text.trim());
 }
 /** A retraction needs words withdrawing or reopening a value, not merely any user quote. */
 export function retracts(text) {

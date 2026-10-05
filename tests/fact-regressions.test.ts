@@ -127,3 +127,32 @@ test('serialized extraction and candidate payloads respect their hard budgets ev
     assert.ok(JSON.stringify(candidates).length <= FACT_LIMITS.routerBudget)
   } finally { s.close() }
 })
+
+test('numbers are read as written: part of a date and numbers apart by spaces still match', () => {
+  assert.equal(states('出发定在 2026-10-05', '10-05'), true)
+  assert.equal(states('room 12 3pm', '12'), true)
+  assert.equal(states('大概 10-15 人', '10-15'), true)
+  assert.equal(states('room 123pm', '12'), false)
+})
+
+test('accepting "your suggestion" by name is an acceptance; a hedge of the user’s own is not', () => {
+  assert.equal(accepts('好，就按你的建议来'), true)
+  assert.equal(accepts('ok, go with your suggestion'), true)
+  assert.equal(accepts('好，就按你说的，不过人数可能还要变'), false)
+})
+
+test('a reaffirmed value moves the dependency on without a "700 → 700" notice', async () => {
+  const { factDelivery } = await import('../src/fact-flow.ts')
+  const s = new ContextStore(':memory:')
+  s.seed([{ id: 'a', title: 'a', summary: '', entities: [], keywords: [], lastState: '' }, { id: 'b', title: 'b', summary: '', entities: [], keywords: [], lastState: '' }])
+  const first = write(s, '700', 1).fact!
+  factDelivery(s, 'auto', 'b', [first.id]).commit()
+  assert.equal(write(s, '700', 5).fact?.version, 2)
+  const quiet = factDelivery(s, 'auto', 'b', [])
+  assert.deepEqual(quiet.notices, [])
+  quiet.commit()
+  assert.equal(s.dependencies('b')[0].versionSeen, 2)
+  // A real change after that is still told, from the value the topic last saw.
+  write(s, '650', 9)
+  assert.deepEqual(factDelivery(s, 'auto', 'b', []).notices, ['- 【a】预算：700 → 650（第 3 版）'])
+})

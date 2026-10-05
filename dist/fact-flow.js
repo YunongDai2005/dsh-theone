@@ -22,6 +22,7 @@ export function factDelivery(store, scope, contextId, imports, inputId) {
     const titles = new Map(store.contexts().map(context => [context.id, context.title]));
     const allowed = (sourceId) => titles.has(sourceId) && !mayShare(store, scope, sourceId, contextId);
     const notices = [];
+    const quiet = [];
     const noticed = new Set();
     for (const dependency of store.dependencies(contextId)) {
         const fact = store.fact(dependency.factId);
@@ -33,6 +34,11 @@ export function factDelivery(store, scope, contextId, imports, inputId) {
         else if (fact.version > dependency.versionSeen) {
             const title = safe(titles.get(fact.contextId), 40);
             const before = store.factVersion(fact.id, dependency.versionSeen);
+            // The same value said again (a reaffirmation is a new version): nothing to tell; move the mark on.
+            if (before && before.status === fact.status && before.value === fact.value) {
+                quiet.push(() => store.recordDelivery(contextId, fact, 'notice', inputId));
+                continue;
+            }
             const line = fact.status !== 'confirmed' ? `- 【${title}】${label}：已撤回或目前没有确认的值，不要再使用之前的值。`
                 : before?.status === 'confirmed' ? `- 【${title}】${label}：${safe(before.value ?? '', 80)} → ${safe(fact.value ?? '', 80)}（第 ${fact.version} 版）`
                     : `- 【${title}】${label}：重新确认为 ${safe(fact.value ?? '', 80)}（第 ${fact.version} 版）`;
@@ -56,7 +62,8 @@ export function factDelivery(store, scope, contextId, imports, inputId) {
     const sentNotices = fit(notices, FACT_LIMITS.noticeBudget), sentFacts = fit(facts, FACT_LIMITS.briefingBudget);
     return { notices: sentNotices.map(item => item.line), facts: sentFacts.map(item => item.line),
         commit: () => { for (const item of [...sentNotices, ...sentFacts])
-            item.commit(); } };
+            item.commit(); for (const mark of quiet)
+            mark(); } };
 }
 /** The topic's own recorded facts, with ids and versions, for its Worker's descriptor. */
 export function ownFactsText(store, contextId) {
@@ -81,7 +88,7 @@ export function extractionPayload(events, base) {
     const room = FACT_LIMITS.extractionBudget - known.join('').length;
     const payload = { user: safe(user, Math.floor(room / 3)), assistant: safe(assistant, room - Math.floor(room / 3) - 200), facts: known.map(line => JSON.parse(line)) };
     // Escaping quotes, newlines and backslashes can double the serialized request size.
-    while (JSON.stringify(payload).length > FACT_LIMITS.extractionBudget) {
+    while (JSON.stringify(payload).length > FACT_LIMITS.extractionBudget && (payload.user || payload.assistant)) {
         const field = payload.assistant.length >= payload.user.length ? 'assistant' : 'user';
         const excess = JSON.stringify(payload).length - FACT_LIMITS.extractionBudget;
         payload[field] = payload[field].slice(0, Math.max(0, payload[field].length - Math.ceil(excess / 2)));
