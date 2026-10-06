@@ -10,7 +10,9 @@
 
 <p align="center">English | <a href="./README.zh.md">简体中文</a></p>
 
-<p align="center"><img src="docs/images/theone-film-preview.webp" alt="TheOne promo film: the One button turns into a 3D key that routes each message to its session" width="100%"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/YunongDai2005/dsh-theone/main/docs/images/theone-demo-en.webp" alt="Demo: two unrelated requests in the main chat each get their own topic in the sidebar; going back to the first one continues it in its own topic" width="100%"></p>
+
+<p align="center"><sub>A GPU question, a hotel question, then the GPU again, with no cues in between. The two topics on the left made themselves; nothing was clicked. (Example conversation.)</sub></p>
 
 ---
 
@@ -22,20 +24,14 @@ If you've ever said any of these, TheOne was probably written for you:
 - "Not starting a new chat for this, I'll just ask here." And one chat turns into a mess.
 - "I already told you that!" The AI forgot what you talked about.
 
-**TheOne takes care of that.** You just talk in one main chat:
-
-<p align="center"><img src="https://raw.githubusercontent.com/YunongDai2005/dsh-theone/main/docs/images/theone-demo-en.webp" alt="Demo: two unrelated requests in the main chat each get their own topic in the sidebar; going back to the first one continues it in its own topic" width="100%"></p>
-
-<p align="center"><sub>A GPU question, a hotel question, then the GPU again, with no cues in between. The two topics on the left made themselves; nothing was clicked. (Example conversation.)</sub></p>
-
-Behind the scenes, it works like this:
+**What TheOne does:** you only ever talk in one main chat. In the background it opens a separate session for each thing you're working on and sends every message to the one it belongs to.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/YunongDai2005/dsh-theone/main/docs/images/theone-architecture-en-dark.svg">
   <img alt="How TheOne works: main chat sends each message through the router to its topic session; answers stream back, and the topic directory keeps progress, constraints and links" src="https://raw.githubusercontent.com/YunongDai2005/dsh-theone/main/docs/images/theone-architecture-en-light.svg" width="100%">
 </picture>
 
-Each project gets its own background session that reasons, runs tools and compacts on its own. What you see is always one ordinary conversation.
+Each project reasons, runs tools and compacts in its own session. What you see is always one ordinary conversation.
 
 ## Why try it
 
@@ -48,13 +44,10 @@ Each project gets its own background session that reasons, runs tools and compac
 | Wrong project | Move it by hand | Say "wrong topic" |
 
 - **Feels native.** Thinking streams in its usual place from the first token, and tool cards, approvals, questions, todo lists, retries and mid-reply steering all work as usual.
-- **Related work connects; unrelated work stays out.** Related topics share progress automatically and TheOne learns which ones belong together from how you use them. A topic's constraints (say, "budget figures stay out of the paper") are attached verbatim every time, so compaction never drops them.
-- **Gets better with use.** Say "wrong topic" or click **Move to…** in the directory, and TheOne learns which terms tie that kind of message to the right topic (one small model call), so similar messages go there from then on. The directory shows how often routing was kept as is.
-- **Knows each topic early.** After a topic's first reply, and once more when it is clearer, a short card (what it is, other names you use for it, the people, places and files involved, what is still open) is written in the background, so routing recognises the topic in your own words from the start. Routing also sees when each topic was last active; topics left alone longer than you usually come back to one (learned from your own use, 7 days until there is enough) are set aside: still reachable, just considered last. Nothing to set up and nothing shown.
+- **Related work connects; unrelated work stays out.** Related topics share progress automatically, and which ones belong together is learned from how you use them. A topic's constraints (say, "budget figures stay out of the paper") are attached verbatim every time, so compaction never drops them.
+- **Learns your words.** Once a topic has replies, a short routing card is written in the background (what it is, what you call it, the people, places and files involved), so it is recognised however you phrase it. Say "wrong topic" and it remembers which terms tie that kind of message to the right one. Topics you haven't touched in a long while go to the back of the line; how long is "long" is learned from how you come back to things.
 - **Your old sessions become a topic directory.** After install it reads your existing sessions in the background, turns them into topics grouped into workspaces, and you pick up where you left off.
-- **Nothing extra to configure.** No separate API key: routing and the background sessions use the model you chose in DSH. When TheOne is the selected model, a button with a layers icon appears beside the model menu: it shows which model does the routing and the work, and switches it.
-
-![TheOne main chat and topic workspaces](https://raw.githubusercontent.com/YunongDai2005/dsh-theone/main/docs/images/theone-topic-workspaces-en.png)
+- **Nothing extra to configure.** No separate API key: it uses the model you chose in DSH. When TheOne is selected, a layers icon beside the model menu shows and switches which model routes and which does the work.
 
 ## Install in 30 seconds
 
@@ -78,14 +71,14 @@ No coding needed:
 
    Click install and wait for it to finish.
 3. **Start.** A new **TheOne · Main chat** appears in the sidebar. Open it and just talk about whatever is on your plate: today's work, the weekend trip, the paper you're writing. No new chats to create, nothing to name.
-4. **Updates.** When a new version is out, a download icon appears next to the TheOne entry. One click installs it, no restart.
+4. **Updates.** When a new version is out, a download icon appears next to the TheOne entry. One click installs it, usually without a restart; your topics live in the database and are untouched.
 5. **Changed your mind?** Uninstall it on the Plugins page. Your DSH chats are all still there; TheOne organises them and never deletes them.
 
 **Small things you may run into**
 
 - **"Too new" and it won't install:** DSH only installs versions published at least 24 hours ago. That's a safety rule, not an error. Wait a day, or enter the GitHub address `https://github.com/YunongDai2005/dsh-theone` instead, which installs right away.
 - **No TheOne in the sidebar after installing:** restart DSH.
-- **Will it cost a lot?** Each message adds one short classification call (no deep thinking, at most 2,048 output tokens), and "ok" or "go on" skips even that. After installing, TheOne also organises your existing chats into a topic directory in the background; with many chats that first pass uses some of your quota. You can turn **History catalog** off in the settings.
+- **Will it cost a lot?** Each message adds one short classification call (no deep thinking), and "ok" or "go on" skips even that. With many old chats, the first pass that organises them uses some of your quota; turn **History catalog** off in the settings if you don't need it.
 </details>
 
 <details>
@@ -101,7 +94,7 @@ A new version from npm installs once it has been published for 24 hours; when an
 
 ## How well does it route?
 
-Claims are cheap, so we built a public benchmark, **InterleaveBench**: one person pushing 3–5 things forward in the same chat at once (a trip, a budget, a paper, a training plan…), half in Chinese and half in English, 50 conversations and 2,466 messages, each labelled in advance with the thing it belongs to. We replayed them message by message through TheOne's own routing code with DeepSeek V4.1 Flash (dev split, 40 conversations; messages even a careful human could not attribute are not scored):
+Claims are cheap, so we built a public benchmark, **InterleaveBench**: one person pushing 3–5 things forward in the same chat at once (a trip, a budget, a paper, a training plan…), half in Chinese and half in English, 50 conversations and 2,466 messages, each labelled in advance with the thing it belongs to. Below, the 40-conversation dev split replayed message by message through TheOne's own routing code with DeepSeek V4.1 Flash (messages even a careful human could not attribute are not scored):
 
 | Approach | Messages routed correctly |
 | --- | --- |
@@ -115,18 +108,18 @@ Claims are cheap, so we built a public benchmark, **InterleaveBench**: one perso
 A few numbers worth knowing:
 
 - **A message landing in another thing's topic**, the mistake that hurts context most: about 3.7% when starting from nothing.
-- The main weakness today is **opening new topics too eagerly**: one thing ends up split over 2.1 topics on average. 0.3.21's topic cards go after exactly that.
+- The main weakness today is **opening new topics too eagerly**: one thing ends up split over 2.1 topics on average. 0.3.21's routing cards go after exactly that.
 - The whole run cost about one US dollar. Data, code and scoring live in [`eval/`](./eval/README.md); reproduce it, or try another model.
 
 The conversations are model-written from a script and this version has no assistant replies, so it measures whether messages are routed right, not everything about how chatting feels.
 
 ## What's next
 
-For now, TheOne is being refined on DeepSeek Harness. DSH's plugin system is open enough that background sessions, tools and compaction can all be reused as they are, which makes it the right place to get "one chat for everything" solid first.
+For now, TheOne is being refined on DeepSeek Harness, whose background sessions, tools and compaction can be reused as they are: the right place to get "one chat for everything" solid first.
 
 In progress:
 
-- **Better routing**: looking at a burst of messages together while deciding each one separately, and measuring what topic cards add.
+- **Better routing**: looking at a burst of messages together while deciding each one separately, and measuring what routing cards add.
 - **Confirmed facts shared between topics**: a budget, a date, where a file lives, kept current wherever you need it. It is experimental and will only be turned on by default once it passes its benchmark.
 
 Once it is stable, the next step goes beyond DSH:
@@ -153,7 +146,9 @@ Which comes first depends on what people need more. If you have a view, say so i
 
 The briefing is marked as reference, not instructions. For details, the background session can use `theone_read_topic` and `theone_search_history`. Linking scope is **Learn automatically** (default), **Same workspace only** or **Off**. In the directory you can link or unlink topics and mark a topic **Do not share**; your choices always win.
 
-**Topic directory.** Each topic card shows its latest progress and constraints. Under **Manage** you can rename, edit the summary and constraints, move to another workspace, merge, delete, or attach an existing DSH session as searchable history; **+ New topic** starts one by hand. **Recent topic routing** lists where each message went, why, with which model and how long it took. With a long history, the first pass takes some time and API quota; set `THEONE_HISTORY_CATALOG=false` to turn it off.
+**Topic directory.** Each topic shows its latest progress and constraints. Under **Manage** you can rename, edit the summary and constraints, move to another workspace, merge, delete, or attach an existing DSH session as searchable history; **+ New topic** starts one by hand. **Recent topic routing** lists where each message went, why, with which model and how long it took. With a long history, the first pass takes some time and API quota; set `THEONE_HISTORY_CATALOG=false` to turn it off.
+
+![TheOne main chat and topic workspaces](https://raw.githubusercontent.com/YunongDai2005/dsh-theone/main/docs/images/theone-topic-workspaces-en.png)
 
 <details>
 <summary><b>Settings</b></summary>
@@ -183,13 +178,13 @@ The database location and entry identifier switch TheOne to different data, so t
 - A topic marked **Do not share** never appears in other topics' briefings, recent-chat excerpts or lookups.
 - Notices from the author are read from `https://yulid.org/theone/notice.json` with a plain request that sends none of your data; turn them off in Settings.
 - When main chat grows long, DSH compacts it through TheOne: frequently used topics keep longer summaries and their latest turns, rarely used ones keep a short status. This makes no model call.
-- When a new version is out, a download icon appears on the right of the TheOne entry in the sidebar: one click installs it through DSH's plugin manager and reloads TheOne in place, without restarting DSH (a DSH without plugin hot reload applies it at the next restart). Your topics stay in the database.
+- Updates are installed by DSH's plugin manager and reload TheOne in place; a DSH without plugin hot reload applies them at the next restart.
 </details>
 
 <details>
 <summary><b>Known limitations</b></summary>
 
-- One request runs at a time; messages queued during a reply wait for it to finish.
+- One request runs at a time: a message sent during a reply is taken as an addition to that topic, so for something else, wait until the reply finishes.
 - New topics write files under `~/.dsh/theone/gateway`; you cannot yet choose a project folder for a new topic.
 - Main chat stores copies of tool calls, so its log grows with use; entry-log rotation is not implemented yet.
 - The main chat is remembered per browser: another browser or the desktop app gets its own main chat, sharing the same topics. Only one DSH process should use a database at a time.
@@ -213,7 +208,6 @@ Tests use the real DSH runtime (AgentLoop, Session, SQLite, JSONL persistence, c
 Service API: `ctx.theone.searchHistoryDetailed(contextId, query, limit)` searches a topic's reviewed history; `store.addSource(contextId, sessionId, { startSeq, endSeq })` attaches part of a session. Earlier acceptance records: [v0.1](./docs/plugin-v0.1.md) and [v0.2](./docs/plugin-v0.2.md).
 </details>
 
-
 <details>
 <summary>🥚</summary>
 
@@ -223,7 +217,7 @@ Congratulations, you found the easter egg.
 
 In the benchmark, TheOne once made a very human mistake. The user said "the café's autumn menu was due on September 25, let's push it to October 8", and TheOne filed it under the October holiday trip to Yunnan. Both were in October, after all.
 
-We're still training it; 0.3.21's topic cards came out of moments like this. If it ever files something of yours in the wrong place, just say "wrong topic" in the main chat. It will remember, and it won't take it personally.
+We're still training it. If it ever files something of yours in the wrong place, just say "wrong topic" in the main chat. It will remember, and it won't take it personally.
 
 </details>
 
