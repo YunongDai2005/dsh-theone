@@ -26,7 +26,7 @@
 
 <p align="center"><img src="https://raw.githubusercontent.com/YunongDai2005/dsh-theone/main/docs/images/theone-demo-zh.webp" alt="演示：在主聊天里先后说显卡和旅行两件事，左侧各自出现一个话题；回到显卡那件事时，它接着原来的话题回答" width="100%"></p>
 
-<p align="center"><sub>连着说两件不相干的事，再切回第一件。左边的话题是它自己建的，你什么都没点。（示例对话）</sub></p>
+<p align="center"><sub>先问显卡，再问旅馆，然后接着问显卡，中间没有任何提示语。左边的两个话题是它自己建的，你什么都没点。（示例对话）</sub></p>
 
 而它在背后是这样运转的：
 
