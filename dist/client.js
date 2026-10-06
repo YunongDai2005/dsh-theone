@@ -282,6 +282,35 @@ var zh = {
   "routes.error": "\u5206\u7C7B\u51FA\u9519\uFF1A{code}",
   "routes.rules": "\u89C4\u5219\u5224\u65AD",
   "routes.removed": "\uFF08\u5DF2\u5220\u9664\u7684\u8BDD\u9898\uFF09",
+  "routes.report": "\u62A5\u544A\u95EE\u9898",
+  "feedback.open": "\u53CD\u9988\u95EE\u9898",
+  "feedback.title": "\u53CD\u9988\u95EE\u9898",
+  "feedback.titleMessage": "\u62A5\u544A\u8FD9\u6761\u56DE\u590D\u7684\u95EE\u9898",
+  "feedback.intro": "\u8BF4\u8BF4\u53D1\u751F\u4E86\u4EC0\u4E48\u3002\u4E0B\u9762\u80FD\u770B\u5230\u8981\u53D1\u51FA\u7684\u5168\u90E8\u5185\u5BB9\uFF0C\u70B9\u300C\u53D1\u9001\u300D\u4E4B\u524D\u4EC0\u4E48\u90FD\u4E0D\u4F1A\u53D1\u51FA\u3002",
+  "feedback.description": "\u53D1\u751F\u4E86\u4EC0\u4E48\uFF1F\u6BD4\u5982\uFF1A\u56DE\u590D\u91CC\u51FA\u73B0\u4E71\u7801\u3001\u5206\u9519\u4E86\u8BDD\u9898\u3001\u67D0\u4E2A\u6309\u94AE\u6CA1\u53CD\u5E94",
+  "feedback.contact": "\u8054\u7CFB\u65B9\u5F0F\uFF08\u9009\u586B\uFF09\uFF1A\u90AE\u7BB1\u3001QQ \u6216\u5FAE\u4FE1\uFF0C\u65B9\u4FBF\u4F5C\u8005\u56DE\u590D\u4F60",
+  "feedback.includeReply": "\u9644\u4E0A\u8FD9\u6761\u6D88\u606F\u548C\u56DE\u590D\u7684\u539F\u6587\uFF08\u6392\u67E5\u4E71\u7801\u8FD9\u7C7B\u95EE\u9898\u65F6\u9700\u8981\uFF09",
+  "feedback.preview": "\u8981\u53D1\u9001\u7684\u5185\u5BB9",
+  "feedback.privacy": "\u53D1\u9001\u5230 feedback.yulid.org\uFF0C\u53EA\u7528\u4E8E\u6392\u67E5\u95EE\u9898\uFF0C\u7531 TheOne \u4F5C\u8005\u4FDD\u5B58 90 \u5929\u540E\u81EA\u52A8\u5220\u9664\u3002\u9ED8\u8BA4\u53EA\u542B\u7248\u672C\u3001\u8BBE\u7F6E\u548C\u8DEF\u7531\u7684\u9519\u8BEF\u7801\u4E0E\u8017\u65F6\uFF0C\u4E0D\u542B\u804A\u5929\u5185\u5BB9\u3002",
+  "feedback.loading": "\u6B63\u5728\u6574\u7406\u8BCA\u65AD\u4FE1\u606F\u2026",
+  "feedback.loadError": "\u8BCA\u65AD\u4FE1\u606F\u6CA1\u6709\u6574\u7406\u51FA\u6765\uFF0C\u4F60\u4ECD\u7136\u53EF\u4EE5\u5199\u4E0B\u95EE\u9898\uFF0C\u590D\u5236\u540E\u53D1\u90AE\u4EF6\u5230 {email}\u3002",
+  "feedback.send": "\u53D1\u9001",
+  "feedback.sending": "\u6B63\u5728\u53D1\u9001\u2026",
+  "feedback.copy": "\u590D\u5236\u5185\u5BB9",
+  "feedback.copied": "\u5DF2\u590D\u5236",
+  "feedback.email": "\u53D1\u90AE\u4EF6",
+  "feedback.cancel": "\u53D6\u6D88",
+  "feedback.close": "\u5173\u95ED",
+  "feedback.sent": "\u5DF2\u53D1\u9001\uFF0C\u7F16\u53F7 {id}\u3002\u5728\u8BC4\u8BBA\u6216\u90AE\u4EF6\u91CC\u63D0\u5230\u8FD9\u4E2A\u7F16\u53F7\uFF0C\u4F5C\u8005\u5C31\u80FD\u627E\u5230\u5B83\u3002\u8C22\u8C22\uFF01",
+  "feedback.fallback": "\u4E5F\u53EF\u4EE5\u70B9\u300C\u590D\u5236\u5185\u5BB9\u300D\uFF0C\u53D1\u90AE\u4EF6\u5230 {email}\u3002",
+  "feedback.error.UNREACHABLE": "\u8FDE\u4E0D\u4E0A\u53CD\u9988\u670D\u52A1\u5668\u3002",
+  "feedback.error.RATE_LIMITED": "\u53D1\u9001\u5F97\u592A\u9891\u7E41\u4E86\uFF0C\u8BF7\u4E00\u5C0F\u65F6\u540E\u518D\u8BD5\u3002",
+  "feedback.error.REJECTED": "\u53CD\u9988\u670D\u52A1\u5668\u6CA1\u6709\u63A5\u6536\u8FD9\u4EFD\u62A5\u544A\u3002",
+  "feedback.error.SERVER_ERROR": "\u53CD\u9988\u670D\u52A1\u5668\u6682\u65F6\u51FA\u4E86\u95EE\u9898\u3002",
+  "feedback.error.DESCRIPTION_REQUIRED": "\u5148\u5199\u4E00\u53E5\u53D1\u751F\u4E86\u4EC0\u4E48\u3002",
+  "feedback.error.TOO_LARGE": "\u5185\u5BB9\u592A\u957F\u4E86\uFF0C\u8BF7\u7F29\u77ED\u63CF\u8FF0\uFF0C\u6216\u53BB\u6389\u56DE\u590D\u539F\u6587\u3002",
+  "feedback.error.DIRECT_OFF": "\u8FD9\u4E2A DSH \u5173\u95ED\u4E86\u76F4\u63A5\u53D1\u9001\u3002",
+  "feedback.error.other": "\u6CA1\u6709\u53D1\u9001\u6210\u529F\u3002",
   "route.reason.steering": "\u56DE\u590D\u4E2D\u8865\u5145",
   "route.reason.short-continuation": "\u63A5\u7740\u8BF4",
   "route.reason.attachment-only": "\u53EA\u6709\u9644\u4EF6",
@@ -500,6 +529,35 @@ var en = {
   "routes.error": "Classifier error: {code}",
   "routes.rules": "rules",
   "routes.removed": "(deleted topic)",
+  "routes.report": "Report a problem",
+  "feedback.open": "Report a problem",
+  "feedback.title": "Report a problem",
+  "feedback.titleMessage": "Report a problem with this reply",
+  "feedback.intro": "Tell us what happened. Everything that would be sent is shown below; nothing leaves this computer until you press Send.",
+  "feedback.description": "What happened? For example: garbled text in a reply, the wrong topic, a button that does nothing",
+  "feedback.contact": "Contact (optional): email or any handle, so the author can reply",
+  "feedback.includeReply": "Include this message and its reply as text (needed for problems like garbled replies)",
+  "feedback.preview": "What will be sent",
+  "feedback.privacy": "Sent to feedback.yulid.org, used only to look into the problem, and deleted by TheOne's author after 90 days. By default it holds versions, settings and routing error codes and timings, no chat content.",
+  "feedback.loading": "Gathering diagnostics\u2026",
+  "feedback.loadError": "Diagnostics could not be gathered. You can still describe the problem, copy it and email {email}.",
+  "feedback.send": "Send",
+  "feedback.sending": "Sending\u2026",
+  "feedback.copy": "Copy",
+  "feedback.copied": "Copied",
+  "feedback.email": "Email",
+  "feedback.cancel": "Cancel",
+  "feedback.close": "Close",
+  "feedback.sent": "Sent as {id}. Mention this id in a comment or email and the author can find it. Thank you!",
+  "feedback.fallback": "You can also press Copy and email {email}.",
+  "feedback.error.UNREACHABLE": "The feedback server cannot be reached.",
+  "feedback.error.RATE_LIMITED": "Too many reports in a short time; try again in an hour.",
+  "feedback.error.REJECTED": "The feedback server did not accept this report.",
+  "feedback.error.SERVER_ERROR": "The feedback server has a problem right now.",
+  "feedback.error.DESCRIPTION_REQUIRED": "Say in a sentence what happened first.",
+  "feedback.error.TOO_LARGE": "Too long; shorten the description or leave out the reply text.",
+  "feedback.error.DIRECT_OFF": "Sending directly is turned off in this DSH.",
+  "feedback.error.other": "The report was not sent.",
   "route.reason.steering": "Added during a reply",
   "route.reason.short-continuation": "Continuation",
   "route.reason.attachment-only": "Attachment only",
@@ -700,6 +758,160 @@ function apply(ctx) {
     document.addEventListener("keydown", keydown, true);
     document.body.append(backdrop);
     (allow ?? footer.querySelector("button"))?.focus();
+  }
+  function openFeedbackDialog(messageId) {
+    if (document.querySelector(".theone-dialog-backdrop")) return;
+    const backdrop = document.createElement("div");
+    backdrop.className = "theone-dialog-backdrop";
+    backdrop.setAttribute("translate", "no");
+    const card = document.createElement("div");
+    card.className = "theone-dialog theone-feedback";
+    card.setAttribute("role", "dialog");
+    card.setAttribute("aria-modal", "true");
+    const title = document.createElement("h2");
+    title.id = "theone-feedback-title";
+    title.textContent = t(messageId ? "feedback.titleMessage" : "feedback.title");
+    card.setAttribute("aria-labelledby", title.id);
+    const intro = document.createElement("p");
+    intro.textContent = t("feedback.intro");
+    const description = document.createElement("textarea");
+    description.maxLength = 4e3;
+    description.rows = 4;
+    description.placeholder = t("feedback.description");
+    description.setAttribute("aria-label", t("feedback.description"));
+    const contact = document.createElement("input");
+    contact.maxLength = 200;
+    contact.placeholder = t("feedback.contact");
+    contact.setAttribute("aria-label", t("feedback.contact"));
+    const include = document.createElement("input");
+    include.type = "checkbox";
+    const includeLabel = document.createElement("label");
+    includeLabel.className = "theone-feedback-check";
+    includeLabel.append(include, " ", t("feedback.includeReply"));
+    const preview = document.createElement("details");
+    preview.className = "theone-feedback-preview";
+    const summary = document.createElement("summary");
+    summary.textContent = t("feedback.preview");
+    const pre = document.createElement("pre");
+    preview.append(summary, pre);
+    const privacy = document.createElement("p");
+    privacy.className = "theone-dialog-note";
+    privacy.textContent = t("feedback.privacy");
+    const status = document.createElement("p");
+    status.className = "theone-dialog-note";
+    status.setAttribute("role", "status");
+    status.textContent = t("feedback.loading");
+    const footer = document.createElement("div");
+    footer.className = "theone-dialog-actions";
+    const button = (text2, primary, act) => {
+      const element = document.createElement("button");
+      element.type = "button";
+      element.textContent = text2;
+      if (primary) element.className = "theone-dialog-primary";
+      element.addEventListener("click", act);
+      footer.append(element);
+      return element;
+    };
+    let draft;
+    let email = "theone@yulid.org";
+    let direct = false;
+    let sentId;
+    let sending = false;
+    const language = () => localeSnapshot().active.startsWith("zh") ? "zh" : "en";
+    const report = () => ({ description: description.value.trim(), ...contact.value.trim() ? { contact: contact.value.trim() } : {}, lang: language(), ...draft ?? {} });
+    const render = () => {
+      pre.textContent = JSON.stringify(report(), null, 2);
+      send.disabled = sending || !!sentId || !direct || !draft || !description.value.trim();
+      send.textContent = t(sending ? "feedback.sending" : "feedback.send");
+    };
+    const load = async () => {
+      status.textContent = t("feedback.loading");
+      draft = void 0;
+      render();
+      try {
+        const response = await fetch("/api/theone/feedback", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          signal: lifetime.signal,
+          body: JSON.stringify({ action: "draft", ...messageId ? { messageId, includeReply: include.checked } : {} })
+        });
+        const body = await response.json();
+        if (!response.ok || !body.draft) throw new Error("draft");
+        draft = body.draft;
+        email = body.email ?? email;
+        direct = body.direct === true;
+        status.textContent = direct ? "" : t("feedback.fallback", { email });
+      } catch {
+        status.textContent = t("feedback.loadError", { email });
+      }
+      render();
+    };
+    const close = () => {
+      backdrop.remove();
+      document.removeEventListener("keydown", keydown, true);
+    };
+    const keydown = (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        close();
+      }
+    };
+    const text = () => sentId ? sentId : JSON.stringify(report(), null, 2);
+    button(t("feedback.cancel"), false, close);
+    const copy = button(t("feedback.copy"), false, () => {
+      void navigator.clipboard?.writeText(text()).then(() => {
+        copy.textContent = t("feedback.copied");
+        setTimeout(() => {
+          copy.textContent = t("feedback.copy");
+        }, 2e3);
+      }, () => {
+      });
+    });
+    button(t("feedback.email"), false, () => {
+      const subject = `TheOne ${String(draft?.version ?? "")} ${description.value.trim().split("\n")[0].slice(0, 40)}`.trim();
+      window.open(`mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(text().slice(0, 1800))}`, "_self");
+    });
+    const send = button(t("feedback.send"), true, () => {
+      if (send.disabled) return;
+      sending = true;
+      render();
+      void (async () => {
+        try {
+          const response = await fetch("/api/theone/feedback", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            signal: lifetime.signal,
+            body: JSON.stringify({ action: "send", draft, description: description.value, contact: contact.value, lang: language() })
+          });
+          const body = await response.json().catch(() => ({}));
+          if (!response.ok || !body.id) throw new Error(body.error ?? "other");
+          sentId = body.id;
+          status.textContent = t("feedback.sent", { id: body.id });
+          description.disabled = contact.disabled = include.disabled = true;
+        } catch (error) {
+          const code = error instanceof Error ? error.message : "";
+          const known = ["UNREACHABLE", "RATE_LIMITED", "REJECTED", "SERVER_ERROR", "DESCRIPTION_REQUIRED", "TOO_LARGE", "DIRECT_OFF"].includes(code);
+          status.textContent = `${t(known ? `feedback.error.${code}` : "feedback.error.other")} ${t("feedback.fallback", { email })}`;
+        } finally {
+          sending = false;
+          render();
+        }
+      })();
+    });
+    description.addEventListener("input", render);
+    contact.addEventListener("input", render);
+    include.addEventListener("change", () => {
+      void load();
+    });
+    card.append(title, intro, description, contact, ...messageId ? [includeLabel] : [], preview, privacy, status, footer);
+    backdrop.append(card);
+    backdrop.addEventListener("pointerdown", (event) => {
+      if (event.target === backdrop && !description.value.trim()) close();
+    });
+    document.addEventListener("keydown", keydown, true);
+    document.body.append(backdrop);
+    description.focus();
+    void load();
   }
   const ICONS = {
     download: ["M12 4v11", "M7 10l5 5 5-5", "M5 20h14"],
@@ -1639,6 +1851,7 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
             { className: "theone-route-body" },
             (0, import_react.createElement)("strong", null, route.decision.action === "CLARIFY" ? t2("routes.clarify") : `\u2192 ${titleOf(target)}`),
             (0, import_react.createElement)("small", null, details),
+            (0, import_react.createElement)("button", { type: "button", className: "theone-route-report", onClick: () => openFeedbackDialog(route.messageId) }, t2("routes.report")),
             route.correctedTo ? (0, import_react.createElement)("span", { className: "theone-route-fixed" }, t2("routes.corrected", { title: titleOf(route.correctedTo) })) : (0, import_react.createElement)(
               "select",
               {
@@ -1866,7 +2079,8 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
               void editLinks({ action: "clearLearned" });
             }
           }, t2("link.clearLearned")) : null,
-          (0, import_react.createElement)("button", { type: "button", onClick: refresh, disabled: !!busy || status?.running }, t2("catalog.refresh"))
+          (0, import_react.createElement)("button", { type: "button", onClick: refresh, disabled: !!busy || status?.running }, t2("catalog.refresh")),
+          (0, import_react.createElement)("button", { type: "button", onClick: () => openFeedbackDialog() }, t2("feedback.open"))
         )
       ),
       creating ? (0, import_react.createElement)(
@@ -2012,6 +2226,12 @@ button:has(.theone-nav[data-wide=true])>span:has(.theone-nav){flex:1;min-width:0
 .theone-dialog-actions .theone-dialog-primary:hover{background:#4a7fc0}
 .theone-dialog-actions button:focus-visible{outline:2px solid #4a7fc0;outline-offset:2px}
 .theone-dialog .theone-dialog-body{white-space:pre-wrap;color:var(--dsw-alias-label-primary,#e8e8ea)}
+.theone-feedback{width:min(560px,100%);max-height:calc(100vh - 32px);overflow:auto}
+.theone-feedback textarea,.theone-feedback input:not([type=checkbox]){display:block;width:100%;box-sizing:border-box;margin:0 0 10px;padding:8px 10px;border:1px solid var(--dsw-alias-border-l2,#ffffff1f);border-radius:9px;background:transparent;color:inherit;font:inherit;resize:vertical}
+.theone-feedback .theone-feedback-check{display:block;margin:0 0 10px;font-size:13px;color:var(--dsw-alias-label-secondary,#a0a0a6)}
+.theone-feedback-preview{margin:0 0 10px;font-size:13px}
+.theone-feedback-preview summary{cursor:pointer;color:var(--dsw-alias-label-secondary,#a0a0a6)}
+.theone-feedback-preview pre{max-height:220px;overflow:auto;margin:6px 0 0;padding:8px 10px;border-radius:9px;background:#0000001f;font-size:12px;line-height:1.5;white-space:pre-wrap;word-break:break-word}
 .theone-notice{display:flex;align-items:center;gap:8px;margin:6px 4px 0;padding:6px 8px 6px 10px;border:1px solid var(--dsw-alias-border-l2,#ffffff1f);border-radius:10px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary,#a0a0a6);min-width:0}
 .theone-notice-tag{flex:none;display:inline-flex;padding:3px;border-radius:6px;background:#3b6fb033;color:#7fa9dd}
 .theone-notice-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -2036,7 +2256,7 @@ button:has(.theone-nav[data-wide=true])>span:has(.theone-nav){flex:1;min-width:0
 var catalogCss = `
 button:has(.theone-catalog-entry)>span:not(:has(.theone-catalog-entry)){display:none}
 .theone-catalog{padding:32px;max-width:1180px;margin:auto;box-sizing:border-box;height:100%;overflow:auto;color:var(--dsw-alias-label-primary)}
-.theone-catalog-header{display:flex;justify-content:space-between;align-items:center;gap:16px}.theone-catalog h1{font-size:24px;margin:0 0 8px}.theone-catalog-header p,.theone-catalog-status,.theone-group-summary{opacity:.65;margin:0 0 18px;line-height:1.6}.theone-catalog button{border:1px solid #8883;border-radius:9px;padding:8px 13px;background:transparent;color:inherit;cursor:pointer;font:inherit;white-space:nowrap}.theone-catalog button:disabled{opacity:.5;cursor:default}.theone-catalog-groups{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,310px),1fr));gap:20px}.theone-topic-group{border:1px solid #8882;border-radius:16px;padding:20px;background:#88805}.theone-topic-group h2{font-size:18px;margin:0 0 8px}.theone-topic-group h2 span{font-size:13px;opacity:.5}.theone-topic-card{border-top:1px solid #8882;padding:16px 0}.theone-topic-card:last-child{padding-bottom:0}.theone-topic-card h3{font-size:15px;line-height:1.5;margin:0 0 7px}.theone-topic-card p{font-size:13px;line-height:1.7;opacity:.75;margin:0 0 12px;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}.theone-topic-actions{display:flex;gap:8px;flex-wrap:wrap}.theone-topic-actions button{font-size:12px}.theone-topic-actions .theone-source-link{border-color:transparent;opacity:.6}.theone-catalog-warning{background:#ff900011;padding:12px;border-radius:10px;font-size:13px}.theone-topic-warning{font-size:12px;line-height:1.6;margin:0 0 12px;color:#d9480f}.theone-catalog-entry{display:flex;align-items:center;gap:10px;font-size:14px}.theone-catalog-empty{padding:40px 0;opacity:.65;line-height:1.8}.theone-catalog-tools{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.theone-topic-links{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 12px;font-size:12px}.theone-links-label,.theone-links-empty{opacity:.6}.theone-link-chip{display:inline-flex;align-items:center;gap:2px;border:1px solid #8883;border-radius:999px;padding:2px 4px 2px 9px}.theone-catalog .theone-link-chip button{border:0;padding:0 5px;opacity:.6;font-size:13px;line-height:1}.theone-topic-links select{font:inherit;font-size:12px;color:inherit;background:transparent;border:1px solid #8883;border-radius:8px;padding:2px 6px}.theone-link-private{display:inline-flex;align-items:center;gap:4px;opacity:.75;cursor:pointer}.theone-topic-card .theone-topic-state{font-size:12px;opacity:.8;-webkit-line-clamp:3}.theone-topic-state span{opacity:.6;margin-right:4px}.theone-manage{display:flex;flex-direction:column;gap:10px;margin-top:12px;padding:14px;border:1px solid #8883;border-radius:12px;font-size:12px}.theone-create{flex-direction:row;flex-wrap:wrap;align-items:center;margin:0 0 18px}.theone-create input{flex:1;min-width:180px}.theone-manage-field{display:flex;flex-direction:column;gap:5px}.theone-manage-field>span{opacity:.65}.theone-manage input,.theone-manage textarea,.theone-manage select,.theone-routes select{font:inherit;font-size:12px;color:inherit;background:transparent;border:1px solid #8883;border-radius:8px;padding:6px 8px;box-sizing:border-box;min-width:0}.theone-manage textarea{resize:vertical;width:100%}.theone-manage-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.theone-manage-row select,.theone-manage-row input{flex:1;min-width:140px}.theone-manage-hint{opacity:.6;font-size:12px;line-height:1.6;margin:0}.theone-catalog .theone-danger{color:#c4402f;border-color:#c4402f55}.theone-routes{border:1px solid #8882;border-radius:16px;padding:14px 20px;margin:0 0 20px}.theone-routes summary{cursor:pointer;font-weight:500}.theone-routes summary span{opacity:.5;font-size:13px}.theone-routes ol{list-style:none;margin:12px 0 0;padding:0;display:flex;flex-direction:column;gap:10px}.theone-routes li{border-top:1px solid #8882;padding-top:10px;font-size:12px;display:flex;flex-direction:column;gap:5px}.theone-route-head{display:flex;gap:10px;min-width:0}.theone-route-head time{opacity:.55;flex:none}.theone-route-head q{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.theone-route-body{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.theone-route-body small{opacity:.6}.theone-route-fixed{opacity:.75}.theone-route-stats{margin-left:10px;font-weight:400;opacity:.6;font-size:12px}@media(max-width:640px){.theone-catalog{padding:20px}.theone-catalog-header{align-items:flex-start}.theone-catalog-header h1{font-size:21px}}
+.theone-catalog-header{display:flex;justify-content:space-between;align-items:center;gap:16px}.theone-catalog h1{font-size:24px;margin:0 0 8px}.theone-catalog-header p,.theone-catalog-status,.theone-group-summary{opacity:.65;margin:0 0 18px;line-height:1.6}.theone-catalog button{border:1px solid #8883;border-radius:9px;padding:8px 13px;background:transparent;color:inherit;cursor:pointer;font:inherit;white-space:nowrap}.theone-catalog button:disabled{opacity:.5;cursor:default}.theone-catalog-groups{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,310px),1fr));gap:20px}.theone-topic-group{border:1px solid #8882;border-radius:16px;padding:20px;background:#88805}.theone-topic-group h2{font-size:18px;margin:0 0 8px}.theone-topic-group h2 span{font-size:13px;opacity:.5}.theone-topic-card{border-top:1px solid #8882;padding:16px 0}.theone-topic-card:last-child{padding-bottom:0}.theone-topic-card h3{font-size:15px;line-height:1.5;margin:0 0 7px}.theone-topic-card p{font-size:13px;line-height:1.7;opacity:.75;margin:0 0 12px;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}.theone-topic-actions{display:flex;gap:8px;flex-wrap:wrap}.theone-topic-actions button{font-size:12px}.theone-topic-actions .theone-source-link{border-color:transparent;opacity:.6}.theone-catalog-warning{background:#ff900011;padding:12px;border-radius:10px;font-size:13px}.theone-topic-warning{font-size:12px;line-height:1.6;margin:0 0 12px;color:#d9480f}.theone-catalog-entry{display:flex;align-items:center;gap:10px;font-size:14px}.theone-catalog-empty{padding:40px 0;opacity:.65;line-height:1.8}.theone-catalog-tools{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.theone-topic-links{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 12px;font-size:12px}.theone-links-label,.theone-links-empty{opacity:.6}.theone-link-chip{display:inline-flex;align-items:center;gap:2px;border:1px solid #8883;border-radius:999px;padding:2px 4px 2px 9px}.theone-catalog .theone-link-chip button{border:0;padding:0 5px;opacity:.6;font-size:13px;line-height:1}.theone-topic-links select{font:inherit;font-size:12px;color:inherit;background:transparent;border:1px solid #8883;border-radius:8px;padding:2px 6px}.theone-link-private{display:inline-flex;align-items:center;gap:4px;opacity:.75;cursor:pointer}.theone-topic-card .theone-topic-state{font-size:12px;opacity:.8;-webkit-line-clamp:3}.theone-topic-state span{opacity:.6;margin-right:4px}.theone-manage{display:flex;flex-direction:column;gap:10px;margin-top:12px;padding:14px;border:1px solid #8883;border-radius:12px;font-size:12px}.theone-create{flex-direction:row;flex-wrap:wrap;align-items:center;margin:0 0 18px}.theone-create input{flex:1;min-width:180px}.theone-manage-field{display:flex;flex-direction:column;gap:5px}.theone-manage-field>span{opacity:.65}.theone-manage input,.theone-manage textarea,.theone-manage select,.theone-routes select{font:inherit;font-size:12px;color:inherit;background:transparent;border:1px solid #8883;border-radius:8px;padding:6px 8px;box-sizing:border-box;min-width:0}.theone-manage textarea{resize:vertical;width:100%}.theone-manage-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.theone-manage-row select,.theone-manage-row input{flex:1;min-width:140px}.theone-manage-hint{opacity:.6;font-size:12px;line-height:1.6;margin:0}.theone-catalog .theone-danger{color:#c4402f;border-color:#c4402f55}.theone-routes{border:1px solid #8882;border-radius:16px;padding:14px 20px;margin:0 0 20px}.theone-routes summary{cursor:pointer;font-weight:500}.theone-routes summary span{opacity:.5;font-size:13px}.theone-routes ol{list-style:none;margin:12px 0 0;padding:0;display:flex;flex-direction:column;gap:10px}.theone-routes li{border-top:1px solid #8882;padding-top:10px;font-size:12px;display:flex;flex-direction:column;gap:5px}.theone-route-head{display:flex;gap:10px;min-width:0}.theone-route-head time{opacity:.55;flex:none}.theone-route-head q{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.theone-route-body{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.theone-route-body small{opacity:.6}.theone-route-fixed{opacity:.75}.theone-catalog .theone-route-report{padding:2px 8px;font-size:12px;opacity:.7}.theone-route-stats{margin-left:10px;font-weight:400;opacity:.6;font-size:12px}@media(max-width:640px){.theone-catalog{padding:20px}.theone-catalog-header{align-items:flex-start}.theone-catalog-header h1{font-size:21px}}
 `;
 var composerCss = `
 .theone-bg{display:inline-flex;align-items:center;gap:5px;height:32px;padding:0 10px;border:0;border-radius:10px;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:14px;white-space:nowrap;cursor:pointer;max-width:220px}

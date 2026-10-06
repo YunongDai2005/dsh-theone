@@ -1,0 +1,21 @@
+# TheOne feedback receiver. Secrets (not in this file): MAIL_TO, IP_SALT — see README.md.
+name = "theone-feedback"
+main = "worker.js"
+compatibility_date = "2026-09-01"
+workers_dev = false
+routes = [{ pattern = "feedback.yulid.org", custom_domain = true }]
+
+[vars]
+MAIL_FROM = "feedback@yulid.org"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "theone-feedback"
+database_id = "REPLACE_WITH_DATABASE_ID"
+
+# Sends only to addresses verified under Email Routing; the address itself is the MAIL_TO secret.
+[[send_email]]
+name = "MAIL"
+
+[triggers]
+crons = ["17 3 * * *"]

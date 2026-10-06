@@ -70,7 +70,8 @@
     "pack:plugin": "npm run build && node scripts/pack-plugin.mjs",
     "install:local": "npm run build && node scripts/install-local.mjs",
     "start:local": "node scripts/start-local.mjs",
-    "eval:test": "node --test eval/test/*.test.mjs && python3 -m unittest discover -s eval/test"
+    "eval:test": "node --test eval/test/*.test.mjs && python3 -m unittest discover -s eval/test",
+    "feedback:test": "node --test server/feedback/test/*.test.mjs"
   },
   "dependencies": {
     "@deepseek-ai/schemastery": "3.18.4"

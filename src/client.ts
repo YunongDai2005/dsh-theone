@@ -154,6 +154,103 @@ export function apply(ctx: Context) {
     ;(allow ?? footer.querySelector('button'))?.focus()
   }
 
+  /**
+   * Report a problem, about TheOne in general or one routed message. The report is drafted by
+   * TheOne, shown here in full together with what the user types, and sent only on Send; copying
+   * it for an email always works, also when the feedback server cannot be reached.
+   */
+  function openFeedbackDialog(messageId?: string) {
+    if (document.querySelector('.theone-dialog-backdrop')) return
+    const backdrop = document.createElement('div')
+    backdrop.className = 'theone-dialog-backdrop'; backdrop.setAttribute('translate', 'no')
+    const card = document.createElement('div')
+    card.className = 'theone-dialog theone-feedback'; card.setAttribute('role', 'dialog'); card.setAttribute('aria-modal', 'true')
+    const title = document.createElement('h2'); title.id = 'theone-feedback-title'; title.textContent = t(messageId ? 'feedback.titleMessage' : 'feedback.title')
+    card.setAttribute('aria-labelledby', title.id)
+    const intro = document.createElement('p'); intro.textContent = t('feedback.intro')
+    const description = document.createElement('textarea'); description.maxLength = 4000; description.rows = 4; description.placeholder = t('feedback.description')
+    description.setAttribute('aria-label', t('feedback.description'))
+    const contact = document.createElement('input'); contact.maxLength = 200; contact.placeholder = t('feedback.contact'); contact.setAttribute('aria-label', t('feedback.contact'))
+    const include = document.createElement('input'); include.type = 'checkbox'
+    const includeLabel = document.createElement('label'); includeLabel.className = 'theone-feedback-check'; includeLabel.append(include, ' ', t('feedback.includeReply'))
+    const preview = document.createElement('details'); preview.className = 'theone-feedback-preview'
+    const summary = document.createElement('summary'); summary.textContent = t('feedback.preview')
+    const pre = document.createElement('pre'); preview.append(summary, pre)
+    const privacy = document.createElement('p'); privacy.className = 'theone-dialog-note'; privacy.textContent = t('feedback.privacy')
+    const status = document.createElement('p'); status.className = 'theone-dialog-note'; status.setAttribute('role', 'status'); status.textContent = t('feedback.loading')
+    const footer = document.createElement('div'); footer.className = 'theone-dialog-actions'
+    const button = (text: string, primary: boolean, act: () => void) => {
+      const element = document.createElement('button'); element.type = 'button'; element.textContent = text
+      if (primary) element.className = 'theone-dialog-primary'
+      element.addEventListener('click', act); footer.append(element); return element
+    }
+    let draft: Record<string, unknown> | undefined
+    let email = 'theone@yulid.org'
+    let direct = false
+    let sentId: string | undefined
+    let sending = false
+    const language = () => (localeSnapshot().active.startsWith('zh') ? 'zh' : 'en')
+    const report = () => ({ description: description.value.trim(), ...(contact.value.trim() ? { contact: contact.value.trim() } : {}), lang: language(), ...(draft ?? {}) })
+    const render = () => {
+      pre.textContent = JSON.stringify(report(), null, 2)
+      send.disabled = sending || !!sentId || !direct || !draft || !description.value.trim()
+      send.textContent = t(sending ? 'feedback.sending' : 'feedback.send')
+    }
+    const load = async () => {
+      status.textContent = t('feedback.loading'); draft = undefined; render()
+      try {
+        const response = await fetch('/api/theone/feedback', { method: 'POST', headers: { 'content-type': 'application/json' }, signal: lifetime.signal,
+          body: JSON.stringify({ action: 'draft', ...(messageId ? { messageId, includeReply: include.checked } : {}) }) })
+        const body = await response.json() as { draft?: Record<string, unknown>; email?: string; direct?: boolean }
+        if (!response.ok || !body.draft) throw new Error('draft')
+        draft = body.draft; email = body.email ?? email; direct = body.direct === true
+        status.textContent = direct ? '' : t('feedback.fallback', { email })
+      } catch { status.textContent = t('feedback.loadError', { email }) }
+      render()
+    }
+    const close = () => { backdrop.remove(); document.removeEventListener('keydown', keydown, true) }
+    const keydown = (event: KeyboardEvent) => { if (event.key === 'Escape') { event.preventDefault(); close() } }
+    const text = () => sentId ? sentId : JSON.stringify(report(), null, 2)
+    button(t('feedback.cancel'), false, close)
+    const copy = button(t('feedback.copy'), false, () => {
+      void navigator.clipboard?.writeText(text()).then(() => { copy.textContent = t('feedback.copied'); setTimeout(() => { copy.textContent = t('feedback.copy') }, 2000) }, () => {})
+    })
+    button(t('feedback.email'), false, () => {
+      // Mail clients cut long links, so the body carries the description and as much detail as fits.
+      const subject = `TheOne ${String(draft?.version ?? '')} ${description.value.trim().split('\n')[0].slice(0, 40)}`.trim()
+      window.open(`mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(text().slice(0, 1800))}`, '_self')
+    })
+    const send = button(t('feedback.send'), true, () => {
+      if (send.disabled) return
+      sending = true; render()
+      void (async () => {
+        try {
+          const response = await fetch('/api/theone/feedback', { method: 'POST', headers: { 'content-type': 'application/json' }, signal: lifetime.signal,
+            body: JSON.stringify({ action: 'send', draft, description: description.value, contact: contact.value, lang: language() }) })
+          const body = await response.json().catch(() => ({})) as { id?: string; error?: string }
+          if (!response.ok || !body.id) throw new Error(body.error ?? 'other')
+          sentId = body.id
+          status.textContent = t('feedback.sent', { id: body.id })
+          description.disabled = contact.disabled = include.disabled = true
+        } catch (error) {
+          const code = error instanceof Error ? error.message : ''
+          const known = ['UNREACHABLE', 'RATE_LIMITED', 'REJECTED', 'SERVER_ERROR', 'DESCRIPTION_REQUIRED', 'TOO_LARGE', 'DIRECT_OFF'].includes(code)
+          status.textContent = `${t((known ? `feedback.error.${code}` : 'feedback.error.other') as TheOneLocaleKey)} ${t('feedback.fallback', { email })}`
+        } finally { sending = false; render() }
+      })()
+    })
+    description.addEventListener('input', render)
+    contact.addEventListener('input', render)
+    include.addEventListener('change', () => { void load() })
+    card.append(title, intro, description, contact, ...(messageId ? [includeLabel] : []), preview, privacy, status, footer)
+    backdrop.append(card)
+    backdrop.addEventListener('pointerdown', event => { if (event.target === backdrop && !description.value.trim()) close() })
+    document.addEventListener('keydown', keydown, true)
+    document.body.append(backdrop)
+    description.focus()
+    void load()
+  }
+
   /** Line icons (24-unit grid), drawn inline so host styles cannot reshape them; the text lives in title and aria-label. */
   const ICONS = {
     download: ['M12 4v11', 'M7 10l5 5 5-5', 'M5 20h14'],
@@ -745,6 +842,7 @@ export function apply(ctx: Context) {
           h('div', { className: 'theone-route-body' },
             h('strong', null, route.decision.action === 'CLARIFY' ? t('routes.clarify') : `→ ${titleOf(target)}`),
             h('small', null, details),
+            h('button', { type: 'button', className: 'theone-route-report', onClick: () => openFeedbackDialog(route.messageId) }, t('routes.report')),
             route.correctedTo ? h('span', { className: 'theone-route-fixed' }, t('routes.corrected', { title: titleOf(route.correctedTo) }))
               : h('select', { value: '', disabled: busy, 'aria-label': t('routes.move'),
                 onChange: (event: React.ChangeEvent<HTMLSelectElement>) => { if (event.target.value) void post('/api/theone/routes', { messageId: route.messageId, contextId: event.target.value }) } },
@@ -865,7 +963,8 @@ export function apply(ctx: Context) {
           h('button', { type: 'button', disabled: !!busy, onClick: () => setCreating(open => !open) }, t('manage.create')),
           snapshot?.linkage && snapshot.linkage.scope !== 'off' ? h('button', { type: 'button', disabled: !!busy, title: t('link.clearLearnedHint'),
             onClick: () => { void editLinks({ action: 'clearLearned' }) } }, t('link.clearLearned')) : null,
-          h('button', { type: 'button', onClick: refresh, disabled: !!busy || status?.running }, t('catalog.refresh')))),
+          h('button', { type: 'button', onClick: refresh, disabled: !!busy || status?.running }, t('catalog.refresh')),
+          h('button', { type: 'button', onClick: () => openFeedbackDialog() }, t('feedback.open')))),
       creating ? h('form', { className: 'theone-manage theone-create', onSubmit: (event: React.FormEvent<HTMLFormElement>) => { event.preventDefault(); void post('/api/theone/topics', { action: 'create', title: newTitle }) } },
         h('input', { value: newTitle, maxLength: 80, autoFocus: true, placeholder: t('manage.title'), disabled: !!busy, onChange: (event: React.ChangeEvent<HTMLInputElement>) => setNewTitle(event.target.value) }),
         h('button', { type: 'submit', disabled: !!busy || !newTitle.trim() }, t('manage.createButton')),
@@ -981,6 +1080,12 @@ button:has(.theone-nav[data-wide=true])>span:has(.theone-nav){flex:1;min-width:0
 .theone-dialog-actions .theone-dialog-primary:hover{background:#4a7fc0}
 .theone-dialog-actions button:focus-visible{outline:2px solid #4a7fc0;outline-offset:2px}
 .theone-dialog .theone-dialog-body{white-space:pre-wrap;color:var(--dsw-alias-label-primary,#e8e8ea)}
+.theone-feedback{width:min(560px,100%);max-height:calc(100vh - 32px);overflow:auto}
+.theone-feedback textarea,.theone-feedback input:not([type=checkbox]){display:block;width:100%;box-sizing:border-box;margin:0 0 10px;padding:8px 10px;border:1px solid var(--dsw-alias-border-l2,#ffffff1f);border-radius:9px;background:transparent;color:inherit;font:inherit;resize:vertical}
+.theone-feedback .theone-feedback-check{display:block;margin:0 0 10px;font-size:13px;color:var(--dsw-alias-label-secondary,#a0a0a6)}
+.theone-feedback-preview{margin:0 0 10px;font-size:13px}
+.theone-feedback-preview summary{cursor:pointer;color:var(--dsw-alias-label-secondary,#a0a0a6)}
+.theone-feedback-preview pre{max-height:220px;overflow:auto;margin:6px 0 0;padding:8px 10px;border-radius:9px;background:#0000001f;font-size:12px;line-height:1.5;white-space:pre-wrap;word-break:break-word}
 .theone-notice{display:flex;align-items:center;gap:8px;margin:6px 4px 0;padding:6px 8px 6px 10px;border:1px solid var(--dsw-alias-border-l2,#ffffff1f);border-radius:10px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary,#a0a0a6);min-width:0}
 .theone-notice-tag{flex:none;display:inline-flex;padding:3px;border-radius:6px;background:#3b6fb033;color:#7fa9dd}
 .theone-notice-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -1006,7 +1111,7 @@ button:has(.theone-nav[data-wide=true])>span:has(.theone-nav){flex:1;min-width:0
 const catalogCss = `
 button:has(.theone-catalog-entry)>span:not(:has(.theone-catalog-entry)){display:none}
 .theone-catalog{padding:32px;max-width:1180px;margin:auto;box-sizing:border-box;height:100%;overflow:auto;color:var(--dsw-alias-label-primary)}
-.theone-catalog-header{display:flex;justify-content:space-between;align-items:center;gap:16px}.theone-catalog h1{font-size:24px;margin:0 0 8px}.theone-catalog-header p,.theone-catalog-status,.theone-group-summary{opacity:.65;margin:0 0 18px;line-height:1.6}.theone-catalog button{border:1px solid #8883;border-radius:9px;padding:8px 13px;background:transparent;color:inherit;cursor:pointer;font:inherit;white-space:nowrap}.theone-catalog button:disabled{opacity:.5;cursor:default}.theone-catalog-groups{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,310px),1fr));gap:20px}.theone-topic-group{border:1px solid #8882;border-radius:16px;padding:20px;background:#88805}.theone-topic-group h2{font-size:18px;margin:0 0 8px}.theone-topic-group h2 span{font-size:13px;opacity:.5}.theone-topic-card{border-top:1px solid #8882;padding:16px 0}.theone-topic-card:last-child{padding-bottom:0}.theone-topic-card h3{font-size:15px;line-height:1.5;margin:0 0 7px}.theone-topic-card p{font-size:13px;line-height:1.7;opacity:.75;margin:0 0 12px;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}.theone-topic-actions{display:flex;gap:8px;flex-wrap:wrap}.theone-topic-actions button{font-size:12px}.theone-topic-actions .theone-source-link{border-color:transparent;opacity:.6}.theone-catalog-warning{background:#ff900011;padding:12px;border-radius:10px;font-size:13px}.theone-topic-warning{font-size:12px;line-height:1.6;margin:0 0 12px;color:#d9480f}.theone-catalog-entry{display:flex;align-items:center;gap:10px;font-size:14px}.theone-catalog-empty{padding:40px 0;opacity:.65;line-height:1.8}.theone-catalog-tools{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.theone-topic-links{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 12px;font-size:12px}.theone-links-label,.theone-links-empty{opacity:.6}.theone-link-chip{display:inline-flex;align-items:center;gap:2px;border:1px solid #8883;border-radius:999px;padding:2px 4px 2px 9px}.theone-catalog .theone-link-chip button{border:0;padding:0 5px;opacity:.6;font-size:13px;line-height:1}.theone-topic-links select{font:inherit;font-size:12px;color:inherit;background:transparent;border:1px solid #8883;border-radius:8px;padding:2px 6px}.theone-link-private{display:inline-flex;align-items:center;gap:4px;opacity:.75;cursor:pointer}.theone-topic-card .theone-topic-state{font-size:12px;opacity:.8;-webkit-line-clamp:3}.theone-topic-state span{opacity:.6;margin-right:4px}.theone-manage{display:flex;flex-direction:column;gap:10px;margin-top:12px;padding:14px;border:1px solid #8883;border-radius:12px;font-size:12px}.theone-create{flex-direction:row;flex-wrap:wrap;align-items:center;margin:0 0 18px}.theone-create input{flex:1;min-width:180px}.theone-manage-field{display:flex;flex-direction:column;gap:5px}.theone-manage-field>span{opacity:.65}.theone-manage input,.theone-manage textarea,.theone-manage select,.theone-routes select{font:inherit;font-size:12px;color:inherit;background:transparent;border:1px solid #8883;border-radius:8px;padding:6px 8px;box-sizing:border-box;min-width:0}.theone-manage textarea{resize:vertical;width:100%}.theone-manage-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.theone-manage-row select,.theone-manage-row input{flex:1;min-width:140px}.theone-manage-hint{opacity:.6;font-size:12px;line-height:1.6;margin:0}.theone-catalog .theone-danger{color:#c4402f;border-color:#c4402f55}.theone-routes{border:1px solid #8882;border-radius:16px;padding:14px 20px;margin:0 0 20px}.theone-routes summary{cursor:pointer;font-weight:500}.theone-routes summary span{opacity:.5;font-size:13px}.theone-routes ol{list-style:none;margin:12px 0 0;padding:0;display:flex;flex-direction:column;gap:10px}.theone-routes li{border-top:1px solid #8882;padding-top:10px;font-size:12px;display:flex;flex-direction:column;gap:5px}.theone-route-head{display:flex;gap:10px;min-width:0}.theone-route-head time{opacity:.55;flex:none}.theone-route-head q{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.theone-route-body{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.theone-route-body small{opacity:.6}.theone-route-fixed{opacity:.75}.theone-route-stats{margin-left:10px;font-weight:400;opacity:.6;font-size:12px}@media(max-width:640px){.theone-catalog{padding:20px}.theone-catalog-header{align-items:flex-start}.theone-catalog-header h1{font-size:21px}}
+.theone-catalog-header{display:flex;justify-content:space-between;align-items:center;gap:16px}.theone-catalog h1{font-size:24px;margin:0 0 8px}.theone-catalog-header p,.theone-catalog-status,.theone-group-summary{opacity:.65;margin:0 0 18px;line-height:1.6}.theone-catalog button{border:1px solid #8883;border-radius:9px;padding:8px 13px;background:transparent;color:inherit;cursor:pointer;font:inherit;white-space:nowrap}.theone-catalog button:disabled{opacity:.5;cursor:default}.theone-catalog-groups{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,310px),1fr));gap:20px}.theone-topic-group{border:1px solid #8882;border-radius:16px;padding:20px;background:#88805}.theone-topic-group h2{font-size:18px;margin:0 0 8px}.theone-topic-group h2 span{font-size:13px;opacity:.5}.theone-topic-card{border-top:1px solid #8882;padding:16px 0}.theone-topic-card:last-child{padding-bottom:0}.theone-topic-card h3{font-size:15px;line-height:1.5;margin:0 0 7px}.theone-topic-card p{font-size:13px;line-height:1.7;opacity:.75;margin:0 0 12px;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}.theone-topic-actions{display:flex;gap:8px;flex-wrap:wrap}.theone-topic-actions button{font-size:12px}.theone-topic-actions .theone-source-link{border-color:transparent;opacity:.6}.theone-catalog-warning{background:#ff900011;padding:12px;border-radius:10px;font-size:13px}.theone-topic-warning{font-size:12px;line-height:1.6;margin:0 0 12px;color:#d9480f}.theone-catalog-entry{display:flex;align-items:center;gap:10px;font-size:14px}.theone-catalog-empty{padding:40px 0;opacity:.65;line-height:1.8}.theone-catalog-tools{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.theone-topic-links{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 12px;font-size:12px}.theone-links-label,.theone-links-empty{opacity:.6}.theone-link-chip{display:inline-flex;align-items:center;gap:2px;border:1px solid #8883;border-radius:999px;padding:2px 4px 2px 9px}.theone-catalog .theone-link-chip button{border:0;padding:0 5px;opacity:.6;font-size:13px;line-height:1}.theone-topic-links select{font:inherit;font-size:12px;color:inherit;background:transparent;border:1px solid #8883;border-radius:8px;padding:2px 6px}.theone-link-private{display:inline-flex;align-items:center;gap:4px;opacity:.75;cursor:pointer}.theone-topic-card .theone-topic-state{font-size:12px;opacity:.8;-webkit-line-clamp:3}.theone-topic-state span{opacity:.6;margin-right:4px}.theone-manage{display:flex;flex-direction:column;gap:10px;margin-top:12px;padding:14px;border:1px solid #8883;border-radius:12px;font-size:12px}.theone-create{flex-direction:row;flex-wrap:wrap;align-items:center;margin:0 0 18px}.theone-create input{flex:1;min-width:180px}.theone-manage-field{display:flex;flex-direction:column;gap:5px}.theone-manage-field>span{opacity:.65}.theone-manage input,.theone-manage textarea,.theone-manage select,.theone-routes select{font:inherit;font-size:12px;color:inherit;background:transparent;border:1px solid #8883;border-radius:8px;padding:6px 8px;box-sizing:border-box;min-width:0}.theone-manage textarea{resize:vertical;width:100%}.theone-manage-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.theone-manage-row select,.theone-manage-row input{flex:1;min-width:140px}.theone-manage-hint{opacity:.6;font-size:12px;line-height:1.6;margin:0}.theone-catalog .theone-danger{color:#c4402f;border-color:#c4402f55}.theone-routes{border:1px solid #8882;border-radius:16px;padding:14px 20px;margin:0 0 20px}.theone-routes summary{cursor:pointer;font-weight:500}.theone-routes summary span{opacity:.5;font-size:13px}.theone-routes ol{list-style:none;margin:12px 0 0;padding:0;display:flex;flex-direction:column;gap:10px}.theone-routes li{border-top:1px solid #8882;padding-top:10px;font-size:12px;display:flex;flex-direction:column;gap:5px}.theone-route-head{display:flex;gap:10px;min-width:0}.theone-route-head time{opacity:.55;flex:none}.theone-route-head q{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.theone-route-body{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.theone-route-body small{opacity:.6}.theone-route-fixed{opacity:.75}.theone-catalog .theone-route-report{padding:2px 8px;font-size:12px;opacity:.7}.theone-route-stats{margin-left:10px;font-weight:400;opacity:.6;font-size:12px}@media(max-width:640px){.theone-catalog{padding:20px}.theone-catalog-header{align-items:flex-start}.theone-catalog-header h1{font-size:21px}}
 `
 
 const composerCss = `

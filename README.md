@@ -78,7 +78,7 @@ No coding needed:
 
 - **"Too new" and it won't install:** DSH only installs versions published at least 24 hours ago. That's a safety rule, not an error. Wait a day, or enter the GitHub address `https://github.com/YunongDai2005/dsh-theone` instead, which installs right away.
 - **No TheOne in the sidebar after installing:** restart DSH.
-- **Something wrong, or GitHub unreachable?** Email [theone@yulid.org](mailto:theone@yulid.org) with your TheOne version, the model you use and what happened; a screenshot helps.
+- **Something wrong?** Click **Report a problem** at the top right of **Topic workspaces**: versions and diagnostics (no chat content) are attached, and Send delivers it without GitHub. Or email [theone@yulid.org](mailto:theone@yulid.org); a screenshot helps.
 - **Will it cost a lot?** Each message adds one short classification call (no deep thinking), and "ok" or "go on" skips even that. With many old chats, the first pass that organises them uses some of your quota; turn **History catalog** off in the settings if you don't need it.
 </details>
 
@@ -178,6 +178,7 @@ The database location and entry identifier switch TheOne to different data, so t
 - Text sent to the router or written into briefings has API keys, passwords and similar secrets removed.
 - A topic marked **Do not share** never appears in other topics' briefings, recent-chat excerpts or lookups.
 - Notices from the author are read from `https://yulid.org/theone/notice.json` with a plain request that sends none of your data; turn them off in Settings.
+- **Report a problem** (top right of Topic workspaces, or **Report a problem** on a message under Recent topic routing) sends only when you press Send, and shows everything it would send first. By default it holds versions, settings and routing error codes and timings, no chat content; for one message, its text and reply are added only if you tick the box. Reports go to `feedback.yulid.org`, are used only to look into problems and are deleted after 90 days; to have one deleted sooner, email theone@yulid.org with its id.
 - When main chat grows long, DSH compacts it through TheOne: frequently used topics keep longer summaries and their latest turns, rarely used ones keep a short status. This makes no model call.
 - Updates are installed by DSH's plugin manager and reload TheOne in place; a DSH without plugin hot reload applies them at the next restart.
 </details>

@@ -38,6 +38,8 @@ import { activityLabel, CARD_AFTER_REPLIES, CARD_PROMPT, cardPayload, learnDorma
 import type { FactResult } from './store.ts'
 import { PACKAGE_NAME, Updater, type PluginInstaller } from './update.ts'
 import { NOTICE_URL, NoticeBoard } from './notices.ts'
+import { exchange, FEEDBACK_EMAIL, FEEDBACK_LIMITS, FEEDBACK_URL, finalReport, replySection, routeDigest, scrub, sendReport, type FeedbackDraft } from './feedback.ts'
+import { createRequire } from 'node:module'
 
 function redactDescriptor(text: string): string {
   return text.replace(/\bsk-[a-zA-Z0-9_-]{16,}|\bBearer\s+\S+/gi, '[REDACTED]')
@@ -72,6 +74,8 @@ export interface Config {
   topicCards?: boolean
   /** Where notices are read from; for testing. */
   noticeUrl?: string
+  /** Where problem reports are sent when the user presses Send; "off" leaves only copy and email. For testing. */
+  feedbackUrl?: string
 }
 
 declare module '@deepseek-ai/cordis' {
@@ -190,6 +194,12 @@ function readOwnVersion(): string {
   catch { return '0.0.0' }
 }
 
+/** DSH's own version, as far as its packages say; undefined when it cannot be read. */
+function readDshVersion(): string | undefined {
+  try { return String((createRequire(import.meta.url)('@deepseek-ai/dsh-agent/package.json') as { version?: unknown }).version ?? '') || undefined }
+  catch { return undefined }
+}
+
 function readDescriptors(path: string): ContextDescriptor[] {
   const value: unknown = JSON.parse(readFileSync(path, 'utf8'))
   if (!Array.isArray(value)) throw new Error('contextsPath must contain a JSON array')
@@ -226,6 +236,7 @@ export default class TheOne extends Service {
     factExtraction: z.boolean().default(false),
     topicCards: z.boolean().default(true),
     noticeUrl: z.string(),
+    feedbackUrl: z.string(),
   })
   readonly store: ContextStore
   readonly catalog?: HistoryCatalog
@@ -643,6 +654,28 @@ export default class TheOne extends Service {
         const dismissed = this.store.dismissedNotices()
         return Response.json({ notices: (await this.noticeBoard.notices()).filter(notice => !dismissed.has(notice.id)) }, { headers: { 'cache-control': 'no-store' } })
       } }))
+      // Problem reports: a draft to show the user in full, then sent only when they press Send.
+      child.effect(() => connection.fetch!.register({ path: '/api/theone/feedback', methods: ['POST'], requestBody: 'buffered', fetch: async request => {
+        let row: Record<string, unknown>
+        try { row = await request.json() as Record<string, unknown> } catch { return Response.json({ error: 'INVALID_INPUT' }, { status: 400 }) }
+        const url = this.config.feedbackUrl || FEEDBACK_URL
+        try {
+          if (row?.action === 'draft') {
+            const messageId = typeof row.messageId === 'string' ? row.messageId : undefined
+            return Response.json({ draft: await this.feedbackDraft(messageId, row.includeReply === true), email: FEEDBACK_EMAIL, direct: url !== 'off' },
+              { headers: { 'cache-control': 'no-store' } })
+          }
+          if (row?.action === 'send') {
+            if (url === 'off') return Response.json({ error: 'DIRECT_OFF' }, { status: 400 })
+            const report = finalReport(row, this.updater.current, homedir())
+            return Response.json({ id: await sendReport(report, url) }, { headers: { 'cache-control': 'no-store' } })
+          }
+          return Response.json({ error: 'INVALID_INPUT' }, { status: 400 })
+        } catch (error) {
+          const code = error instanceof Error && /^[A-Z_]+$/.test(error.message) ? error.message : 'FEEDBACK_FAILED'
+          return Response.json({ error: code }, { status: ['UNREACHABLE', 'SERVER_ERROR', 'RATE_LIMITED', 'REJECTED'].includes(code) ? 502 : 400 })
+        }
+      } }))
       child.effect(() => connection.fetch!.register({ path: '/api/theone/sessions', methods: ['GET'], requestBody: 'buffered', fetch: async () =>
         Response.json({ sessions: await this.attachableSessions() }, { headers: { 'cache-control': 'no-store' } }) }))
       // The user's corrections to topic linking always take precedence over what was learned.
@@ -743,6 +776,52 @@ export default class TheOne extends Service {
       const title = observed?.status === 'fulfilled' ? observed.value.title?.title : undefined
       return { id: record.header.id, title: title || new Date(record.header.createdAt).toISOString().slice(0, 16).replace('T', ' '), createdAt: record.header.createdAt }
     })
+  }
+
+  /**
+   * What a problem report carries before the user adds their words: versions, settings and how
+   * routing went, without message text or topic names. With `messageId`, also how that message's
+   * reply in main chat compares with its topic session, and the texts themselves if `includeReply`.
+   */
+  async feedbackDraft(messageId: string | undefined, includeReply: boolean): Promise<FeedbackDraft> {
+    const c = this.config
+    const settings = await this.settingsSnapshot().catch(() => undefined)
+    const values = settings?.values
+    const status = this.catalog?.snapshot().status
+    const update = await this.updater.status().catch(() => undefined)
+    const routes = this.store.recentRoutes(c.gatewayKey, FEEDBACK_LIMITS.routes)
+    const diagnostics: Record<string, unknown> = {
+      theone: this.updater.current, dsh: readDshVersion() ?? null, node: process.version, platform: `${process.platform}-${process.arch}`,
+      model: settings?.model ? { provider: settings.model.provider, model: settings.model.model } : null,
+      ...(settings?.modelUnavailable ? { modelUnavailable: true } : {}),
+      settings: values ? { routerMode: values.routerMode, linkScope: values.linkScope, routeNotice: values.routeNotice, notices: values.notices,
+        historyCatalog: values.historyCatalog, factLinks: values.factLinks, factExtraction: values.factExtraction, topicCards: c.topicCards !== false,
+        maxResponseChars: values.maxResponseChars, maxDescriptorChars: values.maxDescriptorChars,
+        pinnedModel: !!(values.workerProvider && values.workerModel), manualCatalog: !!values.contextsPath } : null,
+      topics: { total: this.store.contexts().length, hidden: this.store.hiddenReasons().size, workspaces: this.store.groups().length },
+      catalog: status ? { running: status.running, scanned: status.scanned, indexed: status.indexed, skipped: status.skipped, failed: status.failed,
+        pending: status.pending, ...(status.searchUnavailable ? { searchUnavailable: true } : {}) } : { off: true },
+      routing: { stats: this.store.routeStats(c.gatewayKey), recent: routeDigest(routes) },
+      update: update ? { source: update.source, ...(update.latest ? { latest: update.latest } : {}), ...(update.state ? { state: update.state } : {}),
+        ...(update.error ? { error: update.error } : {}) } : null,
+      busy: this.active,
+    }
+    let reply: Record<string, unknown> | undefined
+    if (messageId) {
+      const route = routes.find(item => item.messageId === messageId)
+      const stored = this.store.route(messageId)
+      if (!route || !stored || !this.store.isGateway(stored.gatewayId)) throw new Error('UNKNOWN_MESSAGE')
+      const read = (id: string) => this.ctx.sessionQuery.readSession(SessionId(id)).then(log => log.events, () => undefined)
+      const mainEvents = await read(stored.gatewayId)
+      const main = mainEvents && exchange(mainEvents, messageId)
+      const sessionId = this.store.contexts().find(context => context.id === route.decision.contextId)?.workingSessionId
+      const workerEvents = sessionId ? await read(sessionId) : undefined
+      const worker = workerEvents && exchange(workerEvents, messageId, main?.user)
+      reply = replySection(route, main, worker, includeReply)
+    }
+    // Scrubbed here too, so what the user reads is exactly what is sent.
+    return { v: 1, app: 'theone', version: this.updater.current, diagnostics: scrub(diagnostics, homedir()) as Record<string, unknown>,
+      ...(reply ? { reply: scrub(reply, homedir()) as Record<string, unknown> } : {}) }
   }
 
   /** Read only public options; never read or return the API key environment value. */

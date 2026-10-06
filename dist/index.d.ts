@@ -11,6 +11,7 @@ import { type SettingsSnapshot } from './settings-types.ts';
 import { type LinkScope } from './linkage.ts';
 import { Updater } from './update.ts';
 import { NoticeBoard } from './notices.ts';
+import { type FeedbackDraft } from './feedback.ts';
 export interface Config {
     databasePath?: string;
     contextsPath?: string;
@@ -39,6 +40,8 @@ export interface Config {
     topicCards?: boolean;
     /** Where notices are read from; for testing. */
     noticeUrl?: string;
+    /** Where problem reports are sent when the user presses Send; "off" leaves only copy and email. For testing. */
+    feedbackUrl?: string;
 }
 declare module '@deepseek-ai/cordis' {
     interface Context {
@@ -105,6 +108,12 @@ export default class TheOne extends Service {
     private editTopics;
     /** Existing DSH sessions a topic can take as history: not main chats and not topics' own Workers. */
     private attachableSessions;
+    /**
+     * What a problem report carries before the user adds their words: versions, settings and how
+     * routing went, without message text or topic names. With `messageId`, also how that message's
+     * reply in main chat compares with its topic session, and the texts themselves if `includeReply`.
+     */
+    feedbackDraft(messageId: string | undefined, includeReply: boolean): Promise<FeedbackDraft>;
     /** Read only public options; never read or return the API key environment value. */
     settingsSnapshot(): Promise<SettingsSnapshot>;
     private routerFor;
