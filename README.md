@@ -120,6 +120,22 @@ A few numbers worth knowing:
 
 The conversations are model-written from a script and this version has no assistant replies, so it measures whether messages are routed right, not everything about how chatting feels.
 
+## What's next
+
+For now, TheOne is being refined on DeepSeek Harness. DSH's plugin system is open enough that background sessions, tools and compaction can all be reused as they are, which makes it the right place to get "one chat for everything" solid first.
+
+In progress:
+
+- **Better routing**: looking at a burst of messages together while deciding each one separately, and measuring what topic cards add.
+- **Confirmed facts shared between topics**: a budget, a date, where a file lives, kept current wherever you need it. It is experimental and will only be turned on by default once it passes its benchmark.
+
+Once it is stable, the next step goes beyond DSH:
+
+- **A standalone client**: one interface over different models and providers, opening straight into a single chat;
+- **or adapters for other platforms**: the same automatic topics, inside the chat tools you already use.
+
+Which comes first depends on what people need more. If you have a view, say so in [Issues](https://github.com/YunongDai2005/dsh-theone/issues).
+
 ## How it works
 
 **Choosing a topic.** Each message is matched to the current topic, an earlier one, or a new one. By default the model you selected makes one short classification (thinking off, at most 2,048 tokens), with candidates recalled through DSH full-text search.
