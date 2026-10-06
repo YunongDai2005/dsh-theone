@@ -1,6 +1,6 @@
 {
   "name": "dsh-theone",
-  "version": "0.3.21",
+  "version": "0.3.22",
   "private": false,
   "type": "module",
   "description": "One chat for everything in DeepSeek Harness (DSH): no more hunting for old conversations. Each message goes to the topic it belongs to, with its own context.",
