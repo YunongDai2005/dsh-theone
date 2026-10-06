@@ -9,9 +9,19 @@ $W whoami 2>&1 | grep -qi "not authenticated" && $W login
 
 # The database: reuse it if it exists, otherwise create it; its id goes into wrangler.toml.
 if grep -q REPLACE_WITH_DATABASE_ID wrangler.toml; then
-  ID=$($W d1 list --json 2>/dev/null | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const db=JSON.parse(s).find(d=>d.name==="theone-feedback");if(db)console.log(db.uuid)}catch{}})')
-  [ -n "$ID" ] || ID=$($W d1 create theone-feedback 2>&1 | grep -Eo '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | head -1)
-  [ -n "$ID" ] || { echo "Could not create or find the D1 database theone-feedback." >&2; exit 1; }
+  UUID='[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
+  LIST=$($W d1 list --json 2>&1) || true
+  ID=$(printf '%s' "$LIST" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const db=JSON.parse(s.slice(s.indexOf("["))).find(d=>d.name==="theone-feedback");if(db)console.log(db.uuid)}catch{}})')
+  if [ -z "$ID" ]; then
+    CREATED=$($W d1 create theone-feedback 2>&1) || true
+    ID=$(printf '%s' "$CREATED" | grep -Eo "$UUID" | head -1)
+  fi
+  if [ -z "$ID" ]; then
+    echo "Could not create or find the D1 database theone-feedback. Wrangler said:" >&2
+    printf '%s\n\n%s\n' "$LIST" "$CREATED" >&2
+    exit 1
+  fi
+  echo "D1 database: $ID"
   sed -i.bak "s/REPLACE_WITH_DATABASE_ID/$ID/" wrangler.toml && rm -f wrangler.toml.bak
 fi
 $W d1 execute theone-feedback --remote --file=schema.sql --yes
