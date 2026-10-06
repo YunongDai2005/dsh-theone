@@ -203,6 +203,9 @@ var zh = {
   "settings.help.gatewayKey": "\u533A\u5206\u4E0D\u540C\u7684\u4E3B\u804A\u5929\u5165\u53E3\u72B6\u6001\uFF08\u5F53\u524D\u8BDD\u9898\u3001\u8DEF\u7531\u8BB0\u5F55\u3001\u8BBE\u7F6E\uFF09\u3002\u6539\u52A8\u76F8\u5F53\u4E8E\u6362\u4E00\u4E2A\u65B0\u7684\u5165\u53E3\uFF0C\u56E0\u6B64\u53EA\u80FD\u7528\u73AF\u5883\u53D8\u91CF THEONE_GATEWAY_KEY \u4FEE\u6539\uFF0C\u901A\u5E38\u4FDD\u7559 default\u3002",
   "catalog.title": "\u8BDD\u9898\u5DE5\u4F5C\u533A",
   "catalog.subtitle": "\u76F8\u5173\u7684\u4E8B\u60C5\u653E\u5728\u4E00\u8D77\uFF0C\u968F\u65F6\u56DE\u5230\u4E3B\u804A\u5929\u7EE7\u7EED\u3002",
+  "catalog.figTopics": "\u8BDD\u9898",
+  "catalog.figGroups": "\u5DE5\u4F5C\u533A",
+  "catalog.figKept": "\u6CA1\u88AB\u66F4\u6B63",
   "catalog.refresh": "\u6574\u7406\u5386\u53F2",
   "link.label": "\u5173\u8054\uFF1A",
   "link.none": "\u6682\u65E0\u5173\u8054\u8BDD\u9898",
@@ -450,6 +453,9 @@ var en = {
   "settings.help.gatewayKey": "Separates main-chat entry state (current topic, routing records, settings). Changing it amounts to a new entry, so it can only be set through THEONE_GATEWAY_KEY; usually leave it as default.",
   "catalog.title": "Topic workspaces",
   "catalog.subtitle": "Keep related topics together and pick up the conversation in main chat.",
+  "catalog.figTopics": "Topics",
+  "catalog.figGroups": "Workspaces",
+  "catalog.figKept": "Kept as routed",
   "catalog.refresh": "Organize history",
   "link.label": "Related:",
   "link.none": "No related topics",
@@ -946,9 +952,9 @@ function apply(ctx) {
     const status = (0, import_react.useSyncExternalStore)(subscribeUpdate, () => update);
     const waiting = !!status?.waiting && !status.available && !status.state;
     if (!status || !status.available && !status.state && !waiting) return null;
-    const label = waiting ? t2("update.waiting") : status.state === "installing" ? t2("update.installing") : status.state === "reloading" ? t2("update.reloading") : status.state === "restart" ? t2("update.restart") : status.state === "failed" ? t2("update.failed") : t2("update.available");
+    const label2 = waiting ? t2("update.waiting") : status.state === "installing" ? t2("update.installing") : status.state === "reloading" ? t2("update.reloading") : status.state === "restart" ? t2("update.restart") : status.state === "failed" ? t2("update.failed") : t2("update.available");
     const hint = waiting ? t2("update.waitingHint", { latest: status.waiting.version }) : status.error === "GATEWAY_BUSY" ? t2("update.busy") : status.state === "reloading" ? t2("update.reloadingHint") : status.state === "restart" ? t2("update.restartHint") : status.state === "failed" ? status.error === "OTHER_RELEASE_AGE" ? t2("update.otherAge", { names: status.detail ?? "" }) : status.error === "MINIMUM_RELEASE_AGE" ? status.exempt ? t2("update.ageStill", { detail: status.detail ?? "" }) : t2("update.tooNew") : status.error === "NETWORK" ? t2("update.network") : t2("update.failedHint", { error: status.detail ?? status.error ?? "" }) : status.installable ? t2("update.hint", { current: status.current, latest: status.latest ?? "" }) : t2("update.manualHint", { current: status.current, latest: status.latest ?? "" });
-    const title = `${label} \xB7 ${hint}`;
+    const title = `${label2} \xB7 ${hint}`;
     const act = (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -1164,7 +1170,7 @@ function apply(ctx) {
     const pinned = settings?.values.workerProvider && settings.values.workerModel ? { provider: settings.values.workerProvider, model: settings.values.workerModel } : null;
     const nameOf = (provider, model) => settings?.models.find((item) => item.provider === provider && item.id === model)?.name ?? model;
     const effective = settings?.model ? nameOf(settings.model.provider, settings.model.model) : void 0;
-    const label = pinned ? nameOf(pinned.provider, pinned.model) : effective ?? t2("bg.follow");
+    const label2 = pinned ? nameOf(pinned.provider, pinned.model) : effective ?? t2("bg.follow");
     const choose = async (choice) => {
       closeMenu.current?.();
       setSaving(true);
@@ -1289,7 +1295,7 @@ function apply(ctx) {
       window.addEventListener("blur", close);
       (search ?? rows().find((row) => row.getAttribute("aria-checked") === "true") ?? rows()[0])?.focus();
     };
-    const title = failed ? t2("bg.error") : t2(pinned ? "bg.hint" : "bg.hintFollow", { model: label });
+    const title = failed ? t2("bg.error") : t2(pinned ? "bg.hint" : "bg.hintFollow", { model: label2 });
     return (0, import_react.createElement)(
       "button",
       {
@@ -1309,7 +1315,7 @@ function apply(ctx) {
         }
       },
       (0, import_react.createElement)("span", { className: "theone-bg-caption", "aria-hidden": true }, icon("layers", 15)),
-      (0, import_react.createElement)("span", { className: "theone-bg-text" }, label),
+      (0, import_react.createElement)("span", { className: "theone-bg-text" }, label2),
       (0, import_react.createElement)("span", { className: "theone-bg-chevron", "aria-hidden": true }, saving ? "\u2026" : icon("chevron", 12))
     );
   }
@@ -1709,7 +1715,7 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
     }, []);
     const own = new Set(topic.sourceSessionIds);
     const edited = title.trim() !== topic.title || summary.trim() !== topic.summary || rules.trim() !== constraints;
-    const field = (label, control) => (0, import_react.createElement)("label", { className: "theone-manage-field" }, (0, import_react.createElement)("span", null, t2(label)), control);
+    const field = (label2, control) => (0, import_react.createElement)("label", { className: "theone-manage-field" }, (0, import_react.createElement)("span", null, t2(label2)), control);
     return (0, import_react.createElement)(
       "div",
       { className: "theone-manage" },
@@ -1809,6 +1815,7 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
       )
     );
   }
+  const label = (text) => text.replace(/\s*[:：]\s*$/, "");
   function RouteList({ routes, stats, contexts, post, busy }) {
     const t2 = useText();
     const titleOf = (id) => contexts.find((context) => context.id === id)?.title ?? t2("routes.removed");
@@ -1840,18 +1847,18 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
         return (0, import_react.createElement)(
           "li",
           { key: route.messageId },
+          (0, import_react.createElement)("time", null, new Date(route.at).toLocaleTimeString(localeSnapshot().active, { hour: "2-digit", minute: "2-digit" })),
+          (0, import_react.createElement)("q", null, route.excerpt || "\u2026"),
           (0, import_react.createElement)(
             "div",
-            { className: "theone-route-head" },
-            (0, import_react.createElement)("time", null, new Date(route.at).toLocaleTimeString(localeSnapshot().active, { hour: "2-digit", minute: "2-digit" })),
-            (0, import_react.createElement)("q", null, route.excerpt || "\u2026")
+            { className: "theone-route-target" },
+            (0, import_react.createElement)("strong", null, route.decision.action === "CLARIFY" ? t2("routes.clarify") : `\u2192 ${titleOf(target)}`),
+            (0, import_react.createElement)("small", null, details)
           ),
           (0, import_react.createElement)(
             "div",
-            { className: "theone-route-body" },
-            (0, import_react.createElement)("strong", null, route.decision.action === "CLARIFY" ? t2("routes.clarify") : `\u2192 ${titleOf(target)}`),
-            (0, import_react.createElement)("small", null, details),
-            (0, import_react.createElement)("button", { type: "button", className: "theone-route-report", onClick: () => openFeedbackDialog(route.messageId) }, t2("routes.report")),
+            { className: "theone-route-actions" },
+            (0, import_react.createElement)("button", { type: "button", className: "theone-quiet", onClick: () => openFeedbackDialog(route.messageId) }, t2("routes.report")),
             route.correctedTo ? (0, import_react.createElement)("span", { className: "theone-route-fixed" }, t2("routes.corrected", { title: titleOf(route.correctedTo) })) : (0, import_react.createElement)(
               "select",
               {
@@ -1996,6 +2003,10 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
       if (!linkage || linkage.scope === "off") return null;
       const own = linkage.topics[id];
       if (!own) return null;
+      if (managing !== id) return own.related.length || own.private ? [
+        (0, import_react.createElement)("dt", { key: "dt" }, label(t2("link.label"))),
+        (0, import_react.createElement)("dd", { key: "dd" }, own.related.map((topic) => topic.title).join(" \xB7 "), own.private ? (0, import_react.createElement)("span", { className: "theone-tag" }, t2("link.private")) : null)
+      ] : null;
       const related = new Set(own.related.map((topic) => topic.id));
       const others = snapshot.contexts.filter((context) => context.id !== id && !related.has(context.id));
       return (0, import_react.createElement)(
@@ -2060,27 +2071,48 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
     const assigned = new Set(snapshot?.groups.flatMap((group) => group.contextIds) ?? []);
     const groups = [...snapshot?.groups ?? [], ...snapshot?.contexts.some((c) => !assigned.has(c.id)) ? [{ id: "pending", title: t2("catalog.unassigned"), summary: t2("catalog.unassignedSummary"), contextIds: snapshot.contexts.filter((c) => !assigned.has(c.id)).map((c) => c.id) }] : []];
     const status = snapshot?.status;
+    const kept = routeStats?.total ? Math.round(100 * (routeStats.total - routeStats.corrected) / routeStats.total) : void 0;
+    const figure = (value, name) => (0, import_react.createElement)("div", { key: name }, (0, import_react.createElement)("dd", null, value), (0, import_react.createElement)("dt", null, name));
     return (0, import_react.createElement)(
       "section",
       { className: "theone-catalog", translate: "no" },
       (0, import_react.createElement)(
         "header",
         { className: "theone-catalog-header" },
-        (0, import_react.createElement)("div", null, (0, import_react.createElement)("h1", null, t2("catalog.title")), (0, import_react.createElement)("p", null, t2("catalog.subtitle"))),
+        (0, import_react.createElement)(
+          "div",
+          { className: "theone-catalog-heading" },
+          (0, import_react.createElement)("p", { className: "theone-overline" }, "TheOne"),
+          (0, import_react.createElement)("h1", null, t2("catalog.title")),
+          (0, import_react.createElement)("p", { className: "theone-catalog-lede" }, t2("catalog.subtitle"))
+        ),
+        snapshot ? (0, import_react.createElement)(
+          "dl",
+          { className: "theone-figures" },
+          figure(snapshot.contexts.length, t2("catalog.figTopics")),
+          figure(snapshot.groups.length, t2("catalog.figGroups")),
+          kept !== void 0 ? figure(`${kept}%`, t2("catalog.figKept")) : null
+        ) : null
+      ),
+      (0, import_react.createElement)(
+        "div",
+        { className: "theone-toolbar" },
+        (0, import_react.createElement)("p", { className: "theone-catalog-status", role: "status" }, snapshot ? status?.running ? t2("catalog.indexing") : status?.pending ? t2("catalog.pending", { count: status.pending, sessionSuffix: status.pending === 1 ? "" : "s" }) : t2("catalog.updated") : t2("catalog.reading")),
         (0, import_react.createElement)(
           "div",
           { className: "theone-catalog-tools" },
-          (0, import_react.createElement)("button", { type: "button", disabled: !!busy, onClick: () => setCreating((open) => !open) }, t2("manage.create")),
+          (0, import_react.createElement)("button", { type: "button", className: "theone-primary", disabled: !!busy, onClick: () => setCreating((open) => !open) }, t2("manage.create")),
+          (0, import_react.createElement)("button", { type: "button", onClick: refresh, disabled: !!busy || status?.running }, t2("catalog.refresh")),
           snapshot?.linkage && snapshot.linkage.scope !== "off" ? (0, import_react.createElement)("button", {
             type: "button",
+            className: "theone-quiet",
             disabled: !!busy,
             title: t2("link.clearLearnedHint"),
             onClick: () => {
               void editLinks({ action: "clearLearned" });
             }
           }, t2("link.clearLearned")) : null,
-          (0, import_react.createElement)("button", { type: "button", onClick: refresh, disabled: !!busy || status?.running }, t2("catalog.refresh")),
-          (0, import_react.createElement)("button", { type: "button", onClick: () => openFeedbackDialog() }, t2("feedback.open"))
+          (0, import_react.createElement)("button", { type: "button", className: "theone-quiet", onClick: () => openFeedbackDialog() }, t2("feedback.open"))
         )
       ),
       creating ? (0, import_react.createElement)(
@@ -2090,63 +2122,83 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
           void post("/api/theone/topics", { action: "create", title: newTitle });
         } },
         (0, import_react.createElement)("input", { value: newTitle, maxLength: 80, autoFocus: true, placeholder: t2("manage.title"), disabled: !!busy, onChange: (event) => setNewTitle(event.target.value) }),
-        (0, import_react.createElement)("button", { type: "submit", disabled: !!busy || !newTitle.trim() }, t2("manage.createButton")),
-        (0, import_react.createElement)("button", { type: "button", onClick: () => {
+        (0, import_react.createElement)("button", { type: "submit", className: "theone-primary", disabled: !!busy || !newTitle.trim() }, t2("manage.createButton")),
+        (0, import_react.createElement)("button", { type: "button", className: "theone-quiet", onClick: () => {
           setCreating(false);
           setNewTitle("");
         } }, t2("manage.cancel"))
       ) : null,
-      snapshot?.linkage?.scope === "off" ? (0, import_react.createElement)("p", { className: "theone-catalog-status" }, t2("link.off")) : null,
-      (0, import_react.createElement)("p", { className: "theone-catalog-status", role: "status" }, snapshot ? t2("catalog.counts", { topics: snapshot.contexts.length, groups: snapshot.groups.length, topicSuffix: snapshot.contexts.length === 1 ? "" : "s", groupSuffix: snapshot.groups.length === 1 ? "" : "s" }) + " \xB7 " + (status?.running ? t2("catalog.indexing") : status?.pending ? t2("catalog.pending", { count: status.pending, sessionSuffix: status.pending === 1 ? "" : "s" }) : t2("catalog.updated")) : t2("catalog.reading")),
+      snapshot?.linkage?.scope === "off" ? (0, import_react.createElement)("p", { className: "theone-catalog-note" }, t2("link.off")) : null,
       status?.failed ? (0, import_react.createElement)("p", { className: "theone-catalog-warning" }, t2("catalog.failed", { count: status.failed, sessionSuffix: status.failed === 1 ? "" : "s" })) : null,
       status?.searchUnavailable ? (0, import_react.createElement)("p", { className: "theone-catalog-warning" }, t2("catalog.searchUnavailable")) : null,
       error ? (0, import_react.createElement)("p", { role: "alert", className: "theone-catalog-warning" }, t2(error)) : null,
       snapshot ? (0, import_react.createElement)(RouteList, { routes, stats: routeStats, contexts: snapshot.contexts, post, busy: !!busy }) : null,
       snapshot && !snapshot.contexts.length ? (0, import_react.createElement)("p", { className: "theone-catalog-empty" }, t2(status?.running ? "catalog.emptyIndexing" : "catalog.empty")) : null,
-      (0, import_react.createElement)("div", { className: "theone-catalog-groups" }, ...groups.map((group) => (0, import_react.createElement)(
+      (0, import_react.createElement)("div", { className: "theone-catalog-groups" }, ...groups.map((group, index) => (0, import_react.createElement)(
         "section",
         { key: group.id, className: "theone-topic-group" },
-        (0, import_react.createElement)("h2", null, group.title, (0, import_react.createElement)("span", null, ` ${group.contextIds.length}`)),
-        group.summary ? (0, import_react.createElement)("p", { className: "theone-group-summary" }, group.summary) : null,
-        ...group.contextIds.flatMap((id) => {
+        (0, import_react.createElement)(
+          "header",
+          { className: "theone-group-head" },
+          (0, import_react.createElement)("span", { className: "theone-group-index" }, String(index + 1).padStart(2, "0")),
+          (0, import_react.createElement)("h2", null, group.title, (0, import_react.createElement)("span", null, group.contextIds.length)),
+          group.summary ? (0, import_react.createElement)("p", { className: "theone-group-summary" }, group.summary) : null
+        ),
+        (0, import_react.createElement)("ol", { className: "theone-topic-list" }, ...group.contextIds.flatMap((id) => {
           const topic = snapshot?.contexts.find((c) => c.id === id);
           if (!topic) return [];
           const constraints = snapshot?.linkage?.topics[id]?.constraints ?? "";
+          const open = managing === id;
+          const links = linkRow(id);
           return [(0, import_react.createElement)(
-            "article",
-            { key: id, className: "theone-topic-card" },
-            (0, import_react.createElement)("h3", null, topic.title),
-            (0, import_react.createElement)("p", null, topic.summary),
-            topic.hidden ? (0, import_react.createElement)("p", { className: "theone-topic-warning" }, t2(topic.hidden === "archived" ? "topic.hiddenArchived" : "topic.hiddenOrphaned")) : null,
-            topic.lastState ? (0, import_react.createElement)("p", { className: "theone-topic-state" }, (0, import_react.createElement)("span", null, t2("topic.state")), topic.lastState) : null,
-            constraints ? (0, import_react.createElement)("p", { className: "theone-topic-state" }, (0, import_react.createElement)("span", null, t2("topic.constraints")), constraints) : null,
-            linkRow(id),
+            "li",
+            { key: id, className: `theone-topic-card${open ? " theone-open" : ""}${topic.hidden ? " theone-hidden" : ""}` },
+            (0, import_react.createElement)(
+              "div",
+              { className: "theone-topic-main" },
+              (0, import_react.createElement)("h3", null, topic.title),
+              topic.summary && topic.summary.trim() !== topic.title.trim() ? (0, import_react.createElement)("p", { className: "theone-topic-summary" }, topic.summary) : null,
+              topic.hidden ? (0, import_react.createElement)("p", { className: "theone-topic-warning" }, t2(topic.hidden === "archived" ? "topic.hiddenArchived" : "topic.hiddenOrphaned")) : null,
+              topic.lastState || constraints || links && !open ? (0, import_react.createElement)(
+                "dl",
+                { className: "theone-topic-meta" },
+                topic.lastState ? [(0, import_react.createElement)("dt", { key: "s" }, label(t2("topic.state"))), (0, import_react.createElement)("dd", { key: "sv" }, topic.lastState)] : null,
+                constraints ? [(0, import_react.createElement)("dt", { key: "c" }, label(t2("topic.constraints"))), (0, import_react.createElement)("dd", { key: "cv" }, constraints)] : null,
+                open ? null : links
+              ) : null
+            ),
             (0, import_react.createElement)(
               "div",
               { className: "theone-topic-actions" },
               // A hidden topic has nothing left to continue: its conversations are gone or archived.
               (0, import_react.createElement)("button", {
                 type: "button",
+                className: "theone-continue",
                 disabled: !!busy || !!topic.hidden,
                 title: topic.hidden ? t2("topic.continueHidden") : void 0,
                 onClick: () => {
                   void continueTopic(id);
                 }
-              }, t2(busy === id ? "topic.opening" : "topic.continue")),
-              (0, import_react.createElement)("button", { type: "button", "aria-expanded": managing === id, onClick: () => setManaging((current) => current === id ? void 0 : id) }, t2(managing === id ? "manage.close" : "manage.open")),
+              }, t2(busy === id ? "topic.opening" : "topic.continue"), (0, import_react.createElement)("span", { "aria-hidden": true }, " \u2192")),
+              (0, import_react.createElement)("button", { type: "button", className: "theone-quiet", "aria-expanded": open, onClick: () => setManaging((current) => current === id ? void 0 : id) }, t2(open ? "manage.close" : "manage.open")),
               ...(topic.hidden === "orphaned" ? [] : topic.sourceSessionIds).slice(0, 3).map((sessionId, i) => (0, import_react.createElement)("button", {
                 key: sessionId,
                 type: "button",
-                className: "theone-source-link",
+                className: "theone-quiet",
                 onClick: () => {
                   ctx.layout.beginNavigation();
                   ctx.uiWorkspace.openSession(sessionId);
                 }
               }, t2("topic.source") + (topic.sourceSessionIds.length > 1 ? " " + (i + 1) : "")))
             ),
-            managing === id ? (0, import_react.createElement)(TopicManager, { key: `${id}:${topic.title}:${topic.summary}:${constraints}`, topic, constraints, groups: snapshot.groups, contexts: snapshot.contexts, post, busy: !!busy }) : null
+            open ? (0, import_react.createElement)(
+              "div",
+              { className: "theone-topic-edit" },
+              links,
+              (0, import_react.createElement)(TopicManager, { key: `${id}:${topic.title}:${topic.summary}:${constraints}`, topic, constraints, groups: snapshot.groups, contexts: snapshot.contexts, post, busy: !!busy })
+            ) : null
           )];
-        })
+        }))
       )))
     );
   }
@@ -2255,8 +2307,93 @@ button:has(.theone-nav[data-wide=true])>span:has(.theone-nav){flex:1;min-width:0
 `;
 var catalogCss = `
 button:has(.theone-catalog-entry)>span:not(:has(.theone-catalog-entry)){display:none}
-.theone-catalog{padding:32px;max-width:1180px;margin:auto;box-sizing:border-box;height:100%;overflow:auto;color:var(--dsw-alias-label-primary)}
-.theone-catalog-header{display:flex;justify-content:space-between;align-items:center;gap:16px}.theone-catalog h1{font-size:24px;margin:0 0 8px}.theone-catalog-header p,.theone-catalog-status,.theone-group-summary{opacity:.65;margin:0 0 18px;line-height:1.6}.theone-catalog button{border:1px solid #8883;border-radius:9px;padding:8px 13px;background:transparent;color:inherit;cursor:pointer;font:inherit;white-space:nowrap}.theone-catalog button:disabled{opacity:.5;cursor:default}.theone-catalog-groups{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,310px),1fr));gap:20px}.theone-topic-group{border:1px solid #8882;border-radius:16px;padding:20px;background:#88805}.theone-topic-group h2{font-size:18px;margin:0 0 8px}.theone-topic-group h2 span{font-size:13px;opacity:.5}.theone-topic-card{border-top:1px solid #8882;padding:16px 0}.theone-topic-card:last-child{padding-bottom:0}.theone-topic-card h3{font-size:15px;line-height:1.5;margin:0 0 7px}.theone-topic-card p{font-size:13px;line-height:1.7;opacity:.75;margin:0 0 12px;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}.theone-topic-actions{display:flex;gap:8px;flex-wrap:wrap}.theone-topic-actions button{font-size:12px}.theone-topic-actions .theone-source-link{border-color:transparent;opacity:.6}.theone-catalog-warning{background:#ff900011;padding:12px;border-radius:10px;font-size:13px}.theone-topic-warning{font-size:12px;line-height:1.6;margin:0 0 12px;color:#d9480f}.theone-catalog-entry{display:flex;align-items:center;gap:10px;font-size:14px}.theone-catalog-empty{padding:40px 0;opacity:.65;line-height:1.8}.theone-catalog-tools{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.theone-topic-links{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 12px;font-size:12px}.theone-links-label,.theone-links-empty{opacity:.6}.theone-link-chip{display:inline-flex;align-items:center;gap:2px;border:1px solid #8883;border-radius:999px;padding:2px 4px 2px 9px}.theone-catalog .theone-link-chip button{border:0;padding:0 5px;opacity:.6;font-size:13px;line-height:1}.theone-topic-links select{font:inherit;font-size:12px;color:inherit;background:transparent;border:1px solid #8883;border-radius:8px;padding:2px 6px}.theone-link-private{display:inline-flex;align-items:center;gap:4px;opacity:.75;cursor:pointer}.theone-topic-card .theone-topic-state{font-size:12px;opacity:.8;-webkit-line-clamp:3}.theone-topic-state span{opacity:.6;margin-right:4px}.theone-manage{display:flex;flex-direction:column;gap:10px;margin-top:12px;padding:14px;border:1px solid #8883;border-radius:12px;font-size:12px}.theone-create{flex-direction:row;flex-wrap:wrap;align-items:center;margin:0 0 18px}.theone-create input{flex:1;min-width:180px}.theone-manage-field{display:flex;flex-direction:column;gap:5px}.theone-manage-field>span{opacity:.65}.theone-manage input,.theone-manage textarea,.theone-manage select,.theone-routes select{font:inherit;font-size:12px;color:inherit;background:transparent;border:1px solid #8883;border-radius:8px;padding:6px 8px;box-sizing:border-box;min-width:0}.theone-manage textarea{resize:vertical;width:100%}.theone-manage-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.theone-manage-row select,.theone-manage-row input{flex:1;min-width:140px}.theone-manage-hint{opacity:.6;font-size:12px;line-height:1.6;margin:0}.theone-catalog .theone-danger{color:#c4402f;border-color:#c4402f55}.theone-routes{border:1px solid #8882;border-radius:16px;padding:14px 20px;margin:0 0 20px}.theone-routes summary{cursor:pointer;font-weight:500}.theone-routes summary span{opacity:.5;font-size:13px}.theone-routes ol{list-style:none;margin:12px 0 0;padding:0;display:flex;flex-direction:column;gap:10px}.theone-routes li{border-top:1px solid #8882;padding-top:10px;font-size:12px;display:flex;flex-direction:column;gap:5px}.theone-route-head{display:flex;gap:10px;min-width:0}.theone-route-head time{opacity:.55;flex:none}.theone-route-head q{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.theone-route-body{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.theone-route-body small{opacity:.6}.theone-route-fixed{opacity:.75}.theone-catalog .theone-route-report{padding:2px 8px;font-size:12px;opacity:.7}.theone-route-stats{margin-left:10px;font-weight:400;opacity:.6;font-size:12px}@media(max-width:640px){.theone-catalog{padding:20px}.theone-catalog-header{align-items:flex-start}.theone-catalog-header h1{font-size:21px}}
+.theone-catalog{--t-fg:var(--dsw-alias-label-primary,#18181b);--t-muted:var(--dsw-alias-label-secondary,#6b6b72);--t-rule:var(--dsw-alias-border-l2,#18181b1f);--t-accent:#b4531c;--t-warn:#c2410c;--t-field:#18181b0a;
+  container-type:inline-size;box-sizing:border-box;height:100%;overflow:auto;padding:48px 56px 96px;color:var(--t-fg);font-feature-settings:"tnum" 1}
+[data-ds-dark-theme] .theone-catalog{--t-accent:#8cc2ef;--t-warn:#fb923c;--t-field:#ffffff0d}
+.theone-catalog>*{max-width:1120px;margin-left:auto;margin-right:auto}
+.theone-catalog button{font:inherit;font-size:13px;line-height:1.4;color:inherit;background:transparent;border:1px solid var(--t-rule);border-radius:6px;padding:6px 12px;cursor:pointer;white-space:nowrap}
+.theone-catalog button:hover:not(:disabled){border-color:var(--t-fg)}
+.theone-catalog button:disabled{opacity:.4;cursor:default}
+.theone-catalog button:focus-visible{outline:2px solid var(--t-accent);outline-offset:2px}
+.theone-catalog .theone-primary{background:var(--t-fg);border-color:var(--t-fg);color:var(--dsw-alias-bg-primary,#fff)}
+[data-ds-dark-theme] .theone-catalog .theone-primary{color:#111}
+.theone-catalog .theone-quiet{border-color:transparent;color:var(--t-muted);padding-left:6px;padding-right:6px}
+.theone-catalog .theone-quiet:hover:not(:disabled){border-color:transparent;color:var(--t-fg);text-decoration:underline;text-underline-offset:3px}
+.theone-catalog .theone-continue{border-color:transparent;color:var(--t-accent);font-weight:600;padding-left:0;padding-right:6px}
+.theone-catalog .theone-continue:hover:not(:disabled){border-color:transparent;text-decoration:underline;text-underline-offset:3px}
+.theone-catalog-header{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:24px 48px;padding-bottom:28px;border-bottom:2px solid var(--t-fg)}
+.theone-overline{margin:0 0 14px;font-size:12px;font-weight:600;letter-spacing:.06em;color:var(--t-accent)}
+.theone-catalog h1{margin:0;font-size:44px;line-height:1.05;font-weight:700;letter-spacing:-.02em}
+.theone-catalog-lede{margin:14px 0 0;max-width:34em;font-size:15px;line-height:1.6;color:var(--t-muted)}
+.theone-figures{display:flex;gap:40px;margin:0}
+.theone-figures>div{display:flex;flex-direction:column-reverse;gap:6px;min-width:64px}
+.theone-figures dd{margin:0;font-size:40px;line-height:1;font-weight:600;letter-spacing:-.02em}
+.theone-figures dt{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--t-muted)}
+.theone-toolbar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px 24px;padding:14px 0 40px}
+.theone-catalog-status{margin:0;font-size:13px;color:var(--t-muted)}
+.theone-catalog-tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.theone-catalog-note,.theone-catalog-empty{color:var(--t-muted);font-size:14px;line-height:1.7}
+.theone-catalog-empty{padding:48px 0}
+.theone-catalog-warning{margin:0 0 24px;padding:10px 0 10px 14px;border-left:2px solid var(--t-warn);font-size:13px;line-height:1.6}
+.theone-catalog-entry{display:flex;align-items:center;gap:10px;font-size:14px}
+.theone-routes{margin-bottom:56px;border-top:1px solid var(--t-rule);border-bottom:1px solid var(--t-rule)}
+.theone-routes summary{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;padding:14px 0;cursor:pointer;font-size:13px;font-weight:600;letter-spacing:.04em;list-style:none}
+.theone-routes summary::-webkit-details-marker{display:none}
+.theone-routes summary::before{content:"+";display:inline-block;width:14px;color:var(--t-muted);font-weight:400}
+.theone-routes[open] summary::before{content:"\u2212"}
+.theone-routes summary>span{color:var(--t-muted);font-weight:400}
+.theone-route-stats{font-weight:400;color:var(--t-muted);font-size:12px}
+.theone-routes .theone-manage-hint{margin:0 0 12px 26px;max-width:46em}
+.theone-routes ol{list-style:none;margin:0;padding:0 0 8px}
+.theone-routes li{display:grid;grid-template-columns:52px minmax(0,1.3fr) minmax(0,1fr) auto;gap:4px 20px;align-items:baseline;padding:10px 0;border-top:1px solid var(--t-rule);font-size:13px}
+.theone-routes time{color:var(--t-muted)}
+.theone-routes q{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;quotes:none}
+.theone-route-target{display:flex;flex-direction:column;gap:2px;min-width:0}
+.theone-route-target strong{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.theone-route-target small{color:var(--t-muted);font-size:12px}
+.theone-route-actions{display:flex;gap:8px;align-items:center;justify-content:flex-end}
+.theone-route-fixed{color:var(--t-muted);font-size:12px}
+.theone-routes select{width:auto;max-width:150px;padding-top:4px;padding-bottom:4px;font-size:12px}
+.theone-catalog-groups{display:flex;flex-direction:column;gap:56px}
+.theone-topic-group{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,9fr);gap:0 40px;border-top:2px solid var(--t-fg);padding-top:16px}
+.theone-group-head{position:sticky;top:0;align-self:start}
+.theone-group-index{display:block;margin-bottom:10px;font-size:13px;font-weight:600;color:var(--t-accent)}
+.theone-topic-group h2{margin:0;font-size:22px;line-height:1.2;font-weight:700;letter-spacing:-.01em}
+.theone-topic-group h2 span{margin-left:8px;font-size:13px;font-weight:400;color:var(--t-muted)}
+.theone-group-summary{margin:10px 0 0;font-size:13px;line-height:1.6;color:var(--t-muted)}
+.theone-topic-list{list-style:none;margin:0;padding:0}
+.theone-topic-card{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 32px;padding:18px 0 20px;border-top:1px solid var(--t-rule)}
+.theone-topic-card:first-child{border-top:0;padding-top:4px}
+.theone-topic-card.theone-hidden .theone-topic-main{opacity:.6}
+.theone-topic-card h3{margin:0;font-size:16px;line-height:1.4;font-weight:600}
+.theone-topic-summary{margin:6px 0 0;max-width:42em;font-size:14px;line-height:1.6;color:var(--t-muted);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.theone-topic-meta{display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 16px;margin:14px 0 0;max-width:46em;font-size:13px;line-height:1.55}
+.theone-topic-meta dt{color:var(--t-muted);font-size:12px;white-space:nowrap}
+.theone-topic-meta dd{margin:0}
+.theone-tag{display:inline-block;margin-left:8px;padding:0 6px;border:1px solid var(--t-rule);border-radius:4px;font-size:11px;color:var(--t-muted)}
+.theone-topic-warning{margin:10px 0 0;padding-left:12px;border-left:2px solid var(--t-warn);font-size:12px;line-height:1.6}
+.theone-topic-actions{display:flex;flex-direction:column;align-items:flex-end;gap:0}.theone-topic-actions button{padding-top:3px;padding-bottom:3px}
+.theone-topic-edit{grid-column:1/-1;margin-top:12px;padding:4px 0 4px 20px;border-left:2px solid var(--t-accent)}
+.theone-topic-links{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin:0 0 16px;font-size:13px}
+.theone-links-label,.theone-links-empty{color:var(--t-muted)}
+.theone-link-chip{display:inline-flex;align-items:center;gap:2px;padding:2px 2px 2px 10px;border:1px solid var(--t-rule);border-radius:4px}
+.theone-catalog .theone-link-chip button{border:0;padding:0 6px;font-size:14px;line-height:1;color:var(--t-muted)}
+.theone-link-private{display:inline-flex;align-items:center;gap:6px;color:var(--t-muted);cursor:pointer}
+.theone-catalog input:not([type=checkbox]),.theone-catalog textarea,.theone-catalog select{font:inherit;font-size:13px;color:inherit;background:var(--t-field);border:1px solid transparent;border-bottom-color:var(--t-rule);border-radius:4px 4px 0 0;padding:7px 10px;box-sizing:border-box;min-width:0}
+.theone-catalog input:not([type=checkbox]):focus,.theone-catalog textarea:focus,.theone-catalog select:focus{outline:none;border-bottom-color:var(--t-accent)}
+.theone-manage{display:flex;flex-direction:column;gap:14px;font-size:13px}
+.theone-create{flex-direction:row;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 40px;padding:16px 0;border-top:1px solid var(--t-rule);border-bottom:1px solid var(--t-rule)}
+.theone-create input{flex:1;min-width:200px}
+.theone-manage-field{display:flex;flex-direction:column;gap:6px}
+.theone-manage-field>span{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--t-muted)}
+.theone-manage textarea{resize:vertical;width:100%}
+.theone-manage-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.theone-manage-row select,.theone-manage-row input{flex:1;min-width:160px}
+.theone-manage-hint{margin:0;font-size:12px;line-height:1.6;color:var(--t-muted)}
+.theone-catalog .theone-danger{color:var(--t-warn);border-color:var(--t-warn)}
+@container (max-width:860px){.theone-topic-group{grid-template-columns:1fr}.theone-group-head{position:static;margin-bottom:20px}.theone-catalog-header{grid-template-columns:1fr}.theone-figures{gap:32px}}
+@container (max-width:640px){.theone-catalog h1{font-size:32px}.theone-figures dd{font-size:30px}.theone-topic-card{grid-template-columns:1fr}.theone-topic-actions{flex-direction:row;flex-wrap:wrap;align-items:center}.theone-routes li{grid-template-columns:44px minmax(0,1fr)}.theone-route-target,.theone-route-actions{grid-column:2}.theone-route-actions{justify-content:flex-start}}
+@media(max-width:640px){.theone-catalog{padding:28px 16px 64px}}
 `;
 var composerCss = `
 .theone-bg{display:inline-flex;align-items:center;gap:5px;height:32px;padding:0 10px;border:0;border-radius:10px;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:14px;white-space:nowrap;cursor:pointer;max-width:220px}

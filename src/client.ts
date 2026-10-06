@@ -819,6 +819,9 @@ export function apply(ctx: Context) {
         confirm === 'delete' ? h('span', { className: 'theone-manage-hint' }, t('manage.deleteHint')) : null))
   }
 
+  /** A field name as a column label: "进展：" → "进展". */
+  const label = (text: string) => text.replace(/\s*[:：]\s*$/, '')
+
   /** Where recent messages went and why; a misrouted one can be moved to the right topic. */
   type RouteStats = { total: number; corrected: number; clarified: number; fallback: number }
   function RouteList({ routes, stats, contexts, post, busy }: { routes: RouteView[]; stats?: RouteStats; contexts: CatalogContext[]; post: Post; busy: boolean }) {
@@ -836,13 +839,13 @@ export function apply(ctx: Context) {
           receipt?.elapsedMs !== undefined ? `${(receipt.elapsedMs / 1000).toFixed(1)} s` : undefined,
           receipt?.errorCode ? t('routes.error', { code: receipt.errorCode }) : undefined].filter(Boolean).join(' · ')
         return h('li', { key: route.messageId },
-          h('div', { className: 'theone-route-head' },
-            h('time', null, new Date(route.at).toLocaleTimeString(localeSnapshot().active, { hour: '2-digit', minute: '2-digit' })),
-            h('q', null, route.excerpt || '…')),
-          h('div', { className: 'theone-route-body' },
+          h('time', null, new Date(route.at).toLocaleTimeString(localeSnapshot().active, { hour: '2-digit', minute: '2-digit' })),
+          h('q', null, route.excerpt || '…'),
+          h('div', { className: 'theone-route-target' },
             h('strong', null, route.decision.action === 'CLARIFY' ? t('routes.clarify') : `→ ${titleOf(target)}`),
-            h('small', null, details),
-            h('button', { type: 'button', className: 'theone-route-report', onClick: () => openFeedbackDialog(route.messageId) }, t('routes.report')),
+            h('small', null, details)),
+          h('div', { className: 'theone-route-actions' },
+            h('button', { type: 'button', className: 'theone-quiet', onClick: () => openFeedbackDialog(route.messageId) }, t('routes.report')),
             route.correctedTo ? h('span', { className: 'theone-route-fixed' }, t('routes.corrected', { title: titleOf(route.correctedTo) }))
               : h('select', { value: '', disabled: busy, 'aria-label': t('routes.move'),
                 onChange: (event: React.ChangeEvent<HTMLSelectElement>) => { if (event.target.value) void post('/api/theone/routes', { messageId: route.messageId, contextId: event.target.value }) } },
@@ -929,6 +932,9 @@ export function apply(ctx: Context) {
       if (!linkage || linkage.scope === 'off') return null
       const own = linkage.topics[id]
       if (!own) return null
+      // Read-only unless the topic is open for managing: the list stays a list.
+      if (managing !== id) return own.related.length || own.private ? [h('dt', { key: 'dt' }, label(t('link.label'))),
+        h('dd', { key: 'dd' }, own.related.map(topic => topic.title).join(' · '), own.private ? h('span', { className: 'theone-tag' }, t('link.private')) : null)] : null
       const related = new Set(own.related.map(topic => topic.id))
       const others = snapshot!.contexts.filter(context => context.id !== id && !related.has(context.id))
       return h('div', { className: 'theone-topic-links' },
@@ -956,51 +962,69 @@ export function apply(ctx: Context) {
     const assigned = new Set(snapshot?.groups.flatMap(group => group.contextIds) ?? [])
     const groups = [...snapshot?.groups ?? [], ...(snapshot?.contexts.some(c => !assigned.has(c.id)) ? [{ id: 'pending', title: t('catalog.unassigned'), summary: t('catalog.unassignedSummary'), contextIds: snapshot.contexts.filter(c => !assigned.has(c.id)).map(c => c.id) }] : [])]
     const status = snapshot?.status
+    const kept = routeStats?.total ? Math.round(100 * (routeStats.total - routeStats.corrected) / routeStats.total) : undefined
+    const figure = (value: string | number, name: string) => h('div', { key: name }, h('dd', null, value), h('dt', null, name))
     return h('section', { className: 'theone-catalog', translate: 'no' },
       h('header', { className: 'theone-catalog-header' },
-        h('div', null, h('h1', null, t('catalog.title')), h('p', null, t('catalog.subtitle'))),
+        h('div', { className: 'theone-catalog-heading' },
+          h('p', { className: 'theone-overline' }, 'TheOne'),
+          h('h1', null, t('catalog.title')),
+          h('p', { className: 'theone-catalog-lede' }, t('catalog.subtitle'))),
+        snapshot ? h('dl', { className: 'theone-figures' },
+          figure(snapshot.contexts.length, t('catalog.figTopics')),
+          figure(snapshot.groups.length, t('catalog.figGroups')),
+          kept !== undefined ? figure(`${kept}%`, t('catalog.figKept')) : null) : null),
+      h('div', { className: 'theone-toolbar' },
+        h('p', { className: 'theone-catalog-status', role: 'status' }, snapshot
+          ? (status?.running ? t('catalog.indexing') : status?.pending ? t('catalog.pending', { count: status.pending, sessionSuffix: status.pending === 1 ? '' : 's' }) : t('catalog.updated'))
+          : t('catalog.reading')),
         h('div', { className: 'theone-catalog-tools' },
-          h('button', { type: 'button', disabled: !!busy, onClick: () => setCreating(open => !open) }, t('manage.create')),
-          snapshot?.linkage && snapshot.linkage.scope !== 'off' ? h('button', { type: 'button', disabled: !!busy, title: t('link.clearLearnedHint'),
-            onClick: () => { void editLinks({ action: 'clearLearned' }) } }, t('link.clearLearned')) : null,
+          h('button', { type: 'button', className: 'theone-primary', disabled: !!busy, onClick: () => setCreating(open => !open) }, t('manage.create')),
           h('button', { type: 'button', onClick: refresh, disabled: !!busy || status?.running }, t('catalog.refresh')),
-          h('button', { type: 'button', onClick: () => openFeedbackDialog() }, t('feedback.open')))),
+          snapshot?.linkage && snapshot.linkage.scope !== 'off' ? h('button', { type: 'button', className: 'theone-quiet', disabled: !!busy, title: t('link.clearLearnedHint'),
+            onClick: () => { void editLinks({ action: 'clearLearned' }) } }, t('link.clearLearned')) : null,
+          h('button', { type: 'button', className: 'theone-quiet', onClick: () => openFeedbackDialog() }, t('feedback.open')))),
       creating ? h('form', { className: 'theone-manage theone-create', onSubmit: (event: React.FormEvent<HTMLFormElement>) => { event.preventDefault(); void post('/api/theone/topics', { action: 'create', title: newTitle }) } },
         h('input', { value: newTitle, maxLength: 80, autoFocus: true, placeholder: t('manage.title'), disabled: !!busy, onChange: (event: React.ChangeEvent<HTMLInputElement>) => setNewTitle(event.target.value) }),
-        h('button', { type: 'submit', disabled: !!busy || !newTitle.trim() }, t('manage.createButton')),
-        h('button', { type: 'button', onClick: () => { setCreating(false); setNewTitle('') } }, t('manage.cancel'))) : null,
-      snapshot?.linkage?.scope === 'off' ? h('p', { className: 'theone-catalog-status' }, t('link.off')) : null,
-      h('p', { className: 'theone-catalog-status', role: 'status' }, snapshot
-        ? t('catalog.counts', { topics: snapshot.contexts.length, groups: snapshot.groups.length, topicSuffix: snapshot.contexts.length === 1 ? '' : 's', groupSuffix: snapshot.groups.length === 1 ? '' : 's' }) + ' · ' + (status?.running ? t('catalog.indexing') : status?.pending ? t('catalog.pending', { count: status.pending, sessionSuffix: status.pending === 1 ? '' : 's' }) : t('catalog.updated'))
-        : t('catalog.reading')),
+        h('button', { type: 'submit', className: 'theone-primary', disabled: !!busy || !newTitle.trim() }, t('manage.createButton')),
+        h('button', { type: 'button', className: 'theone-quiet', onClick: () => { setCreating(false); setNewTitle('') } }, t('manage.cancel'))) : null,
+      snapshot?.linkage?.scope === 'off' ? h('p', { className: 'theone-catalog-note' }, t('link.off')) : null,
       status?.failed ? h('p', { className: 'theone-catalog-warning' }, t('catalog.failed', { count: status.failed, sessionSuffix: status.failed === 1 ? '' : 's' })) : null,
       status?.searchUnavailable ? h('p', { className: 'theone-catalog-warning' }, t('catalog.searchUnavailable')) : null,
       error ? h('p', { role: 'alert', className: 'theone-catalog-warning' }, t(error)) : null,
       snapshot ? h(RouteList, { routes, stats: routeStats, contexts: snapshot.contexts, post, busy: !!busy }) : null,
       snapshot && !snapshot.contexts.length ? h('p', { className: 'theone-catalog-empty' }, t(status?.running ? 'catalog.emptyIndexing' : 'catalog.empty')) : null,
-      h('div', { className: 'theone-catalog-groups' }, ...groups.map(group =>
+      h('div', { className: 'theone-catalog-groups' }, ...groups.map((group, index) =>
         h('section', { key: group.id, className: 'theone-topic-group' },
-          h('h2', null, group.title, h('span', null, ` ${group.contextIds.length}`)),
-          group.summary ? h('p', { className: 'theone-group-summary' }, group.summary) : null,
-          ...group.contextIds.flatMap(id => {
+          h('header', { className: 'theone-group-head' },
+            h('span', { className: 'theone-group-index' }, String(index + 1).padStart(2, '0')),
+            h('h2', null, group.title, h('span', null, group.contextIds.length)),
+            group.summary ? h('p', { className: 'theone-group-summary' }, group.summary) : null),
+          h('ol', { className: 'theone-topic-list' }, ...group.contextIds.flatMap(id => {
             const topic = snapshot?.contexts.find(c => c.id === id)
             if (!topic) return []
             const constraints = snapshot?.linkage?.topics[id]?.constraints ?? ''
-            return [h('article', { key: id, className: 'theone-topic-card' },
-              h('h3', null, topic.title), h('p', null, topic.summary),
-              topic.hidden ? h('p', { className: 'theone-topic-warning' }, t(topic.hidden === 'archived' ? 'topic.hiddenArchived' : 'topic.hiddenOrphaned')) : null,
-              topic.lastState ? h('p', { className: 'theone-topic-state' }, h('span', null, t('topic.state')), topic.lastState) : null,
-              constraints ? h('p', { className: 'theone-topic-state' }, h('span', null, t('topic.constraints')), constraints) : null,
-              linkRow(id),
+            const open = managing === id
+            const links = linkRow(id)
+            return [h('li', { key: id, className: `theone-topic-card${open ? ' theone-open' : ''}${topic.hidden ? ' theone-hidden' : ''}` },
+              h('div', { className: 'theone-topic-main' },
+                h('h3', null, topic.title),
+                topic.summary && topic.summary.trim() !== topic.title.trim() ? h('p', { className: 'theone-topic-summary' }, topic.summary) : null,
+                topic.hidden ? h('p', { className: 'theone-topic-warning' }, t(topic.hidden === 'archived' ? 'topic.hiddenArchived' : 'topic.hiddenOrphaned')) : null,
+                topic.lastState || constraints || (links && !open) ? h('dl', { className: 'theone-topic-meta' },
+                  topic.lastState ? [h('dt', { key: 's' }, label(t('topic.state'))), h('dd', { key: 'sv' }, topic.lastState)] : null,
+                  constraints ? [h('dt', { key: 'c' }, label(t('topic.constraints'))), h('dd', { key: 'cv' }, constraints)] : null,
+                  open ? null : links) : null),
               h('div', { className: 'theone-topic-actions' },
                 // A hidden topic has nothing left to continue: its conversations are gone or archived.
-                h('button', { type: 'button', disabled: !!busy || !!topic.hidden, title: topic.hidden ? t('topic.continueHidden') : undefined,
-                  onClick: () => { void continueTopic(id) } }, t(busy === id ? 'topic.opening' : 'topic.continue')),
-                h('button', { type: 'button', 'aria-expanded': managing === id, onClick: () => setManaging(current => current === id ? undefined : id) }, t(managing === id ? 'manage.close' : 'manage.open')),
-                ...(topic.hidden === 'orphaned' ? [] : topic.sourceSessionIds).slice(0, 3).map((sessionId, i) => h('button', { key: sessionId, type: 'button', className: 'theone-source-link',
+                h('button', { type: 'button', className: 'theone-continue', disabled: !!busy || !!topic.hidden, title: topic.hidden ? t('topic.continueHidden') : undefined,
+                  onClick: () => { void continueTopic(id) } }, t(busy === id ? 'topic.opening' : 'topic.continue'), h('span', { 'aria-hidden': true }, ' →')),
+                h('button', { type: 'button', className: 'theone-quiet', 'aria-expanded': open, onClick: () => setManaging(current => current === id ? undefined : id) }, t(open ? 'manage.close' : 'manage.open')),
+                ...(topic.hidden === 'orphaned' ? [] : topic.sourceSessionIds).slice(0, 3).map((sessionId, i) => h('button', { key: sessionId, type: 'button', className: 'theone-quiet',
                   onClick: () => { ctx.layout.beginNavigation(); ctx.uiWorkspace.openSession(sessionId as SessionId) } }, t('topic.source') + (topic.sourceSessionIds.length > 1 ? ' ' + (i + 1) : '')))),
-              managing === id ? h(TopicManager, { key: `${id}:${topic.title}:${topic.summary}:${constraints}`, topic, constraints, groups: snapshot!.groups, contexts: snapshot!.contexts, post, busy: !!busy }) : null)]
-          }))))
+              open ? h('div', { className: 'theone-topic-edit' }, links,
+                h(TopicManager, { key: `${id}:${topic.title}:${topic.summary}:${constraints}`, topic, constraints, groups: snapshot!.groups, contexts: snapshot!.contexts, post, busy: !!busy })) : null)]
+          })))))
     )
   }
 
@@ -1110,8 +1134,93 @@ button:has(.theone-nav[data-wide=true])>span:has(.theone-nav){flex:1;min-width:0
 
 const catalogCss = `
 button:has(.theone-catalog-entry)>span:not(:has(.theone-catalog-entry)){display:none}
-.theone-catalog{padding:32px;max-width:1180px;margin:auto;box-sizing:border-box;height:100%;overflow:auto;color:var(--dsw-alias-label-primary)}
-.theone-catalog-header{display:flex;justify-content:space-between;align-items:center;gap:16px}.theone-catalog h1{font-size:24px;margin:0 0 8px}.theone-catalog-header p,.theone-catalog-status,.theone-group-summary{opacity:.65;margin:0 0 18px;line-height:1.6}.theone-catalog button{border:1px solid #8883;border-radius:9px;padding:8px 13px;background:transparent;color:inherit;cursor:pointer;font:inherit;white-space:nowrap}.theone-catalog button:disabled{opacity:.5;cursor:default}.theone-catalog-groups{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,310px),1fr));gap:20px}.theone-topic-group{border:1px solid #8882;border-radius:16px;padding:20px;background:#88805}.theone-topic-group h2{font-size:18px;margin:0 0 8px}.theone-topic-group h2 span{font-size:13px;opacity:.5}.theone-topic-card{border-top:1px solid #8882;padding:16px 0}.theone-topic-card:last-child{padding-bottom:0}.theone-topic-card h3{font-size:15px;line-height:1.5;margin:0 0 7px}.theone-topic-card p{font-size:13px;line-height:1.7;opacity:.75;margin:0 0 12px;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}.theone-topic-actions{display:flex;gap:8px;flex-wrap:wrap}.theone-topic-actions button{font-size:12px}.theone-topic-actions .theone-source-link{border-color:transparent;opacity:.6}.theone-catalog-warning{background:#ff900011;padding:12px;border-radius:10px;font-size:13px}.theone-topic-warning{font-size:12px;line-height:1.6;margin:0 0 12px;color:#d9480f}.theone-catalog-entry{display:flex;align-items:center;gap:10px;font-size:14px}.theone-catalog-empty{padding:40px 0;opacity:.65;line-height:1.8}.theone-catalog-tools{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.theone-topic-links{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 12px;font-size:12px}.theone-links-label,.theone-links-empty{opacity:.6}.theone-link-chip{display:inline-flex;align-items:center;gap:2px;border:1px solid #8883;border-radius:999px;padding:2px 4px 2px 9px}.theone-catalog .theone-link-chip button{border:0;padding:0 5px;opacity:.6;font-size:13px;line-height:1}.theone-topic-links select{font:inherit;font-size:12px;color:inherit;background:transparent;border:1px solid #8883;border-radius:8px;padding:2px 6px}.theone-link-private{display:inline-flex;align-items:center;gap:4px;opacity:.75;cursor:pointer}.theone-topic-card .theone-topic-state{font-size:12px;opacity:.8;-webkit-line-clamp:3}.theone-topic-state span{opacity:.6;margin-right:4px}.theone-manage{display:flex;flex-direction:column;gap:10px;margin-top:12px;padding:14px;border:1px solid #8883;border-radius:12px;font-size:12px}.theone-create{flex-direction:row;flex-wrap:wrap;align-items:center;margin:0 0 18px}.theone-create input{flex:1;min-width:180px}.theone-manage-field{display:flex;flex-direction:column;gap:5px}.theone-manage-field>span{opacity:.65}.theone-manage input,.theone-manage textarea,.theone-manage select,.theone-routes select{font:inherit;font-size:12px;color:inherit;background:transparent;border:1px solid #8883;border-radius:8px;padding:6px 8px;box-sizing:border-box;min-width:0}.theone-manage textarea{resize:vertical;width:100%}.theone-manage-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.theone-manage-row select,.theone-manage-row input{flex:1;min-width:140px}.theone-manage-hint{opacity:.6;font-size:12px;line-height:1.6;margin:0}.theone-catalog .theone-danger{color:#c4402f;border-color:#c4402f55}.theone-routes{border:1px solid #8882;border-radius:16px;padding:14px 20px;margin:0 0 20px}.theone-routes summary{cursor:pointer;font-weight:500}.theone-routes summary span{opacity:.5;font-size:13px}.theone-routes ol{list-style:none;margin:12px 0 0;padding:0;display:flex;flex-direction:column;gap:10px}.theone-routes li{border-top:1px solid #8882;padding-top:10px;font-size:12px;display:flex;flex-direction:column;gap:5px}.theone-route-head{display:flex;gap:10px;min-width:0}.theone-route-head time{opacity:.55;flex:none}.theone-route-head q{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.theone-route-body{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.theone-route-body small{opacity:.6}.theone-route-fixed{opacity:.75}.theone-catalog .theone-route-report{padding:2px 8px;font-size:12px;opacity:.7}.theone-route-stats{margin-left:10px;font-weight:400;opacity:.6;font-size:12px}@media(max-width:640px){.theone-catalog{padding:20px}.theone-catalog-header{align-items:flex-start}.theone-catalog-header h1{font-size:21px}}
+.theone-catalog{--t-fg:var(--dsw-alias-label-primary,#18181b);--t-muted:var(--dsw-alias-label-secondary,#6b6b72);--t-rule:var(--dsw-alias-border-l2,#18181b1f);--t-accent:#b4531c;--t-warn:#c2410c;--t-field:#18181b0a;
+  container-type:inline-size;box-sizing:border-box;height:100%;overflow:auto;padding:48px 56px 96px;color:var(--t-fg);font-feature-settings:"tnum" 1}
+[data-ds-dark-theme] .theone-catalog{--t-accent:#8cc2ef;--t-warn:#fb923c;--t-field:#ffffff0d}
+.theone-catalog>*{max-width:1120px;margin-left:auto;margin-right:auto}
+.theone-catalog button{font:inherit;font-size:13px;line-height:1.4;color:inherit;background:transparent;border:1px solid var(--t-rule);border-radius:6px;padding:6px 12px;cursor:pointer;white-space:nowrap}
+.theone-catalog button:hover:not(:disabled){border-color:var(--t-fg)}
+.theone-catalog button:disabled{opacity:.4;cursor:default}
+.theone-catalog button:focus-visible{outline:2px solid var(--t-accent);outline-offset:2px}
+.theone-catalog .theone-primary{background:var(--t-fg);border-color:var(--t-fg);color:var(--dsw-alias-bg-primary,#fff)}
+[data-ds-dark-theme] .theone-catalog .theone-primary{color:#111}
+.theone-catalog .theone-quiet{border-color:transparent;color:var(--t-muted);padding-left:6px;padding-right:6px}
+.theone-catalog .theone-quiet:hover:not(:disabled){border-color:transparent;color:var(--t-fg);text-decoration:underline;text-underline-offset:3px}
+.theone-catalog .theone-continue{border-color:transparent;color:var(--t-accent);font-weight:600;padding-left:0;padding-right:6px}
+.theone-catalog .theone-continue:hover:not(:disabled){border-color:transparent;text-decoration:underline;text-underline-offset:3px}
+.theone-catalog-header{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:24px 48px;padding-bottom:28px;border-bottom:2px solid var(--t-fg)}
+.theone-overline{margin:0 0 14px;font-size:12px;font-weight:600;letter-spacing:.06em;color:var(--t-accent)}
+.theone-catalog h1{margin:0;font-size:44px;line-height:1.05;font-weight:700;letter-spacing:-.02em}
+.theone-catalog-lede{margin:14px 0 0;max-width:34em;font-size:15px;line-height:1.6;color:var(--t-muted)}
+.theone-figures{display:flex;gap:40px;margin:0}
+.theone-figures>div{display:flex;flex-direction:column-reverse;gap:6px;min-width:64px}
+.theone-figures dd{margin:0;font-size:40px;line-height:1;font-weight:600;letter-spacing:-.02em}
+.theone-figures dt{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--t-muted)}
+.theone-toolbar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px 24px;padding:14px 0 40px}
+.theone-catalog-status{margin:0;font-size:13px;color:var(--t-muted)}
+.theone-catalog-tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.theone-catalog-note,.theone-catalog-empty{color:var(--t-muted);font-size:14px;line-height:1.7}
+.theone-catalog-empty{padding:48px 0}
+.theone-catalog-warning{margin:0 0 24px;padding:10px 0 10px 14px;border-left:2px solid var(--t-warn);font-size:13px;line-height:1.6}
+.theone-catalog-entry{display:flex;align-items:center;gap:10px;font-size:14px}
+.theone-routes{margin-bottom:56px;border-top:1px solid var(--t-rule);border-bottom:1px solid var(--t-rule)}
+.theone-routes summary{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;padding:14px 0;cursor:pointer;font-size:13px;font-weight:600;letter-spacing:.04em;list-style:none}
+.theone-routes summary::-webkit-details-marker{display:none}
+.theone-routes summary::before{content:"+";display:inline-block;width:14px;color:var(--t-muted);font-weight:400}
+.theone-routes[open] summary::before{content:"−"}
+.theone-routes summary>span{color:var(--t-muted);font-weight:400}
+.theone-route-stats{font-weight:400;color:var(--t-muted);font-size:12px}
+.theone-routes .theone-manage-hint{margin:0 0 12px 26px;max-width:46em}
+.theone-routes ol{list-style:none;margin:0;padding:0 0 8px}
+.theone-routes li{display:grid;grid-template-columns:52px minmax(0,1.3fr) minmax(0,1fr) auto;gap:4px 20px;align-items:baseline;padding:10px 0;border-top:1px solid var(--t-rule);font-size:13px}
+.theone-routes time{color:var(--t-muted)}
+.theone-routes q{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;quotes:none}
+.theone-route-target{display:flex;flex-direction:column;gap:2px;min-width:0}
+.theone-route-target strong{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.theone-route-target small{color:var(--t-muted);font-size:12px}
+.theone-route-actions{display:flex;gap:8px;align-items:center;justify-content:flex-end}
+.theone-route-fixed{color:var(--t-muted);font-size:12px}
+.theone-routes select{width:auto;max-width:150px;padding-top:4px;padding-bottom:4px;font-size:12px}
+.theone-catalog-groups{display:flex;flex-direction:column;gap:56px}
+.theone-topic-group{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,9fr);gap:0 40px;border-top:2px solid var(--t-fg);padding-top:16px}
+.theone-group-head{position:sticky;top:0;align-self:start}
+.theone-group-index{display:block;margin-bottom:10px;font-size:13px;font-weight:600;color:var(--t-accent)}
+.theone-topic-group h2{margin:0;font-size:22px;line-height:1.2;font-weight:700;letter-spacing:-.01em}
+.theone-topic-group h2 span{margin-left:8px;font-size:13px;font-weight:400;color:var(--t-muted)}
+.theone-group-summary{margin:10px 0 0;font-size:13px;line-height:1.6;color:var(--t-muted)}
+.theone-topic-list{list-style:none;margin:0;padding:0}
+.theone-topic-card{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 32px;padding:18px 0 20px;border-top:1px solid var(--t-rule)}
+.theone-topic-card:first-child{border-top:0;padding-top:4px}
+.theone-topic-card.theone-hidden .theone-topic-main{opacity:.6}
+.theone-topic-card h3{margin:0;font-size:16px;line-height:1.4;font-weight:600}
+.theone-topic-summary{margin:6px 0 0;max-width:42em;font-size:14px;line-height:1.6;color:var(--t-muted);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.theone-topic-meta{display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 16px;margin:14px 0 0;max-width:46em;font-size:13px;line-height:1.55}
+.theone-topic-meta dt{color:var(--t-muted);font-size:12px;white-space:nowrap}
+.theone-topic-meta dd{margin:0}
+.theone-tag{display:inline-block;margin-left:8px;padding:0 6px;border:1px solid var(--t-rule);border-radius:4px;font-size:11px;color:var(--t-muted)}
+.theone-topic-warning{margin:10px 0 0;padding-left:12px;border-left:2px solid var(--t-warn);font-size:12px;line-height:1.6}
+.theone-topic-actions{display:flex;flex-direction:column;align-items:flex-end;gap:0}.theone-topic-actions button{padding-top:3px;padding-bottom:3px}
+.theone-topic-edit{grid-column:1/-1;margin-top:12px;padding:4px 0 4px 20px;border-left:2px solid var(--t-accent)}
+.theone-topic-links{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin:0 0 16px;font-size:13px}
+.theone-links-label,.theone-links-empty{color:var(--t-muted)}
+.theone-link-chip{display:inline-flex;align-items:center;gap:2px;padding:2px 2px 2px 10px;border:1px solid var(--t-rule);border-radius:4px}
+.theone-catalog .theone-link-chip button{border:0;padding:0 6px;font-size:14px;line-height:1;color:var(--t-muted)}
+.theone-link-private{display:inline-flex;align-items:center;gap:6px;color:var(--t-muted);cursor:pointer}
+.theone-catalog input:not([type=checkbox]),.theone-catalog textarea,.theone-catalog select{font:inherit;font-size:13px;color:inherit;background:var(--t-field);border:1px solid transparent;border-bottom-color:var(--t-rule);border-radius:4px 4px 0 0;padding:7px 10px;box-sizing:border-box;min-width:0}
+.theone-catalog input:not([type=checkbox]):focus,.theone-catalog textarea:focus,.theone-catalog select:focus{outline:none;border-bottom-color:var(--t-accent)}
+.theone-manage{display:flex;flex-direction:column;gap:14px;font-size:13px}
+.theone-create{flex-direction:row;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 40px;padding:16px 0;border-top:1px solid var(--t-rule);border-bottom:1px solid var(--t-rule)}
+.theone-create input{flex:1;min-width:200px}
+.theone-manage-field{display:flex;flex-direction:column;gap:6px}
+.theone-manage-field>span{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--t-muted)}
+.theone-manage textarea{resize:vertical;width:100%}
+.theone-manage-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.theone-manage-row select,.theone-manage-row input{flex:1;min-width:160px}
+.theone-manage-hint{margin:0;font-size:12px;line-height:1.6;color:var(--t-muted)}
+.theone-catalog .theone-danger{color:var(--t-warn);border-color:var(--t-warn)}
+@container (max-width:860px){.theone-topic-group{grid-template-columns:1fr}.theone-group-head{position:static;margin-bottom:20px}.theone-catalog-header{grid-template-columns:1fr}.theone-figures{gap:32px}}
+@container (max-width:640px){.theone-catalog h1{font-size:32px}.theone-figures dd{font-size:30px}.theone-topic-card{grid-template-columns:1fr}.theone-topic-actions{flex-direction:row;flex-wrap:wrap;align-items:center}.theone-routes li{grid-template-columns:44px minmax(0,1fr)}.theone-route-target,.theone-route-actions{grid-column:2}.theone-route-actions{justify-content:flex-start}}
+@media(max-width:640px){.theone-catalog{padding:28px 16px 64px}}
 `
 
 const composerCss = `

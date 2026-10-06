@@ -117,6 +117,9 @@ export declare const zh: {
     readonly 'settings.help.gatewayKey': "区分不同的主聊天入口状态（当前话题、路由记录、设置）。改动相当于换一个新的入口，因此只能用环境变量 THEONE_GATEWAY_KEY 修改，通常保留 default。";
     readonly 'catalog.title': "话题工作区";
     readonly 'catalog.subtitle': "相关的事情放在一起，随时回到主聊天继续。";
+    readonly 'catalog.figTopics': "话题";
+    readonly 'catalog.figGroups': "工作区";
+    readonly 'catalog.figKept': "没被更正";
     readonly 'catalog.refresh': "整理历史";
     readonly 'link.label': "关联：";
     readonly 'link.none': "暂无关联话题";
