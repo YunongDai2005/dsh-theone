@@ -16,7 +16,14 @@ emailed to the maintainer (at most 30 emails a day; the rest are only stored).
 ## Deploy
 
 Needs: yulid.org on Cloudflare with Email Routing enabled, and your inbox verified under
-**Email Routing → Destination addresses**. Run from this folder:
+**Email Routing → Destination addresses**. The short way, which also checks itself and sends a
+test report to your inbox:
+
+```sh
+sh server/feedback/deploy.sh
+```
+
+The same by hand, from this folder:
 
 ```sh
 npx wrangler login                                    # opens the browser; no token to copy
