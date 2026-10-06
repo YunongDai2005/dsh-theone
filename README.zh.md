@@ -78,6 +78,7 @@
 
 - **提示版本「太新」、装不上：** DSH 默认只安装发布满 24 小时的版本，这是它的安全规则，不是出错。可以等一天再装，也可以改填 GitHub 地址 `https://github.com/YunongDai2005/dsh-theone`，马上就能装。
 - **装完左侧没看到 TheOne：** 重启一下 DSH。
+- **遇到问题、打不开 GitHub：** 发邮件到 [theone@yulid.org](mailto:theone@yulid.org)，写上 TheOne 版本、用的模型和发生了什么，有截图更好。
 - **会不会很费钱：** 每条消息多一次很短的分类调用（不开深度思考），「好的」「继续」这类连这次调用都省了。第一次整理旧会话时，会话多的话会用掉一些额度；不需要可以在设置里关掉「历史整理」。
 </details>
 
@@ -127,7 +128,7 @@ TheOne 现在先在 DeepSeek Harness 上打磨：DSH 的后台会话、工具、
 - **一个独立的客户端**：统一接口，背后接不同的模型和服务，打开就是一个对话框；
 - **或者各个平台的适配版本**：把同样的「自动分话题」带到你已经在用的聊天工具里。
 
-两条路先走哪一条，取决于大家更需要哪个。有想法的话，欢迎在 [Issues](https://github.com/YunongDai2005/dsh-theone/issues) 里说一声。
+两条路先走哪一条，取决于大家更需要哪个。有想法的话，欢迎在 [Issues](https://github.com/YunongDai2005/dsh-theone/issues) 里说一声，或者发邮件到 [theone@yulid.org](mailto:theone@yulid.org)。
 
 ## 它是怎么工作的
 
@@ -223,4 +224,4 @@ npm test
 
 ---
 
-<p align="center">觉得有用的话，点个 ⭐ 让更多人看到。遇到问题或有想法，欢迎 <a href="https://github.com/YunongDai2005/dsh-theone/issues">提 Issue</a>。</p>
+<p align="center">觉得有用的话，点个 ⭐ 让更多人看到。遇到问题或有想法，欢迎 <a href="https://github.com/YunongDai2005/dsh-theone/issues">提 Issue</a>，打不开 GitHub 就发邮件到 <a href="mailto:theone@yulid.org">theone@yulid.org</a>。</p>

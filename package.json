@@ -119,5 +119,9 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/YunongDai2005/dsh-theone.git"
+  },
+  "bugs": {
+    "url": "https://github.com/YunongDai2005/dsh-theone/issues",
+    "email": "theone@yulid.org"
   }
 }

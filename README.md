@@ -78,6 +78,7 @@ No coding needed:
 
 - **"Too new" and it won't install:** DSH only installs versions published at least 24 hours ago. That's a safety rule, not an error. Wait a day, or enter the GitHub address `https://github.com/YunongDai2005/dsh-theone` instead, which installs right away.
 - **No TheOne in the sidebar after installing:** restart DSH.
+- **Something wrong, or GitHub unreachable?** Email [theone@yulid.org](mailto:theone@yulid.org) with your TheOne version, the model you use and what happened; a screenshot helps.
 - **Will it cost a lot?** Each message adds one short classification call (no deep thinking), and "ok" or "go on" skips even that. With many old chats, the first pass that organises them uses some of your quota; turn **History catalog** off in the settings if you don't need it.
 </details>
 
@@ -127,7 +128,7 @@ Once it is stable, the next step goes beyond DSH:
 - **A standalone client**: one interface over different models and providers, opening straight into a single chat;
 - **or adapters for other platforms**: the same automatic topics, inside the chat tools you already use.
 
-Which comes first depends on what people need more. If you have a view, say so in [Issues](https://github.com/YunongDai2005/dsh-theone/issues).
+Which comes first depends on what people need more. If you have a view, say so in [Issues](https://github.com/YunongDai2005/dsh-theone/issues) or by email at [theone@yulid.org](mailto:theone@yulid.org).
 
 ## How it works
 
@@ -223,4 +224,4 @@ We're still training it. If it ever files something of yours in the wrong place,
 
 ---
 
-<p align="center">If TheOne helps, a ⭐ helps others find it. Questions or ideas? <a href="https://github.com/YunongDai2005/dsh-theone/issues">Open an issue</a>.</p>
+<p align="center">If TheOne helps, a ⭐ helps others find it. Questions or ideas? <a href="https://github.com/YunongDai2005/dsh-theone/issues">Open an issue</a> or email <a href="mailto:theone@yulid.org">theone@yulid.org</a>.</p>
