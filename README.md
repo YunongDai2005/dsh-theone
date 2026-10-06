@@ -24,6 +24,12 @@ If you've ever said any of these, TheOne was probably written for you:
 
 **TheOne takes care of that.** You just talk in one main chat:
 
+<p align="center"><img src="https://raw.githubusercontent.com/YunongDai2005/dsh-theone/main/docs/images/theone-demo-en.webp" alt="Demo: two unrelated requests in the main chat each get their own topic in the sidebar; going back to the first one continues it in its own topic" width="100%"></p>
+
+<p align="center"><sub>Two unrelated things, then back to the first. The topics on the left made themselves; nothing was clicked. (Example conversation.)</sub></p>
+
+Behind the scenes, it works like this:
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/YunongDai2005/dsh-theone/main/docs/images/theone-architecture-en-dark.svg">
   <img alt="How TheOne works: main chat sends each message through the router to its topic session; answers stream back, and the topic directory keeps progress, constraints and links" src="https://raw.githubusercontent.com/YunongDai2005/dsh-theone/main/docs/images/theone-architecture-en-light.svg" width="100%">

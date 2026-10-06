@@ -24,6 +24,12 @@
 
 **TheOne 把这些都交给它。** 你只管在一个主聊天里说话：
 
+<p align="center"><img src="https://raw.githubusercontent.com/YunongDai2005/dsh-theone/main/docs/images/theone-demo-zh.webp" alt="演示：在主聊天里先后说显卡和旅行两件事，左侧各自出现一个话题；回到显卡那件事时，它接着原来的话题回答" width="100%"></p>
+
+<p align="center"><sub>连着说两件不相干的事，再切回第一件。左边的话题是它自己建的，你什么都没点。（示例对话）</sub></p>
+
+而它在背后是这样运转的：
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/YunongDai2005/dsh-theone/main/docs/images/theone-architecture-zh-dark.svg">
   <img alt="TheOne 的结构：主聊天把每条消息交给分配话题，送到对应的后台会话，结果实时回到主聊天；话题目录保存进展、约束和关联" src="https://raw.githubusercontent.com/YunongDai2005/dsh-theone/main/docs/images/theone-architecture-zh-light.svg" width="100%">
