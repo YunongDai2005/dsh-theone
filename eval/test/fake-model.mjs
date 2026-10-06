@@ -112,6 +112,20 @@ export default async function answer({ user, tag }) {
     })
     return JSON.stringify({ labels })
   }
+  if (step === 'route' && payload.texts) {
+    // A burst decided message by message: the same rules, following topics created earlier in it.
+    let current = payload.currentId
+    const decisions = payload.texts.map((text, k) => {
+      const named = payload.contexts.find(context => text.toLowerCase().startsWith(context.title.toLowerCase()))
+      const existing = named?.id ?? current
+      const row = existing
+        ? { action: 'EXISTING', contextId: existing, title: null, question: null, reason: named ? 'named' : 'continues', historyIndependent: null, candidateIds: [], relatedIds: [] }
+        : { action: 'CREATE', contextId: null, title: text.slice(0, 30) || 'New', question: null, reason: 'new', historyIndependent: true, candidateIds: [], relatedIds: [] }
+      current = existing ?? `new:${k}`
+      return row
+    })
+    return JSON.stringify({ decisions })
+  }
   if (step === 'route') {
     // TheOne's routing payload: stay on the current topic unless a title is named; create otherwise.
     // With facts offered: import those whose topic and name the message mentions.

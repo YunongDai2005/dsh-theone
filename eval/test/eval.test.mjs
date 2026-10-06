@@ -138,4 +138,21 @@ test('bursts: arrivals are seeded, merging only takes what arrived while waiting
     assert.ok(members.every(row => row.pred === members[0].pred && row.burst === unit.turns.length))
     assert.ok(members.slice(1).every(row => !row.usage))
   }
+  // Decided one by one in a single call: every message gets its own decision, one call per burst.
+  const each = await routeSession(session, { mode: 'open', policy: 'llm', client, merge: 'all', decide: 'each', bursts: { same: 0.6, cross: 0.1, seed: 2 } })
+  assert.equal(each.length, session.turns.length)
+  assert.ok(each.every(row => row.decide === 'each' && row.pred !== 'ERROR' && !row.error))
+  assert.equal(each.filter(row => row.usage).length, all.length)
+})
+
+test('bursts decided one by one: answers are checked against the catalog and topics created earlier in the burst', async () => {
+  const { batchDecisions } = await import('../run-router.mjs')
+  const contexts = [{ id: 'a', title: 'GPU', summary: '', entities: [], keywords: [], lastState: '' }]
+  const row = (action, contextId, title = null) => ({ action, contextId, title, question: null, reason: 'r', historyIndependent: action === 'CREATE' ? true : null, candidateIds: [], relatedIds: [] })
+  const decisions = batchDecisions({ decisions: [row('CREATE', null, 'Kyoto trip'), row('EXISTING', 'new:0'), row('EXISTING', 'a')] }, ['x', 'y', 'z'], contexts, 'a')
+  assert.deepEqual(decisions.map(d => [d.action, d.contextId ?? d.title]), [['CREATE', 'Kyoto trip'], ['KEEP', 'new:0'], ['SWAP', 'a']])
+  // Wrong length, a reference to a topic created later, an unknown id: the whole answer is refused.
+  assert.throws(() => batchDecisions({ decisions: [row('EXISTING', 'a')] }, ['x', 'y'], contexts, 'a'))
+  assert.throws(() => batchDecisions({ decisions: [row('EXISTING', 'new:1'), row('CREATE', null, 'T')] }, ['x', 'y'], contexts, 'a'))
+  assert.throws(() => batchDecisions({ decisions: [row('EXISTING', 'b')] }, ['x'], contexts, 'a'))
 })

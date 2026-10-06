@@ -90,8 +90,16 @@ node eval/run-router.mjs --mode open --policy theone                            
 node eval/run-router.mjs --mode open --policy theone --merge all --same 0.35 --cross 0.05
 node eval/run-router.mjs --mode open --policy theone --merge all --same 0.35 --cross 0.15
 node eval/run-router.mjs --mode open --policy theone --merge adaptive --same 0.35 --cross 0.05
+node eval/run-router.mjs --mode open --policy theone --merge all --decide each --same 0.35 --cross 0.05
+node eval/run-router.mjs --mode open --policy theone --merge all --decide each --same 0.35 --cross 0.15
 python eval/score.py eval/data/interleave-v0/sessions.jsonl eval/data/interleave-v0/predictions/open-theone*.jsonl
 ```
+
+Merging with one decision per burst helps bursts that stay on one thread and hurts bursts that
+change subject. `--decide each` keeps the single call but asks for a decision per message: later
+messages can lean on earlier ones for context, yet each can go to its own topic (a topic created
+earlier in the burst is referred to as `new:<index>`). An answer that does not fit TheOne's checks
+falls back to routing the burst's messages one by one, shown as `via: fallback-…`.
 
 The scorer adds a table: accuracy of messages routed alone, in a burst, and in a burst that spanned
 threads; the share of replies held for the window (the latency cost); and model calls per message.
