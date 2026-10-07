@@ -294,6 +294,7 @@ export default class TheOne extends Service {
     this.store.seed(descriptors)
     if (!!config.workerProvider !== !!config.workerModel) throw new Error('Set both workerProvider and workerModel, or neither')
     this.captureDefaultModel()
+    this.repairDefaultModel()
     this.router = this.routerFor(config.routerMode)
     if (config.historyCatalog ?? true) {
       this.catalog = new HistoryCatalog(ctx, this.store, () => this.backingModel(), config.catalogIntervalMs)
@@ -564,6 +565,11 @@ export default class TheOne extends Service {
           await mkdir(this.gatewayDirectory, { recursive: true })
           return Response.json({ cwd: this.gatewayDirectory }, { headers: { 'cache-control': 'no-store' } })
         } }))
+        // Main chat is about to pick its model; DSH would save that as the user's default.
+        scope.effect(() => connection.fetch!.register({ path: '/api/theone/gateway/hold', methods: ['POST'], requestBody: 'buffered', fetch: async () => {
+          this.holdDefaultModel()
+          return Response.json({ held: true })
+        } }))
         scope.effect(() => connection.fetch!.register({ path: '/api/theone/gateway/prepare', methods: ['POST'], requestBody: 'buffered', fetch: async request => {
           let value: unknown
           try { value = await request.json() } catch { return Response.json({ error: 'INVALID_INPUT' }, { status: 400 }) }
@@ -587,6 +593,7 @@ export default class TheOne extends Service {
           await scope.workspaceRegistry.unarchiveSession(id)
           const locale = 'locale' in value && typeof value.locale === 'string' ? value.locale.slice(0, 16) : 'en'
           this.welcomeGateway(id, locale)
+          await this.restoreDefaultModel().catch(error => console.warn('TheOne could not restore DSH\'s default model.', error))
           return Response.json({ prepared: true, workspaceId: null })
         } }))
       })
@@ -871,6 +878,32 @@ export default class TheOne extends Service {
     // Main chat's reasoning levels and image input are the background model's; DSH re-reads them on this signal.
     if (modelChanged) try { this.adapter?.replace(['theone']) } catch { /* Released during shutdown. */ }
     this.store.seed(descriptors)
+  }
+
+  /**
+   * DSH saves any session's model choice as its global default, so main chat choosing TheOne used
+   * to make every new ordinary chat a TheOne chat. TheOne must not change the user's settings:
+   * before main chat picks its model the default is held, and put back right after.
+   */
+  private heldDefault?: ModelSelection
+  holdDefaultModel(): void {
+    const current = this.ctx.agentDefaultModel.currentSelection()
+    // A default the user set to TheOne themselves stays as it is.
+    this.heldDefault = current.provider && current.provider !== 'theone' ? current : undefined
+  }
+  async restoreDefaultModel(): Promise<void> {
+    const held = this.heldDefault
+    this.heldDefault = undefined
+    // Saves run in order, so this lands after the one DSH queued for main chat's selection.
+    if (held) await this.ctx.agentDefaultModel.saveSelection?.(held)
+  }
+  /** Once: undo the default earlier versions left as TheOne, back to the model in use before it. */
+  private repairDefaultModel(): void {
+    const current = this.ctx.agentDefaultModel.currentSelection()
+    if (current.provider !== 'theone') return
+    const before = this.store.rememberedModel(this.config.gatewayKey)
+    if (!before || !this.store.markOnce('default-model-restored')) return
+    void this.ctx.agentDefaultModel.saveSelection?.(before)?.catch(error => console.warn('TheOne could not restore DSH\'s default model.', error))
   }
 
   /** Capture before Web saves the gateway itself as DSH's new default. */

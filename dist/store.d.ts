@@ -250,6 +250,8 @@ export declare class ContextStore {
     private purgeFacts;
     /** Notices the user closed; they are not shown again on any browser. */
     dismissNotice(id: string, now?: number): void;
+    /** True the first time `name` is marked, false ever after: for one-time repairs. */
+    markOnce(name: string, now?: number): boolean;
     dismissedNotices(): Set<string>;
     /**
      * Topics kept in the directory but hidden from routing and briefings: every conversation they can

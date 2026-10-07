@@ -125,6 +125,7 @@ export class ContextStore {
         context_id TEXT NOT NULL, term TEXT NOT NULL, weight REAL NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY(context_id, term)
       );
       CREATE TABLE IF NOT EXISTS dismissed_notices (id TEXT PRIMARY KEY, dismissed_at INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS plugin_flags (name TEXT PRIMARY KEY, set_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS route_details (
         message_id TEXT PRIMARY KEY, excerpt TEXT NOT NULL, receipt TEXT, corrected_to TEXT, corrected_at INTEGER
       );
@@ -953,6 +954,11 @@ export class ContextStore {
   /** Notices the user closed; they are not shown again on any browser. */
   dismissNotice(id: string, now = Date.now()): void {
     this.db.prepare('INSERT OR IGNORE INTO dismissed_notices VALUES (?, ?)').run(id, now)
+  }
+
+  /** True the first time `name` is marked, false ever after: for one-time repairs. */
+  markOnce(name: string, now = Date.now()): boolean {
+    return this.db.prepare('INSERT OR IGNORE INTO plugin_flags VALUES (?, ?)').run(name, now).changes === 1
   }
 
   dismissedNotices(): Set<string> {

@@ -620,6 +620,7 @@ function apply(ctx) {
       await ctx.sessions.using(target, { source: "controllerOperation", signal: lifetime.signal }, async (reference) => {
         await reference.ready;
         lifetime.signal.throwIfAborted();
+        await fetch("/api/theone/gateway/hold", { method: "POST", signal: lifetime.signal }).catch(() => void 0);
         const selected = await ctx.modelDirectories.directoryFor(target).select({ provider: "theone", model: "gateway" });
         if (!selected.ok) throw selected.error;
         const renamed = await reference.binding.session.rename(t("gateway.title"));

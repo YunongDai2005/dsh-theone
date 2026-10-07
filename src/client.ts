@@ -54,6 +54,8 @@ export function apply(ctx: Context) {
       await ctx.sessions.using(target, { source: 'controllerOperation', signal: lifetime.signal }, async reference => {
         await reference.ready
         lifetime.signal.throwIfAborted()
+        // DSH saves a session's model as the default for new chats; TheOne puts the user's back in prepare.
+        await fetch('/api/theone/gateway/hold', { method: 'POST', signal: lifetime.signal }).catch(() => undefined)
         const selected = await ctx.modelDirectories.directoryFor(target).select({provider:'theone',model:'gateway'})
         if (!selected.ok) throw selected.error
         const renamed = await reference.binding.session.rename(t('gateway.title'))

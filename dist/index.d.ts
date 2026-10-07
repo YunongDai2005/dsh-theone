@@ -119,6 +119,16 @@ export default class TheOne extends Service {
     private routerFor;
     /** Saved settings take effect for the next message; only the background catalog waits for a restart. */
     private applySettings;
+    /**
+     * DSH saves any session's model choice as its global default, so main chat choosing TheOne used
+     * to make every new ordinary chat a TheOne chat. TheOne must not change the user's settings:
+     * before main chat picks its model the default is held, and put back right after.
+     */
+    private heldDefault?;
+    holdDefaultModel(): void;
+    restoreDefaultModel(): Promise<void>;
+    /** Once: undo the default earlier versions left as TheOne, back to the model in use before it. */
+    private repairDefaultModel;
     /** Capture before Web saves the gateway itself as DSH's new default. */
     captureDefaultModel(): void;
     private backingModel;
