@@ -39,3 +39,18 @@ test('one-time repairs run once', () => {
     assert.equal(store.markOnce('default-model-restored'), false)
   } finally { store.close() }
 })
+
+test('TheOne lists only the sessions it made: main chats and topic sessions, never the user’s own', () => {
+  const store = new ContextStore(':memory:')
+  try {
+    store.seed([{ id: 'ctx_a', title: 'A', summary: 'A', entities: [], keywords: [], lastState: '' }])
+    store.rememberGateway('default', 'main-chat')
+    // An ordinary chat of the user's that picked TheOne as its model is routed, but stays theirs.
+    store.plan('m1', 'users-own-chat', 'default', { action: 'MOUNT', contextId: 'ctx_a', reason: 'test' })
+    const owned = store.ownedSessionIds()
+    assert.ok(owned.includes('main-chat'))
+    assert.ok(owned.includes(store.contexts()[0].workingSessionId))
+    assert.ok(!owned.includes('users-own-chat'))
+    assert.equal(owned.length, 2)
+  } finally { store.close() }
+})

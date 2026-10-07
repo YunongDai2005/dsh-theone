@@ -2216,16 +2216,43 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
   ctx.effect(() => {
     const style = document.createElement("style");
     style.dataset.plugin = "dsh-theone-gateway-row";
+    let owned = [];
     const update2 = () => {
+      const ids = new Set(owned);
       const id = navigation.getSnapshot();
-      style.textContent = id ? `[role="treeitem"][data-row-key="${CSS.escape(`session:${id}`)}"]{display:none!important}` : "";
+      if (id) ids.add(id);
+      style.textContent = [...ids].map((sessionId) => `[role="treeitem"][data-row-key="${CSS.escape(`session:${sessionId}`)}"]{display:none!important}`).join("\n");
+    };
+    let timer;
+    const readOwned = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        void fetch("/api/theone/owned", { signal: lifetime.signal, cache: "no-store" }).then((response) => response.ok ? response.json() : void 0).then((value) => {
+          if (value && !lifetime.signal.aborted) {
+            owned = value.sessionIds;
+            update2();
+          }
+        }).catch(() => {
+        });
+      }, 300);
     };
     update2();
+    readOwned();
     const unsubscribe = navigation.subscribe(update2);
+    let count = ctx.sessions.list.getSnapshot().ids.length;
+    const unsubscribeList = ctx.sessions.list.subscribe(() => {
+      const next = ctx.sessions.list.getSnapshot().ids.length;
+      if (next !== count) {
+        count = next;
+        readOwned();
+      }
+    });
     window.addEventListener("storage", update2);
     document.head.append(style);
     return () => {
       unsubscribe();
+      unsubscribeList();
+      clearTimeout(timer);
       window.removeEventListener("storage", update2);
       style.remove();
     };

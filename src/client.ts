@@ -1042,17 +1042,37 @@ export function apply(ctx: Context) {
     style.dataset.plugin = 'dsh-theone-gateway-row'
     // DSH's grouped and flat lists expose the exact Session row identity.
     // Keep the host Session active; only its duplicate navigation row is hidden.
+    // TheOne only organises: the sessions it made for itself (every main chat, each topic's background
+    // session) stay out of DSH's list, which keeps showing exactly the sessions the user made.
+    // Nothing is moved or archived; the rows are only not drawn, and come back if TheOne is removed.
+    let owned: string[] = []
     const update = () => {
+      const ids = new Set(owned)
       const id = navigation.getSnapshot()
-      style.textContent = id
-        ? `[role="treeitem"][data-row-key="${CSS.escape(`session:${id}`)}"]{display:none!important}`
-        : ''
+      if (id) ids.add(id)
+      style.textContent = [...ids].map(sessionId => `[role="treeitem"][data-row-key="${CSS.escape(`session:${sessionId}`)}"]{display:none!important}`).join('\n')
+    }
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const readOwned = () => {
+      clearTimeout(timer)
+      timer = setTimeout(() => {
+        void fetch('/api/theone/owned', { signal: lifetime.signal, cache: 'no-store' })
+          .then(response => response.ok ? response.json() as Promise<{ sessionIds: string[] }> : undefined)
+          .then(value => { if (value && !lifetime.signal.aborted) { owned = value.sessionIds; update() } }).catch(() => {})
+      }, 300)
     }
     update()
+    readOwned()
     const unsubscribe = navigation.subscribe(update)
+    // A new topic session appears in DSH's list: read TheOne's sessions again.
+    let count = ctx.sessions.list.getSnapshot().ids.length
+    const unsubscribeList = ctx.sessions.list.subscribe(() => {
+      const next = ctx.sessions.list.getSnapshot().ids.length
+      if (next !== count) { count = next; readOwned() }
+    })
     window.addEventListener('storage', update)
     document.head.append(style)
-    return () => { unsubscribe(); window.removeEventListener('storage', update); style.remove() }
+    return () => { unsubscribe(); unsubscribeList(); clearTimeout(timer); window.removeEventListener('storage', update); style.remove() }
   })
   // Wait for the owning plugins' declarations; retain their normal browser and chat.
   ctx.slots.inject('main', () => [

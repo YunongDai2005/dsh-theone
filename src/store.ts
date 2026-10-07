@@ -272,6 +272,14 @@ export class ContextStore {
     this.db.prepare('INSERT OR IGNORE INTO pinned_gateways VALUES (?)').run(sessionId)
   }
 
+  /**
+   * Sessions TheOne made for itself: every fixed main chat and each topic's background session.
+   * Sessions the user made, including ones that once chose TheOne as their model, are not among them.
+   */
+  ownedSessionIds(): string[] {
+    return this.db.prepare('SELECT gateway_id AS id FROM pinned_gateways UNION SELECT working_session_id AS id FROM contexts').all().map(row => String(row.id))
+  }
+
   isPinnedGateway(sessionId: string): boolean {
     return !!this.db.prepare('SELECT 1 FROM pinned_gateways WHERE gateway_id = ?').get(sessionId)
   }

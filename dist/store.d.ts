@@ -69,6 +69,11 @@ export declare class ContextStore {
     isGateway(sessionId: string): boolean;
     /** Record the fixed "TheOne · Main chat" entry; other sessions may also use TheOne and switch away. */
     rememberGateway(gatewayKey: string, sessionId: string): void;
+    /**
+     * Sessions TheOne made for itself: every fixed main chat and each topic's background session.
+     * Sessions the user made, including ones that once chose TheOne as their model, are not among them.
+     */
+    ownedSessionIds(): string[];
     isPinnedGateway(sessionId: string): boolean;
     origin(contextId: string): {
         sessionId: string;

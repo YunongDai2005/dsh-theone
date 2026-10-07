@@ -683,6 +683,9 @@ export default class TheOne extends Service {
           return Response.json({ error: code }, { status: ['UNREACHABLE', 'SERVER_ERROR', 'RATE_LIMITED', 'REJECTED'].includes(code) ? 502 : 400 })
         }
       } }))
+      // TheOne's own sessions, so the client can keep them out of DSH's session list.
+      child.effect(() => connection.fetch!.register({ path: '/api/theone/owned', methods: ['GET'], requestBody: 'buffered', fetch: async () =>
+        Response.json({ sessionIds: this.store.ownedSessionIds() }, { headers: { 'cache-control': 'no-store' } }) }))
       child.effect(() => connection.fetch!.register({ path: '/api/theone/sessions', methods: ['GET'], requestBody: 'buffered', fetch: async () =>
         Response.json({ sessions: await this.attachableSessions() }, { headers: { 'cache-control': 'no-store' } }) }))
       // The user's corrections to topic linking always take precedence over what was learned.
