@@ -120,6 +120,22 @@ export default class TheOne extends Service {
     /** Saved settings take effect for the next message; only the background catalog waits for a restart. */
     private applySettings;
     /**
+     * TheOne's own sessions live in DSH's archive, so DSH's own list stays the user's alone, with
+     * TheOne on or off, and after a crash. A topic session leaves the archive only while it answers;
+     * main chat, which the user types into, is archived when TheOne is turned off and back out when
+     * it is on again. Only sessions TheOne made are ever archived, and only those it archived itself
+     * are ever taken out.
+     */
+    private ownArchive?;
+    /** Turning off: archive main chat and anything of TheOne's still out. Read before any wait, as the database closes alongside. */
+    private stowOwnSessions;
+    /** Turning on: main chats TheOne archived come back out; topic sessions it finds out are put away. */
+    private unstowOwnSessions;
+    /** A topic session must be out of the archive to answer: DSH does not run archived sessions. */
+    private readyToRun;
+    /** Put a topic session back once it is idle; DSH refuses while it still runs, so try again shortly. */
+    private stowWhenIdle;
+    /**
      * DSH saves any session's model choice as its global default, so main chat choosing TheOne used
      * to make every new ordinary chat a TheOne chat. TheOne must not change the user's settings:
      * before main chat picks its model the default is held, and put back right after.

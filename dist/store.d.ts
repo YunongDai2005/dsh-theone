@@ -74,6 +74,9 @@ export declare class ContextStore {
      * Sessions the user made, including ones that once chose TheOne as their model, are not among them.
      */
     ownedSessionIds(): string[];
+    /** TheOne's own sessions it put in DSH's archive when it stopped; only these are taken out again. */
+    stowedSessionIds(): string[];
+    markStowed(sessionId: string, stowed: boolean, now?: number): void;
     isPinnedGateway(sessionId: string): boolean;
     origin(contextId: string): {
         sessionId: string;

@@ -46,6 +46,13 @@ function redactDescriptor(text: string): string {
     .replace(/((?:api[_ -]?key|password|密码|密钥)\s*[:=：]\s*)\S+/gi, '$1[REDACTED]')
 }
 
+/** The part of DSH's workspace registry TheOne uses to keep its own sessions out of sight while off. */
+interface OwnSessionArchive {
+  readonly archivedSessionIds: readonly string[]
+  archiveSession(sessionId: SessionId, options?: { stopActivity?: boolean }): Promise<void>
+  unarchiveSession(sessionId: SessionId): Promise<void>
+}
+
 export interface Config {
   databasePath?: string
   contextsPath?: string
@@ -295,6 +302,19 @@ export default class TheOne extends Service {
     if (!!config.workerProvider !== !!config.workerModel) throw new Error('Set both workerProvider and workerModel, or neither')
     this.captureDefaultModel()
     this.repairDefaultModel()
+    // Turning TheOne off leaves DSH as it was before: its own sessions go to DSH's archive while it
+    // is off, and come back out (only those it put there) when it is on again.
+    ctx.inject(['workspaceRegistry'], scope => {
+      const registry = scope.get('workspaceRegistry') as unknown as OwnSessionArchive
+      scope.effect(() => {
+        this.ownArchive = registry
+        void this.unstowOwnSessions(registry).catch(error => console.warn('TheOne could not restore its own sessions from the archive.', error))
+        return async () => {
+          this.ownArchive = undefined
+          await this.stowOwnSessions(registry).catch(error => console.warn('TheOne could not archive its own sessions.', error))
+        }
+      })
+    })
     this.router = this.routerFor(config.routerMode)
     if (config.historyCatalog ?? true) {
       this.catalog = new HistoryCatalog(ctx, this.store, () => this.backingModel(), config.catalogIntervalMs)
@@ -881,6 +901,55 @@ export default class TheOne extends Service {
     // Main chat's reasoning levels and image input are the background model's; DSH re-reads them on this signal.
     if (modelChanged) try { this.adapter?.replace(['theone']) } catch { /* Released during shutdown. */ }
     this.store.seed(descriptors)
+  }
+
+  /**
+   * TheOne's own sessions live in DSH's archive, so DSH's own list stays the user's alone, with
+   * TheOne on or off, and after a crash. A topic session leaves the archive only while it answers;
+   * main chat, which the user types into, is archived when TheOne is turned off and back out when
+   * it is on again. Only sessions TheOne made are ever archived, and only those it archived itself
+   * are ever taken out.
+   */
+  private ownArchive?: OwnSessionArchive
+
+  /** Turning off: archive main chat and anything of TheOne's still out. Read before any wait, as the database closes alongside. */
+  private async stowOwnSessions(registry: OwnSessionArchive): Promise<void> {
+    const archived = new Set<string>(registry.archivedSessionIds)
+    const ids = this.store.ownedSessionIds().filter(id => !archived.has(id))
+    for (const id of ids) this.store.markStowed(id, true)
+    for (const id of ids) {
+      // Placeholders of topics that never ran have no session; DSH refuses those, which is fine.
+      try { await registry.archiveSession(SessionId(id), { stopActivity: true }) } catch { /* Not a session, or DSH is closing. */ }
+    }
+  }
+
+  /** Turning on: main chats TheOne archived come back out; topic sessions it finds out are put away. */
+  private async unstowOwnSessions(registry: OwnSessionArchive): Promise<void> {
+    const archived = new Set<string>(registry.archivedSessionIds)
+    for (const id of this.store.stowedSessionIds()) {
+      try {
+        if (archived.has(id) && this.store.isPinnedGateway(id)) await registry.unarchiveSession(SessionId(id))
+        this.store.markStowed(id, false)
+      } catch (error) { console.warn('TheOne could not restore its session', id, error) }
+    }
+    const known = new Set((await this.ctx.sessionQuery.listSessions().catch(() => [])).map(session => String(session.header.id)))
+    for (const id of this.store.ownedSessionIds()) if (known.has(id) && !this.store.isPinnedGateway(id)) this.stowWhenIdle(id)
+  }
+
+  /** A topic session must be out of the archive to answer: DSH does not run archived sessions. */
+  private async readyToRun(sessionId: string): Promise<void> {
+    const registry = this.ownArchive
+    if (registry?.archivedSessionIds.includes(sessionId)) await registry.unarchiveSession(SessionId(sessionId))
+  }
+
+  /** Put a topic session back once it is idle; DSH refuses while it still runs, so try again shortly. */
+  private stowWhenIdle(sessionId: string, attempt = 0): void {
+    const registry = this.ownArchive
+    if (!registry || registry.archivedSessionIds.includes(sessionId) || this.store.isPinnedGateway(sessionId)) return
+    if ([...this.runs.values()].some(run => run.worker.id === sessionId && !run.done)) return
+    registry.archiveSession(SessionId(sessionId)).catch(() => {
+      if (attempt < 10) setTimeout(() => this.stowWhenIdle(sessionId, attempt + 1), 3000).unref?.()
+    })
   }
 
   /**
@@ -1487,6 +1556,7 @@ export default class TheOne extends Service {
       }
       options.signal?.throwIfAborted()
       this.syncPermissions(gateway, worker)
+      await this.readyToRun(worker.id)
       const refreshed = this.store.contexts().find(item => item.id === context.id) ?? context
       run = new WorkerRun(this.ctx, worker, gateway, input.id, this.config.maxResponseChars, names => this.showWorkerTools(gateway, worker, names))
       this.runs.set(gateway.id, run)
@@ -1752,6 +1822,7 @@ export default class TheOne extends Service {
     if (ownId && this.linkScope !== 'off') for (const id of run.briefed) if (!run.lookedUp.has(id)) this.store.learnLink(ownId, id, LINK_SIGNAL.unused)
     const closing = run.settled.then(() => {
       run.dispose()
+      this.stowWhenIdle(run.worker.id)
       if (!abandon) this.store.finish(run.inputId, !run.failure && run.outcome?.kind === 'completed' ? 'completed' : 'failed')
       const contextId = this.store.route(run.inputId)?.decision.contextId
       if (contextId) this.refreshCompactionSummary(run.worker, contextId)

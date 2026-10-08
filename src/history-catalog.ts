@@ -202,7 +202,9 @@ export class HistoryCatalog {
     try {
       const registry = this.ctx.get('workspaceRegistry') as { archivedSessionIds?: unknown } | undefined
       const ids = registry?.archivedSessionIds
-      return new Set(Array.isArray(ids) ? ids.filter((id): id is string => typeof id === 'string') : [])
+      // TheOne archives its own sessions while it is off; that says nothing about the user's topics.
+      const own = new Set(this.store.ownedSessionIds())
+      return new Set(Array.isArray(ids) ? ids.filter((id): id is string => typeof id === 'string' && !own.has(id)) : [])
     } catch {
       // A registry that is not ready yet must never fail a scan.
       return new Set()

@@ -96,6 +96,7 @@ export class ContextStore {
       );
       CREATE TABLE IF NOT EXISTS dismissed_notices (id TEXT PRIMARY KEY, dismissed_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS plugin_flags (name TEXT PRIMARY KEY, set_at INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS stowed_sessions (session_id TEXT PRIMARY KEY, stowed_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS route_details (
         message_id TEXT PRIMARY KEY, excerpt TEXT NOT NULL, receipt TEXT, corrected_to TEXT, corrected_at INTEGER
       );
@@ -246,6 +247,16 @@ export class ContextStore {
      */
     ownedSessionIds() {
         return this.db.prepare('SELECT gateway_id AS id FROM pinned_gateways UNION SELECT working_session_id AS id FROM contexts').all().map(row => String(row.id));
+    }
+    /** TheOne's own sessions it put in DSH's archive when it stopped; only these are taken out again. */
+    stowedSessionIds() {
+        return this.db.prepare('SELECT session_id FROM stowed_sessions').all().map(row => String(row.session_id));
+    }
+    markStowed(sessionId, stowed, now = Date.now()) {
+        if (stowed)
+            this.db.prepare('INSERT OR REPLACE INTO stowed_sessions VALUES (?, ?)').run(sessionId, now);
+        else
+            this.db.prepare('DELETE FROM stowed_sessions WHERE session_id = ?').run(sessionId);
     }
     isPinnedGateway(sessionId) {
         return !!this.db.prepare('SELECT 1 FROM pinned_gateways WHERE gateway_id = ?').get(sessionId);

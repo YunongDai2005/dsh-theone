@@ -54,3 +54,37 @@ test('TheOne lists only the sessions it made: main chats and topic sessions, nev
     assert.equal(owned.length, 2)
   } finally { store.close() }
 })
+
+test('off and on again: only TheOne’s own sessions go to the archive, and only those it put there come back', { timeout: 30000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'theone-stow-'))
+  const app = await harness(root)
+  try {
+    const theone = app.ctx.theone as unknown as {
+      store: ContextStore
+      stowOwnSessions(registry: unknown): Promise<void>
+      unstowOwnSessions(registry: unknown): Promise<void>
+    }
+    const store = theone.store
+    store.rememberGateway('default', 'main-chat')
+    const topicSession = store.contexts()[0].workingSessionId
+    // The user archived one of their own chats; TheOne's topic session happens to be out.
+    const archived = new Set(['users-archived-chat'])
+    const calls: string[] = []
+    const registry = {
+      get archivedSessionIds() { return [...archived] },
+      async archiveSession(id: string) { calls.push(`archive ${id}`); archived.add(id) },
+      async unarchiveSession(id: string) { calls.push(`unarchive ${id}`); archived.delete(id) },
+    }
+    await theone.stowOwnSessions(registry)
+    assert.ok(archived.has('main-chat') && archived.has(topicSession))
+    assert.ok(!calls.some(call => call.includes('users-archived-chat')))
+
+    await theone.unstowOwnSessions(registry)
+    // Main chat is back out; the topic session stays archived until it answers; the user's chat is untouched.
+    assert.ok(!archived.has('main-chat'))
+    assert.ok(archived.has(topicSession))
+    assert.ok(archived.has('users-archived-chat'))
+    assert.ok(!calls.includes('unarchive users-archived-chat'))
+    assert.deepEqual(store.stowedSessionIds(), [])
+  } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
+})
