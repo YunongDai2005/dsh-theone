@@ -23,7 +23,7 @@ Run them before a release that touches how topic sessions are created, resumed o
 `node drive.mjs native <workspace> "<message>" [preset] [access]` sends a message in a new ordinary
 session; `node drive.mjs main "<message>" [preset] [access]` sends it in TheOne's main chat. Markers:
 `[topic:NAME]` routes to the topic titled NAME (or creates it), `[name:NAME]` names the topic the
-history catalog makes of an ordinary session, `[run] CMD` runs CMD with the bash tool.
+history catalog makes of an ordinary session, `[run] CMD` runs CMD with the bash tool, `[ask]` asks a three-option question, `[call:TOOL] {json}` calls any tool.
 
 ## Checks (all passed on 2026-10-09)
 
@@ -34,4 +34,7 @@ history catalog makes of an ordinary session, `[run] CMD` runs CMD with the bash
 | Folder of a topic made from an existing chat | That chat's folder (reads and writes the project) |
 | Access mode "read only" set in main chat | A write is refused in the topic, as in an ordinary session |
 | A second browser or device opens main chat | The same main chat, not a new empty one |
+| A topic asks a question (`[ask]`; `ask.mjs`, `answer.mjs`) | The choice window opens in main chat; an option, or a typed answer, reaches the topic |
+| A topic needs approval (`[call:bash]` with `sandbox_permissions` under read only) | The approval prompt opens in main chat; "allow once" lets the topic continue |
+| DSH's sidebar | No "Unassigned" heading when only TheOne's sessions are outside a workspace |
 | DSH's workspaces and archive afterwards | No TheOne session attached to a workspace; the archive holds only TheOne's sessions; none of the user's sessions archived |

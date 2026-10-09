@@ -1050,11 +1050,24 @@ export function apply(ctx: Context) {
     // session) stay out of DSH's list, which keeps showing exactly the sessions the user made.
     // Nothing is moved or archived; the rows are only not drawn, and come back if TheOne is removed.
     let owned: string[] = []
+    // DSH puts sessions outside every workspace under "Unassigned". When only TheOne's are left there,
+    // its heading and "show N more" row go too, as they would without TheOne.
+    const onlyOursUnassigned = (ids: Set<string>) => {
+      const workspaces = ctx.workspaces.list.getSnapshot()
+      const list = ctx.sessions.list.getSnapshot()
+      if (workspaces.phase !== 'ready') return false
+      const accounted = new Set(workspaces.items.flatMap(workspace => workspace.sessionIds))
+      const archived = new Set(workspaces.archivedSessionIds)
+      const stray = list.ids.filter((id: SessionId) => { const row = list.byId[id]; return row && !accounted.has(id) && !archived.has(id) && row.origin !== 'subagent' && !row.blank })
+      return stray.length > 0 && stray.every((id: SessionId) => ids.has(id))
+    }
     const update = () => {
       const ids = new Set(owned)
       const id = navigation.getSnapshot()
       if (id) ids.add(id)
-      style.textContent = [...ids].map(sessionId => `[role="treeitem"][data-row-key="${CSS.escape(`session:${sessionId}`)}"]{display:none!important}`).join('\n')
+      const rules = [...ids].map(sessionId => `[role="treeitem"][data-row-key="${CSS.escape(`session:${sessionId}`)}"]{display:none!important}`)
+      if (onlyOursUnassigned(ids)) rules.push('[data-row-key="workspace:"],[data-row-key="overflow:"]{display:none!important}')
+      style.textContent = rules.join('\n')
     }
     let timer: ReturnType<typeof setTimeout> | undefined
     const readOwned = () => {
@@ -1072,11 +1085,12 @@ export function apply(ctx: Context) {
     let count = ctx.sessions.list.getSnapshot().ids.length
     const unsubscribeList = ctx.sessions.list.subscribe(() => {
       const next = ctx.sessions.list.getSnapshot().ids.length
-      if (next !== count) { count = next; readOwned() }
+      if (next !== count) { count = next; readOwned() } else update()
     })
+    const unsubscribeWorkspaces = ctx.workspaces.list.subscribe(update)
     window.addEventListener('storage', update)
     document.head.append(style)
-    return () => { unsubscribe(); unsubscribeList(); clearTimeout(timer); window.removeEventListener('storage', update); style.remove() }
+    return () => { unsubscribe(); unsubscribeList(); unsubscribeWorkspaces(); clearTimeout(timer); window.removeEventListener('storage', update); style.remove() }
   })
   // Wait for the owning plugins' declarations; retain their normal browser and chat.
   ctx.slots.inject('main', () => [

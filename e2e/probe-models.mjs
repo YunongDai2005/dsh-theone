@@ -61,6 +61,13 @@ class Probe extends LlmAdapter {
     const last = messages.at(-1)
     const cmd = user.match(/\[run\]\s*(.+)$/s)?.[1]?.trim()
     if (cmd && last?.role !== 'tool') { yield* call('bash', { command: cmd, description: 'probe' }); return }
+    const generic = user.match(/\[call:([a-z_]+)\]\s*(\{.*\})/s)
+    if (generic && last?.role !== 'tool') { yield* call(generic[1], JSON.parse(generic[2])); return }
+    if (user.includes('[ask]') && last?.role !== 'tool') {
+      yield* call('ask_user_question', { questions: [{ id: 'plan', header: '选方案', question: '用哪种方案？', options: [
+        { label: '方案一 (Recommended)', description: '最快' }, { label: '方案二', description: '最省' }, { label: '方案三', description: '最稳' }] }] })
+      return
+    }
     const result = last?.role === 'tool' ? JSON.stringify(last.content ?? last).slice(0, 600) : undefined
     log({ session: options.sessionId, kind: worker ? 'topic' : 'native', user: user.slice(0, 80), tools, result })
     yield* text(`PROBE ${worker ? 'topic' : 'native'} tools=${tools.length}${result ? ' result=' + result.slice(0, 200) : ''}`)

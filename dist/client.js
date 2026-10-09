@@ -2222,11 +2222,25 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
     const style = document.createElement("style");
     style.dataset.plugin = "dsh-theone-gateway-row";
     let owned = [];
+    const onlyOursUnassigned = (ids) => {
+      const workspaces = ctx.workspaces.list.getSnapshot();
+      const list = ctx.sessions.list.getSnapshot();
+      if (workspaces.phase !== "ready") return false;
+      const accounted = new Set(workspaces.items.flatMap((workspace) => workspace.sessionIds));
+      const archived = new Set(workspaces.archivedSessionIds);
+      const stray = list.ids.filter((id) => {
+        const row = list.byId[id];
+        return row && !accounted.has(id) && !archived.has(id) && row.origin !== "subagent" && !row.blank;
+      });
+      return stray.length > 0 && stray.every((id) => ids.has(id));
+    };
     const update2 = () => {
       const ids = new Set(owned);
       const id = navigation.getSnapshot();
       if (id) ids.add(id);
-      style.textContent = [...ids].map((sessionId) => `[role="treeitem"][data-row-key="${CSS.escape(`session:${sessionId}`)}"]{display:none!important}`).join("\n");
+      const rules = [...ids].map((sessionId) => `[role="treeitem"][data-row-key="${CSS.escape(`session:${sessionId}`)}"]{display:none!important}`);
+      if (onlyOursUnassigned(ids)) rules.push('[data-row-key="workspace:"],[data-row-key="overflow:"]{display:none!important}');
+      style.textContent = rules.join("\n");
     };
     let timer;
     const readOwned = () => {
@@ -2250,13 +2264,15 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
       if (next !== count) {
         count = next;
         readOwned();
-      }
+      } else update2();
     });
+    const unsubscribeWorkspaces = ctx.workspaces.list.subscribe(update2);
     window.addEventListener("storage", update2);
     document.head.append(style);
     return () => {
       unsubscribe();
       unsubscribeList();
+      unsubscribeWorkspaces();
       clearTimeout(timer);
       window.removeEventListener("storage", update2);
       style.remove();
