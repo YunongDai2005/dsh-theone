@@ -1,9 +1,9 @@
 import { Service } from '@deepseek-ai/cordis';
 import z from '@deepseek-ai/schemastery';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { LlmAdapter, createUserMessage, resolveRetryPolicy } from '@deepseek-ai/dsh-llm';
 import { installModelSelection } from '@deepseek-ai/dsh-agent';
 import { defineTool } from '@deepseek-ai/dsh-tools';
@@ -1264,9 +1264,11 @@ export default class TheOne extends Service {
             return existing.agent;
         }
         const sessionId = SessionId(context.workingSessionId);
+        // A topic from an existing session works in that session's folder. A new one works where DSH puts
+        // chats that belong to no project, never in a project the user happened to use last.
         const originCwd = this.store.origin(context.id)?.cwd;
-        const cwd = originCwd ?? this.gatewayDirectory;
-        if (!originCwd)
+        const cwd = originCwd ?? this.defaultWorkspaceDirectory() ?? this.gatewayDirectory;
+        if (cwd === this.gatewayDirectory)
             await mkdir(cwd, { recursive: true });
         const sessions = await this.ctx.sessionQuery.listSessions(signal);
         signal?.throwIfAborted();
@@ -1295,6 +1297,20 @@ export default class TheOne extends Service {
         this.store.addSource(context.id, sessionId);
         this.refreshCompactionSummary(handle.agent, context.id);
         return handle.agent;
+    }
+    /**
+     * DSH's own folder for chats outside any project (Documents/deepseek-harness/default-workspace),
+     * when the user has it. TheOne only works in it; it never creates the folder or the workspace.
+     */
+    defaultWorkspaceDirectory() {
+        const registry = this.ctx.get('workspaceRegistry');
+        try {
+            const path = registry?.list().find(workspace => basename(workspace.path) === 'default-workspace' && basename(dirname(workspace.path)) === 'deepseek-harness')?.path;
+            return path && existsSync(path) ? path : undefined;
+        }
+        catch {
+            return undefined;
+        }
     }
     /** The backing model, with the thinking effort chosen in main chat when that model offers it. */
     async workerModel(reasoningEffort, signal) {

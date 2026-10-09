@@ -187,7 +187,7 @@ The database location and entry identifier switch TheOne to different data, so t
 <summary><b>Known limitations</b></summary>
 
 - One request runs at a time: a message sent during a reply is taken as an addition to that topic, so for something else, wait until the reply finishes.
-- New topics write files under `~/.dsh/theone/gateway`; you cannot yet choose a project folder for a new topic.
+- A new topic works in DSH's own folder for chats outside any project (`Documents/deepseek-harness/default-workspace`), or in `~/.dsh/theone/gateway` if you do not have that folder; you cannot yet choose a project folder for a new topic. Topics organised from your existing chats work in those chats' folders.
 - Main chat stores copies of tool calls, so its log grows with use; entry-log rotation is not implemented yet.
 - The main chat is remembered per browser: another browser or the desktop app gets its own main chat, sharing the same topics. Only one DSH process should use a database at a time.
 - Image output is not forwarded yet; there is no vector search; topics cannot be split yet.

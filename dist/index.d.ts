@@ -178,6 +178,11 @@ export default class TheOne extends Service {
     /** Convenience API. Use searchHistoryDetailed when source diagnostics matter. */
     searchHistory(contextId: string, query: string, limit?: number): Promise<SessionEventWindow[]>;
     private worker;
+    /**
+     * DSH's own folder for chats outside any project (Documents/deepseek-harness/default-workspace),
+     * when the user has it. TheOne only works in it; it never creates the folder or the workspace.
+     */
+    private defaultWorkspaceDirectory;
     /** The backing model, with the thinking effort chosen in main chat when that model offers it. */
     private workerModel;
     /** The Worker runs under the permission mode chosen in main chat (sandbox and approval together). */
