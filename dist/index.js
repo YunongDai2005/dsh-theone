@@ -1,5 +1,6 @@
 import { Service } from '@deepseek-ai/cordis';
 import z from '@deepseek-ai/schemastery';
+import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -7,7 +8,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { LlmAdapter, createUserMessage, resolveRetryPolicy } from '@deepseek-ai/dsh-llm';
 import { installModelSelection } from '@deepseek-ai/dsh-agent';
 import { defineTool } from '@deepseek-ai/dsh-tools';
-import { SessionId } from '@deepseek-ai/dsh-session';
+import { SessionId, SessionLogOffset, SessionSeq, buildForkSeed } from '@deepseek-ai/dsh-session';
 import { buildSessionEventSearchDocuments, filterSessionEventDocuments } from '@deepseek-ai/dsh-session-query';
 import { HistoryCatalog } from "./history-catalog.js";
 import { gatewayCheckpoint } from "./gateway-compaction.js";
@@ -64,6 +65,8 @@ class GatewayAdapter extends LlmAdapter {
     stream(options) { return this.service.answer(options); }
 }
 /** The Worker receives every message admitted in this gateway step, e.g. several steering messages, as one input. */
+/** Main chat's names, as the client sets them per language. */
+const GATEWAY_TITLES = ['TheOne · 主聊天', 'TheOne · Main chat'];
 /** DSH's goal tools; in a topic they act on main chat's goal. */
 const GOAL_TOOLS = new Set(['get_goal', 'create_goal', 'update_goal']);
 /** A round DSH's goal driver queued (source kind "goal", from a plugin TheOne does not depend on). */
@@ -365,6 +368,30 @@ export default class TheOne extends Service {
                 target.agent = worker;
             }
         }, { prepend: true });
+        ctx.inject(['sessionController'], scope => {
+            const controller = scope.get('sessionController');
+            const original = controller.fork;
+            const service = this;
+            controller.fork = async function (request) {
+                if (!service.store.isGateway(request.sessionId))
+                    return original.call(this, request);
+                await service.branch(request.sessionId, request.atSeq);
+                return { sessionId: request.sessionId };
+            };
+            const renaming = controller;
+            const originalRename = renaming.rename;
+            renaming.rename = async function (request) {
+                if (!service.store.isGateway(request.sessionId) || GATEWAY_TITLES.includes(request.title))
+                    return originalRename.call(this, request);
+                return originalRename.call(this, { ...request, title: /^en/.test(service.gatewayLocale(request.sessionId)) ? GATEWAY_TITLES[1] : GATEWAY_TITLES[0] });
+            };
+            scope.effect(() => () => {
+                if (controller.fork !== original)
+                    controller.fork = original;
+                if (renaming.rename !== originalRename)
+                    renaming.rename = originalRename;
+            });
+        });
         // Main chat's own commands: those about the work act on the topic in use (see gatewayCommands).
         ctx.on('agent/created', ({ agent }) => { if (this.store.isGateway(agent.id))
             this.gatewayCommands(agent); return undefined; });
@@ -420,7 +447,7 @@ export default class TheOne extends Service {
                 return decision;
             signal.throwIfAborted();
             // The welcome turn of a new main chat has nothing to route.
-            if (!decision.messages.some(message => message.source.kind === 'user') && decision.messages.some(message => message.source.kind === 'theone-welcome'))
+            if (!decision.messages.some(message => message.source.kind === 'user') && decision.messages.some(message => message.source.kind === 'theone-welcome' || message.source.kind === 'theone-note'))
                 return decision;
             // Know main chat's model choice before routing, so this very message is classified with it.
             const pickedNow = selected?.signal === signal ? selected.model : undefined;
@@ -685,7 +712,7 @@ export default class TheOne extends Service {
                             // and has no ordinary-model request history.
                             const title = await this.ctx.sessionQuery.readTitle(id);
                             const log = await this.ctx.sessionQuery.readSession(id);
-                            if (!['TheOne · 主聊天', 'TheOne · Main chat'].includes(title?.title ?? '') || log.events.some(event => event.type === 'request/header' && event.data.header.config.provider !== 'theone'))
+                            if (!GATEWAY_TITLES.includes(title?.title ?? '') || log.events.some(event => event.type === 'request/header' && event.data.header.config.provider !== 'theone'))
                                 return Response.json({ error: 'NOT_GATEWAY' }, { status: 400 });
                         }
                         for (const workspace of scope.workspaceRegistry.list()) {
@@ -1758,9 +1785,10 @@ export default class TheOne extends Service {
         }
         // Other plugins may add their own context after it; the welcome is the newest input from either side.
         const latest = [...options.messages].reverse().find(message => message.role === 'user' && 'source' in message
-            && (message.source?.kind === 'user' || goalRoundOf(message) !== undefined || message.source?.kind === 'theone-welcome'));
-        if (latest && 'source' in latest && latest.source?.kind === 'theone-welcome') {
-            const text = welcomeText(latest.source.locale);
+            && (message.source?.kind === 'user' || goalRoundOf(message) !== undefined || message.source?.kind === 'theone-welcome' || message.source?.kind === 'theone-note'));
+        if (latest && 'source' in latest && (latest.source?.kind === 'theone-welcome' || latest.source?.kind === 'theone-note')) {
+            const text = latest.source.kind === 'theone-welcome' ? welcomeText(latest.source.locale)
+                : latest.content.filter(block => block.type === 'text').map(block => block.text).join('\n');
             yield { type: 'block-start', index: 0, blockType: 'text' };
             yield { type: 'text-delta', index: 0, text };
             yield { type: 'block-end', index: 0, block: { type: 'text', text } };
@@ -2069,6 +2097,69 @@ export default class TheOne extends Service {
     agentService(agent, name) {
         const presets = this.ctx.get('agentPresets');
         return (presets?.serviceFor(agent, name) ?? agent.ctx.get(name) ?? this.ctx.get(name));
+    }
+    /**
+     * Branch the topic that answered main chat's message at `atSeq` (the latest one when absent): fork
+     * its session at the end of that answer into a new topic, which main chat continues in.
+     */
+    async branch(gatewayId, atSeq) {
+        if (this.active || this.reservedGateway)
+            throw new Error('GATEWAY_BUSY');
+        const live = this.ctx.agents.get(SessionId(gatewayId));
+        const main = live ? live.session.snapshotEvents() : (await this.ctx.sessionQuery.readSession(SessionId(gatewayId))).events;
+        const cut = atSeq ?? main.at(-1)?.seq ?? -1;
+        const input = main.findLast(event => event.seq <= cut && event.type === 'user/message'
+            && (event.data.source.kind === 'user' || goalRoundOf(event.data) !== undefined));
+        if (!input || input.type !== 'user/message')
+            throw new Error('NOTHING_TO_BRANCH');
+        const contextId = this.store.route(input.data.id)?.decision.contextId;
+        const context = this.store.contexts().find(item => item.id === contextId);
+        if (!context)
+            throw new Error('NOTHING_TO_BRANCH');
+        const worker = this.workers.get(context.id)?.agent;
+        const log = worker ? { header: worker.session.header, events: worker.session.snapshotEvents() } : await this.ctx.sessionQuery.readSession(SessionId(context.workingSessionId));
+        const header = 'header' in log ? log.header : log.session;
+        const events = log.events;
+        // The topic's turn for that message: the same message (or, batched, the same words), up to the
+        // end of the answer before the next message the topic received.
+        const words = (data) => data.content.filter(block => block.type === 'text').map(block => block.text).join('\n').trim();
+        const said = words(input.data);
+        const start = events.findIndex(event => event.type === 'user/message' && (event.data.id === input.data.id || (!!said && words(event.data).includes(said))));
+        if (start < 0)
+            throw new Error('NOTHING_TO_BRANCH');
+        const next = events.findIndex((event, index) => index > start && event.type === 'user/message' && event.data.source.kind === 'user');
+        const end = events.slice(start, next < 0 ? undefined : next).findLast(event => event.type === 'turn/end');
+        if (!end)
+            throw new Error('NOTHING_TO_BRANCH');
+        const zh = !/^en/.test(this.gatewayLocale(gatewayId));
+        // A branch of a branch is numbered, not suffixed again.
+        const root = context.title.replace(/((（分支）| \(branch\))( \d+)?)+$/, '');
+        const base = `${root.slice(0, 64)}${zh ? '（分支）' : ' (branch)'}`;
+        const taken = new Set(this.store.contexts().map(item => item.title.toLowerCase()));
+        let title = base;
+        for (let n = 2; taken.has(title.toLowerCase()); n++)
+            title = `${base} ${n}`;
+        const sessionId = SessionId(randomUUID());
+        const handle = await this.ctx.agents.create({ sessionId, agentOptions: this.backingModel(),
+            seed: buildForkSeed(events, SessionSeq(end.seq)), inheritedEventCount: SessionLogOffset(end.seq + 1),
+            meta: { ...(header.cwd ? { cwd: header.cwd } : {}), parentSession: SessionId(header.id), isSeeded: true,
+                ...(header.agentPreset ? { agentPreset: header.agentPreset } : {}) } });
+        await handle.dispose();
+        const id = this.store.branchTopic(context.id, title, sessionId, header.cwd);
+        this.store.addSource(id, sessionId);
+        this.store.mount(this.config.gatewayKey, id);
+        this.stowWhenIdle(sessionId);
+        // Say it in main chat, where the user is: the branch continues from that answer.
+        live?.followup(createUserMessage({ source: { kind: 'theone-note', form: 'notice' }, content: [{ type: 'text', text: zh
+                        ? `已从这条回答分出新话题「${title}」：它带着「${context.title}」到这里为止的全部内容，接下来你说的话会在这个分支里继续；原来的话题保持不变。`
+                        : `Branched “${context.title}” at this answer into a new topic, “${title}”, which keeps everything up to here. What you say next continues in the branch; the original topic is unchanged.` }] }));
+        return { contextId: id, title };
+    }
+    /** The language main chat was opened in. */
+    gatewayLocale(gatewayId) {
+        const events = this.ctx.agents.get(SessionId(gatewayId))?.session.snapshotEvents() ?? [];
+        const welcome = events.find(event => event.type === 'user/message' && event.data.source.kind === 'theone-welcome');
+        return welcome?.type === 'user/message' && welcome.data.source.kind === 'theone-welcome' ? welcome.data.source.locale : 'zh-CN';
     }
     /** Main chats that already have their own commands. */
     commandsInstalled = new WeakSet();

@@ -718,6 +718,23 @@ export class ContextStore {
     return id
   }
 
+  /**
+   * A branch of a topic: a new topic with the same descriptor, constraints, privacy, workspace and
+   * folder, whose work continues in `workingSessionId` (a fork of the topic's session).
+   */
+  branchTopic(sourceId: string, title: string, workingSessionId: string, cwd?: string): string {
+    const source = this.context(sourceId)
+    const id = randomUUID()
+    this.db.prepare('INSERT INTO contexts VALUES (?, ?, ?)').run(id, JSON.stringify({ ...source, id, title, workingSessionId: undefined }), workingSessionId)
+    this.db.prepare('INSERT INTO context_origins VALUES (?, ?, ?)').run(id, workingSessionId, cwd ?? this.origin(sourceId)?.cwd ?? null)
+    const group = this.db.prepare('SELECT group_id FROM topic_group_members WHERE context_id = ?').get(sourceId)
+    if (group) this.db.prepare('INSERT OR REPLACE INTO topic_group_members VALUES (?, ?)').run(id, String(group.group_id))
+    const constraints = this.constraints(sourceId)
+    if (constraints) this.setConstraints(id, constraints.text)
+    if (this.isPrivate(sourceId)) this.setPrivate(id, true)
+    return id
+  }
+
   /** Put a topic in another topic workspace, or a new one named `title`; null leaves it unassigned. */
   moveTopic(contextId: string, target: { groupId: string } | { title: string } | null): void {
     this.context(contextId)

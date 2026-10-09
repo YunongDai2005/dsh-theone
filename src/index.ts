@@ -1,5 +1,6 @@
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
+import { randomUUID } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
 import { homedir } from 'node:os'
@@ -10,7 +11,7 @@ import type { Agent, AgentHandle, ModelSelection, ModelSelectionRef } from '@dee
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ToolExecutionResult } from '@deepseek-ai/dsh-tools'
-import { SessionId } from '@deepseek-ai/dsh-session'
+import { SessionId, SessionLogOffset, SessionSeq, buildForkSeed } from '@deepseek-ai/dsh-session'
 import type { TurnEndReason, SessionEvent } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-compaction/types'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
@@ -101,6 +102,8 @@ declare module '@deepseek-ai/dsh-llm' {
     'theone-context': { kind: 'theone-context'; form: 'recall'; contextId: string }
     'theone-links': { kind: 'theone-links'; form: 'recall'; contextId: string; related: string[] }
     'theone-welcome': { kind: 'theone-welcome'; form: 'notice'; locale: string }
+    /** Something TheOne did on the user's behalf outside a reply (a branch), said in main chat. */
+    'theone-note': { kind: 'theone-note'; form: 'notice' }
   }
 }
 
@@ -132,6 +135,9 @@ class GatewayAdapter extends LlmAdapter {
 }
 
 /** The Worker receives every message admitted in this gateway step, e.g. several steering messages, as one input. */
+/** Main chat's names, as the client sets them per language. */
+const GATEWAY_TITLES = ['TheOne · 主聊天', 'TheOne · Main chat']
+
 /** DSH's goal tools; in a topic they act on main chat's goal. */
 const GOAL_TOOLS = new Set(['get_goal', 'create_goal', 'update_goal'])
 
@@ -391,6 +397,31 @@ export default class TheOne extends Service {
       target.agent = run.gateway
       try { return await agents.withInitiator(run.gateway, () => next()) } finally { target.agent = worker }
     }, { prepend: true })
+    // "Branch in a new chat" on a reply in main chat branches the topic that gave it, as a new topic;
+    // DSH then opens the id it gets back, main chat itself, so the user carries on where they are.
+    ;(ctx as unknown as { inject(names: string[], callback: (scope: Context) => void): void }).inject(['sessionController'], scope => {
+      type Fork = (request: { sessionId: string; atSeq?: number }) => Promise<{ sessionId: string }>
+      const controller = scope.get('sessionController') as { fork: Fork }
+      const original = controller.fork
+      const service = this
+      controller.fork = async function (this: unknown, request) {
+        if (!service.store.isGateway(request.sessionId)) return original.call(this, request)
+        await service.branch(request.sessionId, request.atSeq)
+        return { sessionId: request.sessionId }
+      }
+      // DSH names what it opened after a fork "<title> (1)"; here that is main chat, whose name is TheOne's.
+      type Rename = (request: { sessionId: string; title: string }) => Promise<unknown>
+      const renaming = controller as unknown as { rename: Rename }
+      const originalRename = renaming.rename
+      renaming.rename = async function (this: unknown, request) {
+        if (!service.store.isGateway(request.sessionId) || GATEWAY_TITLES.includes(request.title)) return originalRename.call(this, request)
+        return originalRename.call(this, { ...request, title: /^en/.test(service.gatewayLocale(request.sessionId)) ? GATEWAY_TITLES[1] : GATEWAY_TITLES[0] })
+      }
+      scope.effect(() => () => {
+        if (controller.fork !== original) controller.fork = original
+        if (renaming.rename !== originalRename) renaming.rename = originalRename
+      })
+    })
     // Main chat's own commands: those about the work act on the topic in use (see gatewayCommands).
     ctx.on('agent/created', ({ agent }) => { if (this.store.isGateway(agent.id)) this.gatewayCommands(agent); return undefined })
     // Main-chat tool calls mirror calls the Worker already runs: skip every policy and show its result.
@@ -440,7 +471,7 @@ export default class TheOne extends Service {
       if (decision.kind === 'reject' || (provider !== 'theone' && !this.store.isPinnedGateway(agent.id))) return decision
       signal.throwIfAborted()
       // The welcome turn of a new main chat has nothing to route.
-      if (!decision.messages.some(message => message.source.kind === 'user') && decision.messages.some(message => message.source.kind === 'theone-welcome')) return decision
+      if (!decision.messages.some(message => message.source.kind === 'user') && decision.messages.some(message => message.source.kind === 'theone-welcome' || message.source.kind === 'theone-note')) return decision
       // Know main chat's model choice before routing, so this very message is classified with it.
       const pickedNow = selected?.signal === signal ? selected.model : undefined
       if (provider === 'theone') this.pickedModel = parseVia(pickedNow ?? agent.options.model)
@@ -653,7 +684,7 @@ export default class TheOne extends Service {
             // and has no ordinary-model request history.
             const title = await this.ctx.sessionQuery.readTitle(id)
             const log = await this.ctx.sessionQuery.readSession(id)
-            if (!['TheOne · 主聊天', 'TheOne · Main chat'].includes(title?.title ?? '') || log.events.some(event => event.type === 'request/header' && event.data.header.config.provider !== 'theone'))
+            if (!GATEWAY_TITLES.includes(title?.title ?? '') || log.events.some(event => event.type === 'request/header' && event.data.header.config.provider !== 'theone'))
               return Response.json({ error: 'NOT_GATEWAY' }, { status: 400 })
           }
           for (const workspace of scope.workspaceRegistry.list()) {
@@ -1598,9 +1629,10 @@ export default class TheOne extends Service {
     if (running) { yield* running.stream(options.signal); return }
     // Other plugins may add their own context after it; the welcome is the newest input from either side.
     const latest = [...options.messages].reverse().find(message => message.role === 'user' && 'source' in message
-      && (message.source?.kind === 'user' || goalRoundOf(message) !== undefined || message.source?.kind === 'theone-welcome'))
-    if (latest && 'source' in latest && latest.source?.kind === 'theone-welcome') {
-      const text = welcomeText(latest.source.locale)
+      && (message.source?.kind === 'user' || goalRoundOf(message) !== undefined || message.source?.kind === 'theone-welcome' || message.source?.kind === 'theone-note'))
+    if (latest && 'source' in latest && (latest.source?.kind === 'theone-welcome' || latest.source?.kind === 'theone-note')) {
+      const text = latest.source.kind === 'theone-welcome' ? welcomeText(latest.source.locale)
+        : latest.content.filter(block => block.type === 'text').map(block => block.text).join('\n')
       yield { type: 'block-start', index: 0, blockType: 'text' }
       yield { type: 'text-delta', index: 0, text }
       yield { type: 'block-end', index: 0, block: { type: 'text', text } }
@@ -1878,6 +1910,65 @@ export default class TheOne extends Service {
   private agentService<T>(agent: Agent, name: string): T | undefined {
     const presets = this.ctx.get('agentPresets') as { serviceFor(agent: Agent, name: string): unknown } | undefined
     return (presets?.serviceFor(agent, name) ?? (agent.ctx as Context).get(name) ?? this.ctx.get(name)) as T | undefined
+  }
+
+  /**
+   * Branch the topic that answered main chat's message at `atSeq` (the latest one when absent): fork
+   * its session at the end of that answer into a new topic, which main chat continues in.
+   */
+  async branch(gatewayId: string, atSeq?: number): Promise<{ contextId: string; title: string }> {
+    if (this.active || this.reservedGateway) throw new Error('GATEWAY_BUSY')
+    const live = this.ctx.agents.get(SessionId(gatewayId))
+    const main = live ? live.session.snapshotEvents() : (await this.ctx.sessionQuery.readSession(SessionId(gatewayId))).events
+    const cut = atSeq ?? main.at(-1)?.seq ?? -1
+    const input = main.findLast(event => event.seq <= cut && event.type === 'user/message'
+      && (event.data.source.kind === 'user' || goalRoundOf(event.data) !== undefined))
+    if (!input || input.type !== 'user/message') throw new Error('NOTHING_TO_BRANCH')
+    const contextId = this.store.route(input.data.id)?.decision.contextId
+    const context = this.store.contexts().find(item => item.id === contextId)
+    if (!context) throw new Error('NOTHING_TO_BRANCH')
+    const worker = this.workers.get(context.id)?.agent
+    const log = worker ? { header: worker.session.header, events: worker.session.snapshotEvents() } : await this.ctx.sessionQuery.readSession(SessionId(context.workingSessionId))
+    const header = 'header' in log ? log.header : (log as { session: { cwd?: string; id: string } }).session
+    const events = log.events
+    // The topic's turn for that message: the same message (or, batched, the same words), up to the
+    // end of the answer before the next message the topic received.
+    const words = (data: { content: readonly { type: string; text?: string }[] }) => data.content.filter(block => block.type === 'text').map(block => block.text).join('\n').trim()
+    const said = words(input.data)
+    const start = events.findIndex(event => event.type === 'user/message' && (event.data.id === input.data.id || (!!said && words(event.data).includes(said))))
+    if (start < 0) throw new Error('NOTHING_TO_BRANCH')
+    const next = events.findIndex((event, index) => index > start && event.type === 'user/message' && event.data.source.kind === 'user')
+    const end = events.slice(start, next < 0 ? undefined : next).findLast(event => event.type === 'turn/end')
+    if (!end) throw new Error('NOTHING_TO_BRANCH')
+    const zh = !/^en/.test(this.gatewayLocale(gatewayId))
+    // A branch of a branch is numbered, not suffixed again.
+    const root = context.title.replace(/((（分支）| \(branch\))( \d+)?)+$/, '')
+    const base = `${root.slice(0, 64)}${zh ? '（分支）' : ' (branch)'}`
+    const taken = new Set(this.store.contexts().map(item => item.title.toLowerCase()))
+    let title = base
+    for (let n = 2; taken.has(title.toLowerCase()); n++) title = `${base} ${n}`
+    const sessionId = SessionId(randomUUID())
+    const handle = await this.ctx.agents.create({ sessionId, agentOptions: this.backingModel(),
+      seed: buildForkSeed(events, SessionSeq(end.seq)), inheritedEventCount: SessionLogOffset(end.seq + 1),
+      meta: { ...(header.cwd ? { cwd: header.cwd } : {}), parentSession: SessionId(header.id), isSeeded: true,
+        ...((header as { agentPreset?: string }).agentPreset ? { agentPreset: (header as { agentPreset?: string }).agentPreset } : {}) } } as Parameters<typeof this.ctx.agents.create>[0])
+    await handle.dispose()
+    const id = this.store.branchTopic(context.id, title, sessionId, header.cwd)
+    this.store.addSource(id, sessionId)
+    this.store.mount(this.config.gatewayKey, id)
+    this.stowWhenIdle(sessionId)
+    // Say it in main chat, where the user is: the branch continues from that answer.
+    live?.followup(createUserMessage({ source: { kind: 'theone-note', form: 'notice' }, content: [{ type: 'text', text: zh
+      ? `已从这条回答分出新话题「${title}」：它带着「${context.title}」到这里为止的全部内容，接下来你说的话会在这个分支里继续；原来的话题保持不变。`
+      : `Branched “${context.title}” at this answer into a new topic, “${title}”, which keeps everything up to here. What you say next continues in the branch; the original topic is unchanged.` }] }))
+    return { contextId: id, title }
+  }
+
+  /** The language main chat was opened in. */
+  gatewayLocale(gatewayId: string): string {
+    const events = this.ctx.agents.get(SessionId(gatewayId))?.session.snapshotEvents() ?? []
+    const welcome = events.find(event => event.type === 'user/message' && event.data.source.kind === 'theone-welcome')
+    return welcome?.type === 'user/message' && welcome.data.source.kind === 'theone-welcome' ? welcome.data.source.locale : 'zh-CN'
   }
 
   /** Main chats that already have their own commands. */

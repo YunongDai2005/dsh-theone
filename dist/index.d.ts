@@ -73,6 +73,11 @@ declare module '@deepseek-ai/dsh-llm' {
             form: 'notice';
             locale: string;
         };
+        /** Something TheOne did on the user's behalf outside a reply (a branch), said in main chat. */
+        'theone-note': {
+            kind: 'theone-note';
+            form: 'notice';
+        };
     }
 }
 export declare function viaModel(selection: ModelSelection): string;
@@ -268,6 +273,16 @@ export default class TheOne extends Service {
      */
     /** A service as one session sees it: DSH composes many (commands, compaction) inside its agent preset. */
     private agentService;
+    /**
+     * Branch the topic that answered main chat's message at `atSeq` (the latest one when absent): fork
+     * its session at the end of that answer into a new topic, which main chat continues in.
+     */
+    branch(gatewayId: string, atSeq?: number): Promise<{
+        contextId: string;
+        title: string;
+    }>;
+    /** The language main chat was opened in. */
+    gatewayLocale(gatewayId: string): string;
     /** Main chats that already have their own commands. */
     private readonly commandsInstalled;
     /**

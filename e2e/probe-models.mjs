@@ -40,7 +40,8 @@ class Probe extends LlmAdapter {
     if (system.includes('会话话题路由器')) {
       const p = JSON.parse(textOf(options.messages[0]))
       const name = p.text.match(/\[topic:([^\]]+)\]/)?.[1]
-      const hit = name && p.contexts.find(c => c.title === name)
+      // No marker: carry on with the current topic, as a real router does with a continuation.
+      const hit = name ? p.contexts.find(c => c.title === name) : p.contexts.find(c => c.id === p.currentId)
       const decision = hit
         ? { action: 'EXISTING', contextId: hit.id, title: null, question: null, reason: 'marker', historyIndependent: null, candidateIds: [], relatedIds: [] }
         : { action: 'CREATE', contextId: null, title: name ?? p.text.slice(0, 30), question: null, reason: 'marker', historyIndependent: true, candidateIds: [], relatedIds: [] }

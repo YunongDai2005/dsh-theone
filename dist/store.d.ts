@@ -189,6 +189,11 @@ export declare class ContextStore {
         lastState?: string;
     }): void;
     createTopic(title: string, summary?: string): string;
+    /**
+     * A branch of a topic: a new topic with the same descriptor, constraints, privacy, workspace and
+     * folder, whose work continues in `workingSessionId` (a fork of the topic's session).
+     */
+    branchTopic(sourceId: string, title: string, workingSessionId: string, cwd?: string): string;
     /** Put a topic in another topic workspace, or a new one named `title`; null leaves it unassigned. */
     moveTopic(contextId: string, target: {
         groupId: string;
