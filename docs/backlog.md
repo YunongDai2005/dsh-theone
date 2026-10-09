@@ -26,8 +26,10 @@ message belong to?" without DSH.
 Topics imported from existing DSH sessions keep their folder (`context_origins.cwd`) and their
 sessions run there. New topics start in DSH's default workspace folder
 (`Documents/deepseek-harness/default-workspace`) when the user has it, else `~/.dsh/theone/gateway`;
-never in the most recently used workspace, so nothing lands in a project by accident. Next: let the
-user pick a project folder in main chat (their choice, not a guess) and set `context_origins`.
+never in the most recently used workspace, so nothing lands in a project by accident. Next: when a
+message is about one of the user's projects, start the topic in that project's folder without asking
+(the user only speaks; no folder picker): infer it from the topics and sessions already in that
+project, and fall back to the default workspace when unsure. Set `context_origins` when creating.
 
 ## Repository size
 

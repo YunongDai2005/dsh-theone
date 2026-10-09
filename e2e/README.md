@@ -1,0 +1,37 @@
+# End-to-end checks in a real DSH
+
+The unit tests run TheOne on a reduced DSH (no agent presets, no file or shell tools) with a scripted
+model. They cannot see what a topic session can actually do. These checks run a real DSH web host
+with TheOne installed and a probe model (`probe-models.mjs`) instead of a real one: it routes by
+markers, really calls DSH tools, and logs what every session received to `probe.log`. Each check
+compares a topic session with an ordinary DSH session doing the same thing.
+
+Run them before a release that touches how topic sessions are created, resumed or run.
+
+## Setup
+
+1. A DSH install (`npm i @deepseek-ai/dsh`) and a profile with TheOne installed; copy this
+   repository's `dist/` over the profile's `node_modules/dsh-theone/dist/` to test unreleased code.
+2. In the profile's `cordis.patch.yml`: set TheOne's `databasePath` to a scratch file, keep
+   `historyCatalog: true`, `catalogIntervalMs: 10000`, no `workerProvider`; set
+   `agent-default-model` to provider `deepseek`; insert `probe-models.mjs` as a plugin.
+3. Start DSH once, stop it, then seed workspaces: `python3 seed-workspaces.py <DSH_HOME>/storages/workspace.json <dir> 1`
+   (a project `<dir>/work/proj` and DSH's default workspace `<dir>/docs/deepseek-harness/default-workspace`;
+   pass `0` to leave the default workspace out).
+4. Start DSH with `PROBE_LOG=<dir>/probe.log`, output to `dsh.log` in the directory you run `drive.mjs` from.
+
+`node drive.mjs native <workspace> "<message>" [preset] [access]` sends a message in a new ordinary
+session; `node drive.mjs main "<message>" [preset] [access]` sends it in TheOne's main chat. Markers:
+`[topic:NAME]` routes to the topic titled NAME (or creates it), `[name:NAME]` names the topic the
+history catalog makes of an ordinary session, `[run] CMD` runs CMD with the bash tool.
+
+## Checks (all passed on 2026-10-09)
+
+| Check | Expected |
+| --- | --- |
+| Tools of a new topic, an existing topic, a topic from an existing chat, after a DSH restart | Same as an ordinary session, plus TheOne's three |
+| Folder of a new topic | DSH's default workspace; TheOne's own folder when there is none |
+| Folder of a topic made from an existing chat | That chat's folder (reads and writes the project) |
+| Access mode "read only" set in main chat | A write is refused in the topic, as in an ordinary session |
+| A second browser or device opens main chat | The same main chat, not a new empty one |
+| DSH's workspaces and archive afterwards | No TheOne session attached to a workspace; the archive holds only TheOne's sessions; none of the user's sessions archived |
