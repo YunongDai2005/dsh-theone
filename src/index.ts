@@ -422,6 +422,45 @@ export default class TheOne extends Service {
         if (renaming.rename !== originalRename) renaming.rename = originalRename
       })
     })
+    // Main chat's file panel works in the folder of the topic in use: DSH scopes it to a session's
+    // folder, and main chat's own is TheOne's. Every other session's scope is left as it is.
+    ;(ctx as unknown as { inject(names: string[], callback: (scope: Context) => void): void }).inject(['workspaceFiles'], scope => {
+      type Scope = { sessionId: string; workspaceRoot: string }
+      const files = scope.get('workspaceFiles') as Record<string, (...args: unknown[]) => unknown>
+      const service = this
+      const scoped = async (fileScope: Scope) => service.store.isGateway(fileScope.sessionId)
+        ? { ...fileScope, workspaceRoot: await service.topicFolder().catch(() => undefined) ?? fileScope.workspaceRoot } : fileScope
+      const restore: (() => void)[] = []
+      for (const name of ['read', 'readBytes', 'stat', 'list', 'inspect', 'locateFile']) {
+        const original = files[name]
+        if (typeof original !== 'function') continue
+        files[name] = async function (this: unknown, fileScope: unknown, ...rest: unknown[]) {
+          return original.call(this, await scoped(fileScope as Scope), ...rest)
+        }
+        restore.push(() => { files[name] = original })
+      }
+      const changes = files.changes
+      if (typeof changes === 'function') {
+        files.changes = async function* (this: unknown, fileScope: unknown, ...rest: unknown[]) {
+          yield* changes.call(this, await scoped(fileScope as Scope), ...rest) as AsyncIterable<unknown>
+        }
+        restore.push(() => { files.changes = changes })
+      }
+      scope.effect(() => () => { for (const undo of restore) undo() })
+    })
+    // A terminal opened beside main chat starts in the topic's folder too (the last one worked out).
+    ;(ctx as unknown as { inject(names: string[], callback: (scope: Context) => void): void }).inject(['terminalController'], scope => {
+      type Environment = (agent: Agent, signal: AbortSignal) => { cwd: string }
+      const terminals = scope.get('terminalController') as { environment: Environment }
+      const original = terminals.environment
+      const service = this
+      if (typeof original !== 'function') return
+      terminals.environment = function (this: unknown, agent, signal) {
+        const environment = original.call(this, agent, signal)
+        return service.store.isGateway(agent.id) && service.lastTopicFolder ? { ...environment, cwd: service.lastTopicFolder } : environment
+      }
+      scope.effect(() => () => { if (terminals.environment !== original) terminals.environment = original })
+    })
     // Main chat's own commands: those about the work act on the topic in use (see gatewayCommands).
     ctx.on('agent/created', ({ agent }) => { if (this.store.isGateway(agent.id)) this.gatewayCommands(agent); return undefined })
     // Main-chat tool calls mirror calls the Worker already runs: skip every policy and show its result.
@@ -664,7 +703,8 @@ export default class TheOne extends Service {
       child.inject(['workspaceRegistry'], scope => {
         scope.effect(() => connection.fetch!.register({ path: '/api/theone/gateway', methods: ['GET'], requestBody: 'buffered', fetch: async () => {
           await mkdir(this.gatewayDirectory, { recursive: true })
-          return Response.json({ cwd: this.gatewayDirectory, current: this.store.latestGateway(this.config.gatewayKey) ?? null }, { headers: { 'cache-control': 'no-store' } })
+          return Response.json({ cwd: this.gatewayDirectory, current: this.store.latestGateway(this.config.gatewayKey) ?? null,
+            topicFolder: await this.topicFolder().catch(() => undefined) ?? null }, { headers: { 'cache-control': 'no-store' } })
         } }))
         // Main chat is about to pick its model; DSH would save that as the user's default.
         scope.effect(() => connection.fetch!.register({ path: '/api/theone/gateway/hold', methods: ['POST'], requestBody: 'buffered', fetch: async () => {
@@ -1970,6 +2010,18 @@ export default class TheOne extends Service {
     const welcome = events.find(event => event.type === 'user/message' && event.data.source.kind === 'theone-welcome')
     return welcome?.type === 'user/message' && welcome.data.source.kind === 'theone-welcome' ? welcome.data.source.locale : 'zh-CN'
   }
+
+  /** The folder the topic in use works in, for main chat's file panel and "@" file references. */
+  async topicFolder(): Promise<string | undefined> {
+    const context = this.store.contexts().find(item => item.id === this.store.current(this.config.gatewayKey))
+    if (!context) return this.lastTopicFolder = undefined
+    const live = this.workers.get(context.id)?.agent.session.header.cwd
+    const stored = live ? undefined : (await this.ctx.sessionQuery.listSessions()).find(session => session.header.id === context.workingSessionId)?.header.cwd
+    return this.lastTopicFolder = live ?? stored ?? this.store.origin(context.id)?.cwd ?? this.defaultWorkspaceDirectory() ?? this.gatewayDirectory
+  }
+
+  /** The topic folder last worked out, for DSH callers that need it at once (a new terminal). */
+  lastTopicFolder?: string
 
   /** Main chats that already have their own commands. */
   private readonly commandsInstalled = new WeakSet<Agent>()

@@ -2343,6 +2343,42 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
       style.remove();
     };
   });
+  ctx.effect(() => {
+    const list = ctx.sessions.list;
+    const original = list.getSnapshot;
+    let folder;
+    let base, view, viewFolder, viewId;
+    list.getSnapshot = function() {
+      const snapshot = original.call(this);
+      const id = navigation.getSnapshot();
+      const row = id ? snapshot.byId[id] : void 0;
+      if (!folder || !id || !row || row.cwd === folder) return snapshot;
+      if (snapshot !== base || viewFolder !== folder || viewId !== id) {
+        base = snapshot;
+        viewFolder = folder;
+        viewId = id;
+        view = { ...snapshot, byId: { ...snapshot.byId, [id]: { ...row, cwd: folder } } };
+      }
+      return view;
+    };
+    let timer;
+    const read = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        void fetch("/api/theone/gateway", { signal: lifetime.signal, cache: "no-store" }).then((response) => response.ok ? response.json() : void 0).then((value) => {
+          if (value && !lifetime.signal.aborted) folder = value.topicFolder ?? void 0;
+        }).catch(() => {
+        });
+      }, 400);
+    };
+    read();
+    const unsubscribe = ctx.sessions.list.subscribe(read);
+    return () => {
+      unsubscribe();
+      clearTimeout(timer);
+      list.getSnapshot = original;
+    };
+  });
   ctx.slots.inject("main", () => [
     ctx.slots.register({ name: "main", key: panelId }, GatewayPanel),
     ctx.slots.register({ name: "main", key: catalogPanelId }, CatalogPanel),

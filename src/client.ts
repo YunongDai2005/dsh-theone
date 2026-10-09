@@ -1126,6 +1126,41 @@ export function apply(ctx: Context) {
     document.head.append(style)
     return () => { unsubscribe(); unsubscribeList(); unsubscribeWorkspaces(); clearTimeout(timer); window.removeEventListener('storage', update); style.remove() }
   })
+  // Main chat works through its topics: as far as its file panel and "@" file references go, its folder
+  // is the folder of the topic in use. Only main chat's row in this browser's list changes; the
+  // session, and every other session, stay as they are.
+  ctx.effect(() => {
+    const list = ctx.sessions.list as unknown as { getSnapshot(): SessionListState }
+    const original = list.getSnapshot
+    let folder: string | undefined
+    let base: SessionListState | undefined, view: SessionListState | undefined, viewFolder: string | undefined, viewId: string | undefined
+    list.getSnapshot = function (this: unknown) {
+      const snapshot = original.call(this)
+      const id = navigation.getSnapshot() as SessionId | null
+      const row = id ? snapshot.byId[id] : undefined
+      if (!folder || !id || !row || row.cwd === folder) return snapshot
+      // The same inputs give the same object, as React's external stores require.
+      if (snapshot !== base || viewFolder !== folder || viewId !== id) {
+        base = snapshot; viewFolder = folder; viewId = id
+        view = { ...snapshot, byId: { ...snapshot.byId, [id]: { ...row, cwd: folder } } }
+      }
+      return view!
+    }
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const read = () => {
+      clearTimeout(timer)
+      timer = setTimeout(() => {
+        void fetch('/api/theone/gateway', { signal: lifetime.signal, cache: 'no-store' })
+          .then(response => response.ok ? response.json() as Promise<{ topicFolder?: string | null }> : undefined)
+          .then(value => { if (value && !lifetime.signal.aborted) folder = value.topicFolder ?? undefined }).catch(() => {})
+      }, 400)
+    }
+    read()
+    // A routed message changes main chat's list entry; the topic in use may have changed with it.
+    const unsubscribe = ctx.sessions.list.subscribe(read)
+    return () => { unsubscribe(); clearTimeout(timer); list.getSnapshot = original }
+  })
+
   // Wait for the owning plugins' declarations; retain their normal browser and chat.
   ctx.slots.inject('main', () => [
     ctx.slots.register({name:'main',key:panelId},GatewayPanel),

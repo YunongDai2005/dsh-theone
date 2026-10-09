@@ -283,6 +283,10 @@ export default class TheOne extends Service {
     }>;
     /** The language main chat was opened in. */
     gatewayLocale(gatewayId: string): string;
+    /** The folder the topic in use works in, for main chat's file panel and "@" file references. */
+    topicFolder(): Promise<string | undefined>;
+    /** The topic folder last worked out, for DSH callers that need it at once (a new terminal). */
+    lastTopicFolder?: string;
     /** Main chats that already have their own commands. */
     private readonly commandsInstalled;
     /**
