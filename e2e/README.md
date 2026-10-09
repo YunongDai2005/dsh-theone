@@ -27,6 +27,8 @@ history catalog makes of an ordinary session, `[run] CMD` runs CMD with the bash
 
 ## Checks (all passed on 2026-10-09)
 
+`node mid.mjs "<first>" "<interjection>" "<queued>" [seconds]` sends a message in main chat and, while it runs, an interjection (Ctrl+Enter) and a queued message (Enter).
+
 | Check | Expected |
 | --- | --- |
 | Tools of a new topic, an existing topic, a topic from an existing chat, after a DSH restart | Same as an ordinary session, plus TheOne's three |
@@ -41,4 +43,7 @@ history catalog makes of an ordinary session, `[run] CMD` runs CMD with the bash
 | `/goal` in main chat | Each round runs in the topic the goal was set in; the topic reads and completes main chat's goal, and the goal ends |
 | "Branch in a new chat" on a reply in main chat (`branch.mjs`) | A new topic "<title> (branch)" from that point; main chat stays open, keeps its name and says so; the next message goes to the branch |
 | Main chat's file panel and a new terminal (`term.mjs`) | Both in the folder of the topic in use |
+| While a reply runs (`[run] sleep 10`; `mid.mjs`): an interjection for another topic | That topic answers at once in the background; the reply is not mixed with it; main chat shows it after the reply, as its own turn |
+| While a reply runs: an interjection about it, and a queued message for another topic | The interjection joins the reply (between its steps); the queued message's topic starts at once and is shown after |
+| While a reply runs: a queued message whose topic asks a question (`CLICK=<option>`) | The choice window opens in main chat at once, headed with that topic's name; the answer reaches it |
 | DSH's workspaces and archive afterwards | No TheOne session attached to a workspace; the archive holds only TheOne's sessions; none of the user's sessions archived |

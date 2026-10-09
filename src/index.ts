@@ -1406,14 +1406,15 @@ export default class TheOne extends Service {
         : worker.session.snapshotEvents().findLast(event => event.type === 'tool/call' && event.data.callId === request.callId)
       const detail = call?.type === 'tool/call' ? `${call.data.name} ${call.data.arguments}`.slice(0, 600) : request.toolName
       const base = request.displayReason ?? (request.reason ? { en: request.reason } : undefined)
+      const topic = this.backgroundTopic(run)
       try {
         // The main chat shows the same call under the same id; attach the prompt to that card.
         const shown = request.callId !== undefined && await this.mirroredCall(gateway, request.callId, request.signal)
         return await approval.request({ agent: gateway, toolName: request.toolName,
           ...(shown ? { callId: request.callId } : {}),
           ...(request.reason === undefined ? {} : { reason: request.reason }),
-          displayReason: { en: [base?.en, `Requested in the background task: ${detail}`].filter(Boolean).join('\n'),
-            zh: [base?.zh ?? base?.en, `后台任务请求执行：${detail}`].filter(Boolean).join('\n') },
+          displayReason: { en: [base?.en, `Requested in the background task${topic ? ` "${topic}"` : ''}: ${detail}`].filter(Boolean).join('\n'),
+            zh: [base?.zh ?? base?.en, `后台任务${topic ? `「${topic}」` : ''}请求执行：${detail}`].filter(Boolean).join('\n') },
           ...(request.signal === undefined ? {} : { signal: request.signal }) })
       } catch {
         // The gateway turn closed or approval is unavailable: answer as the Worker's own chain would.
@@ -1464,7 +1465,11 @@ export default class TheOne extends Service {
       // A timed wait is registered for the Worker's own call; main chat's window cannot claim it and
       // would never open. Ask main chat plainly; the Worker's wait still decides when it times out.
       const { wait: _wait, ...plain } = request
-      return await questions.ask({ ...plain, agent: run.gateway })
+      // Asked by work main chat has not shown yet: the window names the topic it is for.
+      const topic = this.backgroundTopic(run)
+      const items = plain.questions as { header?: string }[] | undefined
+      const named = topic && Array.isArray(items) ? { questions: items.map(item => ({ ...item, header: item.header ? `${topic} · ${item.header}` : topic })) } : {}
+      return await questions.ask({ ...plain, ...named, agent: run.gateway })
     // Before DSH's own forwarding to the browser, for the same reason as approvals.
     }, { prepend: true })
   }
@@ -2313,6 +2318,13 @@ export default class TheOne extends Service {
     const run = exec.parent === undefined ? this.runs.get(exec.agent.id) : undefined
     if (run) return run
     return this.throughTheOne.get(exec.agent) ? 'refuse' : undefined
+  }
+
+  /** The topic of a run main chat is not showing yet (work started on a message sent during another reply). */
+  private backgroundTopic(run: WorkerRun): string | undefined {
+    if (![...this.background.values()].some(entry => entry.run === run)) return undefined
+    const contextId = this.store.route(run.inputId)?.decision.contextId
+    return this.store.contexts().find(context => context.id === contextId)?.title
   }
 
   private runForWorker(worker: Agent): WorkerRun | undefined {
