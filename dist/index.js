@@ -1268,19 +1268,29 @@ export default class TheOne extends Service {
         const cwd = originCwd ?? this.gatewayDirectory;
         if (!originCwd)
             await mkdir(cwd, { recursive: true });
-        const setup = (agentCtx, agent) => {
+        const sessions = await this.ctx.sessionQuery.listSessions(signal);
+        signal?.throwIfAborted();
+        const stored = sessions.find(session => session.header.id === sessionId);
+        // DSH's file, shell and other tools come with an agent preset, mounted for every session it opens.
+        // A new topic session takes main chat's preset; an existing one keeps the preset it was created with.
+        const presets = this.ctx.get('agentPresets');
+        const gateway = this.ctx.agents.get(SessionId(gatewayId));
+        const wanted = stored ? stored.header.agentPreset : gateway && presets?.composedPreset(gateway.ctx);
+        const agentPreset = presets && (await presets.resolve(wanted).catch(() => presets.resolve())).id;
+        signal?.throwIfAborted();
+        const setup = async (agentCtx, agent) => {
             const selection = { current: agentOptions, assembled: undefined };
             this.workerSelections.set(context.id, selection);
             installModelSelection(agentCtx, selection);
+            if (presets)
+                await presets.mount(agentCtx, agentPreset);
             this.registerWorkerTools(agentCtx, agent, context.id);
             this.forwardApprovals(agentCtx, agent);
             this.forwardQuestions(agentCtx, agent);
         };
-        const sessions = await this.ctx.sessionQuery.listSessions(signal);
-        signal?.throwIfAborted();
-        const handle = sessions.some(session => session.header.id === sessionId)
+        const handle = stored
             ? await this.ctx.agents.resume({ resumeSessionId: sessionId, agentOptions, signal, setup })
-            : await this.ctx.agents.create({ sessionId, agentOptions, meta: { cwd }, signal, setup });
+            : await this.ctx.agents.create({ sessionId, agentOptions, meta: { cwd, ...agentPreset ? { agentPreset } : {} }, signal, setup });
         this.workers.set(context.id, handle);
         this.store.addSource(context.id, sessionId);
         this.refreshCompactionSummary(handle.agent, context.id);

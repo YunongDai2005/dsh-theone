@@ -53,6 +53,13 @@ interface OwnSessionArchive {
   unarchiveSession(sessionId: SessionId): Promise<void>
 }
 
+/** The part of DSH's agent preset registry that gives a session its tools. */
+interface AgentPresets {
+  resolve(id?: string): Promise<{ id: string }>
+  mount(ctx: Context, id?: string): Promise<{ id: string }>
+  composedPreset(ctx: Context): string | undefined
+}
+
 export interface Config {
   databasePath?: string
   contextsPath?: string
@@ -1147,19 +1154,28 @@ export default class TheOne extends Service {
     const originCwd = this.store.origin(context.id)?.cwd
     const cwd = originCwd ?? this.gatewayDirectory
     if (!originCwd) await mkdir(cwd, { recursive: true })
-    const setup = (agentCtx: Context, agent: Agent) => {
+    const sessions = await this.ctx.sessionQuery.listSessions(signal)
+    signal?.throwIfAborted()
+    const stored = sessions.find(session => session.header.id === sessionId)
+    // DSH's file, shell and other tools come with an agent preset, mounted for every session it opens.
+    // A new topic session takes main chat's preset; an existing one keeps the preset it was created with.
+    const presets = this.ctx.get('agentPresets') as AgentPresets | undefined
+    const gateway = this.ctx.agents.get(SessionId(gatewayId))
+    const wanted = stored ? (stored.header as { agentPreset?: string }).agentPreset : gateway && presets?.composedPreset(gateway.ctx)
+    const agentPreset = presets && (await presets.resolve(wanted).catch(() => presets.resolve())).id
+    signal?.throwIfAborted()
+    const setup = async (agentCtx: Context, agent: Agent) => {
       const selection = { current: agentOptions, assembled: undefined }
       this.workerSelections.set(context.id, selection)
       installModelSelection(agentCtx, selection)
+      if (presets) await presets.mount(agentCtx, agentPreset)
       this.registerWorkerTools(agentCtx, agent, context.id)
       this.forwardApprovals(agentCtx, agent)
       this.forwardQuestions(agentCtx, agent)
     }
-    const sessions = await this.ctx.sessionQuery.listSessions(signal)
-    signal?.throwIfAborted()
-    const handle = sessions.some(session => session.header.id === sessionId)
+    const handle = stored
       ? await this.ctx.agents.resume({ resumeSessionId: sessionId, agentOptions, signal, setup })
-      : await this.ctx.agents.create({ sessionId, agentOptions, meta: { cwd }, signal, setup })
+      : await this.ctx.agents.create({ sessionId, agentOptions, meta: { cwd, ...agentPreset ? { agentPreset } : {} }, signal, setup })
     this.workers.set(context.id, handle)
     this.store.addSource(context.id, sessionId)
     this.refreshCompactionSummary(handle.agent, context.id)
