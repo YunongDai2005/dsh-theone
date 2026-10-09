@@ -99,6 +99,8 @@ export default class TheOne extends Service {
     /** Update checks and one-click install through DSH's plugin manager. */
     readonly updater: Updater;
     readonly noticeBoard: NoticeBoard;
+    /** Goal id → the topic its rounds work in (the topic in use when the goal was set). */
+    private readonly goalTopics;
     /** Sessions whose current step answers through TheOne; only these refuse to run tools themselves. */
     private readonly throughTheOne;
     constructor(ctx: Context, config: Config);
@@ -264,6 +266,15 @@ export default class TheOne extends Service {
      * locks its input until a workspace is chosen. The main chat belongs to no workspace, so a new one
      * opens with a short welcome turn, which also tells the user how it works. No model is called.
      */
+    /** A service as one session sees it: DSH composes many (commands, compaction) inside its agent preset. */
+    private agentService;
+    /** Main chats that already have their own commands. */
+    private readonly commandsInstalled;
+    /**
+     * /compact in main chat compacts the topic in use as well: that is where the long context is.
+     * Registered on main chat alone, it takes the place of DSH's /compact there and nowhere else.
+     */
+    private gatewayCommands;
     welcomeGateway(id: string, locale: string): void;
     /** Topic → when main chat last answered in it; quick alternation between two topics links them. */
     private lastRoute?;
