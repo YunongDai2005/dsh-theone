@@ -105,6 +105,10 @@ export class WorkerRun {
         for (const context of contexts)
             this.worker.inject(context);
         this.worker.followup(input);
+        this.follow();
+    }
+    /** Follow work the Worker took up on its own (a subagent reporting back, say) until it is idle again. */
+    follow() {
         this.settled = this.worker.whenIdle().then(() => undefined, error => {
             this.failure ??= error instanceof Error ? error : new Error(String(error));
         }).finally(() => {

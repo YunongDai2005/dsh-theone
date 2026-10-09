@@ -64,8 +64,12 @@ class Probe extends LlmAdapter {
     const user = textOf(messages.findLast(m => m.role === 'user' && m.source?.kind === 'user'))
     const tools = (options.tools ?? []).map(t => t.name).sort()
     const last = messages.at(-1)
+    // A marker acts once, on the user's message itself: not again after its tool ran, nor when a
+    // notice (a subagent finishing) wakes the session later.
+    const lastUser = messages.findLastIndex(m => m.role === 'user' && m.source?.kind === 'user')
+    const acted = messages.slice(lastUser + 1).some(m => m.role === 'assistant')
     const cmd = user.match(/\[run\]\s*(.+)$/s)?.[1]?.trim()
-    if (cmd && last?.role !== 'tool') { yield* call('bash', { command: cmd, description: 'probe' }); return }
+    if (cmd && !acted) { yield* call('bash', { command: cmd, description: 'probe' }); return }
     // A goal round: read the goal, then mark it complete, as a real model would once the work is done.
     const lastInput = messages.findLast(m => m.role === 'user' && (m.source?.kind === 'user' || m.source?.kind === 'goal'))
     if (lastInput && JSON.stringify(lastInput.content).includes('<goal_round>')) {
@@ -83,8 +87,8 @@ class Probe extends LlmAdapter {
       yield* text('PROBE goal completed'); return
     }
     const generic = user.match(/\[call:([a-z_]+)\]\s*(\{.*\})/s)
-    if (generic && last?.role !== 'tool') { yield* call(generic[1], JSON.parse(generic[2])); return }
-    if (user.includes('[ask]') && last?.role !== 'tool') {
+    if (generic && !acted) { yield* call(generic[1], JSON.parse(generic[2])); return }
+    if (user.includes('[ask]') && !acted) {
       yield* call('ask_user_question', { questions: [{ id: 'plan', header: '选方案', question: '用哪种方案？', options: [
         { label: '方案一 (Recommended)', description: '最快' }, { label: '方案二', description: '最省' }, { label: '方案三', description: '最稳' }] }] })
       return

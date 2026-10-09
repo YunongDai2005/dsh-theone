@@ -248,6 +248,8 @@ export default class TheOne extends Service {
     changeLinks = new Map();
     /** Main-chat message id → its classification, made while a reply was running. */
     sorting = new Map();
+    /** Notices shown in main chat for work a topic took up on its own (see relay). */
+    relays = new Set();
     /** Interjections TheOne moves to the queue; their inbox events are its own. */
     moving = new Set();
     /** Gateway id → cleanup of a run whose main-chat turn has closed while its Worker winds down. */
@@ -391,6 +393,15 @@ export default class TheOne extends Service {
         // interjection) or waits for it (queued), as in an ordinary session; about another matter, that
         // topic starts on it now, in the background.
         ctx.on('agent/inbox/inserted', ({ agent, message }) => {
+            // A topic woken by something other than the user or TheOne (a subagent reporting back) carries
+            // on where nobody sees it; main chat shows that work, as an ordinary chat would.
+            if (message.source.kind !== 'user' && !message.source.kind.startsWith('theone-') && !this.relays.has(message.id) && !this.runForWorker(agent)) {
+                const contextId = [...this.workers].find(([, handle]) => handle.agent === agent)?.[0];
+                if (contextId) {
+                    this.relay(agent, contextId, message);
+                    return;
+                }
+            }
             const run = this.runs.get(agent.id);
             if (!run || message.source.kind !== 'user' || this.moving.has(message.id))
                 return;
@@ -575,6 +586,7 @@ export default class TheOne extends Service {
             let users = decision.messages.filter(message => message.source.kind === 'user');
             // A goal set in main chat advances by rounds DSH queues here; each round goes to the goal's topic.
             const goalRounds = users.length ? [] : decision.messages.filter(message => goalRoundOf(message) !== undefined);
+            const relays = users.length || goalRounds.length ? [] : decision.messages.filter(message => this.relays.has(message.id));
             const run = this.runs.get(agent.id);
             if (run) {
                 // An interjection about another matter is not mixed into the reply: it becomes its own turn.
@@ -606,22 +618,25 @@ export default class TheOne extends Service {
             const events = agent.session.snapshotEvents();
             const midTurn = events.slice(events.findLastIndex(event => event.type === 'turn/start')).some(event => event.type === 'assistant/message');
             // Several steering messages can be claimed in one batch; they are routed and answered together.
-            if (!users.length && !goalRounds.length)
+            if (!users.length && !goalRounds.length && !relays.length)
                 throw new Error('TheOne requires a direct user message per gateway step');
             // A message sent during the last reply may still be being classified, or already worked on.
             for (const message of users)
                 await this.sorting.get(message.id)?.settled;
             signal.throwIfAborted();
-            const early = users.length === 1 ? this.background.get(users[0].id) : undefined;
+            const early = users.length === 1 ? this.background.get(users[0].id) : !users.length && relays.length === 1 ? this.background.get(relays[0].id) : undefined;
+            // A topic's own follow-up whose work is gone (TheOne restarted): main chat just says it.
+            if (relays.length && !early)
+                return decision;
             // Answered together with other input, a message is routed with it, not by itself.
             if (!early)
                 for (const message of users)
                     this.dropBackground(message.id);
             if (this.active || this.reservedGateway)
                 throw new Error('TheOne prototype accepts one active gateway turn at a time');
-            const input = (users.length ? users : goalRounds).at(-1);
+            const input = (users.length ? users : goalRounds.length ? goalRounds : relays).at(-1);
             const goalId = goalRoundOf(input);
-            const text = goalId !== undefined ? goalObjective(input)
+            const text = relays.length ? messageText(input) : goalId !== undefined ? goalObjective(input)
                 : users.map(message => message.content.filter(block => block.type === 'text').map(block => block.text).join('\n')).join('\n\n');
             // A picture or file on its own carries no words to route by: it belongs with the current topic.
             const attachmentOnly = !text.trim();
@@ -630,7 +645,7 @@ export default class TheOne extends Service {
             const attachmentLabel = [...new Set(users.flatMap(message => message.content).flatMap(block => block.type === 'image' ? [zh ? '图片' : 'Image']
                     : block.type === 'file' ? [block.attachment.name] : []))].join(zh ? '、' : ', ').slice(0, 80) || (zh ? '附件' : 'Attachment');
             // "Wrong topic" right after a reply moves the previous message to the right topic and redoes it there.
-            const correction = !midTurn && !attachmentOnly && goalId === undefined ? spokenCorrection(text) : undefined;
+            const correction = !midTurn && !attachmentOnly && goalId === undefined && !relays.length ? spokenCorrection(text) : undefined;
             const previous = correction === undefined ? undefined : this.previousRoute(agent, input.id);
             // Reserve before asynchronous classification so a second gateway cannot race it.
             this.reservedGateway = agent.id;
@@ -1863,9 +1878,10 @@ export default class TheOne extends Service {
         }
         // Other plugins may add their own context after it; the welcome is the newest input from either side.
         const latest = [...options.messages].reverse().find(message => message.role === 'user' && 'source' in message
-            && (message.source?.kind === 'user' || goalRoundOf(message) !== undefined || message.source?.kind === 'theone-welcome' || message.source?.kind === 'theone-note'));
-        if (latest && 'source' in latest && (latest.source?.kind === 'theone-welcome' || latest.source?.kind === 'theone-note')) {
-            const text = latest.source.kind === 'theone-welcome' ? welcomeText(latest.source.locale)
+            && (message.source?.kind === 'user' || goalRoundOf(message) !== undefined || message.source?.kind === 'theone-welcome' || message.source?.kind === 'theone-note' || this.relays.has(message.id)));
+        const relayed = latest && this.relays.has(latest.id) && this.background.has(latest.id);
+        if (latest && 'source' in latest && !relayed && (latest.source?.kind === 'theone-welcome' || latest.source?.kind === 'theone-note' || this.relays.has(latest.id))) {
+            const text = latest.source?.kind === 'theone-welcome' ? welcomeText(latest.source.locale)
                 : latest.content.filter(block => block.type === 'text').map(block => block.text).join('\n');
             yield { type: 'block-start', index: 0, blockType: 'text' };
             yield { type: 'text-delta', index: 0, text };
@@ -1873,7 +1889,7 @@ export default class TheOne extends Service {
             yield { type: 'finish', reason: { kind: 'stop' } };
             return;
         }
-        const input = [...options.messages].reverse().find((message) => message.role === 'user' && 'source' in message && (message.source?.kind === 'user' || goalRoundOf(message) !== undefined));
+        const input = relayed ? latest : [...options.messages].reverse().find((message) => message.role === 'user' && 'source' in message && (message.source?.kind === 'user' || goalRoundOf(message) !== undefined));
         if (!input)
             throw new Error('TheOne requires a session-backed user input');
         const route = this.store.route(input.id);
@@ -2119,6 +2135,27 @@ export default class TheOne extends Service {
                 this.store.deleteTopic(route.decision.contextId);
             throw error;
         }
+    }
+    /**
+     * A topic took up work on its own: follow it from now, and put a line in main chat whose turn shows
+     * that work, after anything main chat is already answering. The topic becomes the one in use then.
+     */
+    relay(worker, contextId, cause) {
+        const gatewayId = this.store.latestGateway(this.config.gatewayKey);
+        const gateway = gatewayId ? this.ctx.agents.get(SessionId(gatewayId)) : undefined;
+        if (!gateway)
+            return;
+        // The same notice the topic got ("Subtask status updated" and its report), as an ordinary chat shows it.
+        const note = createUserMessage({ source: cause.source, content: cause.content });
+        this.relays.add(note.id);
+        const run = new WorkerRun(this.ctx, worker, gateway, note.id, this.config.maxResponseChars, names => this.showWorkerTools(gateway, worker, names));
+        run.request = messageText(cause);
+        run.follow();
+        const current = this.store.current(this.config.gatewayKey);
+        this.store.plan(note.id, gateway.id, this.config.gatewayKey, { action: current === contextId ? 'KEEP' : current ? 'SWAP' : 'MOUNT', contextId, reason: 'topic-continues' }, false);
+        this.store.claim(note.id);
+        this.background.set(note.id, { run, receipt: { mode: 'rules' } });
+        gateway.followup(note);
     }
     /** Move an interjection to the queue, after what is already queued: it is answered as its own turn. */
     requeue(gateway, message) {

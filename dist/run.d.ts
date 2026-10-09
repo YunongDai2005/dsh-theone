@@ -43,6 +43,8 @@ export declare class WorkerRun {
     progress(limit?: number): string;
     /** Give the Worker its context and input; the run ends when the Worker is idle again. */
     start(contexts: UserMessage[], input: UserMessage): void;
+    /** Follow work the Worker took up on its own (a subagent reporting back, say) until it is idle again. */
+    follow(): void;
     /** Steering sent to the main chat during the reply reaches the Worker at its next step. */
     get canForward(): boolean;
     forward(message: UserMessage): void;

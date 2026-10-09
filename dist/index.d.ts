@@ -109,6 +109,8 @@ export default class TheOne extends Service {
     }>;
     /** Main-chat message id → its classification, made while a reply was running. */
     private readonly sorting;
+    /** Notices shown in main chat for work a topic took up on its own (see relay). */
+    private readonly relays;
     /** Interjections TheOne moves to the queue; their inbox events are its own. */
     private readonly moving;
     /** Gateway id → cleanup of a run whose main-chat turn has closed while its Worker winds down. */
@@ -265,6 +267,11 @@ export default class TheOne extends Service {
      * message simply waits its turn.
      */
     private startBackground;
+    /**
+     * A topic took up work on its own: follow it from now, and put a line in main chat whose turn shows
+     * that work, after anything main chat is already answering. The topic becomes the one in use then.
+     */
+    private relay;
     /** Move an interjection to the queue, after what is already queued: it is answered as its own turn. */
     private requeue;
     /** Stop background work on a message main chat will not show (deleted, or answered with other input). */
