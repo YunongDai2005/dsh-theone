@@ -98,7 +98,7 @@ class Probe extends LlmAdapter {
     const result = last?.role === 'tool' ? JSON.stringify(last.content ?? last).slice(0, 600) : undefined
     // Woken by a notice (a late answer, a subagent's report): what it said.
     const woke = last?.role === 'user' && last.source?.kind !== 'user' ? { woke: last.source?.kind, notice: textOf(last).slice(0, 300) } : {}
-    log({ session: options.sessionId, kind: worker ? 'topic' : 'native', user: user.slice(0, 80), tools, result, persona: system.includes('THIRD-PARTY-PERSONA'), ...woke })
+    log({ session: options.sessionId, kind: worker ? 'topic' : 'native', user: user.slice(0, 80), tools, result, persona: system.includes('THIRD-PARTY-PERSONA'), plan: (system + JSON.stringify(messages)).includes('You are in plan mode'), ...woke })
     yield* text(`PROBE ${worker ? 'topic' : 'native'} tools=${tools.length}${result ? ' result=' + result.slice(0, 200) : ''}`)
   }
 }

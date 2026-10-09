@@ -111,6 +111,12 @@ function clarifyText(decision, text) {
     const fixed = CLARIFY_TEXT[decision.reason];
     return fixed ? fixed[writtenInEnglish(text) ? 'en' : 'zh'] : decision.question;
 }
+/**
+ * Messages that wake a session to work on its own, as DSH shows them ("Subtask status updated" and the
+ * like), plus a late answer to a question. Notes DSH adds itself (a mode switch) wake nothing.
+ */
+const WAKING_SOURCES = new Set(['subagent-settled', 'agent-message', 'team-message', 'tool-jobs', 'schedule', 'webhook',
+    'cordis-host-runner', 'user-question-reply']);
 /** The words of a message, without its attachments. */
 function messageText(message) {
     return message.content.filter(block => block.type === 'text').map(block => block.text).join('\n');
@@ -363,6 +369,12 @@ export default class TheOne extends Service {
                 if (background)
                     (background.records ??= []).push(record);
             }
+            // The topic left plan mode (its plan was approved): main chat leaves it too, so the next message acts.
+            if (event.type === 'plan/mode') {
+                const run = this.runForWorker(session) ?? [...this.runs.values()].find(run => run.worker.session === session && !run.done);
+                if (run)
+                    this.syncPlanMode(run.worker, run.gateway);
+            }
             // The Worker's todo list belongs on the conversation the user is reading.
             if (event.type === 'todo/write') {
                 const run = [...this.runs.values()].find(run => run.worker.id === session.id && !run.done);
@@ -395,7 +407,7 @@ export default class TheOne extends Service {
         ctx.on('agent/inbox/inserted', ({ agent, message }) => {
             // A topic woken by something other than the user or TheOne (a subagent reporting back) carries
             // on where nobody sees it; main chat shows that work, as an ordinary chat would.
-            if (message.source.kind !== 'user' && !message.source.kind.startsWith('theone-') && !this.relays.has(message.id) && !this.runForWorker(agent)) {
+            if (WAKING_SOURCES.has(message.source.kind) && !this.relays.has(message.id) && !this.runForWorker(agent)) {
                 const contextId = [...this.workers].find(([, handle]) => handle.agent === agent)?.[0];
                 if (contextId) {
                     this.relay(agent, contextId, message);
@@ -1529,6 +1541,19 @@ export default class TheOne extends Service {
         }
         catch { /* An unavailable preset (e.g. Auto without its integration) leaves the Worker's setting unchanged. */ }
     }
+    /** The topic plans instead of acting while main chat is in plan mode (/plan), as an ordinary chat would. */
+    syncPlanMode(gateway, worker) {
+        try {
+            const plan = this.agentService(gateway, 'planMode');
+            const target = this.agentService(worker, 'planMode') ?? plan;
+            if (!plan || !target)
+                return;
+            const wanted = plan.get(gateway), has = target.get(worker);
+            if ((wanted.pending ?? wanted.active) !== (has.pending ?? has.active))
+                target.set(worker, wanted.pending ?? wanted.active);
+        }
+        catch { /* A DSH without plan mode: nothing to keep in step. */ }
+    }
     refreshCompactionSummary(worker, contextId) {
         const events = worker.session.snapshotEvents();
         const end = events.findLast(event => event.type === 'compaction/end' && !event.data.error);
@@ -2211,6 +2236,7 @@ export default class TheOne extends Service {
         }
         signal?.throwIfAborted();
         this.syncPermissions(gateway, worker);
+        this.syncPlanMode(gateway, worker);
         await this.readyToRun(worker.id);
         const refreshed = this.store.contexts().find(item => item.id === context.id) ?? context;
         const run = new WorkerRun(this.ctx, worker, gateway, input.id, this.config.maxResponseChars, names => this.showWorkerTools(gateway, worker, names));

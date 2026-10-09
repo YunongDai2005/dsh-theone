@@ -211,6 +211,8 @@ export default class TheOne extends Service {
     private workerModel;
     /** The Worker runs under the permission mode chosen in main chat (sandbox and approval together). */
     private syncPermissions;
+    /** The topic plans instead of acting while main chat is in plan mode (/plan), as an ordinary chat would. */
+    private syncPlanMode;
     private refreshCompactionSummary;
     private get linkScope();
     linkageSnapshot(): LinkageSnapshot;

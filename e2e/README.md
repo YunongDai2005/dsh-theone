@@ -47,6 +47,7 @@ history catalog makes of an ordinary session, `[run] CMD` runs CMD with the bash
 | A topic edits a file in a git project (`[run] echo x >> readme.txt`; `changes.mjs`) | Main chat's reply carries the same "Edited readme.txt +1 −0" card as an ordinary chat; opening it shows the comparison, numbered by main chat's turn |
 | A topic hands over a file (`[call:present] {"files":[{"path":"readme.txt"}]}`) | Main chat's reply carries the same file card as an ordinary chat |
 | A topic starts a subagent (`[call:subagent] {"description":"…","prompt":"…"}`), which reports back after the reply | Main chat shows DSH's own "Subtask status updated" card, then the topic's follow-up reply, as an ordinary chat does |
+| `/plan` in main chat, then a message (`plan.mjs main`; `plan-exit.mjs` approves a plan) | The topic gets plan mode's instructions, as an ordinary chat's model does; after "Approve and run" both leave plan mode |
 | A background topic asks for approval while another reply runs (`ACCESS=仅可查看` with `mid.mjs`) | The approval prompt opens in main chat at once and names the topic; "allow once" lets it continue |
 | While a reply runs (`[run] sleep 10`; `mid.mjs`): an interjection for another topic | That topic answers at once in the background; the reply is not mixed with it; main chat shows it after the reply, as its own turn |
 | While a reply runs: an interjection about it, and a queued message for another topic | The interjection joins the reply (between its steps); the queued message's topic starts at once and is shown after |
