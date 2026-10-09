@@ -23,7 +23,7 @@ Run them before a release that touches how topic sessions are created, resumed o
 `node drive.mjs native <workspace> "<message>" [preset] [access]` sends a message in a new ordinary
 session; `node drive.mjs main "<message>" [preset] [access]` sends it in TheOne's main chat. Markers:
 `[topic:NAME]` routes to the topic titled NAME (or creates it), `[name:NAME]` names the topic the
-history catalog makes of an ordinary session, `[run] CMD` runs CMD with the bash tool, `[ask]` asks a three-option question, `[call:TOOL] {json}` calls any tool.
+history catalog makes of an ordinary session, `[run] CMD` runs CMD with the bash tool, `[ask]` asks a three-option question, `[call:TOOL] {json}` calls any tool; a goal round is read and completed through the goal tools.
 
 ## Checks (all passed on 2026-10-09)
 
@@ -37,4 +37,8 @@ history catalog makes of an ordinary session, `[run] CMD` runs CMD with the bash
 | A topic asks a question (`[ask]`; `ask.mjs`, `answer.mjs`) | The choice window opens in main chat; an option, or a typed answer, reaches the topic |
 | A topic needs approval (`[call:bash]` with `sandbox_permissions` under read only) | The approval prompt opens in main chat; "allow once" lets the topic continue |
 | DSH's sidebar | No "Unassigned" heading when only TheOne's sessions are outside a workspace |
+| `/compact` in main chat (`cmd.mjs`) | The topic in use is compacted, and the command says so; main chat's own compaction shows as DSH's notice |
+| `/goal` in main chat | Each round runs in the topic the goal was set in; the topic reads and completes main chat's goal, and the goal ends |
+| "Branch in a new chat" on a reply in main chat (`branch.mjs`) | A new topic "<title> (branch)" from that point; main chat stays open, keeps its name and says so; the next message goes to the branch |
+| Main chat's file panel and a new terminal (`term.mjs`) | Both in the folder of the topic in use |
 | DSH's workspaces and archive afterwards | No TheOne session attached to a workspace; the archive holds only TheOne's sessions; none of the user's sessions archived |

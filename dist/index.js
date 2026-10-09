@@ -2261,11 +2261,16 @@ export default class TheOne extends Service {
                             this.stowWhenIdle(worker.id);
                     }
                 }
-                const own = await compaction.compactNow(invocation.agent, invocation.signal, invocation.commandId).catch((error) => error);
+                // Not tied to the command: DSH would then show main chat's numbers as the command's whole result.
+                const own = await compaction.compactNow(invocation.agent, invocation.signal).catch((error) => error);
+                // Main chat's own compaction shows as DSH's usual notice; only a real failure is worth a line.
                 const main = zh ? '主聊天' : 'Main chat';
-                lines.push(own instanceof Error ? failed(main, own) : done(main, own));
-                const summarySeq = own && !(own instanceof Error) ? own.summarySeq : undefined;
-                return { kind: 'success', text: lines.join('\n'), ...(summarySeq === undefined ? {} : { sourceEventSeq: summarySeq }) };
+                if (own instanceof Error && own.code !== 'summary')
+                    lines.push(failed(main, own));
+                if (!lines.length)
+                    lines.push(done(main, own instanceof Error ? null : own));
+                // No source event: DSH would then show its own one-line account of main chat alone.
+                return { kind: 'success', text: lines.join('\n') };
             },
         });
     }
