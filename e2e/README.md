@@ -23,7 +23,7 @@ Run them before a release that touches how topic sessions are created, resumed o
 `node drive.mjs native <workspace> "<message>" [preset] [access]` sends a message in a new ordinary
 session; `node drive.mjs main "<message>" [preset] [access]` sends it in TheOne's main chat. Markers:
 `[topic:NAME]` routes to the topic titled NAME (or creates it), `[name:NAME]` names the topic the
-history catalog makes of an ordinary session, `[run] CMD` runs CMD with the bash tool, `[ask]` asks a three-option question, `[call:TOOL] {json}` calls any tool (each marker acts once, not again when a notice wakes the session), `[project:NAME]` puts a new topic in that project folder; a goal round is read and completed through the goal tools.
+history catalog makes of an ordinary session, `[run] CMD` runs CMD with the bash tool, `[ask]` asks a three-option question (`[ask:N]` waits only N seconds, for DSH's timed question mode), `[call:TOOL] {json}` calls any tool (each marker acts once, not again when a notice wakes the session), `[project:NAME]` puts a new topic in that project folder; a goal round is read and completed through the goal tools.
 
 ## Checks (all passed on 2026-10-09)
 

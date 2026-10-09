@@ -532,6 +532,21 @@ export default class TheOne extends Service {
       }
       scope.effect(() => () => { for (const undo of restore) undo() })
     })
+    // A question a topic asked that timed out ("answer later") is answered in main chat, where it is
+    // shown; the answer goes to the topic that asked, which carries on (and main chat shows that).
+    ;(ctx as unknown as { inject(names: string[], callback: (scope: Context) => void): void }).inject(['userQuestions'], scope => {
+      type Questions = { answer(agent: Agent, callId: string, answer: unknown): boolean; continued(agent: Agent): readonly { callId: string }[] }
+      const questions = scope.get('userQuestions') as Questions
+      const original = questions.answer
+      const service = this
+      if (typeof original !== 'function' || typeof questions.continued !== 'function') return
+      questions.answer = function (this: unknown, agent: Agent, callId: string, answer: unknown) {
+        const asker = service.store.isGateway(agent.id) ? [...service.workers.values()].map(handle => handle.agent)
+          .find(worker => { try { return questions.continued(worker).some(question => question.callId === callId) } catch { return false } }) : undefined
+        return original.call(this, asker ?? agent, callId, answer)
+      }
+      scope.effect(() => () => { questions.answer = original })
+    })
     // A terminal opened beside main chat starts in the topic's folder too (the last one worked out).
     ;(ctx as unknown as { inject(names: string[], callback: (scope: Context) => void): void }).inject(['terminalController'], scope => {
       type Environment = (agent: Agent, signal: AbortSignal) => { cwd: string }

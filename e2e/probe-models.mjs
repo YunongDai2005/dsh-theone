@@ -88,13 +88,17 @@ class Probe extends LlmAdapter {
     }
     const generic = user.match(/\[call:([a-z_]+)\]\s*(\{.*\})/s)
     if (generic && !acted) { yield* call(generic[1], JSON.parse(generic[2])); return }
-    if (user.includes('[ask]') && !acted) {
-      yield* call('ask_user_question', { questions: [{ id: 'plan', header: '选方案', question: '用哪种方案？', options: [
+    // [ask:N] waits only N seconds, so the question times out and can be answered later.
+    const askTimeout = user.match(/\[ask:(\d+)\]/)?.[1]
+    if ((user.includes('[ask]') || askTimeout) && !acted) {
+      yield* call('ask_user_question', { ...askTimeout ? { timeout: Number(askTimeout) } : {}, questions: [{ id: 'plan', header: '选方案', question: '用哪种方案？', options: [
         { label: '方案一 (Recommended)', description: '最快' }, { label: '方案二', description: '最省' }, { label: '方案三', description: '最稳' }] }] })
       return
     }
     const result = last?.role === 'tool' ? JSON.stringify(last.content ?? last).slice(0, 600) : undefined
-    log({ session: options.sessionId, kind: worker ? 'topic' : 'native', user: user.slice(0, 80), tools, result, persona: system.includes('THIRD-PARTY-PERSONA') })
+    // Woken by a notice (a late answer, a subagent's report): what it said.
+    const woke = last?.role === 'user' && last.source?.kind !== 'user' ? { woke: last.source?.kind, notice: textOf(last).slice(0, 300) } : {}
+    log({ session: options.sessionId, kind: worker ? 'topic' : 'native', user: user.slice(0, 80), tools, result, persona: system.includes('THIRD-PARTY-PERSONA'), ...woke })
     yield* text(`PROBE ${worker ? 'topic' : 'native'} tools=${tools.length}${result ? ' result=' + result.slice(0, 200) : ''}`)
   }
 }

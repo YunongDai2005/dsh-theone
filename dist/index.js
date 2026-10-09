@@ -507,6 +507,24 @@ export default class TheOne extends Service {
             scope.effect(() => () => { for (const undo of restore)
                 undo(); });
         });
+        ctx.inject(['userQuestions'], scope => {
+            const questions = scope.get('userQuestions');
+            const original = questions.answer;
+            const service = this;
+            if (typeof original !== 'function' || typeof questions.continued !== 'function')
+                return;
+            questions.answer = function (agent, callId, answer) {
+                const asker = service.store.isGateway(agent.id) ? [...service.workers.values()].map(handle => handle.agent)
+                    .find(worker => { try {
+                    return questions.continued(worker).some(question => question.callId === callId);
+                }
+                catch {
+                    return false;
+                } }) : undefined;
+                return original.call(this, asker ?? agent, callId, answer);
+            };
+            scope.effect(() => () => { questions.answer = original; });
+        });
         ctx.inject(['terminalController'], scope => {
             const terminals = scope.get('terminalController');
             const original = terminals.environment;
