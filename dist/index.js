@@ -1448,7 +1448,9 @@ export default class TheOne extends Service {
                 // The gateway turn closed or approval is unavailable: answer as the Worker's own chain would.
                 return next();
             }
-        });
+            // DSH forwards approvals of every session to the browser; ours must go first, or the prompt
+            // opens in the hidden topic session where nobody sees it and the topic waits forever.
+        }, { prepend: true });
     }
     /**
      * A topic another topic's Worker may read: never private or kept apart by the user, and within
@@ -1489,8 +1491,12 @@ export default class TheOne extends Service {
             const run = this.runForWorker(worker);
             if (request.agent !== worker || !questions || !run)
                 return next();
-            return await questions.ask({ ...request, agent: run.gateway });
-        });
+            // A timed wait is registered for the Worker's own call; main chat's window cannot claim it and
+            // would never open. Ask main chat plainly; the Worker's wait still decides when it times out.
+            const { wait: _wait, ...plain } = request;
+            return await questions.ask({ ...plain, agent: run.gateway });
+            // Before DSH's own forwarding to the browser, for the same reason as approvals.
+        }, { prepend: true });
     }
     /** Capability is scoped to the exact owned Worker; the model cannot select another Context. */
     registerWorkerTools(agentCtx, worker, contextId) {
