@@ -96,6 +96,15 @@ export default class TheOne extends Service {
     private readonly gatewayDirectory;
     /** Gateway id → the Worker activity its current turn is showing. */
     private readonly runs;
+    /**
+     * Main-chat message id → the topic already working on it in the background: a message about another
+     * matter, sent while a reply was running. Main chat shows that work when it gets to the message.
+     */
+    private readonly background;
+    /** Main-chat message id → its classification, made while a reply was running. */
+    private readonly sorting;
+    /** Interjections TheOne moves to the queue; their inbox events are its own. */
+    private readonly moving;
     /** Gateway id → cleanup of a run whose main-chat turn has closed while its Worker winds down. */
     private readonly closing;
     /** A model the user picked in main chat's own model selector; it answers through the Workers. */
@@ -228,6 +237,34 @@ export default class TheOne extends Service {
     private registerFactTools;
     /** Mirror the routed Worker's steps into the main chat; tools execute exclusively in the Worker. */
     answer(options: GenerateOptions): AsyncIterable<StreamChunk>;
+    /**
+     * Which topic a message is about: candidate search, then the classifier (with a review of the rest
+     * of the catalog before a new topic), or rules when there is none. `running` describes a reply
+     * still being written when the message was sent.
+     */
+    private classify;
+    /**
+     * Classify a message sent while `run` is replying. About that reply (or undecidable): an interjection
+     * reaches it, a queued one waits, as in an ordinary session. About another matter: its topic starts
+     * on it now in the background, and an interjection becomes its own turn instead of joining the reply.
+     */
+    private sortMidReply;
+    /** The other matter a message sent during `run` is about, or nothing when it is about that reply or unsure. */
+    private otherMatter;
+    /**
+     * Start a topic on a message main chat will get to later. At most three topics work at once (the
+     * one shown and two in the background), and a topic works on one thing at a time; otherwise the
+     * message simply waits its turn.
+     */
+    private startBackground;
+    /** Move an interjection to the queue, after what is already queued: it is answered as its own turn. */
+    private requeue;
+    /** Stop background work on a message main chat will not show (deleted, or answered with other input). */
+    private dropBackground;
+    /** A reply or background work is under way. */
+    private get busy();
+    /** Start the routed topic working on `input`; `register` sees the run before the Worker starts. */
+    private startRun;
     /** The message answered just before `inputId` in this main chat, with the topic it went to. */
     private previousRoute;
     /** Route a misrouted message again, never back to the topic it was wrongly given. */
@@ -310,5 +347,7 @@ export default class TheOne extends Service {
      * run (or for a nested dispatch) its calls are refused rather than executed.
      */
     private mirroredRun;
+    /** The topic of a run main chat is not showing yet (work started on a message sent during another reply). */
+    private backgroundTopic;
     private runForWorker;
 }

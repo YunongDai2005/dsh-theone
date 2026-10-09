@@ -82,12 +82,25 @@ export class WorkerRun {
                 this.outcome = event.data.reason;
         }));
     }
-    /** Give the Worker its context and input; the run ends when the Worker is idle again. */
     /** Related topics whose news this run's briefing carried, and those the Worker then looked up. */
     briefed = [];
     lookedUp = new Set();
     /** The Worker recorded facts itself this run, so no extraction is needed afterwards. */
     recordedFacts = false;
+    /** The request this run answers, as the user wrote it. */
+    request = '';
+    /** The end of what the Worker has written so far, for judging messages sent meanwhile. */
+    progress(limit = 600) {
+        let text = '';
+        for (const step of [...this.steps].reverse()) {
+            const written = step.attempt.chunks.map(chunk => chunk.type === 'text-delta' ? chunk.text : '').join('');
+            text = written + (text && written ? '\n' : '') + text;
+            if (text.length >= limit)
+                break;
+        }
+        return text.slice(-limit);
+    }
+    /** Give the Worker its context and input; the run ends when the Worker is idle again. */
     start(contexts, input) {
         for (const context of contexts)
             this.worker.inject(context);

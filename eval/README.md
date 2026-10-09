@@ -184,6 +184,24 @@ What it does not cover yet: the Worker's own `theone_record` and `theone_lookup`
 extractor writes facts here, so `facts` is a lower bound); related topics' digests in the briefing;
 private topics and workspace scope (every topic may share).
 
+## Messages sent while a reply runs
+
+`eval/data/mid-reply/cases.json` holds 35 hand-written cases (Chinese and English, from
+`docs/parallel-topics.md`): a reply is running, and the user sends one more message, as an
+interjection or queued. Each case says where it belongs: with the running work, another existing
+topic, or a new one. Wording is not a guide: other topics' names appear inside requests about the
+running work ("put the 9070 numbers in this table too"), and "by the way" appears before other matters.
+
+```sh
+node eval/run-mid-reply.mjs                 # with DEEPSEEK_API_KEY, or OPENAI_* and --model, as above
+node eval/run-mid-reply.mjs --dry-run       # the pipeline only; the fake model always stays put
+```
+
+It reports how often the destination is right, and the two mistakes apart: **mixed in** (another
+matter put into the running reply) and **split off** (a change to the running work sent elsewhere,
+so the work carries on without it). The plugin's rule is applied as is: a bare "ok" stays, and so
+does anything the classifier keeps, cannot decide, or fails on.
+
 ## Tests
 
 ```sh

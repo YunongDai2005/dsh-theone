@@ -139,10 +139,15 @@ export declare class ContextStore {
     /** The main chat used last (by its latest routed message), else the newest one; shared by every browser. */
     latestGateway(gatewayKey: string): string | undefined;
     recentGatewayIds(gatewayKey: string, excludingId: string): string[];
-    /** Idempotent planning reserves a worker ID before any DSH creation. */
-    plan(messageId: string, gatewayId: string, gatewayKey: string, proposed: Decision): RouteRecord;
+    /**
+     * Idempotent planning reserves a worker ID before any DSH creation. A message planned while another
+     * reply runs (`mount` false) leaves the topic in use as it is until main chat gets to it.
+     */
+    plan(messageId: string, gatewayId: string, gatewayKey: string, proposed: Decision, mount?: boolean): RouteRecord;
     /** Only a planned route may execute. Ambiguous interrupted work is never replayed automatically. */
     claim(messageId: string): void;
+    /** Drop the route of a message main chat never got to (the user deleted it from the queue). */
+    forget(messageId: string): void;
     finish(messageId: string, status: 'completed' | 'failed'): void;
     /** Whole-session access is allowed only for this Context's dedicated worker. */
     addSource(contextId: string, sessionId: string, range?: {

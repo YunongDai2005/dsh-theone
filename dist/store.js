@@ -486,8 +486,11 @@ export class ContextStore {
       GROUP BY gs.gateway_id ORDER BY MAX(r.rowid) DESC LIMIT 2`)
             .all(gatewayKey, excludingId).map(row => String(row.gateway_id));
     }
-    /** Idempotent planning reserves a worker ID before any DSH creation. */
-    plan(messageId, gatewayId, gatewayKey, proposed) {
+    /**
+     * Idempotent planning reserves a worker ID before any DSH creation. A message planned while another
+     * reply runs (`mount` false) leaves the topic in use as it is until main chat gets to it.
+     */
+    plan(messageId, gatewayId, gatewayKey, proposed, mount = true) {
         this.db.exec('BEGIN IMMEDIATE');
         try {
             const existing = this.route(messageId);
@@ -504,7 +507,7 @@ export class ContextStore {
                 this.seed([context]);
                 decision = { ...decision, contextId: context.id };
             }
-            if (decision.contextId) {
+            if (decision.contextId && mount) {
                 this.db.prepare('INSERT INTO gateway_state VALUES (?, ?) ON CONFLICT(gateway_key) DO UPDATE SET context_id = excluded.context_id')
                     .run(gatewayKey, decision.contextId);
             }
@@ -524,6 +527,10 @@ export class ContextStore {
         const result = this.db.prepare("UPDATE routing_events SET status = 'running' WHERE message_id = ? AND status = 'planned'").run(messageId);
         if (result.changes !== 1)
             throw new Error('This input has already started. Inspect its DSH session before resubmitting; automatic replay is disabled.');
+    }
+    /** Drop the route of a message main chat never got to (the user deleted it from the queue). */
+    forget(messageId) {
+        this.db.prepare("DELETE FROM routing_events WHERE message_id = ? AND status IN ('planned', 'running')").run(messageId);
     }
     finish(messageId, status) {
         this.db.prepare('UPDATE routing_events SET status = ? WHERE message_id = ?').run(status, messageId);

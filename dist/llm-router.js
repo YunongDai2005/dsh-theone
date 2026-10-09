@@ -19,8 +19,14 @@ CLARIFY 仅限：用户明确引用缺失旧聊天（如“继续上次那个”
 /** Added to the routing prompt only when facts are offered, so routing is unchanged otherwise. */
 export const FACTS_PROMPT = `
 symbols（可能没有）是其他话题里用户已确认的要点候选（来源话题、名称、值）。本轮请求确实要用到其中哪些，就把它们的 id 放进 imports（最多 ${FACT_LIMITS.imports} 个）；只是看起来相关、实际用不到的不要放。没有就输出空数组。imports 只影响参考资料，不影响话题选择。输出 JSON 时增加字段 "imports": [ids]。`;
+/** Added only for a message sent while a reply is still being written. */
+export const RUNNING_PROMPT = `
+running（可能没有）表示用户发这条消息时，话题 running.topicId 的回复还在进行中：running.request 是它正在回答的请求，running.progress 是它已经输出的最后一段。判断本轮 text 是不是关于这件正在进行的工作：补充条件、修改要求、纠正、叫停、催促、认可、回应它刚说的话、问它的进度，或者让它做完后接着做什么，都属于它，选 EXISTING 且 contextId 为 running.topicId（用到其他话题的数据就放进 relatedIds）。另一件事（另一个已有话题，或新的事情）照常选 EXISTING 或 CREATE，它会在后台另行处理，不会打断正在进行的回复。不要凭某个词判断，要看这句话要解决的是不是正在进行的那件事。拿不准时选 running.topicId。`;
 /** The routing instructions for one request. */
-export const routingPrompt = (payload) => 'symbols' in payload && Array.isArray(payload.symbols) && payload.symbols.length ? ROUTING_PROMPT + FACTS_PROMPT : ROUTING_PROMPT;
+export const routingPrompt = (payload) => {
+    const facts = 'symbols' in payload && Array.isArray(payload.symbols) && payload.symbols.length ? FACTS_PROMPT : '';
+    return ROUTING_PROMPT + facts + ('running' in payload && payload.running ? RUNNING_PROMPT : '');
+};
 export function routingPayload(input) {
     const text = redactRoutingText(input.text).slice(0, 2000);
     const contexts = input.contexts.map(context => ({
@@ -38,7 +44,9 @@ export function routingPayload(input) {
     // Candidates arrive within their size budget; names are cleaned again here, as everything sent is.
     const symbols = (input.facts ?? []).slice(0, FACT_LIMITS.routerItems).map(fact => ({ id: fact.id, topic: redactRoutingText(fact.topic).slice(0, 40),
         label: redactRoutingText(fact.label).slice(0, FACT_LIMITS.routerLabel), kind: fact.kind, value: redactRoutingText(fact.value).slice(0, FACT_LIMITS.routerValue) }));
-    const payload = { text, contexts, currentId: mounted(input, contexts), recent, historyIncomplete: input.historyIncomplete ?? false, ...(corrections.length ? { corrections } : {}), ...(symbols.length ? { symbols } : {}) };
+    const running = input.running && offered.has(input.running.topicId) ? { running: { topicId: input.running.topicId,
+            request: redactRoutingText(input.running.request).slice(0, 600), progress: redactRoutingText(input.running.progress).slice(-600) } } : {};
+    const payload = { text, contexts, currentId: mounted(input, contexts), recent, historyIncomplete: input.historyIncomplete ?? false, ...(corrections.length ? { corrections } : {}), ...(symbols.length ? { symbols } : {}), ...running };
     if (!text.trim() || JSON.stringify(payload).length > 24000)
         throw new RouterFailure('ROUTER_INPUT_INVALID');
     return payload;

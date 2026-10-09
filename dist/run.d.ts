@@ -32,12 +32,16 @@ export declare class WorkerRun {
     done: boolean;
     settled: Promise<void>;
     constructor(ctx: Context, worker: Agent, gateway: Agent, inputId: string, maxChars: number, beforeToolCalls: (names: string[]) => void);
-    /** Give the Worker its context and input; the run ends when the Worker is idle again. */
     /** Related topics whose news this run's briefing carried, and those the Worker then looked up. */
     briefed: string[];
     readonly lookedUp: Set<string>;
     /** The Worker recorded facts itself this run, so no extraction is needed afterwards. */
     recordedFacts: boolean;
+    /** The request this run answers, as the user wrote it. */
+    request: string;
+    /** The end of what the Worker has written so far, for judging messages sent meanwhile. */
+    progress(limit?: number): string;
+    /** Give the Worker its context and input; the run ends when the Worker is idle again. */
     start(contexts: UserMessage[], input: UserMessage): void;
     /** Steering sent to the main chat during the reply reaches the Worker at its next step. */
     get canForward(): boolean;
