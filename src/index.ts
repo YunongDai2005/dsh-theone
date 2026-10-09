@@ -590,7 +590,7 @@ export default class TheOne extends Service {
       child.inject(['workspaceRegistry'], scope => {
         scope.effect(() => connection.fetch!.register({ path: '/api/theone/gateway', methods: ['GET'], requestBody: 'buffered', fetch: async () => {
           await mkdir(this.gatewayDirectory, { recursive: true })
-          return Response.json({ cwd: this.gatewayDirectory }, { headers: { 'cache-control': 'no-store' } })
+          return Response.json({ cwd: this.gatewayDirectory, current: this.store.latestGateway(this.config.gatewayKey) ?? null }, { headers: { 'cache-control': 'no-store' } })
         } }))
         // Main chat is about to pick its model; DSH would save that as the user's default.
         scope.effect(() => connection.fetch!.register({ path: '/api/theone/gateway/hold', methods: ['POST'], requestBody: 'buffered', fetch: async () => {

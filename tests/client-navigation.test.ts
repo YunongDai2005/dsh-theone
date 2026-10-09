@@ -7,7 +7,9 @@ function fixture() {
   const ids = new Set<string>()
   const opened: string[] = [], created: string[] = [], prepared: string[] = []
   let controller = new AbortController()
+  const known = { id: undefined as string | undefined }
   const host: GatewayNavigationHost = {
+    async current() { return known.id },
     async exists(id) { return ids.has(id) },
     async create(id) { created.push(id); ids.add(id) },
     async prepare(id) { prepared.push(id) },
@@ -16,8 +18,21 @@ function fixture() {
   }
   const storage = {getItem:(key:string)=>values.get(key)??null,setItem:(key:string,value:string)=>{values.set(key,value)}}
   const make = () => new GatewayNavigation(host,storage,'gateway',()=> 'fixed-gateway')
-  return {host,make,ids,opened,created,prepared,values,cancel:()=>controller.abort()}
+  return {host,make,ids,opened,created,prepared,values,known,cancel:()=>controller.abort()}
 }
+
+test('a new browser or device continues the main chat DSH already has',async()=>{
+  const f=fixture()
+  f.ids.add('existing-gateway'); f.known.id='existing-gateway'
+  await f.make().open()
+  assert.deepEqual(f.created,[])
+  assert.deepEqual(f.opened,['existing-gateway'])
+  assert.equal(f.values.get('gateway'),'existing-gateway')
+  // A main chat that is gone from DSH is not reused.
+  const g=fixture(); g.known.id='deleted-gateway'
+  await g.make().open()
+  assert.deepEqual(g.created,['fixed-gateway'])
+})
 
 test('main entry reuses its saved host session across client restarts',async()=>{
   const f=fixture()

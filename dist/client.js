@@ -73,7 +73,8 @@ var GatewayNavigation = class {
   async ensure() {
     let id = this.getSnapshot();
     if (!id) {
-      id = this.uuid();
+      const known = await this.host.current().catch(() => void 0);
+      id = known && await this.host.exists(known) ? known : this.uuid();
       this.storage.setItem(this.key, id);
       for (const listener of this.listeners) listener();
     }
@@ -607,6 +608,10 @@ function apply(ctx) {
     await ctx.sessions.create({ sessionId: id, cwd });
   }
   const navigation = new GatewayNavigation({
+    async current() {
+      const response = await fetch("/api/theone/gateway", { signal: lifetime.signal, cache: "no-store" });
+      return response.ok ? (await response.json()).current ?? void 0 : void 0;
+    },
     async exists(id) {
       await ctx.sessions.refresh();
       return ctx.sessions.list.getSnapshot().ids.includes(id);

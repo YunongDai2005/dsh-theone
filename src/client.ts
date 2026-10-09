@@ -44,6 +44,10 @@ export function apply(ctx: Context) {
     await ctx.sessions.create({ sessionId: id as SessionId, cwd })
   }
   const navigation = new GatewayNavigation({
+    async current() {
+      const response = await fetch('/api/theone/gateway', { signal: lifetime.signal, cache: 'no-store' })
+      return response.ok ? ((await response.json()) as { current?: string | null }).current ?? undefined : undefined
+    },
     async exists(id) { await ctx.sessions.refresh(); return ctx.sessions.list.getSnapshot().ids.includes(id as SessionId) },
     create: createGateway,
     async prepare(id) {

@@ -508,6 +508,15 @@ export class ContextStore {
     } : undefined
   }
 
+  /** The main chat used last (by its latest routed message), else the newest one; shared by every browser. */
+  latestGateway(gatewayKey: string): string | undefined {
+    const row = this.db.prepare(`SELECT gs.gateway_id FROM gateway_sessions gs
+      LEFT JOIN routing_events r ON r.gateway_id = gs.gateway_id
+      WHERE gs.gateway_key = ? GROUP BY gs.gateway_id
+      ORDER BY MAX(r.rowid) IS NULL, MAX(r.rowid) DESC, MAX(gs.rowid) DESC LIMIT 1`).get(gatewayKey)
+    return row ? String(row.gateway_id) : undefined
+  }
+
   recentGatewayIds(gatewayKey: string, excludingId: string): string[] {
     return this.db.prepare(`SELECT gs.gateway_id FROM gateway_sessions gs
       JOIN routing_events r ON r.gateway_id = gs.gateway_id

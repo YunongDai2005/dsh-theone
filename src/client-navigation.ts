@@ -1,5 +1,7 @@
 /** Browser-local identity; history and conversation content remain on the DSH host. */
 export interface GatewayNavigationHost {
+  /** The main chat this DSH already has, so another browser or device continues it. */
+  current(): Promise<string | undefined>
   exists(id: string): Promise<boolean>
   create(id: string): Promise<void>
   prepare(id: string): Promise<void>
@@ -32,7 +34,8 @@ export class GatewayNavigation {
   private async ensure(): Promise<string> {
     let id = this.getSnapshot()
     if (!id) {
-      id = this.uuid()
+      const known = await this.host.current().catch(() => undefined)
+      id = known && await this.host.exists(known) ? known : this.uuid()
       // Reserve before the RPC: retries adopt the same id after an ambiguous response.
       this.storage.setItem(this.key, id)
       for (const listener of this.listeners) listener()

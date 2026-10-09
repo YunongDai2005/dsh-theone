@@ -136,6 +136,8 @@ export declare class ContextStore {
     seen(reader: string, source: string): number | undefined;
     markSeen(reader: string, source: string, at: number): void;
     route(messageId: string): RouteRecord | undefined;
+    /** The main chat used last (by its latest routed message), else the newest one; shared by every browser. */
+    latestGateway(gatewayKey: string): string | undefined;
     recentGatewayIds(gatewayKey: string, excludingId: string): string[];
     /** Idempotent planning reserves a worker ID before any DSH creation. */
     plan(messageId: string, gatewayId: string, gatewayKey: string, proposed: Decision): RouteRecord;

@@ -88,3 +88,19 @@ test('off and on again: only TheOne’s own sessions go to the archive, and only
     assert.deepEqual(store.stowedSessionIds(), [])
   } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
 })
+
+test('every browser continues the same main chat: the one used last', () => {
+  const store = new ContextStore(':memory:')
+  try {
+    assert.equal(store.latestGateway('default'), undefined)
+    store.seed([{ id: 'ctx_a', title: 'A', summary: 'A', entities: [], keywords: [], lastState: '' }])
+    store.rememberGateway('default', 'used-chat')
+    store.plan('m1', 'used-chat', 'default', { action: 'MOUNT', contextId: 'ctx_a', reason: 'test' })
+    // A browser opened later created an empty one; the chat with messages still wins.
+    store.rememberGateway('default', 'empty-chat')
+    assert.equal(store.latestGateway('default'), 'used-chat')
+    store.plan('m2', 'empty-chat', 'default', { action: 'MOUNT', contextId: 'ctx_a', reason: 'test' })
+    assert.equal(store.latestGateway('default'), 'empty-chat')
+    assert.equal(store.latestGateway('other-key'), undefined)
+  } finally { store.close() }
+})
