@@ -349,14 +349,17 @@ export default class TheOne extends Service {
                     void this.finishRun(session.id, true);
                 this.catalog?.requestRefresh();
             }
-            // A topic's changed files are listed under the reply in main chat that shows its work.
-            if (event.type === 'workspace/changes') {
+            // A topic's changed files and the files it hands over are listed under the reply in main chat
+            // that shows its work; work main chat has not reached yet is listed when it gets there.
+            const kind = event.type;
+            if (kind === 'workspace/changes' || kind === 'deliverables/presented') {
+                const record = { type: kind, seq: event.seq, data: event.data };
                 const run = [...this.runs.values()].find(run => run.worker.id === session.id && !run.done);
                 if (run)
-                    this.mirrorChanges(run.gateway, session.id, event.seq);
+                    this.mirrorRecord(run.gateway, session.id, record);
                 const background = [...this.background.values()].find(entry => entry.run.worker.id === session.id);
                 if (background)
-                    (background.changes ??= []).push(event.seq);
+                    (background.records ??= []).push(record);
             }
             // The Worker's todo list belongs on the conversation the user is reading.
             if (event.type === 'todo/write') {
@@ -1896,8 +1899,8 @@ export default class TheOne extends Service {
                 this.reservedGateway = undefined;
                 if (background?.todo !== undefined)
                     gateway.session.append('todo/write', background.todo);
-                for (const seq of background?.changes ?? [])
-                    this.mirrorChanges(gateway, run.worker.id, seq);
+                for (const record of background?.records ?? [])
+                    this.mirrorRecord(gateway, run.worker.id, record);
                 yield* run.stream(options.signal);
                 return;
             }
@@ -2625,16 +2628,25 @@ export default class TheOne extends Service {
             return run;
         return this.throughTheOne.get(exec.agent) ? 'refuse' : undefined;
     }
-    /** List a topic's changed files under main chat's current reply, read from the topic's own record. */
-    mirrorChanges(gateway, workerId, seq) {
+    /**
+     * Show a topic's changed-files or handed-over-files record under main chat's current reply: the
+     * changes are read from the topic's own record; handed-over files are copied, under the same call
+     * id as the tool card main chat already shows.
+     */
+    mirrorRecord(gateway, workerId, record) {
         const turn = gateway.session.snapshotEvents().findLast(event => event.type === 'turn/start');
         if (turn?.type !== 'turn/start')
             return;
+        const append = (type, data) => gateway.session.append(type, data);
         try {
-            const event = gateway.session.append('workspace/changes', { turn: turn.data.turn });
-            this.changeLinks.set(`${gateway.id}:${event.seq}`, { sessionId: workerId, seq, turn: turn.data.turn });
+            if (record.type === 'workspace/changes') {
+                const event = append('workspace/changes', { turn: turn.data.turn });
+                this.changeLinks.set(`${gateway.id}:${event.seq}`, { sessionId: workerId, seq: record.seq, turn: turn.data.turn });
+            }
+            else
+                append(record.type, { ...record.data, turn: turn.data.turn });
         }
-        catch { /* A DSH without the changed-files card: nothing to show. */ }
+        catch { /* A DSH without these cards: nothing to show. */ }
     }
     /** Main chat's own folder, where nothing happens; side panels show the topic's folder instead. */
     isGatewayFolder(path) {

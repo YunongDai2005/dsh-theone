@@ -309,7 +309,7 @@ export default class TheOne extends Service {
    * Main-chat message id → the topic already working on it in the background: a message about another
    * matter, sent while a reply was running. Main chat shows that work when it gets to the message.
    */
-  private readonly background = new Map<string, { run: WorkerRun; receipt: RouterReceipt; todo?: unknown; changes?: number[] }>()
+  private readonly background = new Map<string, { run: WorkerRun; receipt: RouterReceipt; todo?: unknown; records?: { type: string; seq: number; data: unknown }[] }>()
   /** "<main chat id>:<seq>" of a changed-files record shown in main chat → the topic's own record. */
   readonly changeLinks = new Map<string, { sessionId: string; seq: number; turn: number }>()
   /** Main-chat message id → its classification, made while a reply was running. */
@@ -392,12 +392,15 @@ export default class TheOne extends Service {
         if (this.runs.has(session.id)) void this.finishRun(session.id, true)
         this.catalog?.requestRefresh()
       }
-      // A topic's changed files are listed under the reply in main chat that shows its work.
-      if ((event as { type: string }).type === 'workspace/changes') {
+      // A topic's changed files and the files it hands over are listed under the reply in main chat
+      // that shows its work; work main chat has not reached yet is listed when it gets there.
+      const kind = (event as { type: string }).type
+      if (kind === 'workspace/changes' || kind === 'deliverables/presented') {
+        const record = { type: kind, seq: event.seq, data: event.data }
         const run = [...this.runs.values()].find(run => run.worker.id === session.id && !run.done)
-        if (run) this.mirrorChanges(run.gateway, session.id, event.seq)
+        if (run) this.mirrorRecord(run.gateway, session.id, record)
         const background = [...this.background.values()].find(entry => entry.run.worker.id === session.id)
-        if (background) (background.changes ??= []).push(event.seq)
+        if (background) (background.records ??= []).push(record)
       }
       // The Worker's todo list belongs on the conversation the user is reading.
       if ((event as { type: string }).type === 'todo/write') {
@@ -1736,7 +1739,7 @@ export default class TheOne extends Service {
         this.runs.set(gateway.id, run)
         this.reservedGateway = undefined
         if (background?.todo !== undefined) (gateway.session as unknown as { append(type: string, data: unknown): void }).append('todo/write', background.todo)
-        for (const seq of background?.changes ?? []) this.mirrorChanges(gateway, run.worker.id, seq)
+        for (const record of background?.records ?? []) this.mirrorRecord(gateway, run.worker.id, record)
         yield* run.stream(options.signal)
         return
       }
@@ -2391,14 +2394,21 @@ export default class TheOne extends Service {
     return this.throughTheOne.get(exec.agent) ? 'refuse' : undefined
   }
 
-  /** List a topic's changed files under main chat's current reply, read from the topic's own record. */
-  private mirrorChanges(gateway: Agent, workerId: string, seq: number): void {
+  /**
+   * Show a topic's changed-files or handed-over-files record under main chat's current reply: the
+   * changes are read from the topic's own record; handed-over files are copied, under the same call
+   * id as the tool card main chat already shows.
+   */
+  private mirrorRecord(gateway: Agent, workerId: string, record: { type: string; seq: number; data: unknown }): void {
     const turn = gateway.session.snapshotEvents().findLast(event => event.type === 'turn/start')
     if (turn?.type !== 'turn/start') return
+    const append = (type: string, data: unknown) => (gateway.session as unknown as { append(type: string, data: unknown): { seq: number } }).append(type, data)
     try {
-      const event = (gateway.session as unknown as { append(type: string, data: unknown): { seq: number } }).append('workspace/changes', { turn: turn.data.turn })
-      this.changeLinks.set(`${gateway.id}:${event.seq}`, { sessionId: workerId, seq, turn: turn.data.turn })
-    } catch { /* A DSH without the changed-files card: nothing to show. */ }
+      if (record.type === 'workspace/changes') {
+        const event = append('workspace/changes', { turn: turn.data.turn })
+        this.changeLinks.set(`${gateway.id}:${event.seq}`, { sessionId: workerId, seq: record.seq, turn: turn.data.turn })
+      } else append(record.type, { ...record.data as object, turn: turn.data.turn })
+    } catch { /* A DSH without these cards: nothing to show. */ }
   }
 
   /** Main chat's own folder, where nothing happens; side panels show the topic's folder instead. */

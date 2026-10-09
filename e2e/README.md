@@ -45,6 +45,7 @@ history catalog makes of an ordinary session, `[run] CMD` runs CMD with the bash
 | "Branch in a new chat" on a reply in main chat (`branch.mjs`) | A new topic "<title> (branch)" from that point; main chat stays open, keeps its name and says so; the next message goes to the branch |
 | Main chat's file panel and a new terminal (`term.mjs`) | Both in the folder of the topic in use |
 | A topic edits a file in a git project (`[run] echo x >> readme.txt`; `changes.mjs`) | Main chat's reply carries the same "Edited readme.txt +1 −0" card as an ordinary chat; opening it shows the comparison, numbered by main chat's turn |
+| A topic hands over a file (`[call:present] {"files":[{"path":"readme.txt"}]}`) | Main chat's reply carries the same file card as an ordinary chat |
 | A background topic asks for approval while another reply runs (`ACCESS=仅可查看` with `mid.mjs`) | The approval prompt opens in main chat at once and names the topic; "allow once" lets it continue |
 | While a reply runs (`[run] sleep 10`; `mid.mjs`): an interjection for another topic | That topic answers at once in the background; the reply is not mixed with it; main chat shows it after the reply, as its own turn |
 | While a reply runs: an interjection about it, and a queued message for another topic | The interjection joins the reply (between its steps); the queued message's topic starts at once and is shown after |

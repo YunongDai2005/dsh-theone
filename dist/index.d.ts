@@ -355,8 +355,12 @@ export default class TheOne extends Service {
      * run (or for a nested dispatch) its calls are refused rather than executed.
      */
     private mirroredRun;
-    /** List a topic's changed files under main chat's current reply, read from the topic's own record. */
-    private mirrorChanges;
+    /**
+     * Show a topic's changed-files or handed-over-files record under main chat's current reply: the
+     * changes are read from the topic's own record; handed-over files are copied, under the same call
+     * id as the tool card main chat already shows.
+     */
+    private mirrorRecord;
     /** Main chat's own folder, where nothing happens; side panels show the topic's folder instead. */
     isGatewayFolder(path: string | undefined): boolean;
     /** The topic of a run main chat is not showing yet (work started on a message sent during another reply). */
