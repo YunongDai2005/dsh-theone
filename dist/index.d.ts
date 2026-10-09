@@ -274,6 +274,11 @@ export default class TheOne extends Service {
      * that work, after anything main chat is already answering. The topic becomes the one in use then.
      */
     private relay;
+    /**
+     * A topic's notice shown in main chat: one TheOne relayed, or one left in main chat's queue by a
+     * restart (its work is gone then, so main chat just shows what it says).
+     */
+    private isRelay;
     /** Move an interjection to the queue, after what is already queued: it is answered as its own turn. */
     private requeue;
     /** Stop background work on a message main chat will not show (deleted, or answered with other input). */

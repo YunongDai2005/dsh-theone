@@ -45,3 +45,17 @@ test('a topic that carries on by itself (a subagent reporting back) is shown in 
     assert.equal((await ask(app.gateway, 'Qwen 下一步呢')).end?.data.reason.kind, 'completed')
   } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
 })
+
+test('a topic\'s notice still queued in main chat after a restart is shown, not treated as an error', { timeout: 30000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'theone-relay-restart-'))
+  const app = await harness(root)
+  try {
+    // What a restart leaves: the notice in main chat's queue, with the work behind it gone.
+    app.gateway.followup(createUserMessage({ source: { kind: 'subagent-settled', form: 'notice', summary: 'done', senderSessionId: 'child' } as unknown as UserMessage['source'],
+      content: [{ type: 'text', text: 'Subagent finished.' }] }))
+    await app.gateway.whenIdle()
+    const end = app.gateway.session.snapshotEvents().findLast(event => event.type === 'turn/end')
+    assert.equal(end?.type === 'turn/end' ? end.data.reason.kind : undefined, 'completed')
+    assert.deepEqual(replies(app.gateway), ['Subagent finished.'])
+  } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
+})

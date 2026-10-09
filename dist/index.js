@@ -633,7 +633,7 @@ export default class TheOne extends Service {
             let users = decision.messages.filter(message => message.source.kind === 'user');
             // A goal set in main chat advances by rounds DSH queues here; each round goes to the goal's topic.
             const goalRounds = users.length ? [] : decision.messages.filter(message => goalRoundOf(message) !== undefined);
-            const relays = users.length || goalRounds.length ? [] : decision.messages.filter(message => this.relays.has(message.id));
+            const relays = users.length || goalRounds.length ? [] : decision.messages.filter(message => this.isRelay(message));
             const run = this.runs.get(agent.id);
             if (run) {
                 // An interjection about another matter is not mixed into the reply: it becomes its own turn.
@@ -1938,9 +1938,9 @@ export default class TheOne extends Service {
         }
         // Other plugins may add their own context after it; the welcome is the newest input from either side.
         const latest = [...options.messages].reverse().find(message => message.role === 'user' && 'source' in message
-            && (message.source?.kind === 'user' || goalRoundOf(message) !== undefined || message.source?.kind === 'theone-welcome' || message.source?.kind === 'theone-note' || this.relays.has(message.id)));
+            && (message.source?.kind === 'user' || goalRoundOf(message) !== undefined || message.source?.kind === 'theone-welcome' || message.source?.kind === 'theone-note' || this.isRelay(message)));
         const relayed = latest && this.relays.has(latest.id) && this.background.has(latest.id);
-        if (latest && 'source' in latest && !relayed && (latest.source?.kind === 'theone-welcome' || latest.source?.kind === 'theone-note' || this.relays.has(latest.id))) {
+        if (latest && 'source' in latest && !relayed && (latest.source?.kind === 'theone-welcome' || latest.source?.kind === 'theone-note' || this.isRelay(latest))) {
             const text = latest.source?.kind === 'theone-welcome' ? welcomeText(latest.source.locale)
                 : latest.content.filter(block => block.type === 'text').map(block => block.text).join('\n');
             yield { type: 'block-start', index: 0, blockType: 'text' };
@@ -2216,6 +2216,13 @@ export default class TheOne extends Service {
         this.store.claim(note.id);
         this.background.set(note.id, { run, receipt: { mode: 'rules' } });
         gateway.followup(note);
+    }
+    /**
+     * A topic's notice shown in main chat: one TheOne relayed, or one left in main chat's queue by a
+     * restart (its work is gone then, so main chat just shows what it says).
+     */
+    isRelay(message) {
+        return this.relays.has(message.id) || WAKING_SOURCES.has(message.source?.kind);
     }
     /** Move an interjection to the queue, after what is already queued: it is answered as its own turn. */
     requeue(gateway, message) {
