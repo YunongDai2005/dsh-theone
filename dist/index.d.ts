@@ -243,6 +243,8 @@ export default class TheOne extends Service {
      * still being written when the message was sent.
      */
     private classify;
+    /** The user's project folders: DSH workspaces that exist, other than DSH's default one and TheOne's own. */
+    private projectFolders;
     /**
      * Classify a message sent while `run` is replying. About that reply (or undecidable): an interjection
      * reaches it, a queued one waits, as in an ordinary session. About another matter: its topic starts

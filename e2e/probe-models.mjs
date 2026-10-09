@@ -44,7 +44,9 @@ class Probe extends LlmAdapter {
       const hit = name ? p.contexts.find(c => c.title === name) : p.contexts.find(c => c.id === p.currentId)
       const decision = hit
         ? { action: 'EXISTING', contextId: hit.id, title: null, question: null, reason: 'marker', historyIndependent: null, candidateIds: [], relatedIds: [] }
-        : { action: 'CREATE', contextId: null, title: name ?? p.text.slice(0, 30), question: null, reason: 'marker', historyIndependent: true, candidateIds: [], relatedIds: [] }
+        : { action: 'CREATE', contextId: null, title: name ?? p.text.slice(0, 30), question: null, reason: 'marker', historyIndependent: true, candidateIds: [], relatedIds: [],
+          // [project:NAME] picks one of the offered project folders for a new topic.
+          projectId: p.projects?.find(project => project.name === p.text.match(/\[project:([^\]]+)\]/)?.[1])?.id ?? null }
       yield* text(JSON.stringify(decision)); return
     }
     if (system.includes('整理聊天历史目录')) {

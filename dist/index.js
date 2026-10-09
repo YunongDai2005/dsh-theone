@@ -1884,6 +1884,8 @@ export default class TheOne extends Service {
      */
     async classify(agent, inputId, text, currentId, allContexts, signal, receipt, running) {
         let contexts = allContexts;
+        const projects = this.projectFolders();
+        const folders = projects.length ? { projects: projects.map(({ id, name }) => ({ id, name })) } : {};
         let searchFailed = false;
         if (this.catalog) {
             try {
@@ -1906,7 +1908,7 @@ export default class TheOne extends Service {
                 const corrections = this.similarCorrections(text);
                 const offered = this.config.factLinks ? this.factCandidates(text, recent, currentId) : [];
                 const facts = offered.length ? { facts: offered } : {};
-                const result = await this.router.decide({ text, contexts, currentId, recent, historyIncomplete: this.catalog?.incomplete, corrections, ...facts, running }, signal);
+                const result = await this.router.decide({ text, contexts, currentId, recent, historyIncomplete: this.catalog?.incomplete, corrections, ...facts, running, ...folders }, signal);
                 proposed = result.decision;
                 // A miss in a short candidate list is not proof that the whole catalog has no match.
                 if (proposed.action === 'CREATE' && this.catalog && !/^新话题[：:]/.test(text.trim())) {
@@ -1919,7 +1921,7 @@ export default class TheOne extends Service {
                         pages.push([...(current ? [current] : []), ...remaining.slice(offset, offset + pageSize)]);
                     // Review pages concurrently, then read them in order exactly as a sequential pass would.
                     const router = this.router, incomplete = this.catalog.incomplete;
-                    const reviews = await Promise.allSettled(pages.map(page => router.decide({ text, contexts: page, currentId, recent, historyIncomplete: incomplete, corrections, ...facts, running }, signal)));
+                    const reviews = await Promise.allSettled(pages.map(page => router.decide({ text, contexts: page, currentId, recent, historyIncomplete: incomplete, corrections, ...facts, running, ...folders }, signal)));
                     const firstElapsed = result.elapsedMs;
                     let checked = 0;
                     for (const settled of reviews) {
@@ -1967,7 +1969,26 @@ export default class TheOne extends Service {
         }
         else
             proposed = resolveContext(text, contexts, currentId);
-        return proposed;
+        if (proposed.action !== 'CREATE')
+            return proposed;
+        // A new topic works in the project it is about: the classifier's pick, else a related topic's project.
+        const { projectId, ...decided } = proposed;
+        const folder = projects.find(project => project.id === projectId)?.path
+            ?? (proposed.relatedIds ?? []).map(id => this.store.origin(id)?.cwd).find(cwd => cwd && projects.some(project => project.path === cwd));
+        return folder ? { ...decided, folder } : decided;
+    }
+    /** The user's project folders: DSH workspaces that exist, other than DSH's default one and TheOne's own. */
+    projectFolders() {
+        const registry = this.ctx.get('workspaceRegistry');
+        const fallback = this.defaultWorkspaceDirectory();
+        try {
+            return (registry?.list() ?? []).map(workspace => workspace.path)
+                .filter(path => path !== fallback && path !== this.gatewayDirectory && existsSync(path))
+                .map((path, index) => ({ id: `p${index + 1}`, name: basename(path), path }));
+        }
+        catch {
+            return [];
+        }
     }
     /**
      * Classify a message sent while `run` is replying. About that reply (or undecidable): an interjection

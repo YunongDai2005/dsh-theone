@@ -18,6 +18,8 @@ export interface RoutingInput {
   facts?: FactCandidate[]
   /** A reply still being written when this message was sent: its topic, the request it answers, what it has said so far. */
   running?: { topicId: string; request: string; progress: string }
+  /** The user's project folders (DSH workspaces) a new topic may work in; only names are sent. */
+  projects?: { id: string; name: string }[]
 }
 export interface RouterUsage { prompt_tokens: number; completion_tokens: number; total_tokens: number; prompt_cache_hit_tokens?: number; prompt_cache_miss_tokens?: number }
 export interface RoutingResult { decision: Decision; model: string; elapsedMs: number; usage?: RouterUsage }
@@ -54,10 +56,15 @@ symbols（可能没有）是其他话题里用户已确认的要点候选（来�
 export const RUNNING_PROMPT = `
 running（可能没有）表示用户发这条消息时，话题 running.topicId 的回复还在进行中：running.request 是它正在回答的请求，running.progress 是它已经输出的最后一段。判断本轮 text 是不是关于这件正在进行的工作：补充条件、修改要求、纠正、叫停、催促、认可、回应它刚说的话、问它的进度，或者让它做完后接着做什么，都属于它，选 EXISTING 且 contextId 为 running.topicId（用到其他话题的数据就放进 relatedIds）。另一件事（另一个已有话题，或新的事情）照常选 EXISTING 或 CREATE，它会在后台另行处理，不会打断正在进行的回复。不要凭某个词判断，要看这句话要解决的是不是正在进行的那件事。拿不准时选 running.topicId。`
 
+/** Added only when the user has project folders, so a new topic can start in the right one. */
+export const PROJECTS_PROMPT = `
+projects（可能没有）是用户电脑上的项目文件夹（只有名字）。CREATE 时，如果这件新事情明显是在其中某个项目里干活（提到这个项目或它的代码、文件、仓库，或接着做那个项目里的事），把它的 id 填进 projectId；和这些项目无关、或拿不准时填 null。其他动作 projectId 为 null。输出 JSON 时增加字段 "projectId"。`
+
 /** The routing instructions for one request. */
 export const routingPrompt = (payload: object) => {
   const facts = 'symbols' in payload && Array.isArray(payload.symbols) && payload.symbols.length ? FACTS_PROMPT : ''
-  return ROUTING_PROMPT + facts + ('running' in payload && payload.running ? RUNNING_PROMPT : '')
+  const projects = 'projects' in payload && Array.isArray(payload.projects) && payload.projects.length ? PROJECTS_PROMPT : ''
+  return ROUTING_PROMPT + facts + projects + ('running' in payload && payload.running ? RUNNING_PROMPT : '')
 }
 
 export function routingPayload(input: RoutingInput): Omit<RoutingInput, 'currentId'> & {currentId:string|null} {
@@ -79,7 +86,8 @@ export function routingPayload(input: RoutingInput): Omit<RoutingInput, 'current
     label: redactRoutingText(fact.label).slice(0, FACT_LIMITS.routerLabel), kind: fact.kind, value: redactRoutingText(fact.value).slice(0, FACT_LIMITS.routerValue) }))
   const running = input.running && offered.has(input.running.topicId) ? { running: { topicId: input.running.topicId,
     request: redactRoutingText(input.running.request).slice(0, 600), progress: redactRoutingText(input.running.progress).slice(-600) } } : {}
-  const payload = {text, contexts, currentId: mounted(input, contexts), recent, historyIncomplete: input.historyIncomplete ?? false, ...(corrections.length ? { corrections } : {}), ...(symbols.length ? { symbols } : {}), ...running}
+  const projects = (input.projects ?? []).slice(0, 40).map(project => ({ id: project.id, name: redactRoutingText(project.name).slice(0, 80) }))
+  const payload = {text, contexts, currentId: mounted(input, contexts), recent, historyIncomplete: input.historyIncomplete ?? false, ...(corrections.length ? { corrections } : {}), ...(symbols.length ? { symbols } : {}), ...running, ...(projects.length ? { projects } : {})}
   if (!text.trim() || JSON.stringify(payload).length > 24000) throw new RouterFailure('ROUTER_INPUT_INVALID')
   return payload
 }
@@ -126,7 +134,9 @@ export function validateRoutingDecision(value: unknown, input: RoutingInput): De
     const title=row.title.trim()
     if (input.contexts.some(context=>context.title.toLowerCase()===title.toLowerCase())) return fail()
     if (row.historyIndependent != null && typeof row.historyIndependent !== 'boolean') return fail()
-    return {action:'CREATE',title,reason,...related(),...imports,
+    // A project folder only from the offered list; anything else is ignored rather than failing the route.
+    const project = typeof row.projectId === 'string' && (input.projects ?? []).some(item => item.id === row.projectId) ? { projectId: row.projectId } : {}
+    return {action:'CREATE',title,reason,...related(),...imports,...project,
       ...(!referencesHistory(input.text) ? { historyIndependent: true } : typeof row.historyIndependent === 'boolean' ? {historyIndependent: row.historyIndependent} : {})}
   }
   if (row.action==='CLARIFY') {

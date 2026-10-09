@@ -35,6 +35,10 @@ export interface Decision {
   imports?: string[]
   /** The user said message `correctionOf` went to the wrong topic; this route redoes it here. */
   correctionOf?: string
+  /** CREATE: the classifier's pick among the offered project folders (see RoutingInput.projects). */
+  projectId?: string
+  /** CREATE: the project folder the new topic works in (one of the user's workspaces). */
+  folder?: string
 }
 
 /** Relatedness between two topics: a user's choice (1 linked, -1 kept apart) or learned weight. */

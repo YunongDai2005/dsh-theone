@@ -173,3 +173,18 @@ test('only a boolean historyIndependent flag can admit standalone CREATE during 
  assert.equal(routingPayload(request).historyIncomplete,true)
  assert.equal(routingPayload(input).historyIncomplete,false)
 })
+test('a new topic names only an offered project folder; running work and folders reach the prompt only when present',()=>{
+ const projects=[{id:'p1',name:'invoice-app'}]
+ const create={action:'CREATE',contextId:null,title:'发票导出',question:null,reason:'新事项',historyIndependent:true}
+ assert.equal(validateRoutingDecision({...create,projectId:'p1'},{...input,projects}).projectId,'p1')
+ assert.equal(validateRoutingDecision({...create,projectId:'p9'},{...input,projects}).projectId,undefined)
+ assert.equal(validateRoutingDecision({...create,projectId:'p1'},input).projectId,undefined)
+ assert.equal(validateRoutingDecision({...decision,projectId:'p1'},{...input,projects}).projectId,undefined)
+ const plain=routingPayload(input)
+ assert.ok(!('projects' in plain) && !('running' in plain))
+ const full=routingPayload({...input,projects,running:{topicId:'topic',request:'整理表格',progress:'x'.repeat(2000)}})
+ assert.deepEqual(full.projects,projects)
+ assert.equal(full.running?.progress.length,600)
+ // A running topic that is not among the candidates is left out rather than trusted.
+ assert.ok(!('running' in routingPayload({...input,running:{topicId:'missing',request:'',progress:''}})))
+})

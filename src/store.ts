@@ -545,6 +545,11 @@ export class ContextStore {
         }
         this.seed([context])
         decision = { ...decision, contextId: context.id }
+        // A new topic about one of the user's projects works in that project's folder.
+        if (decision.folder) {
+          const working = this.db.prepare('SELECT working_session_id FROM contexts WHERE id = ?').get(context.id)
+          this.db.prepare('INSERT OR IGNORE INTO context_origins VALUES (?, ?, ?)').run(context.id, String(working?.working_session_id), decision.folder)
+        }
       }
       if (decision.contextId && mount) {
         this.db.prepare('INSERT INTO gateway_state VALUES (?, ?) ON CONFLICT(gateway_key) DO UPDATE SET context_id = excluded.context_id')

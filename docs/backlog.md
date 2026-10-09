@@ -21,16 +21,6 @@ message belong to?" without DSH.
 - This is a structural change: write the split plan (layout, interfaces, how the plugin changes)
   and agree it before starting.
 
-## New topic in a chosen folder
-
-Topics imported from existing DSH sessions keep their folder (`context_origins.cwd`) and their
-sessions run there. New topics start in DSH's default workspace folder
-(`Documents/deepseek-harness/default-workspace`) when the user has it, else `~/.dsh/theone/gateway`;
-never in the most recently used workspace, so nothing lands in a project by accident. Next: when a
-message is about one of the user's projects, start the topic in that project's folder without asking
-(the user only speaks; no folder picker): infer it from the topics and sessions already in that
-project, and fall back to the default workspace when unsure. Set `context_origins` when creating.
-
 ## Repository size
 
 `docs/images/theone-film-preview.webp` (6.6 MB) is no longer referenced by the READMEs. Deleting it
