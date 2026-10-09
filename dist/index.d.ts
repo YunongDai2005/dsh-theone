@@ -370,6 +370,8 @@ export default class TheOne extends Service {
      * id as the tool card main chat already shows.
      */
     private mirrorRecord;
+    /** For main chat, the session of the topic in use (where its work runs); undefined for any other session. */
+    topicSession(sessionId: string): string | undefined;
     /** Main chat's own folder, where nothing happens; side panels show the topic's folder instead. */
     isGatewayFolder(path: string | undefined): boolean;
     /** The topic of a run main chat is not showing yet (work started on a message sent during another reply). */

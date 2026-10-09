@@ -559,6 +559,24 @@ export default class TheOne extends Service {
       }
       scope.effect(() => () => { questions.answer = original })
     })
+    // The background jobs listed in main chat's header (with their output and a stop button) are the
+    // topic's in use: they run in its session, so main chat would otherwise list none.
+    ;(ctx as unknown as { inject(names: string[], callback: (scope: Context) => void): void }).inject(['jobController'], scope => {
+      type Request = { sessionId: string } & Record<string, unknown>
+      const jobs = scope.get('jobController') as unknown as Record<'list' | 'follow' | 'kill', (request: Request, ...rest: unknown[]) => unknown>
+      const service = this
+      const restore: (() => void)[] = []
+      for (const name of ['list', 'follow', 'kill'] as const) {
+        const original = jobs[name]
+        if (typeof original !== 'function') continue
+        jobs[name] = function (this: unknown, request: Request, ...rest: unknown[]) {
+          const topic = service.topicSession(request.sessionId)
+          return original.call(this, topic ? { ...request, sessionId: topic } : request, ...rest)
+        }
+        restore.push(() => { jobs[name] = original })
+      }
+      scope.effect(() => () => { for (const undo of restore) undo() })
+    })
     // A terminal opened beside main chat starts in the topic's folder too (the last one worked out).
     ;(ctx as unknown as { inject(names: string[], callback: (scope: Context) => void): void }).inject(['terminalController'], scope => {
       type Environment = (agent: Agent, signal: AbortSignal) => { cwd: string }
@@ -2483,6 +2501,12 @@ export default class TheOne extends Service {
         this.changeLinks.set(`${gateway.id}:${event.seq}`, { sessionId: workerId, seq: record.seq, turn: turn.data.turn })
       } else append(record.type, { ...record.data as object, turn: turn.data.turn })
     } catch { /* A DSH without these cards: nothing to show. */ }
+  }
+
+  /** For main chat, the session of the topic in use (where its work runs); undefined for any other session. */
+  topicSession(sessionId: string): string | undefined {
+    if (!this.store.isGateway(sessionId)) return undefined
+    return this.store.contexts().find(context => context.id === this.store.current(this.config.gatewayKey))?.workingSessionId
   }
 
   /** Main chat's own folder, where nothing happens; side panels show the topic's folder instead. */

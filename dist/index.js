@@ -537,6 +537,23 @@ export default class TheOne extends Service {
             };
             scope.effect(() => () => { questions.answer = original; });
         });
+        ctx.inject(['jobController'], scope => {
+            const jobs = scope.get('jobController');
+            const service = this;
+            const restore = [];
+            for (const name of ['list', 'follow', 'kill']) {
+                const original = jobs[name];
+                if (typeof original !== 'function')
+                    continue;
+                jobs[name] = function (request, ...rest) {
+                    const topic = service.topicSession(request.sessionId);
+                    return original.call(this, topic ? { ...request, sessionId: topic } : request, ...rest);
+                };
+                restore.push(() => { jobs[name] = original; });
+            }
+            scope.effect(() => () => { for (const undo of restore)
+                undo(); });
+        });
         ctx.inject(['terminalController'], scope => {
             const terminals = scope.get('terminalController');
             const original = terminals.environment;
@@ -2728,6 +2745,12 @@ export default class TheOne extends Service {
                 append(record.type, { ...record.data, turn: turn.data.turn });
         }
         catch { /* A DSH without these cards: nothing to show. */ }
+    }
+    /** For main chat, the session of the topic in use (where its work runs); undefined for any other session. */
+    topicSession(sessionId) {
+        if (!this.store.isGateway(sessionId))
+            return undefined;
+        return this.store.contexts().find(context => context.id === this.store.current(this.config.gatewayKey))?.workingSessionId;
     }
     /** Main chat's own folder, where nothing happens; side panels show the topic's folder instead. */
     isGatewayFolder(path) {
