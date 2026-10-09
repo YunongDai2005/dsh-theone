@@ -165,6 +165,21 @@ function stepInput(messages: GenerateOptions['messages'], input: UserMessage): U
     index ? [{ type: 'text' as const, text: '\n\n' }, ...message.content] : [...message.content]) })
 }
 
+/** TheOne's own questions, in the language the message was written in; the classifier writes its own. */
+const CLARIFY_TEXT: Record<string, { zh: string; en: string }> = {
+  CATALOG_NOT_READY: { zh: '你指的是之前哪件事？可以补充目标或链接，我就能继续处理。', en: 'Which earlier matter do you mean? Add the goal or a link and I can carry on.' },
+  HISTORY_SEARCH_UNAVAILABLE: { zh: '历史检索暂时不可用，请稍后再试。', en: 'Searching your history is unavailable right now; please try again shortly.' },
+  CATALOG_REVIEW_LIMIT: { zh: '暂时没有找到明确相关的旧话题。你是在说一件新的事情吗？', en: 'I found no earlier topic that clearly matches. Is this something new?' },
+  ROUTER_MODEL_MISSING: { zh: '请先在 DSH 中选择一个已配置的聊天模型，再打开 TheOne。无需另配 API Key。', en: 'Choose a configured chat model in DSH first, then open TheOne. No separate API key is needed.' },
+  'correction-unclear': { zh: '应该放到哪个话题？可以说「分错了，是 某某 的」，我会把上一条交给它重新处理。', en: 'Which topic should it go to? Say "wrong topic, it is about …" and I will redo the last message there.' },
+  'multiple-contexts': { zh: '这句话涉及多个话题，请指定先处理哪个。', en: 'This touches several topics; which one first?' },
+}
+const writtenInEnglish = (text: string) => !!text.trim() && !/[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/.test(text)
+function clarifyText(decision: Decision, text: string): string {
+  const fixed = CLARIFY_TEXT[decision.reason]
+  return fixed ? fixed[writtenInEnglish(text) ? 'en' : 'zh'] : decision.question!
+}
+
 /** The words of a message, without its attachments. */
 function messageText(message: UserMessage): string {
   return message.content.filter(block => block.type === 'text').map(block => block.text).join('\n')
@@ -580,8 +595,10 @@ export default class TheOne extends Service {
         : users.map(message => message.content.filter(block => block.type === 'text').map(block => block.text).join('\n')).join('\n\n')
       // A picture or file on its own carries no words to route by: it belongs with the current topic.
       const attachmentOnly = !text.trim()
-      const attachmentLabel = [...new Set(users.flatMap(message => message.content).flatMap(block => block.type === 'image' ? ['图片']
-        : block.type === 'file' ? [block.attachment.name] : []))].join('、').slice(0, 80) || '附件'
+      // Named in main chat's language: a picture alone carries no words to tell it from.
+      const zh = !/^en/.test(this.gatewayLocale(agent.id))
+      const attachmentLabel = [...new Set(users.flatMap(message => message.content).flatMap(block => block.type === 'image' ? [zh ? '图片' : 'Image']
+        : block.type === 'file' ? [block.attachment.name] : []))].join(zh ? '、' : ', ').slice(0, 80) || (zh ? '附件' : 'Attachment')
       // "Wrong topic" right after a reply moves the previous message to the right topic and redoes it there.
       const correction = !midTurn && !attachmentOnly && goalId === undefined ? spokenCorrection(text) : undefined
       const previous = correction === undefined ? undefined : this.previousRoute(agent, input.id)
@@ -637,7 +654,7 @@ export default class TheOne extends Service {
       const notice = this.config.routeNotice ?? 'switch'
       // Showing every decision also says why it was made.
       // The notice speaks the language the message was written in.
-      const english = !!text.trim() && !/[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/.test(text)
+      const english = writtenInEnglish(text)
       const why = notice === 'all' ? ` · ${reasonLabel(route.decision.reason, english)}` : ''
       const summary = `${mark} ${titleOf(route.decision.contextId) ?? (english ? 'needs a topic' : '请补充话题')}${references.length ? (english ? ` · reference: ${references.join(', ')}` : ` · 参考：${references.join('、')}`) : ''}${why}`.slice(0, 160)
       const switched = route.decision.action === 'MOUNT' || route.decision.action === 'SWAP' || route.decision.action === 'CREATE'
@@ -1688,7 +1705,7 @@ export default class TheOne extends Service {
         return
       }
       if (route.decision.action === 'CLARIFY') {
-        const text = route.decision.question!
+        const text = clarifyText(route.decision, messageText(input))
         yield { type: 'block-start', index: 0, blockType: 'text' }
         yield { type: 'text-delta', index: 0, text }
         yield { type: 'block-end', index: 0, block: { type: 'text', text } }
