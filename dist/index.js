@@ -352,6 +352,10 @@ export default class TheOne extends Service {
                 const run = [...this.runs.values()].find(run => run.worker.id === session.id && !run.done);
                 if (run)
                     run.gateway.session.append('todo/write', event.data);
+                // Written while main chat shows something else: shown once main chat gets to that work.
+                const background = [...this.background.values()].find(entry => entry.run.worker.id === session.id);
+                if (background)
+                    background.todo = event.data;
             }
         });
         // The main chat closes its turn together with the Worker, so the reply is complete when it does.
@@ -1857,6 +1861,8 @@ export default class TheOne extends Service {
             if (run) {
                 this.runs.set(gateway.id, run);
                 this.reservedGateway = undefined;
+                if (background?.todo !== undefined)
+                    gateway.session.append('todo/write', background.todo);
                 yield* run.stream(options.signal);
                 return;
             }

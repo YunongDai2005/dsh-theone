@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions } from '@deepseek-ai/dsh-llm'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import { SessionId } from '@deepseek-ai/dsh-session'
 import { harness, textResponse, FixtureModel } from './harness.ts'
 import { ROUTING_PROMPT } from '../src/llm-router.ts'
 
@@ -175,4 +176,30 @@ test('a queued message for the busy topic waits its turn; background work still 
     assert.deepEqual(asked(app.gateway), ['Qwen 那个', 'Qwen 换成 14B 再测一次', '论文的消融实验怎么分组'])
     assert.deepEqual(replies(app.gateway), ['Qwen 正在测', 'Qwen 补充：14B', '论文回答'])
   } finally { fixture.release.resolve(); thesisRelease.resolve(); await app.close(); await rm(root, { recursive: true, force: true }) }
+})
+
+test('a todo list written by background work shows in main chat once it gets to that work', { timeout: 30000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'theone-mid-todo-'))
+  const fixture = setup()
+  const base = fixture.model.behavior!
+  const app = await harness(root, fixture.model, { routerMode: 'llm', autoModel: true })
+  fixture.model.behavior = async function* (options) {
+    if (topicOf(options) === 'ctx_thesis') {
+      const worker = app.ctx.agents.get(SessionId(options.sessionId!))!
+      ;(worker.session as unknown as { append(type: string, data: unknown): void }).append('todo/write', { todos: [{ content: '分组', status: 'in_progress' }] })
+    }
+    yield* base(options)
+  }
+  const todos = () => app.gateway.session.snapshotEvents().filter(event => (event as { type: string }).type === 'todo/write')
+  try {
+    app.gateway.followup(say('Qwen 那个'))
+    await fixture.entered.promise
+    app.gateway.followup(say('论文的消融实验怎么分组'))
+    await until(() => fixture.log.includes('thesis'))
+    await new Promise(resolve => setTimeout(resolve, 50))
+    assert.equal(todos().length, 0)
+    fixture.release.resolve()
+    await until(() => app.gateway.status === 'idle' && replies(app.gateway).length === 2)
+    assert.equal(todos().length, 1)
+  } finally { fixture.release.resolve(); await app.close(); await rm(root, { recursive: true, force: true }) }
 })

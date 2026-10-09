@@ -309,7 +309,7 @@ export default class TheOne extends Service {
    * Main-chat message id → the topic already working on it in the background: a message about another
    * matter, sent while a reply was running. Main chat shows that work when it gets to the message.
    */
-  private readonly background = new Map<string, { run: WorkerRun; receipt: RouterReceipt }>()
+  private readonly background = new Map<string, { run: WorkerRun; receipt: RouterReceipt; todo?: unknown }>()
   /** Main-chat message id → its classification, made while a reply was running. */
   private readonly sorting = new Map<string, { decided: Promise<Decision | undefined>; settled: Promise<void>; abort: AbortController }>()
   /** Interjections TheOne moves to the queue; their inbox events are its own. */
@@ -394,6 +394,9 @@ export default class TheOne extends Service {
       if ((event as { type: string }).type === 'todo/write') {
         const run = [...this.runs.values()].find(run => run.worker.id === session.id && !run.done)
         if (run) (run.gateway.session as unknown as { append(type: string, data: unknown): void }).append('todo/write', event.data)
+        // Written while main chat shows something else: shown once main chat gets to that work.
+        const background = [...this.background.values()].find(entry => entry.run.worker.id === session.id)
+        if (background) background.todo = event.data
       }
     })
     // The main chat closes its turn together with the Worker, so the reply is complete when it does.
@@ -1701,6 +1704,7 @@ export default class TheOne extends Service {
       if (run) {
         this.runs.set(gateway.id, run)
         this.reservedGateway = undefined
+        if (background?.todo !== undefined) (gateway.session as unknown as { append(type: string, data: unknown): void }).append('todo/write', background.todo)
         yield* run.stream(options.signal)
         return
       }

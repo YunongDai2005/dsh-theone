@@ -44,6 +44,8 @@ Each project reasons, runs tools and compacts in its own session. What you see i
 | Wrong project | Move it by hand | Say "wrong topic" |
 
 - **Feels native.** Thinking streams in its usual place from the first token, and tool cards, approvals, questions, todo lists, retries and mid-reply steering all work as usual.
+- **Keep talking while it works.** A message sent during a reply that is about that reply joins it, as in any DSH chat; one about something else starts in its own topic right away, in the background, and its answer follows in main chat in the order you sent things. At most three topics work at once.
+- **Works where the work is.** A new topic about one of your projects works in that project's folder; anything else goes to DSH's folder for chats outside any project. Nothing is added to your projects in the sidebar.
 - **Related work connects; unrelated work stays out.** Related topics share progress automatically, and which ones belong together is learned from how you use them. A topic's constraints (say, "budget figures stay out of the paper") are attached verbatim every time, so compaction never drops them.
 - **Learns your words.** Once a topic has replies, a short routing card is written in the background (what it is, what you call it, the people, places and files involved), so it is recognised however you phrase it. Say "wrong topic" and it remembers which terms tie that kind of message to the right one. Topics you haven't touched in a long while go to the back of the line; how long is "long" is learned from how you come back to things.
 - **Your old sessions become a topic directory.** After install it reads your existing sessions in the background, turns them into topics grouped into workspaces, and you pick up where you left off.
@@ -186,10 +188,10 @@ The database location and entry identifier switch TheOne to different data, so t
 <details>
 <summary><b>Known limitations</b></summary>
 
-- One request runs at a time: a message sent during a reply is taken as an addition to that topic, so for something else, wait until the reply finishes.
-- A new topic works in DSH's own folder for chats outside any project (`Documents/deepseek-harness/default-workspace`), or in `~/.dsh/theone/gateway` if you do not have that folder; you cannot yet choose a project folder for a new topic. Topics organised from your existing chats work in those chats' folders.
+- Telling whether a message sent during a reply is about that reply needs the routing model; with rules-only routing, every such message joins the reply, as before.
+- A new topic not about any of your projects works in DSH's own folder for chats outside any project (`Documents/deepseek-harness/default-workspace`), or in `~/.dsh/theone/gateway` if you do not have that folder. Topics organised from your existing chats work in those chats' folders.
 - Main chat stores copies of tool calls, so its log grows with use; entry-log rotation is not implemented yet.
-- The main chat is remembered per browser: another browser or the desktop app gets its own main chat, sharing the same topics. Only one DSH process should use a database at a time.
+- Only one DSH process should use a database at a time.
 - Image output is not forwarded yet; there is no vector search; topics cannot be split yet.
 - Main chat shows tool cards without running them because TheOne sits first in DSH's tool pipeline. If another plugin also places itself first, it may see these mirrored calls, but no tool runs twice.
 </details>
