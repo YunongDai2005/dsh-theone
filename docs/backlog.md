@@ -20,8 +20,3 @@ message belong to?" without DSH.
 - Gate: the InterleaveBench numbers (closed 91.6, open 86.6) must reproduce after the split.
 - This is a structural change: write the split plan (layout, interfaces, how the plugin changes)
   and agree it before starting.
-
-## Repository size
-
-`docs/images/theone-film-preview.webp` (6.6 MB) is no longer referenced by the READMEs. Deleting it
-cuts the working tree from 10.7 MB to about 4 MB; history keeps it (no rewrite planned).
