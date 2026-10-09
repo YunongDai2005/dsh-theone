@@ -51,6 +51,14 @@ export declare const zh: {
     readonly 'update.restartHint': "已更新，重启 DSH 后生效。";
     readonly 'update.failedHint': "更新没有完成（{error}）。点击重试，或在「插件」页面重新安装。";
     readonly 'settings.title': "TheOne 设置";
+    readonly 'settings.update': "更新";
+    readonly 'settings.updateCurrent': "当前版本 {current}";
+    readonly 'settings.updateLatest': "已是最新版本。DSH 启动时和之后每 6 小时也会自动检查一次。";
+    readonly 'settings.updateUnknown': "还没有检查过。";
+    readonly 'settings.updateChecking': "正在检查…";
+    readonly 'settings.updateCheckFailed': "检查失败：连不上更新源，请检查网络后重试。";
+    readonly 'settings.updateCheck': "检查更新";
+    readonly 'settings.updateInstall': "更新";
     readonly 'settings.menu': "设置";
     readonly 'settings.subtitle': "查看当前生效的配置和各项用途。";
     readonly 'settings.readOnly': "保存后立即生效；只有「自动整理历史」和「历史补扫间隔」需要重启 DSH。数据库位置和主入口标识只能通过环境变量修改，见各项说明。";

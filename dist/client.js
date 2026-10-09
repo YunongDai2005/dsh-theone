@@ -138,6 +138,14 @@ var zh = {
   "update.restartHint": "\u5DF2\u66F4\u65B0\uFF0C\u91CD\u542F DSH \u540E\u751F\u6548\u3002",
   "update.failedHint": "\u66F4\u65B0\u6CA1\u6709\u5B8C\u6210\uFF08{error}\uFF09\u3002\u70B9\u51FB\u91CD\u8BD5\uFF0C\u6216\u5728\u300C\u63D2\u4EF6\u300D\u9875\u9762\u91CD\u65B0\u5B89\u88C5\u3002",
   "settings.title": "TheOne \u8BBE\u7F6E",
+  "settings.update": "\u66F4\u65B0",
+  "settings.updateCurrent": "\u5F53\u524D\u7248\u672C {current}",
+  "settings.updateLatest": "\u5DF2\u662F\u6700\u65B0\u7248\u672C\u3002DSH \u542F\u52A8\u65F6\u548C\u4E4B\u540E\u6BCF 6 \u5C0F\u65F6\u4E5F\u4F1A\u81EA\u52A8\u68C0\u67E5\u4E00\u6B21\u3002",
+  "settings.updateUnknown": "\u8FD8\u6CA1\u6709\u68C0\u67E5\u8FC7\u3002",
+  "settings.updateChecking": "\u6B63\u5728\u68C0\u67E5\u2026",
+  "settings.updateCheckFailed": "\u68C0\u67E5\u5931\u8D25\uFF1A\u8FDE\u4E0D\u4E0A\u66F4\u65B0\u6E90\uFF0C\u8BF7\u68C0\u67E5\u7F51\u7EDC\u540E\u91CD\u8BD5\u3002",
+  "settings.updateCheck": "\u68C0\u67E5\u66F4\u65B0",
+  "settings.updateInstall": "\u66F4\u65B0",
   "settings.menu": "\u8BBE\u7F6E",
   "settings.subtitle": "\u67E5\u770B\u5F53\u524D\u751F\u6548\u7684\u914D\u7F6E\u548C\u5404\u9879\u7528\u9014\u3002",
   "settings.readOnly": "\u4FDD\u5B58\u540E\u7ACB\u5373\u751F\u6548\uFF1B\u53EA\u6709\u300C\u81EA\u52A8\u6574\u7406\u5386\u53F2\u300D\u548C\u300C\u5386\u53F2\u8865\u626B\u95F4\u9694\u300D\u9700\u8981\u91CD\u542F DSH\u3002\u6570\u636E\u5E93\u4F4D\u7F6E\u548C\u4E3B\u5165\u53E3\u6807\u8BC6\u53EA\u80FD\u901A\u8FC7\u73AF\u5883\u53D8\u91CF\u4FEE\u6539\uFF0C\u89C1\u5404\u9879\u8BF4\u660E\u3002",
@@ -388,6 +396,14 @@ var en = {
   "update.restartHint": "Updated. Restart DSH to apply it.",
   "update.failedHint": "The update did not finish ({error}). Click to retry, or reinstall from the Plugins page.",
   "settings.title": "TheOne settings",
+  "settings.update": "Updates",
+  "settings.updateCurrent": "Version {current}",
+  "settings.updateLatest": "You have the latest version. TheOne also checks when DSH starts and every 6 hours after.",
+  "settings.updateUnknown": "Not checked yet.",
+  "settings.updateChecking": "Checking\u2026",
+  "settings.updateCheckFailed": "Could not check: the update source is unreachable. Check the network and try again.",
+  "settings.updateCheck": "Check for updates",
+  "settings.updateInstall": "Update",
   "settings.menu": "Settings",
   "settings.subtitle": "Review active configuration and what each option does.",
   "settings.readOnly": "Changes apply when saved; only History catalog and Rescan interval need a DSH restart. The database location and entry identifier can only be changed through environment variables; see their descriptions.",
@@ -680,9 +696,9 @@ function apply(ctx) {
       updateListeners.delete(listener);
     };
   };
-  const readUpdate = async (method = "GET", body) => {
+  const readUpdate = async (method = "GET", body, force = false) => {
     try {
-      const response = await fetch("/api/theone/update", {
+      const response = await fetch(force ? "/api/theone/update?force" : "/api/theone/update", {
         method,
         signal: lifetime.signal,
         cache: "no-store",
@@ -690,9 +706,29 @@ function apply(ctx) {
       });
       if (response.ok || response.status === 409 || response.status === 400) setUpdate(await response.json());
       if (update?.state === "reloading") void awaitReload(update.current);
+      return response.ok;
     } catch {
+      return false;
     }
   };
+  function startUpdate(status) {
+    if (status.state === "installing" || status.state === "reloading" || status.state === "restart") return;
+    const waiting = !!status.waiting && !status.available && !status.state;
+    if (!status.exempt && (waiting || status.state === "failed" && status.error === "MINIMUM_RELEASE_AGE")) {
+      openReleaseAgeDialog(status);
+      return;
+    }
+    if (!status.installable) {
+      window.open("https://github.com/YunongDai2005/dsh-theone#readme", "_blank", "noopener");
+      return;
+    }
+    setUpdate({ ...status, state: "installing" });
+    void readUpdate("POST");
+  }
+  function updateHint(status) {
+    const waiting = !!status.waiting && !status.available && !status.state;
+    return waiting ? t("update.waitingHint", { latest: status.waiting.version }) : status.error === "GATEWAY_BUSY" ? t("update.busy") : status.state === "reloading" ? t("update.reloadingHint") : status.state === "restart" ? t("update.restartHint") : status.state === "failed" ? status.error === "OTHER_RELEASE_AGE" ? t("update.otherAge", { names: status.detail ?? "" }) : status.error === "MINIMUM_RELEASE_AGE" ? status.exempt ? t("update.ageStill", { detail: status.detail ?? "" }) : t("update.tooNew") : status.error === "NETWORK" ? t("update.network") : t("update.failedHint", { error: status.detail ?? status.error ?? "" }) : status.installable ? t("update.hint", { current: status.current, latest: status.latest ?? "" }) : t("update.manualHint", { current: status.current, latest: status.latest ?? "" });
+  }
   async function awaitReload(previous) {
     for (const started = Date.now(); Date.now() - started < 12e4; ) {
       await new Promise((resolve) => setTimeout(resolve, 1500));
@@ -959,22 +995,12 @@ function apply(ctx) {
     const waiting = !!status?.waiting && !status.available && !status.state;
     if (!status || !status.available && !status.state && !waiting) return null;
     const label2 = waiting ? t2("update.waiting") : status.state === "installing" ? t2("update.installing") : status.state === "reloading" ? t2("update.reloading") : status.state === "restart" ? t2("update.restart") : status.state === "failed" ? t2("update.failed") : t2("update.available");
-    const hint = waiting ? t2("update.waitingHint", { latest: status.waiting.version }) : status.error === "GATEWAY_BUSY" ? t2("update.busy") : status.state === "reloading" ? t2("update.reloadingHint") : status.state === "restart" ? t2("update.restartHint") : status.state === "failed" ? status.error === "OTHER_RELEASE_AGE" ? t2("update.otherAge", { names: status.detail ?? "" }) : status.error === "MINIMUM_RELEASE_AGE" ? status.exempt ? t2("update.ageStill", { detail: status.detail ?? "" }) : t2("update.tooNew") : status.error === "NETWORK" ? t2("update.network") : t2("update.failedHint", { error: status.detail ?? status.error ?? "" }) : status.installable ? t2("update.hint", { current: status.current, latest: status.latest ?? "" }) : t2("update.manualHint", { current: status.current, latest: status.latest ?? "" });
+    const hint = updateHint(status);
     const title = `${label2} \xB7 ${hint}`;
     const act = (event) => {
       event.preventDefault();
       event.stopPropagation();
-      if (status.state === "installing" || status.state === "reloading" || status.state === "restart") return;
-      if (!status.exempt && (waiting || status.state === "failed" && status.error === "MINIMUM_RELEASE_AGE")) {
-        openReleaseAgeDialog(status);
-        return;
-      }
-      if (!status.installable) {
-        window.open("https://github.com/YunongDai2005/dsh-theone#readme", "_blank", "noopener");
-        return;
-      }
-      setUpdate({ ...status, state: "installing" });
-      void readUpdate("POST");
+      startUpdate(status);
     };
     return (0, import_react.createElement)(
       "span",
@@ -1480,6 +1506,44 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
       error && (0, import_react.createElement)("button", { type: "button", onClick: () => setAttempt((value) => value + 1) }, t2("retry"))
     );
   }
+  function UpdateSection() {
+    const t2 = useText();
+    const status = (0, import_react.useSyncExternalStore)(subscribeUpdate, () => update);
+    const [checking, setChecking] = (0, import_react.useState)(false);
+    const [failed, setFailed] = (0, import_react.useState)(false);
+    const check = async () => {
+      setChecking(true);
+      setFailed(false);
+      setFailed(!await readUpdate("GET", void 0, true));
+      setChecking(false);
+    };
+    const waiting = !!status?.waiting && !status.available && !status.state;
+    const busy = status?.state === "installing" || status?.state === "reloading";
+    const pending = !!status && (status.available || waiting || !!status.state);
+    const line = checking ? t2("settings.updateChecking") : failed ? t2("settings.updateCheckFailed") : !status ? t2("settings.updateUnknown") : pending ? updateHint(status) : t2("settings.updateLatest");
+    return (0, import_react.createElement)(
+      "section",
+      { className: "theone-settings-group theone-settings-update" },
+      (0, import_react.createElement)("h2", null, t2("settings.update")),
+      status && !pending ? (0, import_react.createElement)("p", { className: "theone-settings-update-version" }, t2("settings.updateCurrent", { current: status.current })) : null,
+      (0, import_react.createElement)("p", { role: "status" }, line),
+      (0, import_react.createElement)(
+        "div",
+        { className: "theone-settings-update-actions" },
+        (0, import_react.createElement)("button", { type: "button", disabled: checking || busy, onClick: () => {
+          void check();
+        } }, t2("settings.updateCheck")),
+        (0, import_react.createElement)("button", {
+          type: "button",
+          className: "theone-settings-save",
+          disabled: checking || busy || !status || !pending || status.state === "restart",
+          onClick: () => {
+            if (status) startUpdate(status);
+          }
+        }, t2(status?.state === "installing" ? "update.installing" : status?.state === "reloading" ? "update.reloading" : "settings.updateInstall"))
+      )
+    );
+  }
   function SettingsPanel() {
     const t2 = useText();
     const heading = (0, import_react.useRef)(null);
@@ -1628,6 +1692,7 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
         (0, import_react.createElement)("button", { type: "button", disabled: saving, onClick: () => ctx.layout.selectPanel(panelId) }, t2("settings.back"))
       ),
       (0, import_react.createElement)("p", { className: "theone-settings-notice" }, t2("settings.readOnly")),
+      (0, import_react.createElement)(UpdateSection),
       !snapshot && !error ? (0, import_react.createElement)("p", { role: "status" }, t2("settings.loading")) : null,
       error ? (0, import_react.createElement)("p", { role: "alert" }, t2("settings.error"), " ", (0, import_react.createElement)("button", { type: "button", onClick: () => setAttempt((n) => n + 1) }, t2("retry"))) : null,
       snapshot && draft && (0, import_react.createElement)(
@@ -2477,6 +2542,7 @@ var settingsCss = `
 .theone-settings-header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.theone-settings h1{font-size:26px;margin:0 0 8px;outline:none}.theone-settings h2{font-size:17px;margin:0 0 16px}.theone-settings-header p,.theone-settings-help{color:var(--dsw-alias-label-secondary);line-height:1.6;margin:0 0 18px}
 .theone-settings button{border:1px solid var(--dsw-alias-border-l2);border-radius:9px;padding:9px 14px;background:var(--dsw-alias-interactive-bg-hover);color:inherit;font:inherit;cursor:pointer;white-space:nowrap}.theone-settings button:focus-visible{outline:2px solid var(--dsw-focus-ring-color);outline-offset:2px}
 .theone-settings-notice{padding:13px 16px;border:1px solid #ed9b412a;background:#f3940710;border-radius:12px;font-size:13px;line-height:1.7;margin:0 0 22px}
+.theone-settings-update p{margin:0 0 10px;line-height:1.7}.theone-settings-update-version{color:var(--dsw-alias-label-secondary);font-size:13px}.theone-settings-update-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:6px}
 .theone-settings-summary,.theone-settings-group{border:1px solid var(--dsw-alias-border-l2);border-radius:16px;padding:22px;margin-bottom:20px}.theone-settings-summary{background:#88804}.theone-settings-summary dl{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px}.theone-settings dl{margin:0}.theone-settings-summary dt{font-size:12px;color:var(--dsw-alias-label-secondary);margin-bottom:8px}.theone-settings dd{margin:0;overflow-wrap:anywhere;line-height:1.6}.theone-settings-summary dd{font-size:15px}.theone-settings-summary p{font-size:13px;line-height:1.7;color:var(--dsw-alias-label-secondary);margin:16px 0 0}
 .theone-settings-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(160px,42%);gap:24px;padding:16px 0;border-top:1px solid var(--dsw-alias-border-l2)}.theone-settings-row:first-child{border-top:0;padding-top:0}.theone-settings-row:last-child{padding-bottom:0}.theone-settings-row strong{font-size:14px;font-weight:500}.theone-settings-row p{font-size:13px;line-height:1.6;color:var(--dsw-alias-label-secondary);margin:6px 0}.theone-settings-row code{font-size:11px;color:var(--dsw-alias-label-secondary)}.theone-settings-row dd{font-size:13px;padding-top:1px}.theone-settings-row[data-inactive=true]{opacity:.6}
 @media(max-width:640px){.theone-settings{padding:20px 16px}.theone-settings-header{flex-wrap:wrap}.theone-settings-summary,.theone-settings-group{padding:18px}.theone-settings-summary dl{grid-template-columns:1fr}.theone-settings-row{grid-template-columns:1fr;gap:10px}}

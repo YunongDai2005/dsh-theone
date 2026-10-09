@@ -101,14 +101,37 @@ export function apply(ctx: Context) {
   const updateListeners = new Set<() => void>()
   const setUpdate = (value: UpdateStatus) => { update = value; for (const listener of updateListeners) listener() }
   const subscribeUpdate = (listener: () => void) => { updateListeners.add(listener); return () => { updateListeners.delete(listener) } }
-  const readUpdate = async (method: 'GET' | 'POST' = 'GET', body?: Record<string, unknown>) => {
+  const readUpdate = async (method: 'GET' | 'POST' = 'GET', body?: Record<string, unknown>, force = false): Promise<boolean> => {
     try {
-      const response = await fetch('/api/theone/update', { method, signal: lifetime.signal, cache: 'no-store',
+      const response = await fetch(force ? '/api/theone/update?force' : '/api/theone/update', { method, signal: lifetime.signal, cache: 'no-store',
         ...(body ? { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : {}) })
       // A refused request (409 busy, 400 the exemption could not be written) still reports the status.
       if (response.ok || response.status === 409 || response.status === 400) setUpdate(await response.json() as UpdateStatus)
       if (update?.state === 'reloading') void awaitReload(update.current)
-    } catch { /* Offline: the button simply stays hidden. */ }
+      return response.ok
+    } catch { return false /* Offline: the button simply stays hidden. */ }
+  }
+  /** What pressing Update does, from the sidebar button or from Settings. */
+  function startUpdate(status: UpdateStatus) {
+    if (status.state === 'installing' || status.state === 'reloading' || status.state === 'restart') return
+    const waiting = !!status.waiting && !status.available && !status.state
+    // Once TheOne is exempt, asking again would not help; the explanation says what pnpm still refuses.
+    if (!status.exempt && (waiting || (status.state === 'failed' && status.error === 'MINIMUM_RELEASE_AGE'))) { openReleaseAgeDialog(status); return }
+    if (!status.installable) { window.open('https://github.com/YunongDai2005/dsh-theone#readme', '_blank', 'noopener'); return }
+    setUpdate({ ...status, state: 'installing' })
+    void readUpdate('POST')
+  }
+  /** The state of an update in words, shared by the sidebar button's tooltip and Settings. */
+  function updateHint(status: UpdateStatus) {
+    const waiting = !!status.waiting && !status.available && !status.state
+    return waiting ? t('update.waitingHint', { latest: status.waiting!.version }) : status.error === 'GATEWAY_BUSY' ? t('update.busy') : status.state === 'reloading' ? t('update.reloadingHint')
+      : status.state === 'restart' ? t('update.restartHint')
+      : status.state === 'failed' ? (status.error === 'OTHER_RELEASE_AGE' ? t('update.otherAge', { names: status.detail ?? '' })
+        : status.error === 'MINIMUM_RELEASE_AGE' ? (status.exempt ? t('update.ageStill', { detail: status.detail ?? '' }) : t('update.tooNew'))
+        : status.error === 'NETWORK' ? t('update.network')
+        : t('update.failedHint', { error: status.detail ?? status.error ?? '' }))
+      : status.installable ? t('update.hint', { current: status.current, latest: status.latest ?? '' })
+      : t('update.manualHint', { current: status.current, latest: status.latest ?? '' })
   }
   /** TheOne restarts itself with the new version; once it answers again, the page loads the new interface. */
   async function awaitReload(previous: string) {
@@ -284,25 +307,13 @@ export function apply(ctx: Context) {
     const label = waiting ? t('update.waiting') : status.state === 'installing' ? t('update.installing') : status.state === 'reloading' ? t('update.reloading')
       : status.state === 'restart' ? t('update.restart')
       : status.state === 'failed' ? t('update.failed') : t('update.available')
-    const hint = waiting ? t('update.waitingHint', { latest: status.waiting!.version }) : status.error === 'GATEWAY_BUSY' ? t('update.busy') : status.state === 'reloading' ? t('update.reloadingHint')
-      : status.state === 'restart' ? t('update.restartHint')
-      : status.state === 'failed' ? (status.error === 'OTHER_RELEASE_AGE' ? t('update.otherAge', { names: status.detail ?? '' })
-        : status.error === 'MINIMUM_RELEASE_AGE' ? (status.exempt ? t('update.ageStill', { detail: status.detail ?? '' }) : t('update.tooNew'))
-        : status.error === 'NETWORK' ? t('update.network')
-        : t('update.failedHint', { error: status.detail ?? status.error ?? '' }))
-      : status.installable ? t('update.hint', { current: status.current, latest: status.latest ?? '' })
-      : t('update.manualHint', { current: status.current, latest: status.latest ?? '' })
+    const hint = updateHint(status)
     // The button is only an icon; its state and the full explanation are in the tooltip.
     const title = `${label} · ${hint}`
     const act = (event: React.SyntheticEvent) => {
       // The entry itself is a button that opens main chat; this click is only the update's.
       event.preventDefault(); event.stopPropagation()
-      if (status.state === 'installing' || status.state === 'reloading' || status.state === 'restart') return
-      // Once TheOne is exempt, asking again would not help; the tooltip says what pnpm still refuses.
-      if (!status.exempt && (waiting || (status.state === 'failed' && status.error === 'MINIMUM_RELEASE_AGE'))) { openReleaseAgeDialog(status); return }
-      if (!status.installable) { window.open('https://github.com/YunongDai2005/dsh-theone#readme', '_blank', 'noopener'); return }
-      setUpdate({ ...status, state: 'installing' })
-      void readUpdate('POST')
+      startUpdate(status)
     }
     return h('span', { className: 'theone-update', role: 'button', tabIndex: 0, title, 'aria-label': title, 'data-state': waiting ? 'waiting' : status.state ?? 'available',
       onClick: act, onPointerDown: (event: React.PointerEvent) => event.stopPropagation(),
@@ -626,6 +637,28 @@ export function apply(ctx: Context) {
       error && h('button',{type:'button',onClick:()=>setAttempt(value=>value+1)},t('retry')))
   }
 
+  /** Settings' own way to look for and install a new version, beside the automatic check. */
+  function UpdateSection() {
+    const t = useText()
+    const status = useSyncExternalStore(subscribeUpdate, () => update)
+    const [checking, setChecking] = useState(false)
+    const [failed, setFailed] = useState(false)
+    const check = async () => { setChecking(true); setFailed(false); setFailed(!await readUpdate('GET', undefined, true)); setChecking(false) }
+    const waiting = !!status?.waiting && !status.available && !status.state
+    const busy = status?.state === 'installing' || status?.state === 'reloading'
+    const pending = !!status && (status.available || waiting || !!status.state)
+    const line = checking ? t('settings.updateChecking') : failed ? t('settings.updateCheckFailed') : !status ? t('settings.updateUnknown')
+      : pending ? updateHint(status) : t('settings.updateLatest')
+    return h('section', { className: 'theone-settings-group theone-settings-update' },
+      h('h2', null, t('settings.update')),
+      status && !pending ? h('p', { className: 'theone-settings-update-version' }, t('settings.updateCurrent', { current: status.current })) : null,
+      h('p', { role: 'status' }, line),
+      h('div', { className: 'theone-settings-update-actions' },
+        h('button', { type: 'button', disabled: checking || busy, onClick: () => { void check() } }, t('settings.updateCheck')),
+        h('button', { type: 'button', className: 'theone-settings-save', disabled: checking || busy || !status || !pending || status.state === 'restart',
+          onClick: () => { if (status) startUpdate(status) } }, t(status?.state === 'installing' ? 'update.installing' : status?.state === 'reloading' ? 'update.reloading' : 'settings.updateInstall'))))
+  }
+
   function SettingsPanel() {
     const t = useText()
     const heading = useRef<HTMLHeadingElement>(null)
@@ -734,6 +767,7 @@ export function apply(ctx: Context) {
         h('div', null, h('h1', { ref: heading, tabIndex: -1 }, t('settings.title')), h('p', null, t('settings.subtitle'))),
         h('button', { type: 'button', disabled: saving, onClick: () => ctx.layout.selectPanel(panelId) }, t('settings.back'))),
       h('p', { className: 'theone-settings-notice' }, t('settings.readOnly')),
+      h(UpdateSection),
       !snapshot && !error ? h('p', { role: 'status' }, t('settings.loading')) : null,
       error ? h('p', { role: 'alert' }, t('settings.error'), ' ', h('button', { type: 'button', onClick: () => setAttempt(n => n + 1) }, t('retry'))) : null,
       snapshot && draft && h('form', { onSubmit: (event: React.FormEvent<HTMLFormElement>) => { event.preventDefault(); void save() } },
@@ -1297,6 +1331,7 @@ const settingsCss = `
 .theone-settings-header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.theone-settings h1{font-size:26px;margin:0 0 8px;outline:none}.theone-settings h2{font-size:17px;margin:0 0 16px}.theone-settings-header p,.theone-settings-help{color:var(--dsw-alias-label-secondary);line-height:1.6;margin:0 0 18px}
 .theone-settings button{border:1px solid var(--dsw-alias-border-l2);border-radius:9px;padding:9px 14px;background:var(--dsw-alias-interactive-bg-hover);color:inherit;font:inherit;cursor:pointer;white-space:nowrap}.theone-settings button:focus-visible{outline:2px solid var(--dsw-focus-ring-color);outline-offset:2px}
 .theone-settings-notice{padding:13px 16px;border:1px solid #ed9b412a;background:#f3940710;border-radius:12px;font-size:13px;line-height:1.7;margin:0 0 22px}
+.theone-settings-update p{margin:0 0 10px;line-height:1.7}.theone-settings-update-version{color:var(--dsw-alias-label-secondary);font-size:13px}.theone-settings-update-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:6px}
 .theone-settings-summary,.theone-settings-group{border:1px solid var(--dsw-alias-border-l2);border-radius:16px;padding:22px;margin-bottom:20px}.theone-settings-summary{background:#88804}.theone-settings-summary dl{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px}.theone-settings dl{margin:0}.theone-settings-summary dt{font-size:12px;color:var(--dsw-alias-label-secondary);margin-bottom:8px}.theone-settings dd{margin:0;overflow-wrap:anywhere;line-height:1.6}.theone-settings-summary dd{font-size:15px}.theone-settings-summary p{font-size:13px;line-height:1.7;color:var(--dsw-alias-label-secondary);margin:16px 0 0}
 .theone-settings-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(160px,42%);gap:24px;padding:16px 0;border-top:1px solid var(--dsw-alias-border-l2)}.theone-settings-row:first-child{border-top:0;padding-top:0}.theone-settings-row:last-child{padding-bottom:0}.theone-settings-row strong{font-size:14px;font-weight:500}.theone-settings-row p{font-size:13px;line-height:1.6;color:var(--dsw-alias-label-secondary);margin:6px 0}.theone-settings-row code{font-size:11px;color:var(--dsw-alias-label-secondary)}.theone-settings-row dd{font-size:13px;padding-top:1px}.theone-settings-row[data-inactive=true]{opacity:.6}
 @media(max-width:640px){.theone-settings{padding:20px 16px}.theone-settings-header{flex-wrap:wrap}.theone-settings-summary,.theone-settings-group{padding:18px}.theone-settings-summary dl{grid-template-columns:1fr}.theone-settings-row{grid-template-columns:1fr;gap:10px}}
