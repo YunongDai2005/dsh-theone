@@ -1,7 +1,7 @@
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { randomUUID } from 'node:crypto'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
@@ -309,7 +309,9 @@ export default class TheOne extends Service {
    * Main-chat message id → the topic already working on it in the background: a message about another
    * matter, sent while a reply was running. Main chat shows that work when it gets to the message.
    */
-  private readonly background = new Map<string, { run: WorkerRun; receipt: RouterReceipt; todo?: unknown }>()
+  private readonly background = new Map<string, { run: WorkerRun; receipt: RouterReceipt; todo?: unknown; changes?: number[] }>()
+  /** "<main chat id>:<seq>" of a changed-files record shown in main chat → the topic's own record. */
+  readonly changeLinks = new Map<string, { sessionId: string; seq: number; turn: number }>()
   /** Main-chat message id → its classification, made while a reply was running. */
   private readonly sorting = new Map<string, { decided: Promise<Decision | undefined>; settled: Promise<void>; abort: AbortController }>()
   /** Interjections TheOne moves to the queue; their inbox events are its own. */
@@ -389,6 +391,13 @@ export default class TheOne extends Service {
         // A main-chat turn that ends without its natural stop (cancelled or failed) abandons its Worker.
         if (this.runs.has(session.id)) void this.finishRun(session.id, true)
         this.catalog?.requestRefresh()
+      }
+      // A topic's changed files are listed under the reply in main chat that shows its work.
+      if ((event as { type: string }).type === 'workspace/changes') {
+        const run = [...this.runs.values()].find(run => run.worker.id === session.id && !run.done)
+        if (run) this.mirrorChanges(run.gateway, session.id, event.seq)
+        const background = [...this.background.values()].find(entry => entry.run.worker.id === session.id)
+        if (background) (background.changes ??= []).push(event.seq)
       }
       // The Worker's todo list belongs on the conversation the user is reading.
       if ((event as { type: string }).type === 'todo/write') {
@@ -470,7 +479,8 @@ export default class TheOne extends Service {
       type Scope = { sessionId: string; workspaceRoot: string }
       const files = scope.get('workspaceFiles') as Record<string, (...args: unknown[]) => unknown>
       const service = this
-      const scoped = async (fileScope: Scope) => service.store.isGateway(fileScope.sessionId)
+      // Only main chat's own folder is swapped; a folder named explicitly (a topic's change card) is kept.
+      const scoped = async (fileScope: Scope) => service.store.isGateway(fileScope.sessionId) && service.isGatewayFolder(fileScope.workspaceRoot)
         ? { ...fileScope, workspaceRoot: await service.topicFolder().catch(() => undefined) ?? fileScope.workspaceRoot } : fileScope
       const restore: (() => void)[] = []
       for (const name of ['read', 'readBytes', 'stat', 'list', 'inspect', 'locateFile']) {
@@ -487,6 +497,27 @@ export default class TheOne extends Service {
           yield* changes.call(this, await scoped(fileScope as Scope), ...rest) as AsyncIterable<unknown>
         }
         restore.push(() => { files.changes = changes })
+      }
+      scope.effect(() => () => { for (const undo of restore) undo() })
+    })
+    // The changed-files card under a reply: a topic's changes are shown under main chat's reply, and
+    // opening one reads the topic's record of them.
+    ;(ctx as unknown as { inject(names: string[], callback: (scope: Context) => void): void }).inject(['workspaceChanges'], scope => {
+      type Lookup = (sessionId: string, seq: number, ...rest: unknown[]) => unknown
+      const changes = scope.get('workspaceChanges') as Record<'summary' | 'diff', Lookup>
+      const service = this
+      const restore: (() => void)[] = []
+      for (const name of ['summary', 'diff'] as const) {
+        const original = changes[name]
+        if (typeof original !== 'function') continue
+        changes[name] = function (this: unknown, sessionId: string, seq: number, ...rest: unknown[]) {
+          const source = service.changeLinks.get(`${sessionId}:${seq}`)
+          if (!source) return original.call(this, sessionId, seq, ...rest)
+          const found = original.call(this, source.sessionId, source.seq, ...rest)
+          // Numbered by main chat's turn, the one the reader sees, not the topic's own.
+          return name === 'summary' && found && typeof found === 'object' ? { ...found, turn: source.turn } : found
+        }
+        restore.push(() => { changes[name] = original })
       }
       scope.effect(() => () => { for (const undo of restore) undo() })
     })
@@ -1705,6 +1736,7 @@ export default class TheOne extends Service {
         this.runs.set(gateway.id, run)
         this.reservedGateway = undefined
         if (background?.todo !== undefined) (gateway.session as unknown as { append(type: string, data: unknown): void }).append('todo/write', background.todo)
+        for (const seq of background?.changes ?? []) this.mirrorChanges(gateway, run.worker.id, seq)
         yield* run.stream(options.signal)
         return
       }
@@ -2357,6 +2389,22 @@ export default class TheOne extends Service {
     const run = exec.parent === undefined ? this.runs.get(exec.agent.id) : undefined
     if (run) return run
     return this.throughTheOne.get(exec.agent) ? 'refuse' : undefined
+  }
+
+  /** List a topic's changed files under main chat's current reply, read from the topic's own record. */
+  private mirrorChanges(gateway: Agent, workerId: string, seq: number): void {
+    const turn = gateway.session.snapshotEvents().findLast(event => event.type === 'turn/start')
+    if (turn?.type !== 'turn/start') return
+    try {
+      const event = (gateway.session as unknown as { append(type: string, data: unknown): { seq: number } }).append('workspace/changes', { turn: turn.data.turn })
+      this.changeLinks.set(`${gateway.id}:${event.seq}`, { sessionId: workerId, seq, turn: turn.data.turn })
+    } catch { /* A DSH without the changed-files card: nothing to show. */ }
+  }
+
+  /** Main chat's own folder, where nothing happens; side panels show the topic's folder instead. */
+  isGatewayFolder(path: string | undefined): boolean {
+    if (!path) return true
+    try { return realpathSync(path) === realpathSync(this.gatewayDirectory) } catch { return resolve(path) === resolve(this.gatewayDirectory) }
   }
 
   /** The topic of a run main chat is not showing yet (work started on a message sent during another reply). */

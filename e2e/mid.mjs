@@ -11,6 +11,8 @@ const b = await chromium.launch(); const p = await (await b.newContext({ locale:
 await p.goto(url); await p.waitForTimeout(4000)
 await p.locator('.theone-nav').first().click()
 await p.waitForTimeout(2500)
+// ACCESS=<mode label>: main chat's access mode, e.g. 仅可查看 (read only), so writes ask for approval.
+if (process.env.ACCESS) { await p.getByRole('button', { name: /访问模式/ }).click(); await p.waitForTimeout(800); await p.getByText(process.env.ACCESS, { exact: true }).last().click(); await p.waitForTimeout(1200) }
 const box = p.locator('textarea, [contenteditable="true"]').last()
 const sent = []
 const send = async (text, keys) => { await box.click(); await p.keyboard.type(text); await p.keyboard.press(keys); sent.push({ at: new Date().toISOString(), text, keys }) }
@@ -36,7 +38,10 @@ for (let i = 0; i < Number(seconds) * 2; i++) {
   }
   for (const label of ['允许本次', '允许一次', '允许']) {
     const btn = p.getByRole('button', { name: label, exact: true })
-    if (await btn.count().catch(() => 0)) { approvals.push(label); await btn.first().click().catch(() => {}); break }
+    if (await btn.count().catch(() => 0)) {
+      if (!approvals.length) await p.screenshot({ path: 'mid-approval.png' })
+      approvals.push(`${label} ${new Date().toISOString()}`); await btn.first().click().catch(() => {}); break
+    }
   }
 }
 const main = (await p.locator('main').innerText().catch(() => '')).split('\n').filter(l => /PROBE|\[topic:|→|＋|·/.test(l))

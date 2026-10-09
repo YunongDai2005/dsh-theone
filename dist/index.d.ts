@@ -101,6 +101,12 @@ export default class TheOne extends Service {
      * matter, sent while a reply was running. Main chat shows that work when it gets to the message.
      */
     private readonly background;
+    /** "<main chat id>:<seq>" of a changed-files record shown in main chat → the topic's own record. */
+    readonly changeLinks: Map<string, {
+        sessionId: string;
+        seq: number;
+        turn: number;
+    }>;
     /** Main-chat message id → its classification, made while a reply was running. */
     private readonly sorting;
     /** Interjections TheOne moves to the queue; their inbox events are its own. */
@@ -349,6 +355,10 @@ export default class TheOne extends Service {
      * run (or for a nested dispatch) its calls are refused rather than executed.
      */
     private mirroredRun;
+    /** List a topic's changed files under main chat's current reply, read from the topic's own record. */
+    private mirrorChanges;
+    /** Main chat's own folder, where nothing happens; side panels show the topic's folder instead. */
+    isGatewayFolder(path: string | undefined): boolean;
     /** The topic of a run main chat is not showing yet (work started on a message sent during another reply). */
     private backgroundTopic;
     private runForWorker;
