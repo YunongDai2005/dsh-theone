@@ -1,5 +1,9 @@
 <h1 align="center">TheOne</h1>
 
+> This branch contains the **Flow State topic notes experiment**. See
+> [setup, tested boundaries and pending cloud verification](docs/hackathons/flow-state.md).
+> The ArmorIQ addon is opt-in; the existing TheOne description below is the base project.
+
 <p align="center"><b>One chat for everything you're working on.</b><br>It knows which project each message belongs to, and keeps every project's context separate.</p>
 
 <p align="center">

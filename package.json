@@ -30,6 +30,10 @@
     "./client": {
       "types": "./dist/client.d.ts",
       "default": "./dist/client.js"
+    },
+    "./armoriq": {
+      "types": "./dist/armoriq.d.ts",
+      "default": "./dist/armoriq.js"
     }
   },
   "files": [
@@ -63,6 +67,9 @@
     "node": ">=24.0.0"
   },
   "scripts": {
+    "build:armoriq": "tsc -p tsconfig.armoriq.json",
+    "test:armoriq": "tsx --test tests/armoriq.test.ts",
+    "verify:armoriq": "tsx scripts/verify-armoriq.ts",
     "build": "tsc -p tsconfig.json && node scripts/build-client.mjs",
     "typecheck": "tsc -p tsconfig.tests.json",
     "test": "tsx --test tests/*.test.ts",
@@ -125,5 +132,8 @@
   "bugs": {
     "url": "https://github.com/YunongDai2005/dsh-theone/issues",
     "email": "theone@yulid.org"
+  },
+  "optionalDependencies": {
+    "@armoriq/sdk": "^0.6.10"
   }
 }
