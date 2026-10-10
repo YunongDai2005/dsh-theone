@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto'
 import type {} from '@deepseek-ai/dsh-compaction/types'
 import { redactRoutingText, RouterFailure } from './llm-router.ts'
 import { modelJson } from './model-json.ts'
+import { textFeatures } from './routing-policy.ts'
 import type { StoredContext } from './types.ts'
 import { ContextStore } from './store.ts'
 import type { CatalogSnapshot, CatalogStatus, ExtractedTopic, HiddenReason, HistoryPart } from './catalog-types.ts'
@@ -247,6 +248,20 @@ export class HistoryCatalog {
     const normalized = text.toLowerCase()
     const scores = new Map(all.map(c => [c.id, (c.id === currentId ? 10000 : 0) + (hints.prior?.get(c.id) ?? 0) +
       [...c.entities, ...c.keywords, c.title].filter(t => t.length >= 2 && normalized.includes(t.toLowerCase())).length * 10]))
+    // Words and two-character pieces the message shares with each topic's description, weighted by
+    // how few topics have them. Chinese has no spaces: "京都" is not a whole term of "京都旅馆", and
+    // DSH's full-text search (off by default) does not split Chinese either.
+    const query = textFeatures(text)
+    if (query.size) {
+      const bags = new Map(all.map(c => [c.id, textFeatures([c.title, c.summary, c.lastState, ...c.entities, ...c.keywords].join(' '))]))
+      const spread = new Map<string, number>()
+      for (const bag of bags.values()) for (const feature of query) if (bag.has(feature)) spread.set(feature, (spread.get(feature) ?? 0) + 1)
+      for (const [id, bag] of bags) {
+        let shared = 0
+        for (const feature of query) if (bag.has(feature)) shared += Math.log((all.length + 1) / (spread.get(feature)! + 0.5))
+        scores.set(id, (scores.get(id) ?? 0) + Math.min(shared, 30) * 3)
+      }
+    }
     const terms = [...new Set(text.match(/[a-zA-Z][\w.-]{1,40}|[\u4e00-\u9fff]{2,8}/g) ?? [])].slice(0, 4)
     for (const term of terms) {
       signal?.throwIfAborted()

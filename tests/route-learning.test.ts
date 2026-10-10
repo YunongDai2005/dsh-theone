@@ -116,3 +116,19 @@ test('opening another topic right after a message went elsewhere is a weak hint,
     assert.deepEqual(app.ctx.theone.store.learnedTerms().get('ctx_thesis'), ['显存设置'])
   } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
 })
+
+test('candidate recall finds a topic by the words of its description, Chinese included, without full-text search', async () => {
+  const store = new ContextStore(':memory:')
+  try {
+    // Many unrelated topics that all share some everyday wording, and one about the trip.
+    const many = Array.from({ length: 30 }, (_, index) => ({ ...topic(`t${String(index).padStart(2, '0')}`, `项目${index}`), summary: `我们这个项目的第${index}部分`, lastState: '进行中' }))
+    store.seed([...many, { id: 'zz-kyoto', title: '十一月出游', summary: '十一月去京都三天，订了岚山附近的旅馆。', entities: ['岚山'], keywords: [], lastState: '旅馆已订，行程还没排。' }])
+    // DSH's full-text search is off by default and does not split Chinese: it finds nothing here.
+    const catalog = new HistoryCatalog({ sessionQuery: { searchSessions: async () => { throw new Error('search backend disabled') } } } as never, store, () => ({ provider: 'x', model: 'y' }))
+    const picked = await catalog.candidates('上次说的那家京都旅馆还有房吗', undefined, undefined, {})
+    assert.equal(picked[0].id, 'zz-kyoto')
+    // Wording every topic shares does not pull any one of them forward.
+    const plain = await catalog.candidates('我们这个项目进行中', undefined, undefined, {})
+    assert.equal(plain.length, 16)
+  } finally { store.close() }
+})
