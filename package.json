@@ -63,8 +63,8 @@
     "node": ">=24.0.0"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json && node scripts/build-client.mjs",
-    "typecheck": "tsc -p tsconfig.tests.json",
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.client.json && node scripts/build-client.mjs",
+    "typecheck": "tsc -p tsconfig.tests.json && tsc -p tsconfig.client.json --noEmit",
     "test": "tsx --test tests/*.test.ts",
     "demo": "tsx --test tests/demo.test.ts",
     "profile:prepare": "npm run build && node scripts/write-profile.mjs",
