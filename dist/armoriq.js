@@ -15,16 +15,18 @@ export function scopedAction(topic, action) {
 export class TopicGuard {
     email;
     validitySeconds;
+    mode;
     client;
     plans = new Map();
-    constructor(email, options, validitySeconds = 300) {
+    constructor(email, options, validitySeconds = 300, mode = 'sdk') {
         this.email = email;
         this.validitySeconds = validitySeconds;
+        this.mode = mode;
         this.client = new ArmorIQClient({ ...options, observability: noTelemetry });
     }
     prepare(topic) {
         const session = this.client.forUser(this.email).startSession({
-            mode: 'local', trueReanchor: false, validitySeconds: this.validitySeconds,
+            mode: this.mode, trueReanchor: false, validitySeconds: this.validitySeconds,
             observability: noTelemetry,
             toolNameParser: action => ({ mcp: 'theone-notes', action }),
         });
@@ -82,12 +84,14 @@ export function apply(ctx, config) {
     const validity = config.validitySeconds ?? 300;
     if (!Number.isInteger(validity) || validity < 30 || validity > 3600)
         throw new Error('validitySeconds must be 30–3600');
+    if (config.verificationMode && !['sdk', 'local'].includes(config.verificationMode))
+        throw new Error('verificationMode must be sdk or local');
     mkdirSync(dirname(config.databasePath), { recursive: true });
     const db = new DatabaseSync(config.databasePath);
     db.exec(`CREATE TABLE IF NOT EXISTS notes (topic TEXT, key TEXT, text TEXT NOT NULL, PRIMARY KEY(topic, key));
     CREATE TABLE IF NOT EXISTS decisions (id INTEGER PRIMARY KEY, at TEXT NOT NULL, agent TEXT NOT NULL,
       owner TEXT NOT NULL, target TEXT NOT NULL, action TEXT NOT NULL, allowed INTEGER NOT NULL, reason TEXT NOT NULL);`);
-    const guard = new TopicGuard(config.userEmail, { apiKey }, validity);
+    const guard = new TopicGuard(config.userEmail, { apiKey }, validity, config.verificationMode ?? 'sdk');
     const owner = (agentId) => agentId ? ctx.theone.store.contexts().find(topic => topic.workingSessionId === agentId)?.id : undefined;
     ctx.on('tools/pre-execute', async (exec, next) => {
         const topic = owner(exec.agent?.id);

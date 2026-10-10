@@ -8,15 +8,18 @@ export interface Config {
     databasePath: string;
     apiKeyEnv?: string;
     validitySeconds?: number;
+    /** sdk verifies through ArmorIQ's service; local requires a trusted Ed25519 key. */
+    verificationMode?: 'sdk' | 'local';
 }
 export declare function scopedAction(topic: string, action: string): string;
 /** Fixed operator plan. Model calls can request actions, but cannot expand this plan. */
 export declare class TopicGuard {
     private readonly email;
     private readonly validitySeconds;
+    private readonly mode;
     private readonly client;
     private readonly plans;
-    constructor(email: string, options: Partial<SDKConfig>, validitySeconds?: number);
+    constructor(email: string, options: Partial<SDKConfig>, validitySeconds?: number, mode?: 'sdk' | 'local');
     private prepare;
     check(owner: string, target: string, action: string, signal?: AbortSignal): Promise<EnforceResult>;
     close(): Promise<void>;

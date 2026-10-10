@@ -15,7 +15,7 @@ try {
   ]
   for (const operation of operations) {
     const decision = await guard.check(operation.owner, operation.target, operation.action)
-    console.log(JSON.stringify({ at: new Date().toISOString(), ...operation, ...decision }))
+    console.log(JSON.stringify({ at: new Date().toISOString(), ...operation, requestedAction: operation.action, decision }))
     assert.equal(decision.allowed, operation.expect, `Unexpected decision for ${operation.action} targeting ${operation.target}`)
     assert.equal(decision.action, operation.expect ? 'allow' : 'block')
     if (!operation.expect) assert.match(decision.reason ?? '', /tool-not-in-plan/)
