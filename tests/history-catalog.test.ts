@@ -408,3 +408,22 @@ test('a scan in progress does not make an indexed catalog incomplete', { timeout
     assert.equal(catalog.incomplete, false)
   } finally { await catalog.close(); await app.close(); await rm(root, { recursive: true, force: true }) }
 })
+
+test('a topic the user deleted counts as handled, so the catalog completes when its conversation grows', { timeout: 60000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'theone-catalog-dismissed-'))
+  const app = await harness(root, fixture(), { routerMode: 'llm' })
+  const catalog = new HistoryCatalog(app.ctx, app.ctx.theone.store, () => ({ provider: 'fixture', model: 'fixture' }))
+  try {
+    const mixed = await source(app, root, '论文方法：视频注意力设计', '显卡部署：配置 Qwen')
+    await catalog.refresh()
+    assert.equal(catalog.incomplete, false)
+    const gpu = catalog.snapshot().contexts.find(c => c.title === '显卡部署')!
+    app.ctx.theone.store.deleteTopic(gpu.id)
+    // The conversation grows after the deletion: it is read again, and the deleted part stays out.
+    await ask(mixed, '论文方法：补一段相关工作')
+    await catalog.refresh()
+    assert.equal(catalog.snapshot().contexts.some(c => c.title === '显卡部署'), false)
+    assert.equal(catalog.snapshot().status.pending, 0)
+    assert.equal(catalog.incomplete, false)
+  } finally { await catalog.close(); await app.close(); await rm(root, { recursive: true, force: true }) }
+})

@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { harness, ask, textResponse, FixtureModel } from './harness.ts'
+import { ContextStore } from '../src/store.ts'
 
 test('files a topic changed or handed over are listed under main chat\'s reply, read from the topic\'s record and numbered by main chat\'s turn', { timeout: 30000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'theone-changes-'))
@@ -38,5 +39,11 @@ test('files a topic changed or handed over are listed under main chat\'s reply, 
     assert.deepEqual(presented?.data, { turn: 2, callId: 'call_present', files: [{ path: 'report.pdf' }] })
     // Anything else passes through unchanged.
     assert.equal(summary.summary('other', 7).sessionId, 'other')
+    // The link is kept with TheOne's records: TheOne reloaded while DSH runs on (the topic's record is
+    // still there) still opens the card, and the seq may come in as text from the request.
+    const reopened = new ContextStore(join(root, 'contexts.db'))
+    try { assert.deepEqual(reopened.changeLink(app.gateway.id, Number(String(shown.seq))), { sessionId: recorded.worker, seq: recorded.seq, turn: 2 }) }
+    finally { reopened.close() }
+    assert.equal(summary.summary(app.gateway.id, String(shown.seq) as unknown as number).sessionId, recorded.worker)
   } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
 })

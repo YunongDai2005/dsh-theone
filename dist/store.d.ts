@@ -268,6 +268,17 @@ export declare class ContextStore {
      * topics which used them can be told once that they are gone. What the topic itself received goes.
      */
     private purgeFacts;
+    /** A changed-files card in main chat (`gatewayId`, `seq`) reads the topic's record (`sessionId`, `seq`). */
+    linkChange(gatewayId: string, seq: number, source: {
+        sessionId: string;
+        seq: number;
+        turn: number;
+    }): void;
+    changeLink(gatewayId: string, seq: number): {
+        sessionId: string;
+        seq: number;
+        turn: number;
+    } | undefined;
     /** Notices the user closed; they are not shown again on any browser. */
     dismissNotice(id: string, now?: number): void;
     /** True the first time `name` is marked, false ever after: for one-time repairs. */

@@ -318,8 +318,9 @@ export default class TheOne extends Service {
    */
   private readonly background = new Map<string, { run: WorkerRun; receipt: RouterReceipt; todo?: unknown; records?: { type: string; seq: number; data: unknown }[] }>()
   /** "<main chat id>:<seq>" of a changed-files record shown in main chat → the topic's own record. */
-  readonly changeLinks = new Map<string, { sessionId: string; seq: number; turn: number }>()
   /** Main-chat message id → its classification, made while a reply was running. */
+  /** Background topics being started: message id → topic id; they count toward the limit. */
+  private readonly starting = new Map<string, string | undefined>()
   private readonly sorting = new Map<string, { decided: Promise<Decision | undefined>; settled: Promise<void>; abort: AbortController }>()
   /** Notices shown in main chat for work a topic took up on its own (see relay). */
   private readonly relays = new Set<string>()
@@ -534,7 +535,7 @@ export default class TheOne extends Service {
         const original = changes[name]
         if (typeof original !== 'function') continue
         changes[name] = function (this: unknown, sessionId: string, seq: number, ...rest: unknown[]) {
-          const source = service.changeLinks.get(`${sessionId}:${seq}`)
+          const source = service.store.changeLink(sessionId, Number(seq))
           if (!source) return original.call(this, sessionId, seq, ...rest)
           const found = original.call(this, source.sessionId, source.seq, ...rest)
           // Numbered by main chat's turn, the one the reader sees, not the topic's own.
@@ -1978,16 +1979,21 @@ export default class TheOne extends Service {
    * message simply waits its turn.
    */
   private async startBackground(gateway: Agent, message: UserMessage, decision: Decision, receipt: RouterReceipt, signal: AbortSignal): Promise<void> {
-    if (this.background.size >= 2 || signal.aborted || this.store.route(message.id)) return
+    if (this.background.size + this.starting.size >= 2 || signal.aborted || this.store.route(message.id)) return
     const working = [...this.runs.values(), ...[...this.background.values()].map(entry => entry.run)]
       .map(run => this.store.route(run.inputId)?.decision.contextId)
-    if (decision.action !== 'CREATE' && working.includes(decision.contextId)) return
+    if (decision.action !== 'CREATE' && [...working, ...this.starting.values()].includes(decision.contextId)) return
     const route = this.store.plan(message.id, gateway.id, this.config.gatewayKey, decision, false)
     this.store.claim(message.id)
+    // Hold the place before the topic starts, so requests made at the same moment cannot all pass the check.
+    this.starting.set(message.id, route.decision.contextId)
     try {
-      await this.startRun(gateway, route, message, message, run => this.background.set(message.id, { run, receipt }),
-        signal, gateway.options.reasoningEffort)
+      await this.startRun(gateway, route, message, message, run => {
+        this.starting.delete(message.id)
+        this.background.set(message.id, { run, receipt })
+      }, signal, gateway.options.reasoningEffort)
     } catch (error) {
+      this.starting.delete(message.id)
       const entry = this.background.get(message.id)
       this.background.delete(message.id)
       entry?.run.cancel()
@@ -2050,7 +2056,7 @@ export default class TheOne extends Service {
 
   /** A reply or background work is under way. */
   private get busy(): boolean {
-    return this.active || !!this.reservedGateway || this.background.size > 0
+    return this.active || !!this.reservedGateway || this.background.size > 0 || this.starting.size > 0
   }
 
   /** Start the routed topic working on `input`; `register` sees the run before the Worker starts. */
@@ -2321,7 +2327,15 @@ export default class TheOne extends Service {
     // end of the answer before the next message the topic received.
     const words = (data: { content: readonly { type: string; text?: string }[] }) => data.content.filter(block => block.type === 'text').map(block => block.text).join('\n').trim()
     const said = words(input.data)
-    const start = events.findIndex(event => event.type === 'user/message' && (event.data.id === input.data.id || (!!said && words(event.data).includes(said))))
+    // The same message first; only messages answered together reach the topic under another id. Then
+    // the same words are matched by how many times they were said before, not by the first time.
+    let start = events.findIndex(event => event.type === 'user/message' && event.data.id === input.data.id)
+    if (start < 0 && said) {
+      const before = main.filter(event => event.seq < input.seq && event.type === 'user/message' && event.data.source.kind === 'user'
+        && this.store.route(event.data.id)?.decision.contextId === context.id && words(event.data).includes(said)).length
+      const matches = events.flatMap((event, index) => event.type === 'user/message' && words(event.data).includes(said) ? [index] : [])
+      start = matches[before] ?? matches.at(-1) ?? -1
+    }
     if (start < 0) throw new Error('NOTHING_TO_BRANCH')
     const next = events.findIndex((event, index) => index > start && event.type === 'user/message' && event.data.source.kind === 'user')
     const end = events.slice(start, next < 0 ? undefined : next).findLast(event => event.type === 'turn/end')
@@ -2506,7 +2520,7 @@ export default class TheOne extends Service {
     try {
       if (record.type === 'workspace/changes') {
         const event = append('workspace/changes', { turn: turn.data.turn })
-        this.changeLinks.set(`${gateway.id}:${event.seq}`, { sessionId: workerId, seq: record.seq, turn: turn.data.turn })
+        this.store.linkChange(gateway.id, event.seq, { sessionId: workerId, seq: record.seq, turn: turn.data.turn })
       } else append(record.type, { ...record.data as object, turn: turn.data.turn })
     } catch { /* A DSH without these cards: nothing to show. */ }
   }

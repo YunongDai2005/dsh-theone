@@ -94,6 +94,9 @@ export class ContextStore {
       CREATE TABLE IF NOT EXISTS learned_terms (
         context_id TEXT NOT NULL, term TEXT NOT NULL, weight REAL NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY(context_id, term)
       );
+      CREATE TABLE IF NOT EXISTS change_links (
+        gateway_id TEXT NOT NULL, seq INTEGER NOT NULL, session_id TEXT NOT NULL, source_seq INTEGER NOT NULL, turn INTEGER NOT NULL, PRIMARY KEY(gateway_id, seq)
+      );
       CREATE TABLE IF NOT EXISTS dismissed_notices (id TEXT PRIMARY KEY, dismissed_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS plugin_flags (name TEXT PRIMARY KEY, set_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS stowed_sessions (session_id TEXT PRIMARY KEY, stowed_at INTEGER NOT NULL);
@@ -985,6 +988,14 @@ export class ContextStore {
         this.db.prepare("UPDATE facts SET deleted_at = ?, aliases = '[]', current_version = 0 WHERE context_id = ? AND deleted_at IS NULL").run(now, contextId);
         this.db.prepare('DELETE FROM fact_dependencies WHERE context_id = ?').run(contextId);
         this.db.prepare('DELETE FROM fact_deliveries WHERE context_id = ?').run(contextId);
+    }
+    /** A changed-files card in main chat (`gatewayId`, `seq`) reads the topic's record (`sessionId`, `seq`). */
+    linkChange(gatewayId, seq, source) {
+        this.db.prepare('INSERT OR REPLACE INTO change_links VALUES (?, ?, ?, ?, ?)').run(gatewayId, seq, source.sessionId, source.seq, source.turn);
+    }
+    changeLink(gatewayId, seq) {
+        const row = this.db.prepare('SELECT session_id, source_seq, turn FROM change_links WHERE gateway_id = ? AND seq = ?').get(gatewayId, seq);
+        return row ? { sessionId: String(row.session_id), seq: Number(row.source_seq), turn: Number(row.turn) } : undefined;
     }
     /** Notices the user closed; they are not shown again on any browser. */
     dismissNotice(id, now = Date.now()) {

@@ -102,12 +102,9 @@ export default class TheOne extends Service {
      */
     private readonly background;
     /** "<main chat id>:<seq>" of a changed-files record shown in main chat → the topic's own record. */
-    readonly changeLinks: Map<string, {
-        sessionId: string;
-        seq: number;
-        turn: number;
-    }>;
     /** Main-chat message id → its classification, made while a reply was running. */
+    /** Background topics being started: message id → topic id; they count toward the limit. */
+    private readonly starting;
     private readonly sorting;
     /** Notices shown in main chat for work a topic took up on its own (see relay). */
     private readonly relays;

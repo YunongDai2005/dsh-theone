@@ -192,8 +192,10 @@ export class HistoryCatalog {
                     this.status.pending--;
                     continue;
                 }
-                const changed = parts.filter(part => this.store.indexedTurn(sessionId, part.seq)?.fingerprint !== part.fingerprint &&
-                    this.store.dismissedTurn(sessionId, part.seq) !== part.fingerprint);
+                // A turn the user deleted stays out. It is known by its message, not its fingerprint: the last
+                // turn's fingerprint changes as the conversation grows, and the deletion must outlast that.
+                const dismissed = (part) => this.store.dismissedTurn(sessionId, part.seq) !== undefined;
+                const changed = parts.filter(part => this.store.indexedTurn(sessionId, part.seq)?.fingerprint !== part.fingerprint && !dismissed(part));
                 const owned = this.store.contexts().find(context => context.workingSessionId === sessionId);
                 const title = clean((await this.ctx.sessionQuery.readTitle(sessionId, signal))?.title ?? '', 120);
                 for (let offset = 0; offset < changed.length; offset += 8) {
@@ -221,7 +223,7 @@ export class HistoryCatalog {
                     signal.throwIfAborted();
                     this.store.importTopics(sessionId, log.session.cwd, batch, topics);
                 }
-                if (parts.every(p => this.store.indexedTurn(sessionId, p.seq)?.fingerprint === p.fingerprint)) {
+                if (parts.every(p => this.store.indexedTurn(sessionId, p.seq)?.fingerprint === p.fingerprint || dismissed(p))) {
                     this.store.markIndex(sessionId, through, 'ready');
                     this.status.indexed++;
                     this.status.pending--;
