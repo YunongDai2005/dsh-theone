@@ -53,6 +53,8 @@ Each project reasons, runs tools and compacts in its own session. What you see i
 
 ## Install in 30 seconds
 
+For a local demo using NVIDIA Nemotron 3 Super through Nebius Token Factory, see [Nebius/Nemotron setup](docs/nebius-demo.md).
+
 1. Configure an API in DSH and select a model that can chat.
 2. Open **Plugins → Add plugin**, enter `dsh-theone` under *Package name or address*, and install.
 3. Click **TheOne · Main chat** in the sidebar and start talking.

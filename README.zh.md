@@ -53,6 +53,8 @@
 
 ## 30 秒装好
 
+想通过 Nebius Token Factory 用 NVIDIA Nemotron 3 Super 运行独立演示，可查看[配置与启动说明（英文）](docs/nebius-demo.md)。
+
 1. 在 DSH 中配置好 API，选一个能正常聊天的模型。
 2. 打开 **插件 → 添加插件**，在「包名或地址」里填 `dsh-theone`，点击安装。
 3. 点击左侧 **TheOne · 主聊天**，开始说话。
