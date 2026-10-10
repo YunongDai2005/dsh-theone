@@ -1,4 +1,4 @@
-import { RouterFailure } from "./llm-router.js";
+import { RouterFailure, answerJson } from "./llm-router.js";
 /** Small, tool-free analysis through the host runtime, with no session history replay. */
 export async function modelJson(llm, selection, system, payload, signal, options = {}) {
     signal?.throwIfAborted();
@@ -35,7 +35,7 @@ export async function modelJson(llm, selection, system, payload, signal, options
         }
         if (!finished)
             throw new RouterFailure('CATALOG_OUTPUT_INCOMPLETE');
-        const json = output.trim().replace(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/, '$1').trim();
+        const json = answerJson(output);
         try {
             return JSON.parse(json);
         }

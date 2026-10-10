@@ -1,6 +1,6 @@
 import type LlmRuntime from '@deepseek-ai/dsh-llm'
 import type { ModelSelection } from '@deepseek-ai/dsh-agent'
-import { RouterFailure } from './llm-router.ts'
+import { RouterFailure, answerJson } from './llm-router.ts'
 
 /** Small, tool-free analysis through the host runtime, with no session history replay. */
 export async function modelJson(llm: Pick<LlmRuntime, 'prepareCall'>, selection: ModelSelection,
@@ -32,7 +32,7 @@ export async function modelJson(llm: Pick<LlmRuntime, 'prepareCall'>, selection:
       }
     }
     if (!finished) throw new RouterFailure('CATALOG_OUTPUT_INCOMPLETE')
-    const json = output.trim().replace(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/, '$1').trim()
+    const json = answerJson(output)
     try { return JSON.parse(json) } catch { throw new RouterFailure('CATALOG_OUTPUT_INVALID') }
   } catch (error) {
     signal?.throwIfAborted()

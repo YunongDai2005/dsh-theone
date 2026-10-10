@@ -188,3 +188,10 @@ test('a new topic names only an offered project folder; running work and folders
  // A running topic that is not among the candidates is left out rather than trusted.
  assert.ok(!('running' in routingPayload({...input,running:{topicId:'missing',request:'',progress:''}})))
 })
+test('reasoning a model writes before its answer (<think>…</think>) does not hide the routing JSON',async()=>{
+ const inline=service(function*(){yield* textResponse(`<think>用户说"继续"，当前在研究话题。{"action":"CREATE"}</think>\n${JSON.stringify(decision)}`)}).router()
+ assert.equal((await inline.decide(input)).decision.action,'KEEP')
+ // Some chat templates open the block in the prompt, so only its end reaches the answer.
+ const closing=service(function*(){yield* textResponse(`想一想……</think>\n\n\`\`\`json\n${JSON.stringify(decision)}\n\`\`\``)}).router()
+ assert.equal((await closing.decide(input)).decision.action,'KEEP')
+})

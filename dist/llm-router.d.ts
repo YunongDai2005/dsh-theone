@@ -87,6 +87,13 @@ export interface RoutingRouter {
     decide(input: RoutingInput, signal?: AbortSignal): Promise<RoutingResult>;
 }
 /** Uses the host's configured adapter; credentials never enter this plugin. */
+/**
+ * The JSON object a model answered with. Some models (Nemotron, Qwen and others served through
+ * OpenAI-compatible APIs) write their reasoning into the answer before it, as `<think>…</think>`,
+ * or only its closing tag when the chat template opened it; providers without JSON mode may wrap
+ * the object in a code fence.
+ */
+export declare function answerJson(output: string): string;
 export declare class DshRouter implements RoutingRouter {
     private readonly llm;
     private readonly selection;

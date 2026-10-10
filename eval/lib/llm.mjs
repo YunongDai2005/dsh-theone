@@ -63,7 +63,9 @@ export async function createClient({ model = process.env.EVAL_MODEL ?? 'deepseek
     const body = openai
       ? { ...sampling, messages: [{ role: 'system', content: system }, { role: 'user', content: user }], ...extra }
       : { ...sampling, system, messages: [{ role: 'user', content: user }], thinking: { type: 'disabled' }, ...extra }
-    const parse = text => JSON.parse(text.trim().replace(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/, '$1').trim())
+    // Reasoning some models write before the answer (<think>…</think>, or only its end) is set aside, as TheOne does.
+    const answer = text => text.includes('</think>') ? text.slice(text.lastIndexOf('</think>') + '</think>'.length) : text
+    const parse = text => JSON.parse(answer(text).trim().replace(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/, '$1').trim())
     // A malformed answer is never cached, so asking again can succeed.
     for (let attempt = 0; ; attempt++) {
       const hash = createHash('sha256').update(JSON.stringify([fake ? 'fake' : base, body, tag])).digest('hex').slice(0, 24)

@@ -131,6 +131,16 @@ export function validateRoutingDecision(value, input) {
     return fail();
 }
 /** Uses the host's configured adapter; credentials never enter this plugin. */
+/**
+ * The JSON object a model answered with. Some models (Nemotron, Qwen and others served through
+ * OpenAI-compatible APIs) write their reasoning into the answer before it, as `<think>…</think>`,
+ * or only its closing tag when the chat template opened it; providers without JSON mode may wrap
+ * the object in a code fence.
+ */
+export function answerJson(output) {
+    const end = output.lastIndexOf('</think>');
+    return (end < 0 ? output : output.slice(end + '</think>'.length)).trim().replace(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/, '$1').trim();
+}
 export class DshRouter {
     llm;
     selection;
@@ -194,8 +204,7 @@ export class DshRouter {
             }
             if (!stopped)
                 throw new RouterFailure('ROUTER_RESPONSE_INCOMPLETE');
-            // Providers without JSON mode may wrap a single JSON object in a code fence.
-            const json = output.trim().replace(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/, '$1').trim();
+            const json = answerJson(output);
             const decision = validateRoutingDecision(JSON.parse(json), { ...input, currentId: payload.currentId ?? undefined });
             this.failures = 0;
             this.blockedUntil = 0;
