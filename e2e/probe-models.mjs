@@ -30,9 +30,9 @@ async function* call(name, args) {
 class Probe extends LlmAdapter {
   providerInfo(provider) { return { id: provider, name: 'Probe' } }
   providerRetryPolicy() { return resolveRetryPolicy({ mode: 'normal', maxRetries: 0 }, 'probe.retry') }
-  async listModels(provider) { return [{ provider, id: 'deepseek-v3.2', name: 'Probe', inputModalities: ['text'] }] }
+  async listModels(provider) { return [{ provider, id: 'deepseek-v3.2', name: 'Probe', inputModalities: ['text', 'image'] }] }
   async resolveModel(provider, model) {
-    return { provider, id: model, name: 'Probe', inputModalities: ['text'], context: { contextWindow: 128000 }, defaultMaxTokens: 8192,
+    return { provider, id: model, name: 'Probe', inputModalities: ['text', 'image'], context: { contextWindow: 128000 }, defaultMaxTokens: 8192,
       reasoning: { efforts: [{ id: 'off', name: 'Off' }, { id: 'medium', name: 'Medium' }], defaultEffort: 'medium' } }
   }
   async *stream(options) {
