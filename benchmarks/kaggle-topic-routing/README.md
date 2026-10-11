@@ -28,11 +28,28 @@ Kaggle account phone and identity verification are required for model access. Ch
 
 `verify_harness.py` uses scripted mock responses. Its positive, negative, and half-correct controls verify scoring only. They are not real model results and make zero inference requests.
 
-## Results and publication status
+## Verified results — task version 1, October 11, 2026
 
-Pending real model execution. No model accuracy or contest submission is claimed at this stage. The first pre-verification upload left a private task without a source kernel; it is not the reproducible task named above and will not be submitted as a benchmark.
+| Model | Correct | Accuracy | Run ID | Recorded inference cost |
+|---|---:|---:|---|---:|
+| Gemini 3.7 Flash | 35/36 | 97.2% | 4630860 | $0.03675525 |
+| GPT-5.4 nano (2026-03-17) | 34/36 | 94.4% | 4630864 | $0.00256955 |
 
-Source is covered by this repository's MIT license. Kaggle separately displays its task/notebook license; check the platform page for the published artifact's license.
+These are single completed Kaggle executions on identical frozen cases. Both models misrouted `collision-2`: a request to add a moving bill to a monthly budget went to the apartment-move topic rather than the household budget. GPT also chose the thesis for `ambiguous-4`, where the policy requires clarification. A one-case difference cannot establish broad model superiority. Costs are recorded request metrics for these runs, not general workload prices or all account usage.
+
+Qwen 3 Next 80B Instruct was scheduled as run 4630865 but remains incomplete at this update. It is excluded from the table; incomplete execution is not scored as a routing failure.
+
+`results.json` and `cases.csv` contain sanitized summaries. `summarize_results.py` recomputes exact-match case scores from completed server traces, checks all 36 cases and the parent score, and excludes scripted harness runs. After downloading traces with the CLI, provide each completed run directory:
+
+```bash
+python summarize_results.py results-private/theone-routing-decisions/1/<model>/<run-id> --output verified-results
+```
+
+- [Public benchmark and leaderboard](https://www.kaggle.com/benchmarks/yulidai/theone-routing-decisions)
+- [Published task version 1 and model outputs](https://www.kaggle.com/benchmarks/tasks/yulidai/theone-routing-decisions/1)
+- [Public backing notebook](https://www.kaggle.com/code/yulidai/new-benchmark-task-d1b14/output)
+
+The benchmark uses **Average of task scores** to aggregate numeric accuracy. Source in this GitHub repository remains MIT. The published Kaggle benchmark/task/notebook is Apache 2.0, approved separately by the author. The first pre-verification upload left private metadata without a source kernel; it is excluded from all results and public links above.
 
 ## References
 

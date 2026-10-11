@@ -1,0 +1,95 @@
+[
+  {
+    "model": "google/gemini-3.7-flash",
+    "run_id": "4630860",
+    "task_version": 1,
+    "start_utc": "2026-10-11T02:24:17.507129Z",
+    "end_utc": "2026-10-11T02:25:37.021638Z",
+    "n": 36,
+    "correct": 35,
+    "accuracy": 0.9722222222222222,
+    "recorded_cost_usd": 0.03675525,
+    "groups": {
+      "explicit": {
+        "correct": 6,
+        "n": 6
+      },
+      "new_topic": {
+        "correct": 6,
+        "n": 6
+      },
+      "lexical_collision": {
+        "correct": 5,
+        "n": 6
+      },
+      "resumption": {
+        "correct": 6,
+        "n": 6
+      },
+      "clarification": {
+        "correct": 6,
+        "n": 6
+      },
+      "untrusted_content": {
+        "correct": 6,
+        "n": 6
+      }
+    },
+    "failures": [
+      {
+        "case": "collision-2",
+        "expected": "t287",
+        "actual": "t593"
+      }
+    ]
+  },
+  {
+    "model": "openai/gpt-5.4-nano-2026-03-17",
+    "run_id": "4630864",
+    "task_version": 1,
+    "start_utc": "2026-10-11T02:27:33.361920Z",
+    "end_utc": "2026-10-11T02:27:59.691135Z",
+    "n": 36,
+    "correct": 34,
+    "accuracy": 0.9444444444444444,
+    "recorded_cost_usd": 0.00256955,
+    "groups": {
+      "resumption": {
+        "correct": 6,
+        "n": 6
+      },
+      "explicit": {
+        "correct": 6,
+        "n": 6
+      },
+      "new_topic": {
+        "correct": 6,
+        "n": 6
+      },
+      "lexical_collision": {
+        "correct": 5,
+        "n": 6
+      },
+      "clarification": {
+        "correct": 5,
+        "n": 6
+      },
+      "untrusted_content": {
+        "correct": 6,
+        "n": 6
+      }
+    },
+    "failures": [
+      {
+        "case": "collision-2",
+        "expected": "t287",
+        "actual": "t593"
+      },
+      {
+        "case": "ambiguous-4",
+        "expected": "CLARIFY",
+        "actual": "t104"
+      }
+    ]
+  }
+]
