@@ -24,6 +24,11 @@ read another topic's notes, ArmorIQ rejects the action before the tool runs.
   currently blocks own-topic actions with `no_matching_policy`. The official CLI
   accepted a restricted two-action policy draft, but activation returned HTTP 500.
   A successful end-to-end cloud integration is **not yet claimed**.
+- Rechecked October 11, 2026: the official CLI still reports active policy
+  version 0 with no policy. Retrying the restricted draft returned HTTP 500
+  before successful activation. The dashboard shows no active policies; its
+  new-policy YAML lens labels its generated example "preview only". Neither
+  surface confirms a working notes policy.
 - Pending: resolve service policy activation, repeat live allow/block checks,
   record a real-model demo video, obtain registration approval and finally submit.
   Local issuer tests are **not** evidence of a working cloud integration.
@@ -59,10 +64,11 @@ npm run build:armoriq
 npm run test:armoriq
 ```
 
-`build:armoriq` compiles the server addon and its TheOne dependencies. A clean npm
-install currently exposes pre-existing client session API type mismatches in the
-base v0.3.31 UI (`src/client.ts`); the normal whole-project build is not claimed
-to pass with that dependency set. This branch does not change the UI API.
+`build:armoriq` compiles the server addon and its TheOne dependencies. The base
+client/Host type declaration collision was fixed in this branch by commit
+`7cb3b7e`, which isolates browser type checking. Clean installation, full type
+checking/build and all 223 tests passed with the fix. It does not change runtime
+behavior or generated dist output. The upstream main PR is still open.
 
 Enable the addon separately from the normal TheOne plugin in a compatible DSH
 profile:
