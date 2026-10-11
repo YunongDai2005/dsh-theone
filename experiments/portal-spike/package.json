@@ -1,0 +1,9 @@
+{
+  "name": "theone-portal-spike",
+  "private": true,
+  "type": "module",
+  "description": "Technical spike for TheOne over Claude Code and Codex; see docs/portal.md",
+  "dependencies": {
+    "@agentclientprotocol/sdk": "1.7.0"
+  }
+}

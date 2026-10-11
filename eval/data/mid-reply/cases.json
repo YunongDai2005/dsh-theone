@@ -1,0 +1,537 @@
+{
+  "about": "Messages sent while a reply is still running. expect: \"running\" (about the work in progress: joins it, or waits for it), a topic id (another existing matter), or \"new\" (a new matter). Hand-written; see docs/parallel-topics.md.",
+  "catalogs": {
+    "zh": [
+      {
+        "id": "thesis",
+        "title": "视频注意力论文",
+        "summary": "硕士论文：视频注意力模型，第三章消融实验，第四章效率分析。",
+        "entities": [
+          "论文",
+          "第三章",
+          "第四章",
+          "消融",
+          "LaTeX"
+        ],
+        "keywords": [
+          "论文",
+          "实验"
+        ],
+        "lastState": "正在把第三章消融结果整理成表格。"
+      },
+      {
+        "id": "gpu",
+        "title": "Qwen / RX 9070 XT 部署",
+        "summary": "在 RX 9070 XT 上部署 Qwen，测推理吞吐和显存。",
+        "entities": [
+          "Qwen",
+          "9070 XT",
+          "FP8",
+          "吞吐"
+        ],
+        "keywords": [
+          "显卡",
+          "推理"
+        ],
+        "lastState": "14B 的吞吐测完了，下一步测 FP8。"
+      },
+      {
+        "id": "kyoto",
+        "title": "京都旅行",
+        "summary": "十一月去京都三天，订了岚山附近的旅馆。",
+        "entities": [
+          "京都",
+          "岚山",
+          "旅馆"
+        ],
+        "keywords": [
+          "旅行",
+          "行程"
+        ],
+        "lastState": "旅馆已订，行程还没排。"
+      },
+      {
+        "id": "tax",
+        "title": "个税年度汇算",
+        "summary": "2026 年度个税汇算，专项附加扣除还缺租房凭证。",
+        "entities": [
+          "个税",
+          "专项附加扣除",
+          "租房"
+        ],
+        "keywords": [
+          "报税"
+        ],
+        "lastState": "等房东发租房合同扫描件。"
+      }
+    ],
+    "en": [
+      {
+        "id": "cli",
+        "title": "Rust CLI 1.0 release",
+        "summary": "Releasing a Rust command-line tool: changelog, crates.io publish, Homebrew formula.",
+        "entities": [
+          "Rust",
+          "crates.io",
+          "Homebrew",
+          "changelog"
+        ],
+        "keywords": [
+          "release"
+        ],
+        "lastState": "Changelog drafted; Homebrew formula next."
+      },
+      {
+        "id": "lisbon",
+        "title": "Lisbon weekend",
+        "summary": "Weekend in Lisbon in May; flights booked, looking for a hotel in Alfama.",
+        "entities": [
+          "Lisbon",
+          "Alfama",
+          "flights"
+        ],
+        "keywords": [
+          "travel"
+        ],
+        "lastState": "Comparing two hotels."
+      },
+      {
+        "id": "marathon",
+        "title": "Half marathon training",
+        "summary": "12-week plan for a half marathon in June.",
+        "entities": [
+          "half marathon",
+          "long run",
+          "pace"
+        ],
+        "keywords": [
+          "running",
+          "training"
+        ],
+        "lastState": "Week 4 of 12."
+      }
+    ]
+  },
+  "cases": [
+    {
+      "id": "z01",
+      "lang": "zh",
+      "running": {
+        "topicId": "thesis",
+        "request": "把第三章的消融结果整理成 LaTeX 表格",
+        "progress": "好的，我先读取 results/ablation.csv，表头是 模型、Top-1、FLOPs……"
+      },
+      "how": "interjection",
+      "text": "再加一列显存占用",
+      "expect": "running"
+    },
+    {
+      "id": "z02",
+      "lang": "zh",
+      "running": {
+        "topicId": "thesis",
+        "request": "把第三章的消融结果整理成 LaTeX 表格",
+        "progress": "好的，我先读取 results/ablation.csv，表头是 模型、Top-1、FLOPs……"
+      },
+      "how": "interjection",
+      "text": "不对，用 booktabs",
+      "expect": "running"
+    },
+    {
+      "id": "z03",
+      "lang": "zh",
+      "running": {
+        "topicId": "thesis",
+        "request": "把第三章的消融结果整理成 LaTeX 表格",
+        "progress": "表格写好了一半，正在对齐小数位。"
+      },
+      "how": "interjection",
+      "text": "快点",
+      "expect": "running"
+    },
+    {
+      "id": "z04",
+      "lang": "zh",
+      "running": {
+        "topicId": "thesis",
+        "request": "把第三章的消融结果整理成 LaTeX 表格",
+        "progress": "我准备直接改 chapter3.tex 里的表格。"
+      },
+      "how": "interjection",
+      "text": "先别动文件",
+      "expect": "running"
+    },
+    {
+      "id": "z05",
+      "lang": "zh",
+      "running": {
+        "topicId": "thesis",
+        "request": "把第三章的消融结果整理成 LaTeX 表格",
+        "progress": "表格写好了一半。"
+      },
+      "how": "interjection",
+      "text": "把 9070 那边测的吞吐数据也放进这个表",
+      "expect": "running"
+    },
+    {
+      "id": "z06",
+      "lang": "zh",
+      "running": {
+        "topicId": "thesis",
+        "request": "把第三章的消融结果整理成 LaTeX 表格",
+        "progress": "表格写好了一半。"
+      },
+      "how": "interjection",
+      "text": "京都明天天气怎么样",
+      "expect": "kyoto"
+    },
+    {
+      "id": "z07",
+      "lang": "zh",
+      "running": {
+        "topicId": "thesis",
+        "request": "把第三章的消融结果整理成 LaTeX 表格",
+        "progress": "表格写好了一半。"
+      },
+      "how": "queued",
+      "text": "那家旅馆有温泉吗",
+      "expect": "kyoto"
+    },
+    {
+      "id": "z08",
+      "lang": "zh",
+      "running": {
+        "topicId": "thesis",
+        "request": "把第三章的消融结果整理成 LaTeX 表格",
+        "progress": "表格写好了一半。"
+      },
+      "how": "queued",
+      "text": "然后第四章也照这样弄一下",
+      "expect": "running"
+    },
+    {
+      "id": "z09",
+      "lang": "zh",
+      "running": {
+        "topicId": "thesis",
+        "request": "把第三章的消融结果整理成 LaTeX 表格",
+        "progress": "表格写好了一半。"
+      },
+      "how": "queued",
+      "text": "帮我写一个 Rust 的发票解析器",
+      "expect": "new"
+    },
+    {
+      "id": "z10",
+      "lang": "zh",
+      "running": {
+        "topicId": "thesis",
+        "request": "把第三章的消融结果整理成 LaTeX 表格",
+        "progress": "表格写好了一半。"
+      },
+      "how": "interjection",
+      "text": "9070 的 FP8 测完了吗",
+      "expect": "gpu"
+    },
+    {
+      "id": "z11",
+      "lang": "zh",
+      "running": {
+        "topicId": "thesis",
+        "request": "把第三章的消融结果整理成 LaTeX 表格",
+        "progress": "我把 B3 和 B4 两组合并成了一行。"
+      },
+      "how": "interjection",
+      "text": "和之前那版有什么区别？",
+      "expect": "running"
+    },
+    {
+      "id": "z12",
+      "lang": "zh",
+      "running": {
+        "topicId": "gpu",
+        "request": "在 9070 XT 上跑一遍 Qwen 14B 的吞吐测试",
+        "progress": "正在跑 batch=8，已经完成 3/5 组。"
+      },
+      "how": "interjection",
+      "text": "测完把结果放进我论文的表里",
+      "expect": "running"
+    },
+    {
+      "id": "z13",
+      "lang": "zh",
+      "running": {
+        "topicId": "gpu",
+        "request": "在 9070 XT 上跑一遍 Qwen 14B 的吞吐测试",
+        "progress": "正在跑 batch=8，已经完成 3/5 组。"
+      },
+      "how": "interjection",
+      "text": "顺便帮我排一下京都的行程",
+      "expect": "kyoto"
+    },
+    {
+      "id": "z14",
+      "lang": "zh",
+      "running": {
+        "topicId": "gpu",
+        "request": "在 9070 XT 上跑一遍 Qwen 14B 的吞吐测试",
+        "progress": "正在跑 batch=8，已经完成 3/5 组。"
+      },
+      "how": "interjection",
+      "text": "改用 FP8",
+      "expect": "running"
+    },
+    {
+      "id": "z15",
+      "lang": "zh",
+      "running": {
+        "topicId": "gpu",
+        "request": "在 9070 XT 上跑一遍 Qwen 14B 的吞吐测试",
+        "progress": "正在跑 batch=8，已经完成 3/5 组。"
+      },
+      "how": "interjection",
+      "text": "现在到哪一步了",
+      "expect": "running"
+    },
+    {
+      "id": "z16",
+      "lang": "zh",
+      "running": {
+        "topicId": "gpu",
+        "request": "在 9070 XT 上跑一遍 Qwen 14B 的吞吐测试",
+        "progress": "batch=8 显存 15.2GB，接近上限。要不要降到 batch=4？"
+      },
+      "how": "interjection",
+      "text": "降吧",
+      "expect": "running"
+    },
+    {
+      "id": "z17",
+      "lang": "zh",
+      "running": {
+        "topicId": "gpu",
+        "request": "在 9070 XT 上跑一遍 Qwen 14B 的吞吐测试",
+        "progress": "正在跑 batch=8。"
+      },
+      "how": "queued",
+      "text": "房东的租房合同发过来了，帮我把个税的专项附加扣除填一下",
+      "expect": "tax"
+    },
+    {
+      "id": "z18",
+      "lang": "zh",
+      "running": {
+        "topicId": "kyoto",
+        "request": "帮我排一下京都三天的行程",
+        "progress": "第一天：岚山竹林、天龙寺……"
+      },
+      "how": "interjection",
+      "text": "第二天别太早，我起不来",
+      "expect": "running"
+    },
+    {
+      "id": "z19",
+      "lang": "zh",
+      "running": {
+        "topicId": "kyoto",
+        "request": "帮我排一下京都三天的行程",
+        "progress": "第一天：岚山竹林、天龙寺……"
+      },
+      "how": "interjection",
+      "text": "论文的引用格式用 GB/T 7714 吗",
+      "expect": "thesis"
+    },
+    {
+      "id": "z20",
+      "lang": "zh",
+      "running": {
+        "topicId": "kyoto",
+        "request": "帮我排一下京都三天的行程",
+        "progress": "第一天：岚山竹林、天龙寺……"
+      },
+      "how": "interjection",
+      "text": "预算控制在五千以内",
+      "expect": "running"
+    },
+    {
+      "id": "z21",
+      "lang": "zh",
+      "running": {
+        "topicId": "kyoto",
+        "request": "帮我排一下京都三天的行程",
+        "progress": "第一天：岚山竹林、天龙寺……"
+      },
+      "how": "queued",
+      "text": "日元现在汇率多少",
+      "expect": "running"
+    },
+    {
+      "id": "z22",
+      "lang": "zh",
+      "running": {
+        "topicId": "kyoto",
+        "request": "帮我排一下京都三天的行程",
+        "progress": "第一天：岚山竹林、天龙寺……"
+      },
+      "how": "queued",
+      "text": "给我推荐几本讲注意力机制的书",
+      "expect": "thesis"
+    },
+    {
+      "id": "z23",
+      "lang": "zh",
+      "running": {
+        "topicId": "tax",
+        "request": "帮我算一下今年个税汇算要补多少",
+        "progress": "工资薪金合计 31.2 万，已预缴……"
+      },
+      "how": "interjection",
+      "text": "我还有一笔劳务报酬忘了说，8000",
+      "expect": "running"
+    },
+    {
+      "id": "z25",
+      "lang": "zh",
+      "running": {
+        "topicId": "tax",
+        "request": "帮我算一下今年个税汇算要补多少",
+        "progress": "工资薪金合计 31.2 万，已预缴……"
+      },
+      "how": "interjection",
+      "text": "今晚吃什么好",
+      "expect": "new"
+    },
+    {
+      "id": "e01",
+      "lang": "en",
+      "running": {
+        "topicId": "cli",
+        "request": "Write the Homebrew formula for the 1.0 release",
+        "progress": "Here's the formula skeleton; computing the sha256 of the tarball…"
+      },
+      "how": "interjection",
+      "text": "use the arm64 bottle too",
+      "expect": "running"
+    },
+    {
+      "id": "e02",
+      "lang": "en",
+      "running": {
+        "topicId": "cli",
+        "request": "Write the Homebrew formula for the 1.0 release",
+        "progress": "Here's the formula skeleton; computing the sha256 of the tarball…"
+      },
+      "how": "interjection",
+      "text": "wait, don't push anything yet",
+      "expect": "running"
+    },
+    {
+      "id": "e03",
+      "lang": "en",
+      "running": {
+        "topicId": "cli",
+        "request": "Write the Homebrew formula for the 1.0 release",
+        "progress": "Here's the formula skeleton; computing the sha256 of the tarball…"
+      },
+      "how": "interjection",
+      "text": "is the Alfama place cheaper than the other one?",
+      "expect": "lisbon"
+    },
+    {
+      "id": "e04",
+      "lang": "en",
+      "running": {
+        "topicId": "cli",
+        "request": "Write the Homebrew formula for the 1.0 release",
+        "progress": "Formula done; now the tap's README."
+      },
+      "how": "queued",
+      "text": "then do the same for the Scoop manifest",
+      "expect": "running"
+    },
+    {
+      "id": "e05",
+      "lang": "en",
+      "running": {
+        "topicId": "cli",
+        "request": "Write the Homebrew formula for the 1.0 release",
+        "progress": "Formula done; now the tap's README."
+      },
+      "how": "queued",
+      "text": "what should my long run pace be this week?",
+      "expect": "marathon"
+    },
+    {
+      "id": "e06",
+      "lang": "en",
+      "running": {
+        "topicId": "cli",
+        "request": "Write the Homebrew formula for the 1.0 release",
+        "progress": "Formula done; now the tap's README."
+      },
+      "how": "queued",
+      "text": "draft a polite email declining a meeting on Friday",
+      "expect": "new"
+    },
+    {
+      "id": "e07",
+      "lang": "en",
+      "running": {
+        "topicId": "lisbon",
+        "request": "Compare the two Alfama hotels for me",
+        "progress": "Hotel A is €140/night with breakfast; Hotel B is…"
+      },
+      "how": "interjection",
+      "text": "only ones with a lift please, my knee is bad",
+      "expect": "running"
+    },
+    {
+      "id": "e09",
+      "lang": "en",
+      "running": {
+        "topicId": "lisbon",
+        "request": "Compare the two Alfama hotels for me",
+        "progress": "Hotel A is €140/night with breakfast; Hotel B is…"
+      },
+      "how": "interjection",
+      "text": "did the crates.io publish go through?",
+      "expect": "cli"
+    },
+    {
+      "id": "e10",
+      "lang": "en",
+      "running": {
+        "topicId": "marathon",
+        "request": "Adjust weeks 5-8 of my plan, I lost a week to a cold",
+        "progress": "Week 5: 3 easy runs, long run 10 km…"
+      },
+      "how": "interjection",
+      "text": "ok",
+      "expect": "running"
+    },
+    {
+      "id": "e11",
+      "lang": "en",
+      "running": {
+        "topicId": "marathon",
+        "request": "Adjust weeks 5-8 of my plan, I lost a week to a cold",
+        "progress": "Week 5: 3 easy runs, long run 10 km…"
+      },
+      "how": "interjection",
+      "text": "I'll be in Lisbon in week 7, plan runs there",
+      "expect": "running"
+    },
+    {
+      "id": "e12",
+      "lang": "en",
+      "running": {
+        "topicId": "marathon",
+        "request": "Adjust weeks 5-8 of my plan, I lost a week to a cold",
+        "progress": "Week 5: 3 easy runs, long run 10 km…"
+      },
+      "how": "queued",
+      "text": "book a table for two somewhere in Alfama on Saturday",
+      "expect": "lisbon"
+    }
+  ]
+}

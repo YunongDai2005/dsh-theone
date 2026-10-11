@@ -1,88 +1,205 @@
-# TheOne for DeepSeek Harness
+<h1 align="center">TheOne</h1>
 
-English | [简体中文](./README.zh.md)
+<p align="center"><b>One chat for everything you're working on.</b><br>It knows which project each message belongs to, and keeps every project's context separate.</p>
 
-> Unofficial community project, independently maintained. Not affiliated with or endorsed by DeepSeek.
+<p align="center">
+  <img alt="DSH 0.2.0-rc.2" src="https://img.shields.io/badge/DSH-0.2.0--rc.2-a75b1e">
+  <img alt="Node.js 24" src="https://img.shields.io/badge/Node.js-24-3c873a">
+  <img alt="English / 中文" src="https://img.shields.io/badge/UI-English%20%2F%20中文-4a7fb5">
+</p>
 
-**One main chat for your projects and past conversations.** TheOne routes each message to the relevant topic, mounts a short summary, and runs it in a dedicated DSH working session. DSH stores the original conversations and runs models and tools; TheOne stores the topic catalog, summaries, and routing state.
+<p align="center">English | <a href="./README.zh.md">简体中文</a></p>
 
-The **TheOne · Main chat** entry stays at the top of the sidebar, with a soft orange glow in light mode and pale blue in dark mode. It belongs to no project workspace and is hidden from the ordinary session list. Upgrading detaches older main chats from workspaces while preserving their logs. New main chats use a dedicated directory under the DSH data directory; existing topics keep their original working directories.
+<p align="center"><img src="https://raw.githubusercontent.com/YunongDai2005/dsh-theone/main/docs/images/theone-demo-en.webp" alt="Demo: two unrelated requests in the main chat each get their own topic in the sidebar; going back to the first one continues it in its own topic" width="100%"></p>
 
-Compatible with **DSH 0.2.0-rc.2** and **Node.js 24**.
+<p align="center"><sub>A GPU question, a hotel question, then the GPU again, with no cues in between. The two topics on the left made themselves; nothing was clicked. (Example conversation.)</sub></p>
+
+---
+
+How many sessions are sitting in your DSH sidebar? Getting back to last week's work means digging through them. Skip creating a new one and everything piles into a single session, where topics bleed into each other and the details vanish at the next compaction.
+
+If you've ever said any of these, TheOne was probably written for you:
+
+- "Where was that chat again?" Too many conversations, and the old one is nowhere to be found.
+- "Not starting a new chat for this, I'll just ask here." And one chat turns into a mess.
+- "I already told you that!" The AI forgot what you talked about.
+
+**What TheOne does:** you only ever talk in one main chat. In the background it opens a separate session for each thing you're working on and sends every message to the one it belongs to.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/YunongDai2005/dsh-theone/main/docs/images/theone-architecture-en-dark.svg">
+  <img alt="How TheOne works: main chat sends each message through the router to its topic session; answers stream back, and the topic directory keeps progress, constraints and links" src="https://raw.githubusercontent.com/YunongDai2005/dsh-theone/main/docs/images/theone-architecture-en-light.svg" width="100%">
+</picture>
+
+Each project reasons, runs tools and compacts in its own session. What you see is always one ordinary conversation.
+
+## Why try it
+
+| | Usual workflow | With TheOne |
+| --- | --- | --- |
+| Start something new | Create a session, name it | Just say it |
+| Go back to earlier work | Dig through the sidebar | Mention it; TheOne finds it |
+| One session gets cluttered | Topics interfere; compaction drops details | Every project has its own context |
+| Two projects need each other | Copy and paste | The other project's progress comes along |
+| Wrong project | Move it by hand | Say "wrong topic" |
+
+- **Feels native.** Thinking streams in its usual place from the first token, and tool cards, approvals, questions, todo lists, retries and mid-reply steering all work as usual.
+- **Keep talking while it works.** A message sent during a reply that is about that reply joins it, as in any DSH chat; one about something else starts in its own topic right away, in the background, and its answer follows in main chat in the order you sent things. At most three topics work at once.
+- **Works where the work is.** A new topic about one of your projects works in that project's folder; anything else goes to DSH's folder for chats outside any project. Nothing is added to your projects in the sidebar.
+- **Related work connects; unrelated work stays out.** Related topics share progress automatically, and which ones belong together is learned from how you use them. A topic's constraints (say, "budget figures stay out of the paper") are attached verbatim every time, so compaction never drops them.
+- **Learns your words.** Once a topic has replies, a short routing card is written in the background (what it is, what you call it, the people, places and files involved), so it is recognised however you phrase it. Say "wrong topic" and it remembers which terms tie that kind of message to the right one. Topics you haven't touched in a long while go to the back of the line; how long is "long" is learned from how you come back to things.
+- **Your old sessions become a topic directory.** After install it reads your existing sessions in the background, turns them into topics grouped into workspaces, and you pick up where you left off.
+- **Nothing extra to configure.** No separate API key: it uses the model you chose in DSH. When TheOne is selected, a layers icon beside the model menu shows and switches which model routes and which does the work.
+
+## Install in 30 seconds
+
+For a local demo using NVIDIA Nemotron 3 Super through Nebius Token Factory, see [Nebius/Nemotron setup](docs/nebius-demo.md).
+
+1. Configure an API in DSH and select a model that can chat.
+2. Open **Plugins → Add plugin**, enter `dsh-theone` under *Package name or address*, and install.
+3. Click **TheOne · Main chat** in the sidebar and start talking.
+
+That's it. Works with DSH `0.2.0-rc.2` and Node.js 24; the interface follows DSH's language (English / Simplified Chinese).
+
+<details>
+<summary><b>New to DSH? A step-by-step walkthrough (about 3 minutes)</b></summary>
+
+No coding needed:
+
+1. **Make sure DSH itself can chat.** Add your model provider's API key (DeepSeek's, for example) in DSH's settings, open an ordinary chat and say "hi". If it answers, you're set. TheOne uses that same model; there is no other key to enter.
+2. **Install TheOne.** Click **Plugins** in the sidebar, then **Add plugin**, and enter:
+
+   ```
+   dsh-theone
+   ```
+
+   Click install and wait for it to finish.
+3. **Start.** A new **TheOne · Main chat** appears in the sidebar. Open it and just talk about whatever is on your plate: today's work, the weekend trip, the paper you're writing. No new chats to create, nothing to name.
+4. **Updates.** When a new version is out, a download icon appears next to the TheOne entry. One click installs it, usually without a restart; your topics live in the database and are untouched.
+5. **Changed your mind?** Uninstall it on the Plugins page. Your DSH chats are all still there; TheOne organises them and never deletes them.
+
+**Small things you may run into**
+
+- **"Too new" and it won't install:** DSH only installs versions published at least 24 hours ago. That's a safety rule, not an error. Wait a day, or enter the GitHub address `https://github.com/YunongDai2005/dsh-theone` instead, which installs right away.
+- **No TheOne in the sidebar after installing:** restart DSH.
+- **Something wrong?** Click **Report a problem** at the top right of **Topic workspaces**: versions and diagnostics (no chat content) are attached, and Send delivers it without GitHub. Or email [theone@yulid.org](mailto:theone@yulid.org); a screenshot helps.
+- **Will it cost a lot?** Each message adds one short classification call (no deep thinking), and "ok" or "go on" skips even that. With many old chats, the first pass that organises them uses some of your quota; turn **History catalog** off in the settings if you don't need it.
+</details>
+
+<details>
+<summary><b>Command line and other sources</b></summary>
+
+- npm: `dsh plugin --profile web add dsh-theone --ignore-scripts` (use `desktop` instead of `web` for the desktop app)
+- GitHub (always the latest main): `dsh plugin --profile web add github:YunongDai2005/dsh-theone --ignore-scripts`
+
+A new version from npm installs once it has been published for 24 hours; when an update is newer than that, the update button explains it and can exempt TheOne alone so it installs right away.
+</details>
+
+> Unofficial community project, maintained independently. It is not affiliated with or endorsed by DeepSeek.
+
+## How well does it route?
+
+Claims are cheap, so we built a public benchmark, **InterleaveBench**: one person pushing 3–5 things forward in the same chat at once (a trip, a budget, a paper, a training plan…), half in Chinese and half in English, 50 conversations and 2,466 messages, each labelled in advance with the thing it belongs to. Below, the 40-conversation dev split replayed message by message through TheOne's own routing code with DeepSeek V4.1 Flash (messages even a careful human could not attribute are not scored):
+
+| Approach | Messages routed correctly |
+| --- | --- |
+| TheOne, topic list given up front | **91.6%** |
+| TheOne, starting from nothing and creating topics as it goes (your first day) | **86.6%** |
+| Keyword search (BM25), topic list given up front | 73.3% |
+| No routing, everything in one chat | 44.5% |
+| Keyword search, starting from nothing | 39.9% |
+| A new topic for every message | 9.8% |
+
+A few numbers worth knowing:
+
+- **A message landing in another thing's topic**, the mistake that hurts context most: about 3.7% when starting from nothing.
+- The main weakness today is **opening new topics too eagerly**: one thing ends up split over 2.1 topics on average. 0.3.21's routing cards go after exactly that.
+- The whole run cost about one US dollar. Data, code and scoring live in [`eval/`](./eval/README.md); reproduce it, or try another model.
+
+The conversations are model-written from a script and this version has no assistant replies, so it measures whether messages are routed right, not everything about how chatting feels.
+
+## What's next
+
+For now, TheOne is being refined on DeepSeek Harness, whose background sessions, tools and compaction can be reused as they are: the right place to get "one chat for everything" solid first.
+
+In progress:
+
+- **Better routing**: looking at a burst of messages together while deciding each one separately, and measuring what routing cards add.
+- **Confirmed facts shared between topics**: a budget, a date, where a file lives, kept current wherever you need it. It is experimental and will only be turned on by default once it passes its benchmark.
+
+Once it is stable, the next step goes beyond DSH:
+
+- **A standalone client**: one interface over different models and providers, opening straight into a single chat;
+- **or adapters for other platforms**: the same automatic topics, inside the chat tools you already use.
+
+Which comes first depends on what people need more. If you have a view, say so in [Issues](https://github.com/YunongDai2005/dsh-theone/issues) or by email at [theone@yulid.org](mailto:theone@yulid.org).
+
+## How it works
+
+**Choosing a topic.** Each message is matched to the current topic, an earlier one, or a new one. By default the model you selected makes one short classification (thinking off, at most 2,048 tokens), with candidates recalled through DSH full-text search.
+
+- With no credible match it starts a new topic instead of asking whether it is new. It only asks when you refer to an earlier chat it cannot find, or it truly cannot tell which one you mean.
+- When one message draws on several topics, the one doing the work gets it and the others come along as reference.
+- "ok" or "go on" continues the current topic without waiting for a decision, and so does a picture or file sent without words.
+- If the classification call fails, rules decide, staying in the current topic when unsure. Rule-based routing (`THEONE_ROUTER_MODE=rules`) makes no model calls at all.
+
+**Linking topics.** A background session starting work receives a reference briefing, and none when there is nothing new:
+
+- right after a topic switch, the last few turns of main chat, so "use what we just said" carries over;
+- what changed in related topics since it last heard: their latest compaction summary (dated) and the progress after it;
+- each topic's constraints, verbatim, every time.
+
+The briefing is marked as reference, not instructions. For details, the background session can use `theone_read_topic` and `theone_search_history`. Linking scope is **Learn automatically** (default), **Same workspace only** or **Off**. In the directory you can link or unlink topics and mark a topic **Do not share**; your choices always win.
+
+**Topic directory.** Each topic shows its latest progress and constraints, the project (DSH workspace) it works in, and its status when that is not plain in progress: **Waiting on you** (it asks you something, or a restart cut its work off), **Set aside** (untouched for longer than you usually come back), or **Done** (you marked it; a new message to it reopens it). Status is kept apart from the topic's record of what it worked on (its latest 20 messages and how each ended), and is worked out from it. **Mark done** / **Reopen** sits next to **Manage**. Under **Manage** you can rename, edit the summary and constraints, move to another workspace, merge, delete, or attach an existing DSH session as searchable history; **+ New topic** starts one by hand. **Recent topic routing** lists where each message went, why, with which model and how long it took. With a long history, the first pass takes some time and API quota; set `THEONE_HISTORY_CATALOG=false` to turn it off.
 
 ![TheOne main chat and topic workspaces](https://raw.githubusercontent.com/YunongDai2005/dsh-theone/main/docs/images/theone-topic-workspaces-en.png)
 
-*Screenshot from an isolated DSH profile with fictional example topics.*
+<details>
+<summary><b>Settings</b></summary>
 
-## Install and start chatting
+Right-click the TheOne button in the sidebar and choose **Settings**. Changes apply when saved; only the history catalog settings wait for a DSH restart.
 
-1. Configure your API provider in DSH and select a working chat model.
-2. Open **Plugins → Add plugin**, paste `https://github.com/YunongDai2005/dsh-theone`, and install.
-3. Open **TheOne · Main chat** in the sidebar and start chatting.
-
-**v0.3.3 enables LLM routing by default and reuses DSH’s model calls and API credentials. No additional API key is needed.** Routing and topic workers use the model selected in DSH before opening TheOne. To change models, select another regular chat model in DSH, then open TheOne again.
-
-The public repository includes the compiled backend and web client. Installation needs no local build or lifecycle scripts. You can also use the DSH CLI:
-
-```sh
-dsh plugin --profile web add github:YunongDai2005/dsh-theone --ignore-scripts
-```
-
-DSH does not currently update plugins automatically. Follow its plugin page instructions to uninstall and reinstall. If your default model is already `theone/gateway` after upgrading, select a configured regular model once before opening TheOne. The plugin remembers the model selection across restarts; DSH manages the credentials.
-
-The database defaults to `$DSH_HOME/theone/contexts.db`, or `~/.dsh/theone/contexts.db` when `DSH_HOME` is unset. Keep this directory when reinstalling to retain your topics. Run one profile process per database.
-
-## English and Chinese UI
-
-The sidebar, catalog, buttons, and status messages follow DSH’s active language and update immediately when you switch it. DSH uses the system/browser language when no language is explicitly selected. Changing languages keeps the same main chat.
-
-Historical topic titles, summaries, and original conversations stay in their original language.
-
-## History catalog and topic workspaces
-
-The plugin reads existing DSH sessions in the background through `ctx.sessionQuery`. It prefers completed compaction summaries, then uses bounded excerpts of user messages and replies for the remaining content. Each extraction batch covers at most eight turns and uses the model configured in DSH. It does not summarize entire long sessions again.
-
-Related topics are grouped into **Topic workspaces**, accessible from the sidebar. Each topic keeps a separate working session. Choose **Continue chatting** to resume it through main chat, or **View original chat** to open its DSH source.
-
-These workspaces are logical groups stored by TheOne. Native DSH workspaces are tied to disk directories; this version preserves existing execution directories. Imports store summaries and source event ranges. Continuing an imported topic uses a dedicated worker that reads sources on demand, rather than copying a whole mixed conversation into its execution history.
-
-Catalog entries, groups, source ranges, and indexing progress live in TheOne’s SQLite database. DSH keeps the original logs. The plugin organizes history at startup, updates after chats, and periodically checks for changes. Unchanged sessions do not trigger new model calls. Each scan processes at most 64 extraction batches and continues remaining work later. Initial indexing takes time and uses your configured API quota.
-
-Routing uses the catalog and DSH full-text search to retrieve up to 16 candidates for the LLM. If search fails, it falls back to the existing catalog and checks additional entries. A proposed new topic triggers up to three further batches of catalog checks; if entries remain unchecked, the plugin asks for clarification. Incomplete indexing or unreadable sources prevent a search miss from being treated as proof of a new topic. An explicit `新话题：` (Chinese for “new topic:”) request can still create one.
-
-Set `THEONE_HISTORY_CATALOG=false` to stop automatic indexing while keeping existing entries and groups. Failed sessions appear in the status and are retried later; one failed source does not block the others.
-
-## Current features
-
-- The LLM selects an existing topic, a new topic, or clarification. Code validates the target and plans `KEEP / MOUNT / SWAP / CREATE / CLARIFY`.
-- Each project has a dedicated, resumable DSH working session. Returning to a project resumes its worker.
-- Routing calls the configured DSH provider through `ctx.llm.prepareCall()`. It sends a short catalog, the current input, and up to 12 recent text messages, without tools or full history.
-- Routing makes an additional model call, separate from the reply, with a 2,048-token output limit and a 30-second timeout. Additional catalog checks may make further calls. These use your API quota.
-- Failed calls, invalid JSON, unknown topic IDs, truncation, and cancellation do not switch projects or start workers. Permission/rate-limit errors, or three consecutive other errors, pause routing for 60 seconds.
-- `theone_search_history` lets a worker search its dedicated session and approved historical event ranges on demand: at most 10 windows and 8,000 characters of excerpts.
-- `theone_update_state` saves up to 800 characters of progress. Completed DSH compaction summaries are reused, redacted, and limited to 1,200 characters, without summarizing the whole session again.
-- SQLite stores catalog, source ranges, mounts, and execution state. DSH logs store original inputs, tool results, and replies. Historical instructions are treated as reference material.
-- Main chat accepts one active request at a time. Cancellation propagates to routing and the worker; in-progress inputs are not replayed automatically.
-
-## Optional configuration
-
-A normal installation needs none of these variables.
-
-| Variable | Purpose / default |
+| Setting | What it does |
 | --- | --- |
-| `THEONE_HISTORY_CATALOG` | Enabled by default; `false` stops background indexing |
-| `THEONE_DATABASE_PATH` | Override the catalog database path |
-| `THEONE_CONTEXTS_PATH` | Manual catalog JSON; omitted means an initially empty catalog |
-| `THEONE_GATEWAY_KEY` | Gateway identifier; `default` |
-| `THEONE_ROUTER_MODE` | `llm` (default) or `rules` |
-| `THEONE_ROUTER_TRANSPORT` | `dsh` (default); `legacy` uses the earlier direct DeepSeek integration |
-| `THEONE_WORKER_PROVIDER` / `THEONE_WORKER_MODEL` | Fixed model override; set both together. Otherwise follows DSH selection |
+| Topic notices | How main chat shows topic changes: hidden, one line only when the topic changes (default), or on every message with the reason |
+| Linking scope | Learn automatically (default), same workspace only, or off |
+| Share confirmed facts (experimental) | Off by default. Topics share only facts the user confirmed (a figure, a decision, where a file is), with version and source; a topic that used one is told when it changes or is withdrawn. Applies after a DSH restart |
+| Record facts automatically (experimental) | Off by default. With shared facts on, one small model call after each turn records facts the topic session left out; only user-confirmed ones are shared |
+| Model | Follow DSH (default) or pin the background model from any model configured in DSH; a pinned model takes precedence over main chat's selector |
+| Routing | LLM decision (default) or rule-based |
+| History catalog | On/off and rescan interval |
+| Limits | Topic descriptor length; reply length per background step, thinking included |
+| Manual catalog file | Optional JSON file of hand-written topics, imported when saved |
 
-Only `THEONE_ROUTER_TRANSPORT=legacy` uses `THEONE_ROUTER_API_KEY`, `THEONE_ROUTER_BASE_URL`, and `THEONE_ROUTER_MODEL`. The default integration does not read that key.
+The database location and entry identifier switch TheOne to different data, so they are set only through environment variables: `THEONE_DATABASE_PATH` and `THEONE_GATEWAY_KEY`. Also optional: `THEONE_CONTEXTS_PATH` and `THEONE_WORKER_PROVIDER` / `THEONE_WORKER_MODEL` (set both).
+</details>
 
-A manual catalog contains `ContextDescriptor[]`: `id / title / summary / entities / keywords / lastState`. Entries are inserted only on first initialization. Workers cannot use the `theone` provider.
+<details>
+<summary><b>Data and privacy</b></summary>
 
-## Development and tests
+- DSH keeps the original conversations and tool results; TheOne keeps only its catalog, summaries, links and routing records in its own SQLite database (`$DSH_HOME/theone/contexts.db`, `~/.dsh/theone/` by default).
+- Text sent to the router or written into briefings has API keys, passwords and similar secrets removed.
+- A topic marked **Do not share** never appears in other topics' briefings, recent-chat excerpts or lookups.
+- Notices from the author are read from `https://yulid.org/theone/notice.json` with a plain request that sends none of your data; turn them off in Settings.
+- **Report a problem** (top right of Topic workspaces, or **Report a problem** on a message under Recent topic routing) sends only when you press Send, and shows everything it would send first. By default it holds versions, settings and routing error codes and timings, no chat content; for one message, its text and reply are added only if you tick the box. Reports go to `feedback.yulid.org`, are used only to look into problems and are deleted after 90 days; to have one deleted sooner, email theone@yulid.org with its id.
+- When main chat grows long, DSH compacts it through TheOne: frequently used topics keep longer summaries and their latest turns, rarely used ones keep a short status. This makes no model call.
+- Updates are installed by DSH's plugin manager and reload TheOne in place; a DSH without plugin hot reload applies them at the next restart.
+</details>
+
+<details>
+<summary><b>Known limitations</b></summary>
+
+- Telling whether a message sent during a reply is about that reply needs the routing model; with rules-only routing, every such message joins the reply, as before.
+- A new topic not about any of your projects works in DSH's own folder for chats outside any project (`Documents/deepseek-harness/default-workspace`), or in `~/.dsh/theone/gateway` if you do not have that folder. Topics organised from your existing chats work in those chats' folders.
+- Main chat stores copies of tool calls, so its log grows with use; entry-log rotation is not implemented yet.
+- Only one DSH process should use a database at a time.
+- Image output is not forwarded yet; there is no vector search; topics cannot be split yet.
+- Main chat shows tool cards without running them because TheOne sits first in DSH's tool pipeline. If another plugin also places itself first, it may see these mirrored calls, but no tool runs twice.
+</details>
+
+<details>
+<summary><b>Development</b></summary>
 
 ```sh
 git clone https://github.com/YunongDai2005/dsh-theone.git
@@ -90,27 +207,26 @@ cd dsh-theone
 npm ci --ignore-scripts
 npm run typecheck
 npm test
-npm run pack:plugin
 ```
 
-Tests use real DSH services, AgentLoop, sessions, SQLite queries, JSONL persistence, and compaction, with mocked models and no external API calls. Demo catalogs contain fictional data.
+Tests use the real DSH runtime (AgentLoop, Session, SQLite, JSONL persistence, compaction) with a simulated model, and call no external API. `npm run pack:plugin` builds the install package; `npm run install:local` and `npm run start:local` run a separate DSH profile in `~/.dsh-theone`.
 
-Packaging produces `.dsh-test/dsh-theone-0.3.3.tgz`, containing the backend, web client, configuration, and bilingual documentation. It excludes API keys, chat snapshots, and databases.
+Service API: `ctx.theone.searchHistoryDetailed(contextId, query, limit)` searches a topic's reviewed history; `store.addSource(contextId, sessionId, { startSeq, endSeq })` attaches part of a session. Earlier acceptance records: [v0.1](./docs/plugin-v0.1.md) and [v0.2](./docs/plugin-v0.2.md).
+</details>
 
-For isolated local development, run `npm run install:local` and `npm run start:local`. Data lives under `~/.dsh-theone`; configure a model in that separate DSH profile. Copy `.env.example` to `.env` to adjust the port and other settings. Do not commit `.env`.
+<details>
+<summary>🥚</summary>
 
-## Service API
+<br>
 
-`ctx.theone.searchHistoryDetailed(contextId, query, limit)` returns windows within approved ranges, text projections, source error codes, and a `partial` flag. `searchHistory()` returns only the windows.
+Congratulations, you found the easter egg.
 
-Manually linked historical sessions require an approved inclusive range through `store.addSource(contextId, sessionId, {startSeq, endSeq})`. Automatic imports use validated complete-turn ranges classified by the model. Only dedicated workers may link an entire session.
+In the benchmark, TheOne once made a very human mistake. The user said "the café's autumn menu was due on September 25, let's push it to October 8", and TheOne filed it under the October holiday trip to Yunnan. Both were in October, after all.
 
-## Known limits
+We're still training it. If it ever files something of yours in the wrong place, just say "wrong topic" in the main chat. It will remember, and it won't take it personally.
 
-- Main chat identity is stored in the current browser for the current web path. Another browser may create another gateway while sharing the same topic workers through the database.
-- This version supports text input and forwards replies after worker steps commit. Token-by-token forwarding, image output, tool cards, and approval UI forwarding are not complete.
-- Candidate retrieval uses short catalog entries and DSH full-text search. Embeddings and vector search are not implemented. The LLM extracts topics and groups related entries. Multi-mount and automatic worker rollover are also pending.
-- Catalog updates and DSH logs are not a transaction across databases. Check the original session when an interruption leaves request state uncertain. Hard power-loss recovery has not been validated.
-- Indexing requires readable DSH logs and has not been tested at large scale. History tools scan approved source ranges; gateway log rotation is pending.
+</details>
 
-An earlier AI Box replay scored 75/79 with a manually curated catalog. This does not establish routing accuracy for new users. TheOne has not been deployed to AI Box. See the historical [v0.1 acceptance report](./docs/plugin-v0.1.md) and [v0.2 web client report](./docs/plugin-v0.2.md).
+---
+
+<p align="center">If TheOne helps, a ⭐ helps others find it. Questions or ideas? <a href="https://github.com/YunongDai2005/dsh-theone/issues">Open an issue</a> or email <a href="mailto:theone@yulid.org">theone@yulid.org</a>.</p>

@@ -1,0 +1,13 @@
+{
+  "notices": [
+    {
+      "id": "2026-10-welcome",
+      "level": "info",
+      "title": { "zh": "欢迎使用 TheOne", "en": "Welcome to TheOne" },
+      "body": { "zh": "遇到问题或有想法，欢迎在 GitHub 提 Issue。", "en": "Questions or ideas? Open an issue on GitHub." },
+      "link": "https://github.com/YunongDai2005/dsh-theone/issues",
+      "versions": "*",
+      "until": "2026-12-31"
+    }
+  ]
+}

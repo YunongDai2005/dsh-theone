@@ -3,10 +3,58 @@ import { DatabaseSync } from 'node:sqlite'
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { randomUUID, createHash } from 'node:crypto'
-import type { ExtractedTopic, HistoryPart, TopicGroup } from './catalog-types.ts'
-import type { ContextDescriptor, Decision, RouteRecord, StoredContext, SourceRange } from './types.ts'
+import type { ExtractedTopic, HiddenReason, HistoryPart, TopicGroup } from './catalog-types.ts'
+import type { ContextDescriptor, ContextUsage, Decision, RouteRecord, RouteView, StoredContext, SourceRange, TopicLink } from './types.ts'
+import { FACT_KINDS, FACT_LIMITS, factKey, safe, type FactEvidence, type FactKind, type FactStatus, type FactView } from './facts.ts'
+
+/** A write to a topic's facts, after its evidence was checked against the session. */
+export interface FactWrite {
+  factId?: string
+  label: string
+  kind: FactKind
+  value: string
+  aliases?: string[]
+  status: 'confirmed' | 'proposed'
+  evidence: FactEvidence
+  origin: FactView['origin']
+  /** The version the writer last saw; the write is refused if the fact has moved on since. */
+  expectedVersion?: number
+}
+
+export type FactOutcome = 'created' | 'updated' | 'unchanged' | 'retracted' | 'rejected'
+export interface FactResult {
+  outcome: FactOutcome
+  /** Why a write was refused: stale (the fact changed since `expectedVersion`), older-evidence,
+   * keeps-confirmed (a proposal never replaces a confirmed value), unknown-fact, invalid. */
+  reason?: string
+  fact?: FactView
+  previous?: FactView
+}
+
+/** Terms learned from corrections fade by half every 30 days unless they are confirmed again. */
+export const TERM_HALF_LIFE_MS = 30 * 86400000
+
+/** A whole session attached by hand counts as reviewed from its first event to its last. */
+export const WHOLE_SESSION = { startSeq: 0, endSeq: Number.MAX_SAFE_INTEGER }
 
 /** Stores descriptors and routing metadata. Original conversation stays in DSH. */
+/** Run records a topic keeps; older ones are dropped as new ones start. */
+export const RUNS_KEPT = 20
+
+/** One message a topic worked on, and how that ended. */
+export interface TopicRun {
+  messageId: string
+  contextId: string
+  sessionId: string
+  outcome: 'running' | 'completed' | 'failed' | 'stopped' | 'interrupted' | 'moved'
+  startedAt: number
+  endedAt?: number
+}
+
+const runOf = (row: Record<string, unknown>): TopicRun => ({ messageId: String(row.message_id), contextId: String(row.context_id),
+  sessionId: String(row.session_id), outcome: String(row.outcome) as TopicRun['outcome'], startedAt: Number(row.started_at),
+  ...(row.ended_at == null ? {} : { endedAt: Number(row.ended_at) }) })
+
 export class ContextStore {
   private readonly db: DatabaseSync
 
@@ -34,6 +82,9 @@ export class ContextStore {
       );
       CREATE TABLE IF NOT EXISTS model_binding (
         gateway_key TEXT PRIMARY KEY, selection TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS plugin_settings (
+        gateway_key TEXT PRIMARY KEY, settings TEXT NOT NULL, revision INTEGER NOT NULL
       );
       PRAGMA busy_timeout = 5000;
       CREATE TABLE IF NOT EXISTS contexts (
@@ -70,7 +121,82 @@ export class ContextStore {
         gateway_key TEXT NOT NULL, gateway_id TEXT NOT NULL,
         PRIMARY KEY(gateway_key, gateway_id)
       );
+      CREATE TABLE IF NOT EXISTS pinned_gateways (gateway_id TEXT PRIMARY KEY);
+      CREATE TABLE IF NOT EXISTS topic_links (
+        a TEXT NOT NULL, b TEXT NOT NULL, weight REAL NOT NULL DEFAULT 0,
+        manual INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL, PRIMARY KEY(a, b)
+      );
+      CREATE TABLE IF NOT EXISTS topic_flags (
+        context_id TEXT PRIMARY KEY, private INTEGER NOT NULL DEFAULT 0, constraints TEXT, constraints_at INTEGER
+      );
+      CREATE TABLE IF NOT EXISTS compaction_digests (
+        context_id TEXT PRIMARY KEY, summary TEXT NOT NULL, through_seq INTEGER NOT NULL, created_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS briefing_seen (
+        reader TEXT NOT NULL, source TEXT NOT NULL, seen_at INTEGER NOT NULL, PRIMARY KEY(reader, source)
+      );
+      CREATE TABLE IF NOT EXISTS dismissed_turns (
+        session_id TEXT NOT NULL, user_seq INTEGER NOT NULL, fingerprint TEXT NOT NULL, PRIMARY KEY(session_id, user_seq)
+      );
+      CREATE TABLE IF NOT EXISTS learned_terms (
+        context_id TEXT NOT NULL, term TEXT NOT NULL, weight REAL NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY(context_id, term)
+      );
+      CREATE TABLE IF NOT EXISTS topic_runs (
+        message_id TEXT PRIMARY KEY, context_id TEXT NOT NULL, session_id TEXT NOT NULL,
+        outcome TEXT NOT NULL CHECK (outcome IN ('running', 'completed', 'failed', 'stopped', 'interrupted', 'moved')),
+        started_at INTEGER NOT NULL, ended_at INTEGER
+      );
+      CREATE INDEX IF NOT EXISTS topic_runs_by_topic ON topic_runs(context_id, started_at);
+      CREATE TABLE IF NOT EXISTS topic_status (context_id TEXT PRIMARY KEY, declared TEXT NOT NULL CHECK (declared IN ('done')), declared_at INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS change_links (
+        gateway_id TEXT NOT NULL, seq INTEGER NOT NULL, session_id TEXT NOT NULL, source_seq INTEGER NOT NULL, turn INTEGER NOT NULL, PRIMARY KEY(gateway_id, seq)
+      );
+      CREATE TABLE IF NOT EXISTS dismissed_notices (id TEXT PRIMARY KEY, dismissed_at INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS plugin_flags (name TEXT PRIMARY KEY, set_at INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS stowed_sessions (session_id TEXT PRIMARY KEY, stowed_at INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS route_details (
+        message_id TEXT PRIMARY KEY, excerpt TEXT NOT NULL, receipt TEXT, corrected_to TEXT, corrected_at INTEGER
+      );
+      CREATE TABLE IF NOT EXISTS facts (
+        id TEXT PRIMARY KEY, context_id TEXT NOT NULL, key TEXT NOT NULL, label TEXT NOT NULL,
+        aliases TEXT NOT NULL DEFAULT '[]', kind TEXT NOT NULL CHECK (kind IN ('fact', 'decision', 'artifact')),
+        current_version INTEGER NOT NULL, merged_from TEXT, deleted_at INTEGER, last_used_at INTEGER,
+        UNIQUE (context_id, key)
+      );
+      CREATE TABLE IF NOT EXISTS fact_versions (
+        fact_id TEXT NOT NULL REFERENCES facts(id), version INTEGER NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('confirmed', 'proposed', 'retracted')),
+        value TEXT, evidence TEXT NOT NULL, origin TEXT NOT NULL CHECK (origin IN ('worker', 'extractor')),
+        created_at INTEGER NOT NULL, PRIMARY KEY (fact_id, version)
+      );
+      CREATE TABLE IF NOT EXISTS fact_deliveries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, context_id TEXT NOT NULL, fact_id TEXT NOT NULL, version INTEGER NOT NULL,
+        input_id TEXT, via TEXT NOT NULL CHECK (via IN ('route', 'lookup', 'notice')), at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS fact_dependencies (
+        context_id TEXT NOT NULL, fact_id TEXT NOT NULL, version_seen INTEGER NOT NULL,
+        first_at INTEGER NOT NULL, last_at INTEGER NOT NULL, PRIMARY KEY (context_id, fact_id)
+      );
+      CREATE TABLE IF NOT EXISTS hidden_contexts (
+        context_id TEXT PRIMARY KEY REFERENCES contexts(id), reason TEXT NOT NULL, detected_at INTEGER NOT NULL
+      );
     `)
+  }
+
+  settings(gatewayKey: string): { values: unknown; revision: number } | undefined {
+    const row = this.db.prepare('SELECT settings, revision FROM plugin_settings WHERE gateway_key = ?').get(gatewayKey) as { settings: string; revision: number } | undefined
+    if (!row) return
+    let values: unknown
+    try { values = JSON.parse(row.settings) } catch { /* A fresh save can repair malformed preferences. */ }
+    return { values, revision: row.revision }
+  }
+
+  saveSettings(gatewayKey: string, values: unknown, revision: number): boolean {
+    const result = this.db.prepare(`INSERT INTO plugin_settings(gateway_key, settings, revision)
+      SELECT ?, ?, 1 WHERE ? = 0 OR EXISTS(SELECT 1 FROM plugin_settings WHERE gateway_key = ? AND revision = ?)
+      ON CONFLICT(gateway_key) DO UPDATE SET settings = excluded.settings, revision = plugin_settings.revision + 1
+      WHERE plugin_settings.revision = ?`).run(gatewayKey, JSON.stringify(values), revision, gatewayKey, revision, revision)
+    return result.changes === 1
   }
 
   /** Only model identity is persisted. API credentials remain owned by DSH. */
@@ -100,9 +226,61 @@ export class ContextStore {
     }))
   }
 
+  /** Context ids, newest first. contexts() is ordered by id, and generated ids are random. */
+  contextIdsByRecency(): string[] {
+    return this.db.prepare('SELECT id FROM contexts ORDER BY rowid DESC').all().map(row => String(row.id))
+  }
+
   current(gatewayKey: string): string | undefined {
     const row = this.db.prepare('SELECT context_id FROM gateway_state WHERE gateway_key = ?').get(gatewayKey)
     return row ? String(row.context_id) : undefined
+  }
+
+  /** Successful uses only: retries, failed work and clarification never heat a topic. */
+  contextUsage(gatewayKey: string, now = Date.now()): ContextUsage[] {
+    const cutoff = new Date(now - 30 * 86400000).toISOString().slice(0, 19).replace('T', ' ')
+    return this.db.prepare(`SELECT json_extract(r.decision, '$.contextId') AS context_id,
+      COUNT(*) AS calls, SUM(r.created_at >= ?) AS recent_calls, MAX(r.created_at) AS last_used
+      FROM routing_events r JOIN gateway_sessions gs ON gs.gateway_id = r.gateway_id
+      WHERE gs.gateway_key = ? AND r.status = 'completed'
+        AND json_extract(r.decision, '$.action') != 'CLARIFY'
+        AND json_extract(r.decision, '$.contextId') IS NOT NULL
+      GROUP BY context_id`).all(cutoff, gatewayKey).map(row => ({
+        contextId: String(row.context_id), completedCalls: Number(row.calls),
+        recentCalls: Number(row.recent_calls), lastUsedAt: Date.parse(String(row.last_used).replace(' ', 'T') + 'Z'),
+      }))
+  }
+
+  /** Every completed route of this entry, oldest first, to the topic it really belonged to (after corrections). */
+  routeTimeline(gatewayKey: string): { contextId: string; at: number }[] {
+    return this.db.prepare(`SELECT COALESCE(d.corrected_to, json_extract(r.decision, '$.contextId')) AS context_id, r.created_at
+      FROM routing_events r JOIN gateway_sessions gs ON gs.gateway_id = r.gateway_id
+      LEFT JOIN route_details d ON d.message_id = r.message_id
+      WHERE gs.gateway_key = ? AND r.status = 'completed' AND json_extract(r.decision, '$.action') != 'CLARIFY'
+      ORDER BY r.rowid`).all(gatewayKey).flatMap(row => row.context_id == null ? [] : [{
+        contextId: String(row.context_id), at: Date.parse(String(row.created_at).replace(' ', 'T') + 'Z') }])
+  }
+
+  /**
+   * A topic's routing card: other names and entities join its keywords, and its summary is replaced
+   * unless a compaction summary (written from the whole session) already took its place.
+   */
+  applyCard(contextId: string, card: { summary: string; aliases: string[]; entities: string[]; open: string[] }): void {
+    this.db.exec('BEGIN IMMEDIATE')
+    try {
+      const context = this.contexts().find(item => item.id === contextId)
+      if (!context) { this.db.exec('COMMIT'); return }
+      const { workingSessionId: _, ...descriptor } = context
+      const merge = (first: string[], then: string[]) => {
+        const seen = new Set<string>()
+        return [...first, ...then].filter(term => { const key = term.toLowerCase(); return term && !seen.has(key) && seen.add(key) }).slice(0, 24)
+      }
+      const compacted = this.summaryUpdates(contextId).length > 0
+      const summary = compacted ? descriptor.summary : [card.summary, card.open.length ? `待定：${card.open.join('；')}` : ''].filter(Boolean).join(' ').slice(0, 600)
+      this.db.prepare('UPDATE contexts SET descriptor = ? WHERE id = ?').run(JSON.stringify({ ...descriptor, summary,
+        keywords: merge(descriptor.keywords, card.aliases), entities: merge(card.entities, descriptor.entities) }), contextId)
+      this.db.exec('COMMIT')
+    } catch (error) { this.db.exec('ROLLBACK'); throw error }
   }
 
   groups(): TopicGroup[] {
@@ -116,8 +294,31 @@ export class ContextStore {
     return !!this.db.prepare('SELECT 1 FROM gateway_sessions WHERE gateway_id = ? LIMIT 1').get(sessionId)
   }
 
+  /** Record the fixed "TheOne · Main chat" entry; other sessions may also use TheOne and switch away. */
   rememberGateway(gatewayKey: string, sessionId: string): void {
     this.db.prepare('INSERT OR IGNORE INTO gateway_sessions VALUES (?, ?)').run(gatewayKey, sessionId)
+    this.db.prepare('INSERT OR IGNORE INTO pinned_gateways VALUES (?)').run(sessionId)
+  }
+
+  /**
+   * Sessions TheOne made for itself: every fixed main chat and each topic's background session.
+   * Sessions the user made, including ones that once chose TheOne as their model, are not among them.
+   */
+  ownedSessionIds(): string[] {
+    return this.db.prepare('SELECT gateway_id AS id FROM pinned_gateways UNION SELECT working_session_id AS id FROM contexts').all().map(row => String(row.id))
+  }
+
+  /** TheOne's own sessions it put in DSH's archive when it stopped; only these are taken out again. */
+  stowedSessionIds(): string[] {
+    return this.db.prepare('SELECT session_id FROM stowed_sessions').all().map(row => String(row.session_id))
+  }
+  markStowed(sessionId: string, stowed: boolean, now = Date.now()): void {
+    if (stowed) this.db.prepare('INSERT OR REPLACE INTO stowed_sessions VALUES (?, ?)').run(sessionId, now)
+    else this.db.prepare('DELETE FROM stowed_sessions WHERE session_id = ?').run(sessionId)
+  }
+
+  isPinnedGateway(sessionId: string): boolean {
+    return !!this.db.prepare('SELECT 1 FROM pinned_gateways WHERE gateway_id = ?').get(sessionId)
   }
 
   origin(contextId: string): { sessionId: string; cwd?: string } | undefined {
@@ -130,8 +331,14 @@ export class ContextStore {
     return row ? { throughSeq: Number(row.through_seq), status: String(row.status) } : undefined
   }
 
-  markIndex(sessionId: string, throughSeq: number, status: 'ready' | 'failed' | 'skipped', errorCode?: string): void {
+  markIndex(sessionId: string, throughSeq: number, status: 'ready' | 'failed' | 'skipped' | 'excluded', errorCode?: string): void {
     this.db.prepare('INSERT OR REPLACE INTO history_index VALUES (?, ?, ?, ?)').run(sessionId, throughSeq, status, errorCode ?? null)
+  }
+
+  /** A turn of a topic the user deleted; the catalog must not extract it again while it is unchanged. */
+  dismissedTurn(sessionId: string, seq: number): string | undefined {
+    const row = this.db.prepare('SELECT fingerprint FROM dismissed_turns WHERE session_id = ? AND user_seq = ?').get(sessionId, seq)
+    return row ? String(row.fingerprint) : undefined
   }
 
   indexedTurn(sessionId: string, seq: number): { fingerprint: string; contextId: string } | undefined {
@@ -146,8 +353,13 @@ export class ContextStore {
       for (const topic of topics) {
         const id = topic.contextId ?? randomUUID()
         const existing = this.contexts().find(context => context.id === id)
+        // The Worker's own progress note and DSH compaction summary outrank a catalog re-extraction, which only
+        // sees short excerpts; otherwise every re-index after a turn would overwrite them.
+        const stated = existing && this.db.prepare('SELECT 1 FROM context_state_updates WHERE context_id = ? LIMIT 1').get(id)
+        const summarized = existing && this.db.prepare('SELECT 1 FROM context_summary_updates WHERE context_id = ? LIMIT 1').get(id)
         const descriptor: ContextDescriptor = { id, title: existing?.title ?? topic.title,
-          summary: topic.summary, entities: topic.entities, keywords: topic.keywords, lastState: topic.lastState }
+          summary: summarized ? existing.summary : topic.summary, entities: topic.entities, keywords: topic.keywords,
+          lastState: stated ? existing.lastState : topic.lastState }
         if (existing) this.db.prepare('UPDATE contexts SET descriptor = ? WHERE id = ?').run(JSON.stringify(descriptor), id)
         else {
           this.seed([descriptor])
@@ -224,6 +436,96 @@ export class ContextStore {
     return this.db.prepare('SELECT session_id AS sessionId, summary_seq AS summarySeq, end_seq AS endSeq, summary FROM context_summary_updates WHERE context_id = ? ORDER BY rowid').all(contextId)
   }
 
+  /** Learned relatedness halves every two weeks without new evidence. */
+  static readonly LINK_HALF_LIFE_MS = 14 * 86400000
+
+  private pair(a: string, b: string): [string, string] { return a < b ? [a, b] : [b, a] }
+
+  /** Link rows touching one topic (or all), with learned weight decayed to `now`. */
+  links(contextId?: string, now = Date.now()): TopicLink[] {
+    const rows = contextId === undefined ? this.db.prepare('SELECT * FROM topic_links').all()
+      : this.db.prepare('SELECT * FROM topic_links WHERE a = ? OR b = ?').all(contextId, contextId)
+    return rows.map(row => ({ a: String(row.a), b: String(row.b), manual: Number(row.manual) as TopicLink['manual'],
+      weight: Number(row.weight) * 0.5 ** (Math.max(0, now - Number(row.updated_at)) / ContextStore.LINK_HALF_LIFE_MS) }))
+  }
+
+  /** Add learned evidence; a pair the user unlinked never learns back. */
+  learnLink(a: string, b: string, delta: number, now = Date.now()): void {
+    if (a === b) return
+    const [x, y] = this.pair(a, b)
+    const existing = this.links(x, now).find(link => link.a === x && link.b === y)
+    if (existing?.manual === -1) return
+    const weight = Math.min(5, Math.max(0, (existing?.weight ?? 0) + delta))
+    this.db.prepare(`INSERT INTO topic_links(a, b, weight, manual, updated_at) VALUES (?, ?, ?, 0, ?)
+      ON CONFLICT(a, b) DO UPDATE SET weight = excluded.weight, updated_at = excluded.updated_at`).run(x, y, weight, now)
+  }
+
+  /** 1 links a pair permanently, -1 keeps it apart, 0 returns it to learning. */
+  setManualLink(a: string, b: string, manual: TopicLink['manual'], now = Date.now()): void {
+    if (a === b) throw new Error('A topic cannot link to itself')
+    const [x, y] = this.pair(a, b)
+    this.db.prepare(`INSERT INTO topic_links(a, b, weight, manual, updated_at) VALUES (?, ?, 0, ?, ?)
+      ON CONFLICT(a, b) DO UPDATE SET manual = excluded.manual, weight = CASE WHEN excluded.manual = -1 THEN 0 ELSE topic_links.weight END`).run(x, y, manual, now)
+  }
+
+  /** Forget learned relatedness; the user's own links and separations stay. */
+  clearLearnedLinks(): void {
+    this.db.exec('DELETE FROM topic_links WHERE manual = 0; UPDATE topic_links SET weight = 0')
+  }
+
+  setPrivate(contextId: string, value: boolean): void {
+    this.db.prepare(`INSERT INTO topic_flags(context_id, private) VALUES (?, ?)
+      ON CONFLICT(context_id) DO UPDATE SET private = excluded.private`).run(contextId, value ? 1 : 0)
+  }
+
+  privateIds(): Set<string> {
+    return new Set(this.db.prepare('SELECT context_id FROM topic_flags WHERE private = 1').all().map(row => String(row.context_id)))
+  }
+
+  /** Project directory of every topic that came from an existing session. */
+  origins(): Map<string, string | undefined> {
+    return new Map(this.db.prepare('SELECT context_id, cwd FROM context_origins').all().map(row => [String(row.context_id), row.cwd ? String(row.cwd) : undefined]))
+  }
+
+  isPrivate(contextId: string): boolean {
+    return !!this.db.prepare('SELECT 1 FROM topic_flags WHERE context_id = ? AND private = 1').get(contextId)
+  }
+
+  /** Standing rules for a topic, kept apart from summaries so compaction cannot drop them. */
+  setConstraints(contextId: string, text: string | null, now = Date.now()): void {
+    const value = text?.trim() || null
+    if (value && (value.length > 400 || /\bsk-[a-zA-Z0-9_-]{16,}|\bBearer\s+\S+/i.test(value))) throw new Error('Invalid topic constraints')
+    this.db.prepare(`INSERT INTO topic_flags(context_id, constraints, constraints_at) VALUES (?, ?, ?)
+      ON CONFLICT(context_id) DO UPDATE SET constraints = excluded.constraints, constraints_at = excluded.constraints_at`).run(contextId, value, now)
+  }
+
+  constraints(contextId: string): { text: string; at: number } | undefined {
+    const row = this.db.prepare('SELECT constraints, constraints_at FROM topic_flags WHERE context_id = ? AND constraints IS NOT NULL').get(contextId)
+    return row ? { text: String(row.constraints), at: Number(row.constraints_at) } : undefined
+  }
+
+  /** The latest full compaction summary of a topic's Worker and how far it covers. */
+  saveDigest(contextId: string, summary: string, throughSeq: number, now = Date.now()): void {
+    this.db.prepare(`INSERT INTO compaction_digests VALUES (?, ?, ?, ?) ON CONFLICT(context_id) DO UPDATE SET
+      summary = excluded.summary, through_seq = excluded.through_seq, created_at = excluded.created_at
+      WHERE excluded.through_seq > compaction_digests.through_seq`).run(contextId, summary.slice(0, 16000), throughSeq, now)
+  }
+
+  digest(contextId: string): { summary: string; throughSeq: number; at: number } | undefined {
+    const row = this.db.prepare('SELECT * FROM compaction_digests WHERE context_id = ?').get(contextId)
+    return row ? { summary: String(row.summary), throughSeq: Number(row.through_seq), at: Number(row.created_at) } : undefined
+  }
+
+  /** When `reader` last received `source`'s state in a briefing. */
+  seen(reader: string, source: string): number | undefined {
+    const row = this.db.prepare('SELECT seen_at FROM briefing_seen WHERE reader = ? AND source = ?').get(reader, source)
+    return row ? Number(row.seen_at) : undefined
+  }
+
+  markSeen(reader: string, source: string, at: number): void {
+    this.db.prepare(`INSERT INTO briefing_seen VALUES (?, ?, ?) ON CONFLICT(reader, source) DO UPDATE SET seen_at = excluded.seen_at`).run(reader, source, at)
+  }
+
   route(messageId: string): RouteRecord | undefined {
     const row = this.db.prepare('SELECT * FROM routing_events WHERE message_id = ?').get(messageId)
     return row ? {
@@ -231,6 +533,15 @@ export class ContextStore {
       decision: JSON.parse(String(row.decision)) as Decision,
       status: String(row.status) as RouteRecord['status'],
     } : undefined
+  }
+
+  /** The main chat used last (by its latest routed message), else the newest one; shared by every browser. */
+  latestGateway(gatewayKey: string): string | undefined {
+    const row = this.db.prepare(`SELECT gs.gateway_id FROM gateway_sessions gs
+      LEFT JOIN routing_events r ON r.gateway_id = gs.gateway_id
+      WHERE gs.gateway_key = ? GROUP BY gs.gateway_id
+      ORDER BY MAX(r.rowid) IS NULL, MAX(r.rowid) DESC, MAX(gs.rowid) DESC LIMIT 1`).get(gatewayKey)
+    return row ? String(row.gateway_id) : undefined
   }
 
   recentGatewayIds(gatewayKey: string, excludingId: string): string[] {
@@ -241,8 +552,11 @@ export class ContextStore {
       .all(gatewayKey, excludingId).map(row => String(row.gateway_id))
   }
 
-  /** Idempotent planning reserves a worker ID before any DSH creation. */
-  plan(messageId: string, gatewayId: string, gatewayKey: string, proposed: Decision): RouteRecord {
+  /**
+   * Idempotent planning reserves a worker ID before any DSH creation. A message planned while another
+   * reply runs (`mount` false) leaves the topic in use as it is until main chat gets to it.
+   */
+  plan(messageId: string, gatewayId: string, gatewayKey: string, proposed: Decision, mount = true): RouteRecord {
     this.db.exec('BEGIN IMMEDIATE')
     try {
       const existing = this.route(messageId)
@@ -258,8 +572,13 @@ export class ContextStore {
         }
         this.seed([context])
         decision = { ...decision, contextId: context.id }
+        // A new topic about one of the user's projects works in that project's folder.
+        if (decision.folder) {
+          const working = this.db.prepare('SELECT working_session_id FROM contexts WHERE id = ?').get(context.id)
+          this.db.prepare('INSERT OR IGNORE INTO context_origins VALUES (?, ?, ?)').run(context.id, String(working?.working_session_id), decision.folder)
+        }
       }
-      if (decision.contextId) {
+      if (decision.contextId && mount) {
         this.db.prepare('INSERT INTO gateway_state VALUES (?, ?) ON CONFLICT(gateway_key) DO UPDATE SET context_id = excluded.context_id')
           .run(gatewayKey, decision.contextId)
       }
@@ -278,6 +597,11 @@ export class ContextStore {
   claim(messageId: string): void {
     const result = this.db.prepare("UPDATE routing_events SET status = 'running' WHERE message_id = ? AND status = 'planned'").run(messageId)
     if (result.changes !== 1) throw new Error('This input has already started. Inspect its DSH session before resubmitting; automatic replay is disabled.')
+  }
+
+  /** Drop the route of a message main chat never got to (the user deleted it from the queue). */
+  forget(messageId: string): void {
+    this.db.prepare("DELETE FROM routing_events WHERE message_id = ? AND status IN ('planned', 'running')").run(messageId)
   }
 
   finish(messageId: string, status: 'completed' | 'failed'): void {
@@ -314,6 +638,500 @@ export class ContextStore {
 
   sources(contextId: string): string[] {
     return [...new Set(this.sourceRanges(contextId).map(source => source.sessionId))]
+  }
+
+  /** What a route was decided from: a short redacted excerpt and the classifier's receipt. */
+  recordRouteDetail(messageId: string, excerpt: string, receipt: unknown): void {
+    this.db.prepare('INSERT OR IGNORE INTO route_details(message_id, excerpt, receipt) VALUES (?, ?, ?)').run(messageId, excerpt, JSON.stringify(receipt))
+  }
+
+  /** This entry's latest routes, newest first. */
+  recentRoutes(gatewayKey: string, limit = 20): RouteView[] {
+    return this.db.prepare(`SELECT r.message_id, r.decision, r.status, r.created_at, d.excerpt, d.receipt, d.corrected_to
+      FROM routing_events r JOIN gateway_sessions gs ON gs.gateway_id = r.gateway_id
+      LEFT JOIN route_details d ON d.message_id = r.message_id
+      WHERE gs.gateway_key = ? ORDER BY r.rowid DESC LIMIT ?`).all(gatewayKey, limit).map(row => ({
+        messageId: String(row.message_id), decision: JSON.parse(String(row.decision)) as Decision, status: String(row.status) as RouteView['status'],
+        at: Date.parse(String(row.created_at).replace(' ', 'T') + 'Z'), excerpt: row.excerpt == null ? '' : String(row.excerpt),
+        ...(row.receipt ? { receipt: JSON.parse(String(row.receipt)) } : {}), ...(row.corrected_to ? { correctedTo: String(row.corrected_to) } : {}),
+      }))
+  }
+
+  /** Record that a message belonged to another topic; later routing learns from it. */
+  correctRoute(messageId: string, contextId: string, now = Date.now()): void {
+    if (!this.route(messageId)) throw new Error('Unknown route')
+    if (!this.contexts().some(context => context.id === contextId)) throw new Error('Unknown Context')
+    this.db.prepare(`INSERT INTO route_details(message_id, excerpt, corrected_to, corrected_at) VALUES (?, '', ?, ?)
+      ON CONFLICT(message_id) DO UPDATE SET corrected_to = excluded.corrected_to, corrected_at = excluded.corrected_at`).run(messageId, contextId, now)
+  }
+
+  /**
+   * Terms a correction showed belong to a topic (positive delta) or not (negative). Weights fade
+   * over time, stay within 0–5, and a term that falls to nothing is forgotten.
+   */
+  learnTerms(contextId: string, terms: string[], delta: number, now = Date.now()): void {
+    if (!this.contexts().some(context => context.id === contextId)) return
+    for (const raw of new Set(terms.map(term => term.trim()).filter(term => term.length >= 2 && term.length <= 24))) {
+      const row = this.db.prepare('SELECT weight, updated_at FROM learned_terms WHERE context_id = ? AND term = ?').get(contextId, raw) as { weight: number; updated_at: number } | undefined
+      const current = row ? row.weight * 0.5 ** ((now - row.updated_at) / TERM_HALF_LIFE_MS) : 0
+      const weight = Math.min(5, current + delta)
+      if (weight <= 0.05) this.db.prepare('DELETE FROM learned_terms WHERE context_id = ? AND term = ?').run(contextId, raw)
+      else this.db.prepare('INSERT OR REPLACE INTO learned_terms VALUES (?, ?, ?, ?)').run(contextId, raw, weight, now)
+    }
+  }
+
+  /** Each topic's learned terms that still count (weight > 0.5 after fading), strongest first. */
+  learnedTerms(now = Date.now(), limit = 20): Map<string, string[]> {
+    const result = new Map<string, { term: string; weight: number }[]>()
+    for (const row of this.db.prepare('SELECT * FROM learned_terms').all() as { context_id: string; term: string; weight: number; updated_at: number }[]) {
+      const weight = row.weight * 0.5 ** ((now - row.updated_at) / TERM_HALF_LIFE_MS)
+      if (weight <= 0.5) continue
+      result.set(row.context_id, [...result.get(row.context_id) ?? [], { term: row.term, weight }])
+    }
+    return new Map([...result].map(([id, terms]) => [id, terms.sort((a, b) => b.weight - a.weight).slice(0, limit).map(item => item.term)]))
+  }
+
+  /** How routing has gone lately: of the last `limit` messages, how many were moved, asked about or routed by rules after a failure. */
+  routeStats(gatewayKey: string, limit = 100): { total: number; corrected: number; clarified: number; fallback: number } {
+    const routes = this.recentRoutes(gatewayKey, limit)
+    return { total: routes.length,
+      corrected: routes.filter(route => route.correctedTo && route.correctedTo !== route.decision.contextId).length,
+      clarified: routes.filter(route => route.decision.action === 'CLARIFY').length,
+      fallback: routes.filter(route => route.decision.reason.startsWith('router-fallback:')).length }
+  }
+
+  /** Corrections as examples for the classifier: this text belonged there, not here. Newest first. */
+  corrections(gatewayKey: string, limit = 50): { text: string; wrongId?: string; rightId: string }[] {
+    const known = new Set(this.contexts().map(context => context.id))
+    return this.db.prepare(`SELECT d.excerpt, d.corrected_to, r.decision FROM route_details d
+      JOIN routing_events r ON r.message_id = d.message_id JOIN gateway_sessions gs ON gs.gateway_id = r.gateway_id
+      WHERE gs.gateway_key = ? AND d.corrected_to IS NOT NULL AND d.excerpt != '' ORDER BY d.corrected_at DESC LIMIT ?`).all(gatewayKey, limit * 2)
+      .flatMap(row => {
+        const wrongId = (JSON.parse(String(row.decision)) as Decision).contextId
+        const rightId = String(row.corrected_to)
+        // A message moved back where it first went teaches nothing.
+        return known.has(rightId) && wrongId !== rightId ? [{ text: String(row.excerpt), ...(wrongId && known.has(wrongId) ? { wrongId } : {}), rightId }] : []
+      }).slice(0, limit)
+  }
+
+  private writeDescriptor(context: StoredContext): void {
+    const { workingSessionId: _, ...descriptor } = context
+    this.db.prepare('UPDATE contexts SET descriptor = ? WHERE id = ?').run(JSON.stringify(descriptor), context.id)
+  }
+
+  private context(contextId: string): StoredContext {
+    const context = this.contexts().find(item => item.id === contextId)
+    if (!context) throw new Error('Unknown Context')
+    return context
+  }
+
+  /** Terms a correction showed belong to this topic, newest kept first. */
+  addKeywords(contextId: string, terms: string[]): void {
+    const context = this.context(contextId)
+    const seen = new Set<string>()
+    const keywords = [...terms, ...context.keywords].filter(term => {
+      const key = term.toLowerCase()
+      if (!term.trim() || seen.has(key)) return false
+      seen.add(key); return true
+    }).slice(0, 40)
+    this.writeDescriptor({ ...context, keywords })
+  }
+
+  /** The user's own wording for a topic outranks what the catalog extracted. */
+  editTopic(contextId: string, change: { title?: string; summary?: string; lastState?: string }): void {
+    const context = this.context(contextId)
+    const title = change.title?.trim()
+    if (title !== undefined && (!title || title.length > 80 || this.contexts().some(other => other.id !== contextId && other.title.toLowerCase() === title.toLowerCase())))
+      throw new Error('Invalid topic title')
+    const summary = change.summary?.trim()
+    if (summary !== undefined && (!summary || summary.length > 2000)) throw new Error('Invalid topic summary')
+    this.writeDescriptor({ ...context, ...(title ? { title } : {}), ...(summary ? { summary } : {}) })
+    // A hand-written summary is kept like a compaction summary: re-indexing will not overwrite it.
+    if (summary) this.db.prepare("INSERT OR REPLACE INTO context_summary_updates(context_id, session_id, summary_seq, end_seq, summary) VALUES (?, 'user', 0, 0, ?)").run(contextId, summary)
+  }
+
+  createTopic(title: string, summary?: string): string {
+    const name = title.trim()
+    if (!name || name.length > 80 || this.contexts().some(context => context.title.toLowerCase() === name.toLowerCase())) throw new Error('Invalid topic title')
+    const id = randomUUID()
+    this.seed([{ id, title: name, summary: summary?.trim() || '新话题，尚无历史摘要。', entities: [], keywords: [name], lastState: '等待首次执行' }])
+    return id
+  }
+
+  /**
+   * A branch of a topic: a new topic with the same descriptor, constraints, privacy, workspace and
+   * folder, whose work continues in `workingSessionId` (a fork of the topic's session).
+   */
+  branchTopic(sourceId: string, title: string, workingSessionId: string, cwd?: string): string {
+    const source = this.context(sourceId)
+    const id = randomUUID()
+    this.db.prepare('INSERT INTO contexts VALUES (?, ?, ?)').run(id, JSON.stringify({ ...source, id, title, workingSessionId: undefined }), workingSessionId)
+    this.db.prepare('INSERT INTO context_origins VALUES (?, ?, ?)').run(id, workingSessionId, cwd ?? this.origin(sourceId)?.cwd ?? null)
+    const group = this.db.prepare('SELECT group_id FROM topic_group_members WHERE context_id = ?').get(sourceId)
+    if (group) this.db.prepare('INSERT OR REPLACE INTO topic_group_members VALUES (?, ?)').run(id, String(group.group_id))
+    const constraints = this.constraints(sourceId)
+    if (constraints) this.setConstraints(id, constraints.text)
+    if (this.isPrivate(sourceId)) this.setPrivate(id, true)
+    return id
+  }
+
+  /** Put a topic in another topic workspace, or a new one named `title`; null leaves it unassigned. */
+  moveTopic(contextId: string, target: { groupId: string } | { title: string } | null): void {
+    this.context(contextId)
+    if (target === null) { this.db.prepare('DELETE FROM topic_group_members WHERE context_id = ?').run(contextId); return }
+    let groupId: string
+    if ('groupId' in target) {
+      if (!this.db.prepare('SELECT 1 FROM topic_groups WHERE id = ?').get(target.groupId)) throw new Error('Unknown topic workspace')
+      groupId = target.groupId
+    } else {
+      const title = target.title.trim()
+      if (!title || title.length > 80) throw new Error('Invalid topic workspace title')
+      const normalized = title.normalize('NFKC').toLowerCase().replace(/\s+/g, '')
+      groupId = 'group-' + createHash('sha256').update(normalized).digest('hex').slice(0, 20)
+      this.db.prepare('INSERT OR IGNORE INTO topic_groups VALUES (?, ?, ?, ?)').run(groupId, title, '', normalized)
+    }
+    this.db.prepare('INSERT OR REPLACE INTO topic_group_members VALUES (?, ?)').run(contextId, groupId)
+  }
+
+  /** Attach a whole existing session to a topic as reviewed history its Worker may search. */
+  attachSession(contextId: string, sessionId: string): void {
+    this.addSource(contextId, sessionId, WHOLE_SESSION)
+  }
+
+  /**
+   * Fold `sourceId` into `targetId`: its history, progress, summaries and links move over, and its
+   * own Worker session becomes searchable history of the target. The source topic is removed.
+   */
+  mergeTopics(sourceId: string, targetId: string): void {
+    if (sourceId === targetId) throw new Error('Cannot merge a topic into itself')
+    const source = this.context(sourceId), target = this.context(targetId)
+    this.db.exec('BEGIN IMMEDIATE')
+    try {
+      const merged = (a: string[], b: string[]) => [...new Map([...a, ...b].map(term => [term.toLowerCase(), term])).values()].slice(0, 40)
+      this.writeDescriptor({ ...target, entities: merged(target.entities, source.entities), keywords: merged(target.keywords, source.keywords) })
+      this.db.prepare('INSERT OR IGNORE INTO context_source_ranges SELECT ?, session_id, start_seq, end_seq FROM context_source_ranges WHERE context_id = ?').run(targetId, sourceId)
+      // The source's own Worker conversation is now reviewed history of the target, not a new catalog source.
+      this.markIndex(source.workingSessionId, Number.MAX_SAFE_INTEGER, 'excluded')
+      this.db.prepare('INSERT OR IGNORE INTO context_source_ranges VALUES (?, ?, ?, ?)').run(targetId, source.workingSessionId, WHOLE_SESSION.startSeq, WHOLE_SESSION.endSeq)
+      for (const table of ['history_turns', 'context_state_updates', 'topic_runs']) this.db.prepare(`UPDATE ${table} SET context_id = ? WHERE context_id = ?`).run(targetId, sourceId)
+      this.db.prepare('UPDATE OR IGNORE context_summary_updates SET context_id = ? WHERE context_id = ?').run(targetId, sourceId)
+      this.db.prepare('UPDATE gateway_state SET context_id = ? WHERE context_id = ?').run(targetId, sourceId)
+      this.db.prepare('UPDATE route_details SET corrected_to = ? WHERE corrected_to = ?').run(targetId, sourceId)
+      this.db.prepare('INSERT OR IGNORE INTO learned_terms SELECT ?, term, weight, updated_at FROM learned_terms WHERE context_id = ?').run(targetId, sourceId)
+      const rules = [this.constraints(targetId)?.text, this.constraints(sourceId)?.text].filter(Boolean)
+      if (rules.length) this.setConstraints(targetId, rules.join('\n').slice(0, 400))
+      for (const link of this.links(sourceId)) {
+        const other = link.a === sourceId ? link.b : link.a
+        if (other === targetId) continue
+        if (link.manual) this.setManualLink(targetId, other, link.manual)
+        if (link.weight > 0) this.learnLink(targetId, other, link.weight)
+      }
+      this.mergeFacts(sourceId, targetId, source.title)
+      this.purge(sourceId)
+      this.db.exec('COMMIT')
+    } catch (error) { this.db.exec('ROLLBACK'); throw error }
+  }
+
+  /** Remove a topic and everything TheOne kept about it. DSH keeps the conversations themselves. */
+  deleteTopic(contextId: string): void {
+    const context = this.context(contextId)
+    this.db.exec('BEGIN IMMEDIATE')
+    try {
+      // The catalog would otherwise find the same conversation again and bring the topic back.
+      this.db.prepare('INSERT OR REPLACE INTO dismissed_turns SELECT session_id, user_seq, fingerprint FROM history_turns WHERE context_id = ?').run(contextId)
+      this.markIndex(context.workingSessionId, Number.MAX_SAFE_INTEGER, 'excluded')
+      this.purge(contextId); this.db.exec('COMMIT')
+    }
+    catch (error) { this.db.exec('ROLLBACK'); throw error }
+  }
+
+  private purge(contextId: string): void {
+    for (const table of ['topic_group_members', 'history_turns', 'context_origins', 'context_sources', 'context_source_ranges',
+      'gateway_state', 'context_state_updates', 'context_summary_updates', 'topic_flags', 'compaction_digests', 'learned_terms',
+      'topic_runs', 'topic_status'])
+      this.db.prepare(`DELETE FROM ${table} WHERE context_id = ?`).run(contextId)
+    this.db.prepare('DELETE FROM topic_links WHERE a = ? OR b = ?').run(contextId, contextId)
+    this.db.prepare('DELETE FROM hidden_contexts WHERE context_id = ?').run(contextId)
+    this.db.prepare('DELETE FROM briefing_seen WHERE reader = ? OR source = ?').run(contextId, contextId)
+    this.db.prepare('UPDATE route_details SET corrected_to = NULL, corrected_at = NULL WHERE corrected_to = ?').run(contextId)
+    this.purgeFacts(contextId)
+    this.db.prepare('DELETE FROM contexts WHERE id = ?').run(contextId)
+  }
+
+  // ---- Facts: a topic's settled items, versioned, with evidence. Runs inside the caller's transaction where one is open.
+
+  private factQuery(where: string): string {
+    return `SELECT f.*, v.status, v.value, v.evidence, v.origin, v.created_at FROM facts f
+      LEFT JOIN fact_versions v ON v.fact_id = f.id AND v.version = f.current_version WHERE ${where}`
+  }
+
+  private factFrom(row: Record<string, unknown>): FactView {
+    return { id: String(row.id), contextId: String(row.context_id), key: String(row.key), label: String(row.label),
+      aliases: JSON.parse(String(row.aliases)) as string[], kind: String(row.kind) as FactKind, version: Number(row.current_version),
+      status: (row.status ? String(row.status) : 'retracted') as FactStatus, value: row.value == null ? null : String(row.value),
+      evidence: row.evidence ? JSON.parse(String(row.evidence)) as FactEvidence : { sessionId: '', seq: null, speaker: 'unverified', quote: '' },
+      origin: (row.origin ? String(row.origin) : 'worker') as FactView['origin'], createdAt: Number(row.created_at ?? 0),
+      ...(row.deleted_at != null ? { deletedAt: Number(row.deleted_at) } : {}), ...(row.merged_from ? { mergedFrom: String(row.merged_from) } : {}) }
+  }
+
+  /** A fact's current state, also when its topic was deleted (then it has no value). */
+  fact(factId: string): (FactView & { lastUsedAt?: number }) | undefined {
+    const row = this.db.prepare(this.factQuery('f.id = ?')).get(factId) as Record<string, unknown> | undefined
+    return row && { ...this.factFrom(row), ...(row.last_used_at != null ? { lastUsedAt: Number(row.last_used_at) } : {}) }
+  }
+
+  /** One earlier version of a fact. */
+  factVersion(factId: string, version: number): FactView | undefined {
+    const row = this.db.prepare(`SELECT f.*, v.status, v.value, v.evidence, v.origin, v.created_at, v.version AS current_version FROM facts f
+      JOIN fact_versions v ON v.fact_id = f.id WHERE f.id = ? AND v.version = ?`).get(factId, version) as Record<string, unknown> | undefined
+    return row && this.factFrom(row)
+  }
+
+  /** A topic's live facts; include withdrawn identities when taking a write/extraction baseline. */
+  facts(contextId: string, includeRetracted = false): FactView[] {
+    return (this.db.prepare(this.factQuery(`f.context_id = ? AND f.deleted_at IS NULL ${includeRetracted ? '' : "AND v.status != 'retracted'"} ORDER BY COALESCE(f.last_used_at, v.created_at) DESC`)).all(contextId) as Record<string, unknown>[])
+      .map(row => this.factFrom(row))
+  }
+
+  /** Confirmed facts of every other live topic, the pool other topics may draw from. */
+  sharedFacts(excludeContextId?: string): (FactView & { lastUsedAt?: number })[] {
+    return (this.db.prepare(this.factQuery("f.deleted_at IS NULL AND v.status = 'confirmed' AND f.context_id != ?")).all(excludeContextId ?? '') as Record<string, unknown>[])
+      .map(row => ({ ...this.factFrom(row), ...(row.last_used_at != null ? { lastUsedAt: Number(row.last_used_at) } : {}) }))
+  }
+
+  private factByName(contextId: string, key: string): FactView | undefined {
+    const exact = this.db.prepare(this.factQuery('f.context_id = ? AND f.key = ? AND f.deleted_at IS NULL')).get(contextId, key) as Record<string, unknown> | undefined
+    if (exact) return this.factFrom(exact)
+    return this.facts(contextId).find(fact => fact.aliases.includes(key))
+      ?? (this.db.prepare(this.factQuery("f.context_id = ? AND f.deleted_at IS NULL AND v.status = 'retracted'")).all(contextId) as Record<string, unknown>[])
+        .map(row => this.factFrom(row)).find(fact => fact.aliases.includes(key))
+  }
+
+  /** Refuse a write that is older than what the fact already holds. */
+  private staleWrite(current: FactView, evidence: FactEvidence, expectedVersion?: number): string | undefined {
+    if (expectedVersion !== undefined && expectedVersion !== current.version) return 'stale'
+    // Within one session, evidence only moves forward: a slow write from an earlier turn cannot win.
+    if (current.evidence.sessionId === evidence.sessionId && current.evidence.seq != null && evidence.seq != null && evidence.seq < current.evidence.seq) return 'older-evidence'
+    return undefined
+  }
+
+  private newerEvidence(current: FactView, evidence: FactEvidence): boolean {
+    return evidence.sessionId !== current.evidence.sessionId ||
+      (evidence.seq != null && (current.evidence.seq == null || evidence.seq > current.evidence.seq))
+  }
+
+  private inTransaction<T>(work: () => T): T {
+    this.db.exec('BEGIN IMMEDIATE')
+    try { const result = work(); this.db.exec('COMMIT'); return result }
+    catch (error) { this.db.exec('ROLLBACK'); throw error }
+  }
+
+  private addVersion(factId: string, version: number, status: FactStatus, value: string | null, evidence: FactEvidence, origin: FactView['origin'], now: number): void {
+    this.db.prepare('INSERT INTO fact_versions VALUES (?, ?, ?, ?, ?, ?, ?)').run(factId, version, status, value, JSON.stringify(evidence), origin, now)
+    this.db.prepare('UPDATE facts SET current_version = ? WHERE id = ?').run(version, factId)
+  }
+
+  /**
+   * Record a fact or a new value of it. Same fact means the given id, or the same folded name or alias
+   * within the topic; names are never matched loosely. The write is refused when it is stale, when its
+   * evidence is older than the current version's, or when a proposal would replace a confirmed value.
+   */
+  recordFact(contextId: string, write: FactWrite, now = Date.now()): FactResult {
+    this.context(contextId)
+    const label = safe(write.label, FACT_LIMITS.label), key = factKey(label), value = safe(write.value, FACT_LIMITS.value)
+    if (!key || !value || !FACT_KINDS.includes(write.kind)) return { outcome: 'rejected', reason: 'invalid' }
+    const evidence = { ...write.evidence, quote: safe(write.evidence.quote, FACT_LIMITS.quote) }
+    const aliasKeys = (names: string[], exclude = key) => [...new Set(names.map(name => factKey(safe(name, FACT_LIMITS.alias))).filter(alias => alias && alias !== exclude))].slice(0, FACT_LIMITS.aliases)
+    return this.inTransaction(() => {
+      const current = write.factId ? this.fact(write.factId) : this.factByName(contextId, key)
+      if (write.factId && (!current || current.contextId !== contextId || current.deletedAt !== undefined)) return { outcome: 'rejected', reason: 'unknown-fact' } as FactResult
+      if (!current) {
+        if (this.db.prepare('SELECT 1 FROM facts WHERE context_id = ? AND key = ?').get(contextId, key)) return { outcome: 'rejected', reason: 'invalid' } as FactResult
+        const id = 'fact_' + randomUUID().replaceAll('-', '').slice(0, 20)
+        this.db.prepare('INSERT INTO facts (id, context_id, key, label, aliases, kind, current_version) VALUES (?, ?, ?, ?, ?, ?, 0)')
+          .run(id, contextId, key, label, JSON.stringify(aliasKeys(write.aliases ?? [])), write.kind)
+        this.addVersion(id, 1, write.status, value, evidence, write.origin, now)
+        return { outcome: 'created', fact: this.fact(id)! } as FactResult
+      }
+      const refused = this.staleWrite(current, evidence, write.expectedVersion)
+        ?? (current.status === 'confirmed' && write.status === 'proposed' ? 'keeps-confirmed' : undefined)
+      if (refused) return { outcome: 'rejected', reason: refused, fact: current } as FactResult
+      const aliases = [...new Set([...current.aliases, ...aliasKeys([...(write.aliases ?? []), ...(key !== current.key ? [label] : [])], current.key)])]
+        .filter(alias => alias !== current.key).slice(0, FACT_LIMITS.aliases)
+      this.db.prepare('UPDATE facts SET aliases = ? WHERE id = ?').run(JSON.stringify(aliases), current.id)
+      // A later reaffirmation is a new version too: delayed writes must not undo the user's latest words.
+      if (current.status === write.status && current.value === value && !this.newerEvidence(current, evidence)) return { outcome: 'unchanged', fact: this.fact(current.id)! } as FactResult
+      this.addVersion(current.id, current.version + 1, write.status, value, evidence, write.origin, now)
+      return { outcome: 'updated', fact: this.fact(current.id)!, previous: current } as FactResult
+    })
+  }
+
+  /** The user said a fact no longer holds (or is not decided yet): a new version without a value. */
+  retractFact(contextId: string, factId: string, evidence: FactEvidence, origin: FactView['origin'], expectedVersion?: number, now = Date.now()): FactResult {
+    return this.inTransaction(() => {
+      const current = this.fact(factId)
+      if (!current || current.contextId !== contextId || current.deletedAt !== undefined) return { outcome: 'rejected', reason: 'unknown-fact' } as FactResult
+      const quoted = { ...evidence, quote: safe(evidence.quote, FACT_LIMITS.quote) }
+      const refused = this.staleWrite(current, quoted, expectedVersion)
+      if (refused) return { outcome: 'rejected', reason: refused, fact: current } as FactResult
+      if (current.status === 'retracted' && !this.newerEvidence(current, quoted)) return { outcome: 'unchanged', fact: current } as FactResult
+      this.addVersion(current.id, current.version + 1, 'retracted', null, quoted, origin, now)
+      return { outcome: 'retracted', fact: this.fact(current.id)!, previous: current } as FactResult
+    })
+  }
+
+  /** A fact reached a topic (by routing, a lookup or a change notice): log it and note the version seen. */
+  recordDelivery(contextId: string, fact: Pick<FactView, 'id' | 'version'>, via: 'route' | 'lookup' | 'notice', inputId?: string, now = Date.now()): void {
+    this.db.prepare('INSERT INTO fact_deliveries (context_id, fact_id, version, input_id, via, at) VALUES (?, ?, ?, ?, ?, ?)').run(contextId, fact.id, fact.version, inputId ?? null, via, now)
+    this.db.prepare(`INSERT INTO fact_dependencies VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(context_id, fact_id) DO UPDATE SET version_seen = excluded.version_seen, last_at = excluded.last_at`).run(contextId, fact.id, fact.version, now, now)
+    if (via !== 'notice') this.db.prepare('UPDATE facts SET last_used_at = ? WHERE id = ?').run(now, fact.id)
+  }
+
+  /** The facts a topic has been given, with the version it last saw. */
+  dependencies(contextId: string): { factId: string; versionSeen: number }[] {
+    return this.db.prepare('SELECT fact_id, version_seen FROM fact_dependencies WHERE context_id = ? ORDER BY first_at').all(contextId)
+      .map(row => ({ factId: String(row.fact_id), versionSeen: Number(row.version_seen) }))
+  }
+
+  forgetDependency(contextId: string, factId: string): void {
+    this.db.prepare('DELETE FROM fact_dependencies WHERE context_id = ? AND fact_id = ?').run(contextId, factId)
+  }
+
+  /** Delivery log of a topic, oldest first. */
+  deliveries(contextId: string): { factId: string; version: number; via: string; inputId?: string }[] {
+    return this.db.prepare('SELECT * FROM fact_deliveries WHERE context_id = ? ORDER BY id').all(contextId)
+      .map(row => ({ factId: String(row.fact_id), version: Number(row.version), via: String(row.via), ...(row.input_id ? { inputId: String(row.input_id) } : {}) }))
+  }
+
+  /**
+   * Facts of a merged topic move with their identity, so whoever depends on them keeps doing so. A name
+   * both topics use stays two facts: the incoming one is renamed after its topic; values never merge.
+   */
+  private mergeFacts(sourceId: string, targetId: string, sourceTitle: string): void {
+    for (const fact of this.db.prepare('SELECT id, key, label FROM facts WHERE context_id = ? AND deleted_at IS NULL').all(sourceId)) {
+      let key = String(fact.key), label = String(fact.label)
+      if (this.db.prepare('SELECT 1 FROM facts WHERE context_id = ? AND key = ?').get(targetId, key)) {
+        label = `${label}（来自 ${sourceTitle}）`.slice(0, FACT_LIMITS.label + 30)
+        key = factKey(label)
+        for (let n = 2; this.db.prepare('SELECT 1 FROM facts WHERE context_id = ? AND key = ?').get(targetId, key); n++) key = `${factKey(label)} ${n}`
+      }
+      this.db.prepare('UPDATE facts SET context_id = ?, key = ?, label = ?, merged_from = ? WHERE id = ?').run(targetId, key, label, sourceId, String(fact.id))
+    }
+    this.db.prepare('INSERT OR IGNORE INTO fact_dependencies SELECT ?, fact_id, version_seen, first_at, last_at FROM fact_dependencies WHERE context_id = ?').run(targetId, sourceId)
+    this.db.prepare('DELETE FROM fact_dependencies WHERE context_id = ?').run(sourceId)
+    // A topic does not depend on its own facts.
+    this.db.prepare('DELETE FROM fact_dependencies WHERE context_id = ? AND fact_id IN (SELECT id FROM facts WHERE context_id = ?)').run(targetId, targetId)
+    this.db.prepare('UPDATE fact_deliveries SET context_id = ? WHERE context_id = ?').run(targetId, sourceId)
+  }
+
+  /**
+   * A deleted topic's facts lose their values and evidence; the identity stays as a tombstone so that
+   * topics which used them can be told once that they are gone. What the topic itself received goes.
+   */
+  private purgeFacts(contextId: string, now = Date.now()): void {
+    this.db.prepare('DELETE FROM fact_versions WHERE fact_id IN (SELECT id FROM facts WHERE context_id = ?)').run(contextId)
+    this.db.prepare("UPDATE facts SET deleted_at = ?, aliases = '[]', current_version = 0 WHERE context_id = ? AND deleted_at IS NULL").run(now, contextId)
+    this.db.prepare('DELETE FROM fact_dependencies WHERE context_id = ?').run(contextId)
+    this.db.prepare('DELETE FROM fact_deliveries WHERE context_id = ?').run(contextId)
+  }
+
+  /** A topic took up a message (one per message); a topic keeps its latest RUNS_KEPT records. */
+  startTopicRun(messageId: string, contextId: string, sessionId: string, now = Date.now()): void {
+    this.db.prepare("INSERT OR REPLACE INTO topic_runs VALUES (?, ?, ?, 'running', ?, NULL)").run(messageId, contextId, sessionId, now)
+    this.db.prepare(`DELETE FROM topic_runs WHERE context_id = ? AND message_id NOT IN
+      (SELECT message_id FROM topic_runs WHERE context_id = ? ORDER BY started_at DESC, rowid DESC LIMIT ${RUNS_KEPT})`).run(contextId, contextId)
+  }
+
+  /** How the topic's work on a message ended. A record already settled keeps its outcome, except a move. */
+  endTopicRun(messageId: string, outcome: Exclude<TopicRun['outcome'], 'running'>, now = Date.now()): void {
+    this.db.prepare(`UPDATE topic_runs SET outcome = ?, ended_at = ? WHERE message_id = ? AND (outcome = 'running' OR ? = 'moved')`)
+      .run(outcome, now, messageId, outcome)
+  }
+
+  /** Work never shown (the message was deleted from main chat's queue) leaves no record. */
+  dropTopicRun(messageId: string): void {
+    this.db.prepare('DELETE FROM topic_runs WHERE message_id = ?').run(messageId)
+  }
+
+  /** Work that was running when TheOne stopped (a restart) did not finish: it is interrupted. */
+  interruptTopicRuns(now = Date.now()): string[] {
+    const rows = this.db.prepare("SELECT message_id FROM topic_runs WHERE outcome = 'running'").all().map(row => String(row.message_id))
+    this.db.prepare("UPDATE topic_runs SET outcome = 'interrupted', ended_at = ? WHERE outcome = 'running'").run(now)
+    return rows
+  }
+
+  topicRun(messageId: string): TopicRun | undefined {
+    const row = this.db.prepare('SELECT * FROM topic_runs WHERE message_id = ?').get(messageId)
+    return row ? runOf(row) : undefined
+  }
+
+  /** The topic's runs, newest first. */
+  topicRuns(contextId: string, limit = RUNS_KEPT): TopicRun[] {
+    return this.db.prepare('SELECT * FROM topic_runs WHERE context_id = ? ORDER BY started_at DESC, rowid DESC LIMIT ?').all(contextId, limit).map(runOf)
+  }
+
+  /** The newest run of every topic. */
+  latestTopicRuns(): Map<string, TopicRun> {
+    const rows = this.db.prepare(`SELECT * FROM topic_runs r WHERE rowid = (SELECT rowid FROM topic_runs WHERE context_id = r.context_id
+      ORDER BY started_at DESC, rowid DESC LIMIT 1)`).all()
+    return new Map(rows.map(row => [String(row.context_id), runOf(row)]))
+  }
+
+  /** The user said the topic's matter is done (`undefined` reopens it). */
+  declareTopic(contextId: string, declared: 'done' | undefined, now = Date.now()): void {
+    this.context(contextId)
+    if (declared) this.db.prepare('INSERT OR REPLACE INTO topic_status VALUES (?, ?, ?)').run(contextId, declared, now)
+    else this.db.prepare('DELETE FROM topic_status WHERE context_id = ?').run(contextId)
+  }
+
+  declaredTopics(): Map<string, { declared: 'done'; at: number }> {
+    return new Map(this.db.prepare('SELECT * FROM topic_status').all().map(row => [String(row.context_id), { declared: 'done' as const, at: Number(row.declared_at) }]))
+  }
+
+  /** A changed-files card in main chat (`gatewayId`, `seq`) reads the topic's record (`sessionId`, `seq`). */
+  linkChange(gatewayId: string, seq: number, source: { sessionId: string; seq: number; turn: number }): void {
+    this.db.prepare('INSERT OR REPLACE INTO change_links VALUES (?, ?, ?, ?, ?)').run(gatewayId, seq, source.sessionId, source.seq, source.turn)
+  }
+
+  changeLink(gatewayId: string, seq: number): { sessionId: string; seq: number; turn: number } | undefined {
+    const row = this.db.prepare('SELECT session_id, source_seq, turn FROM change_links WHERE gateway_id = ? AND seq = ?').get(gatewayId, seq)
+    return row ? { sessionId: String(row.session_id), seq: Number(row.source_seq), turn: Number(row.turn) } : undefined
+  }
+
+  /** Notices the user closed; they are not shown again on any browser. */
+  dismissNotice(id: string, now = Date.now()): void {
+    this.db.prepare('INSERT OR IGNORE INTO dismissed_notices VALUES (?, ?)').run(id, now)
+  }
+
+  /** True the first time `name` is marked, false ever after: for one-time repairs. */
+  markOnce(name: string, now = Date.now()): boolean {
+    return this.db.prepare('INSERT OR IGNORE INTO plugin_flags VALUES (?, ?)').run(name, now).changes === 1
+  }
+
+  dismissedNotices(): Set<string> {
+    return new Set(this.db.prepare('SELECT id FROM dismissed_notices').all().map(row => String(row.id)))
+  }
+
+  /**
+   * Topics kept in the directory but hidden from routing and briefings: every conversation they can
+   * draw on is gone from disk (`orphaned`) or archived in DSH (`archived`). The catalog scan
+   * recomputes this set, so restoring a conversation or unarchiving it brings the topic back.
+   */
+  hiddenReasons(): Map<string, HiddenReason> {
+    return new Map(this.db.prepare('SELECT context_id, reason FROM hidden_contexts').all()
+      .map(row => [String(row.context_id), String(row.reason) as HiddenReason] as const))
+  }
+
+  /** Replace the hidden set in one write, so a scan never leaves a stale entry behind. */
+  replaceHidden(entries: readonly { id: string; reason: string }[], now = Date.now()): void {
+    this.db.exec('BEGIN IMMEDIATE')
+    try {
+      this.db.prepare('DELETE FROM hidden_contexts').run()
+      const insert = this.db.prepare('INSERT OR REPLACE INTO hidden_contexts VALUES (?, ?, ?)')
+      for (const entry of entries) insert.run(entry.id, entry.reason, now)
+      this.db.exec('COMMIT')
+    } catch (error) { this.db.exec('ROLLBACK'); throw error }
   }
 
   close(): void { this.db.close() }

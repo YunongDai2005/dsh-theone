@@ -1,0 +1,205 @@
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { compareVersions, installSource, RELEASE_AGE_MS, releaseAgeExemptions, releaseAgeViolations, Updater, withReleaseAgeExemption, type PluginInstaller } from '../src/update.ts'
+
+/** An npm registry answer: each version with its publication time. */
+const registry = (releases: Record<string, number>): typeof fetch => (async () => Response.json({
+  versions: Object.fromEntries(Object.keys(releases).map(version => [version, {}])),
+  time: Object.fromEntries(Object.entries(releases).map(([version, at]) => [version, new Date(at).toISOString()])),
+})) as typeof fetch
+const DAY_AGO = Date.now() - RELEASE_AGE_MS - 60000
+
+const SHA = 'a'.repeat(40)
+function github(version: string, calls: string[] = []): typeof fetch {
+  return (async (url: string | URL) => {
+    calls.push(String(url))
+    if (String(url).includes('api.github.com')) return new Response(SHA)
+    return Response.json({ version })
+  }) as typeof fetch
+}
+
+test('versions compare numerically and installs are traced to their source', () => {
+  assert.equal(compareVersions('0.3.10', '0.3.9'), 1)
+  assert.equal(compareVersions('v0.4.0', '0.4.0'), 0)
+  assert.equal(compareVersions('0.4.0-rc.1', '0.4.0'), -1)
+  assert.equal(installSource('github:YunongDai2005/dsh-theone'), 'github')
+  assert.equal(installSource('git+https://github.com/YunongDai2005/dsh-theone.git#abc'), 'github')
+  assert.equal(installSource('^0.3.9'), 'npm')
+  assert.equal(installSource('file:../dsh-theone'), 'other')
+  assert.equal(installSource(undefined), 'other')
+})
+
+test('a GitHub install updates to the exact commit it checked, through the plugin manager', async () => {
+  const calls: string[] = []
+  let time = 0
+  const updater = new Updater('0.3.10', () => 'github:YunongDai2005/dsh-theone', github('0.3.11', calls), () => time)
+  const status = await updater.status()
+  assert.deepEqual(status, { current: '0.3.10', latest: '0.3.11', available: true, installable: true, source: 'github' })
+  assert.ok(calls[1].endsWith(`/${SHA}/package.json`))
+  // Checks are cached for six hours unless forced.
+  await updater.status(); assert.equal(calls.length, 2)
+  await updater.status(true); assert.equal(calls.length, 4)
+  time += 7 * 3600000; await updater.status(); assert.equal(calls.length, 6)
+  const specs: string[] = []
+  const installer: PluginInstaller = { installBundle: async (spec, options) => { specs.push(spec); assert.equal(options?.enabled, true); return { application: 'restart-required' } } }
+  assert.equal((await updater.install(installer)).state, 'restart')
+  assert.deepEqual(specs, [`github:YunongDai2005/dsh-theone#${SHA}`])
+  // Installed once; it waits for the restart rather than installing again.
+  await updater.install(installer); assert.equal(specs.length, 1)
+})
+
+test('npm installs use the registry; nothing newer, offline or unmanaged installs are handled', async () => {
+  const npm = new Updater('0.3.10', () => '^0.3.10', registry({ '0.3.10': DAY_AGO, '0.4.0': DAY_AGO }))
+  const specs: string[] = []
+  const status = await npm.install({ installBundle: async spec => { specs.push(spec); return { application: 'failed', error: { code: 'incompatible-version' } } } })
+  assert.deepEqual(specs, ['dsh-theone@0.4.0'])
+  assert.equal(status.state, 'failed')
+  assert.equal(status.error, 'incompatible-version')
+
+  const current = new Updater('0.3.11', () => 'github:YunongDai2005/dsh-theone', github('0.3.11'))
+  assert.equal((await current.status()).available, false)
+
+  const offline = new Updater('0.3.10', () => 'github:YunongDai2005/dsh-theone', (async () => { throw new Error('getaddrinfo ENOTFOUND') }) as typeof fetch)
+  const unreachable = await offline.status()
+  assert.equal(unreachable.available, false)
+  assert.match(unreachable.error!, /ENOTFOUND/)
+
+  const local = new Updater('0.3.10', () => 'file:../dsh-theone', github('0.3.11'))
+  const manual = await local.status()
+  assert.equal(manual.available, true)
+  assert.equal(manual.installable, false)
+  assert.equal((await local.install({ installBundle: async () => assert.fail('must not install') })).state, undefined)
+  // Without DSH's plugin manager nothing is installed either.
+  const missing = new Updater('0.3.10', () => '^0.3.10', registry({ '0.4.0': DAY_AGO }))
+  assert.equal((await missing.install(undefined)).state, undefined)
+})
+
+test('with hot reload, TheOne reloads itself after installing instead of waiting for a DSH restart', async () => {
+  const updater = new Updater('0.3.10', () => 'github:YunongDai2005/dsh-theone', github('0.3.11'))
+  const reloaded: string[] = []
+  const status = await updater.install({ installBundle: async () => ({ application: 'restart-required', bundle: 'dsh-theone' }) }, bundle => reloaded.push(bundle))
+  assert.equal(status.state, 'reloading')
+  assert.deepEqual(reloaded, ['dsh-theone'])
+  await updater.install({ installBundle: async () => assert.fail('installed once') }, bundle => reloaded.push(bundle))
+  assert.equal(reloaded.length, 1)
+})
+
+test('the update endpoint installs, then switches the bundle off and on so DSH loads the new version', { timeout: 30000 }, async () => {
+  const { mkdtemp, rm } = await import('node:fs/promises')
+  const { tmpdir } = await import('node:os')
+  const { join } = await import('node:path')
+  const { HostConnectionService } = await import('@deepseek-ai/dsh-client-connection')
+  const { harness } = await import('./harness.ts')
+  const root = await mkdtemp(join(tmpdir(), 'theone-update-'))
+  const previousFetch = globalThis.fetch
+  const app = await harness(root)
+  try {
+    const calls: string[] = []
+    const manager = {
+      installBundle: async (spec: string) => { calls.push(`install ${spec}`); return { application: 'restart-required', bundle: 'dsh-theone' } },
+      setBundleEnabled: async (name: string, enabled: boolean) => { calls.push(`${enabled ? 'on' : 'off'} ${name}`); return { application: 'applied' } },
+    }
+    app.ctx.provide('pluginManager'); app.ctx.set('pluginManager', manager)
+    app.ctx.provide('hmr'); app.ctx.set('hmr', {})
+    // This copy reports itself as installed from GitHub, one version behind.
+    Object.defineProperty(app.ctx.theone, 'updater', { value: new Updater('0.0.1', () => 'github:YunongDai2005/dsh-theone', github('9.9.9')) })
+    const connection = new HostConnectionService(app.ctx, [], undefined as never)
+    const handler = connection.createSharedFetchHandler('/api')
+    await new Promise<void>(resolve => setImmediate(resolve))
+    const checked = await (await handler.fetch(new Request('http://dsh.internal/api/theone/update'))).json() as { available: boolean }
+    assert.equal(checked.available, true)
+    const response = await handler.fetch(new Request('http://dsh.internal/api/theone/update', { method: 'POST' }))
+    assert.equal((await response.json() as { state: string }).state, 'reloading')
+    await new Promise(resolve => setTimeout(resolve, 600))
+    assert.deepEqual(calls, [`install github:YunongDai2005/dsh-theone#${SHA}`, 'off dsh-theone', 'on dsh-theone'])
+  } finally { globalThis.fetch = previousFetch; await app.close(); await rm(root, { recursive: true, force: true }) }
+})
+
+test('npm updates wait until pnpm accepts the version, and its refusal is explained', async () => {
+  let time = Date.now()
+  const published = time - 3600000
+  const updater = new Updater('0.3.12', () => '0.3.12', registry({ '0.3.12': DAY_AGO - 1000, '0.3.13': DAY_AGO, '0.3.14': published }), () => time)
+  // 0.3.14 is an hour old: 0.3.13 is offered, 0.3.14 waits.
+  const first = await updater.status()
+  assert.equal(first.latest, '0.3.13')
+  assert.deepEqual(first.waiting, { version: '0.3.14', readyAt: published + RELEASE_AGE_MS })
+  time = published + RELEASE_AGE_MS + 1000
+  const later = await updater.status()
+  assert.equal(later.latest, '0.3.14')
+  assert.equal(later.waiting, undefined)
+  const refused = await updater.install({ installBundle: async () => ({ application: 'failed', error: { code: 'install-failed' },
+    packageResult: { output: '[ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION] 1 lockfile entries failed verification' } }) })
+  assert.equal(refused.state, 'failed')
+  assert.equal(refused.error, 'MINIMUM_RELEASE_AGE')
+  const offline = new Updater('0.3.12', () => '0.3.12', registry({ '0.3.13': DAY_AGO }))
+  const network = await offline.install({ installBundle: async () => ({ application: 'failed', packageResult: { output: 'GET https://registry.npmjs.org/x error (UND_ERR_DESTROYED)' } }) })
+  assert.equal(network.error, 'NETWORK')
+})
+
+test('the release-age exemption is added to pnpm-workspace.yaml without disturbing anything else', () => {
+  assert.equal(withReleaseAgeExemption(''), 'minimumReleaseAgeExclude:\n  - dsh-theone\n')
+  const approved = 'onlyBuiltDependencies:\n  - esbuild\n'
+  assert.equal(withReleaseAgeExemption(approved), approved + 'minimumReleaseAgeExclude:\n  - dsh-theone\n')
+  const block = 'minimumReleaseAge: 1440\r\nminimumReleaseAgeExclude:\r\n    - left-pad\r\nonlyBuiltDependencies: []\r\n'
+  const added = withReleaseAgeExemption(block)
+  assert.equal(added, 'minimumReleaseAge: 1440\r\nminimumReleaseAgeExclude:\r\n    - left-pad\r\n    - dsh-theone\r\nonlyBuiltDependencies: []\r\n')
+  assert.deepEqual(releaseAgeExemptions(added), ['left-pad', 'dsh-theone'])
+  assert.equal(withReleaseAgeExemption(added), added)
+  assert.equal(withReleaseAgeExemption('minimumReleaseAgeExclude: [left-pad]\n'), 'minimumReleaseAgeExclude: ["left-pad", "dsh-theone"]\n')
+  assert.throws(() => withReleaseAgeExemption('minimumReleaseAgeExclude: left-pad\n'), /UNRECOGNISED_WORKSPACE/)
+})
+
+test('exempting TheOne installs the fresh version now, and only TheOne is exempted', async () => {
+  const { mkdtemp, readFile, rm, writeFile } = await import('node:fs/promises')
+  const { tmpdir } = await import('node:os')
+  const { join } = await import('node:path')
+  const root = await mkdtemp(join(tmpdir(), 'theone-exempt-'))
+  try {
+    const file = join(root, 'pnpm-workspace.yaml')
+    await writeFile(file, 'onlyBuiltDependencies:\n  - esbuild\n')
+    const published = Date.now() - 3600000
+    const updater = new Updater('0.3.13', () => '0.3.13', registry({ '0.3.13': DAY_AGO, '0.3.15': published }), Date.now, () => file)
+    const waiting = await updater.status()
+    assert.equal(waiting.available, false)
+    assert.equal(waiting.waiting?.version, '0.3.15')
+    assert.equal(waiting.exempt, false)
+    assert.equal(waiting.canExempt, true)
+    updater.allowFresh()
+    assert.equal(await readFile(file, 'utf8'), 'onlyBuiltDependencies:\n  - esbuild\nminimumReleaseAgeExclude:\n  - dsh-theone\n')
+    const specs: string[] = []
+    const installed = await updater.install({ installBundle: async spec => { specs.push(spec); return { application: 'restart-required' } } })
+    assert.deepEqual(specs, ['dsh-theone@0.3.15'])
+    assert.equal(installed.state, 'restart')
+    assert.equal(installed.exempt, true)
+    // Without a known profile there is nothing to edit.
+    assert.throws(() => new Updater('0.3.13', () => '0.3.13').allowFresh(), /NO_PROFILE/)
+  } finally { await rm(root, { recursive: true, force: true }) }
+})
+
+test('an exempt TheOne still refused by the lockfile check is retried with exact exemptions; other packages are named', async () => {
+  const { mkdtemp, readFile, rm, writeFile } = await import('node:fs/promises')
+  const { tmpdir } = await import('node:os')
+  const { join } = await import('node:path')
+  const root = await mkdtemp(join(tmpdir(), 'theone-exempt-'))
+  const refusal = (entry: string) => ({ application: 'failed', error: { code: 'operation-error' }, packageResult: {
+    output: `[ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION] 1 lockfile entries failed verification:\n  ${entry} was published at 2026-10-03T15:33:36.000Z, within the minimumReleaseAge cutoff` } })
+  try {
+    assert.deepEqual(releaseAgeViolations(refusal('@scope/pkg@1.2.0').packageResult.output), ['@scope/pkg@1.2.0'])
+    const file = join(root, 'pnpm-workspace.yaml')
+    await writeFile(file, 'minimumReleaseAgeExclude:\n  - dsh-theone\n')
+    const updater = new Updater('0.3.18', () => '0.3.18', registry({ '0.3.18': Date.now() - 7200000, '0.3.19': Date.now() - 3600000 }), Date.now, () => file)
+    let calls = 0
+    const status = await updater.install({ installBundle: async () => ++calls === 1 ? refusal('dsh-theone@0.3.18') : { application: 'restart-required' } })
+    assert.equal(calls, 2)
+    assert.equal(status.state, 'restart')
+    assert.deepEqual(releaseAgeExemptions(await readFile(file, 'utf8')), ['dsh-theone', 'dsh-theone@0.3.18', 'dsh-theone@0.3.19'])
+
+    // Another package that is too new is not TheOne's to exempt: no retry, and it is named.
+    const other = new Updater('0.3.18', () => '0.3.18', registry({ '0.3.18': Date.now() - 7200000, '0.3.19': Date.now() - 3600000 }), Date.now, () => file)
+    let tries = 0
+    const failed = await other.install({ installBundle: async () => { tries++; return refusal('@deepseek-ai/schemastery@3.19.0') } })
+    assert.equal(tries, 1)
+    assert.equal(failed.error, 'OTHER_RELEASE_AGE')
+    assert.equal(failed.detail, '@deepseek-ai/schemastery@3.19.0')
+  } finally { await rm(root, { recursive: true, force: true }) }
+})

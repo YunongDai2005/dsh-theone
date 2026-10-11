@@ -27,7 +27,8 @@ export class GatewayNavigation {
     async ensure() {
         let id = this.getSnapshot();
         if (!id) {
-            id = this.uuid();
+            const known = await this.host.current().catch(() => undefined);
+            id = known && await this.host.exists(known) ? known : this.uuid();
             // Reserve before the RPC: retries adopt the same id after an ambiguous response.
             this.storage.setItem(this.key, id);
             for (const listener of this.listeners)

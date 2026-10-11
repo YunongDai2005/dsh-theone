@@ -11,8 +11,9 @@ const cases = [
   ['继续', 'ctx_thesis', 'KEEP', 'ctx_thesis'],
   ['不是这个，是论文那个', 'ctx_qwen_9070xt', 'SWAP', 'ctx_thesis'],
   ['不是 Qwen，是论文那个', 'ctx_qwen_9070xt', 'SWAP', 'ctx_thesis'],
-  ['Qwen 跟论文结合一下', 'ctx_qwen_9070xt', 'CLARIFY', undefined],
-  ['这个跟论文结合一下', 'ctx_qwen_9070xt', 'CLARIFY', undefined],
+  ['Qwen 跟论文结合一下', 'ctx_qwen_9070xt', 'KEEP', 'ctx_qwen_9070xt'],
+  ['这个跟论文结合一下', 'ctx_qwen_9070xt', 'KEEP', 'ctx_qwen_9070xt'],
+  ['论文跟 Qwen 结合一下', undefined, 'MOUNT', 'ctx_thesis'],
   ['继续昨天那个', 'ctx_thesis', 'CLARIFY', undefined],
   ['不是这个，是另一个模型', 'ctx_qwen_9070xt', 'CLARIFY', undefined],
   ['我想开始学日语', undefined, 'CREATE', undefined],
@@ -27,6 +28,11 @@ for (const [input, current, action, contextId] of cases) {
     assert.equal(result.contextId, contextId)
   })
 }
+
+test('combining topics works in one and brings the other along instead of asking which', () => {
+  assert.deepEqual(resolveContext('这个跟论文结合一下', contexts, 'ctx_qwen_9070xt').relatedIds, ['ctx_thesis'])
+  assert.deepEqual(resolveContext('论文跟 Qwen 结合一下', contexts).relatedIds, ['ctx_qwen_9070xt'])
+})
 
 test('CREATE planning is atomic and idempotent; interrupted execution cannot repeat', () => {
   const store = new ContextStore(':memory:')
@@ -48,7 +54,7 @@ const regressionCases = [
   ['检查论文，然后继续配置 Qwen', 'ctx_thesis', 'SWAP', 'ctx_qwen_9070xt'],
   ['还有你说的那个方案，具体怎么做', 'ctx_thesis', 'KEEP', 'ctx_thesis'],
   ['合成一个 MD 然后归档', 'ctx_thesis', 'KEEP', 'ctx_thesis'],
-  ['我想了解摄影', 'ctx_thesis', 'CLARIFY', undefined],
+  ['我想了解摄影', 'ctx_thesis', 'CREATE', undefined],
   ['回到上周那个，继续', 'ctx_thesis', 'CLARIFY', undefined],
 ] as const
 for (const [text, current, action, contextId] of regressionCases) {
@@ -65,12 +71,12 @@ test('clarification examples come from the supplied catalog', () => {
   assert.doesNotMatch(result.question!, /Qwen|论文/)
 })
 
-test('a generic keyword alone cannot switch a mounted Context', () => {
+test('a generic keyword alone starts a standalone topic instead of forcing a switch', () => {
   const catalog = [
     { id: 'host', title: '家庭主机', summary: '维护电脑', entities: ['AI Box'], keywords: ['硬盘'], lastState: '配置' },
     { id: 'tools', title: '工具', summary: '插件', entities: ['Harness'], keywords: ['浏览器'], lastState: '配置' },
   ]
-  assert.equal(resolveContext('有没有给 AI 做的浏览器', catalog, 'host').action, 'CLARIFY')
+  assert.equal(resolveContext('有没有给 AI 做的浏览器', catalog, 'host').action, 'CREATE')
   assert.equal(resolveContext('回到浏览器那个', catalog, 'host').contextId, 'tools')
   assert.equal(resolveContext('Harness 的浏览器', catalog, 'host').contextId, 'tools')
   assert.equal(resolveContext('浏览器那个', catalog).contextId, 'tools')

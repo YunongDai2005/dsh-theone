@@ -10,7 +10,3 @@
         workerProvider: !!js process.env.THEONE_WORKER_PROVIDER
         workerModel: !!js process.env.THEONE_WORKER_MODEL
         routerMode: !!js process.env.THEONE_ROUTER_MODE || 'llm'
-        routerTransport: !!js process.env.THEONE_ROUTER_TRANSPORT || 'dsh'
-        routerBaseUrl: !!js process.env.THEONE_ROUTER_BASE_URL || 'https://api.deepseek.com'
-        routerModel: !!js process.env.THEONE_ROUTER_MODEL
-        routerApiKeyEnv: THEONE_ROUTER_API_KEY

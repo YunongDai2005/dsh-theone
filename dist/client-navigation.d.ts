@@ -1,5 +1,7 @@
 /** Browser-local identity; history and conversation content remain on the DSH host. */
 export interface GatewayNavigationHost {
+    /** The main chat this DSH already has, so another browser or device continues it. */
+    current(): Promise<string | undefined>;
     exists(id: string): Promise<boolean>;
     create(id: string): Promise<void>;
     prepare(id: string): Promise<void>;

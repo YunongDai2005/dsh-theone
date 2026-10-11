@@ -1,9 +1,23 @@
 {
   "name": "dsh-theone",
-  "version": "0.3.3",
+  "version": "0.3.32",
   "private": false,
+  "license": "MIT",
   "type": "module",
-  "description": "Automatic context routing for DeepSeek Harness",
+  "description": "One chat for everything in DeepSeek Harness (DSH): no more hunting for old conversations. Each message goes to the topic it belongs to, with its own context.",
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "deepseek",
+    "ai-chat",
+    "chat-organizer",
+    "conversation-management",
+    "chat-history",
+    "context-management",
+    "conversation-routing",
+    "productivity"
+  ],
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -56,7 +70,9 @@
     "profile:prepare": "npm run build && node scripts/write-profile.mjs",
     "pack:plugin": "npm run build && node scripts/pack-plugin.mjs",
     "install:local": "npm run build && node scripts/install-local.mjs",
-    "start:local": "node scripts/start-local.mjs"
+    "start:local": "node scripts/start-local.mjs",
+    "eval:test": "node --test eval/test/*.test.mjs && python3 -m unittest discover -s eval/test",
+    "feedback:test": "node --test server/feedback/test/*.test.mjs"
   },
   "dependencies": {
     "@deepseek-ai/schemastery": "3.18.4"
@@ -92,6 +108,8 @@
     "@deepseek-ai/dsh-system-prompt": "0.2.0-rc.2",
     "@deepseek-ai/dsh-token-meter": "0.2.0-rc.2",
     "@deepseek-ai/dsh-tools": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-user-approval": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-user-questions": "0.2.0-rc.2",
     "@deepseek-ai/dsh-workspace": "0.2.0-rc.2",
     "@types/node": "^24.0.0",
     "@types/react": "^18.3.1",
@@ -103,5 +121,9 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/YunongDai2005/dsh-theone.git"
+  },
+  "bugs": {
+    "url": "https://github.com/YunongDai2005/dsh-theone/issues",
+    "email": "theone@yulid.org"
   }
 }

@@ -50,7 +50,10 @@ test('global Gateway migration detaches only its own Session, persists, and unar
     assert.equal((await app.prepare(id)).status, 200)
     assert.equal(workspace.sessionIds.includes(id), false)
     assert.ok(workspace.sessionIds.includes(ordinaryId))
-    assert.deepEqual(legacy.agent.session.snapshotEvents(), before)
+    // Its history is kept as is; a main chat that never had a turn gets the welcome turn after it.
+    await legacy.agent.whenIdle()
+    assert.deepEqual(legacy.agent.session.snapshotEvents().slice(0, before.length), before)
+    assert.ok(legacy.agent.session.snapshotEvents().slice(before.length).some(event => event.type === 'turn/start'))
     assert.ok(app.ctx.theone.store.isGateway(id))
     // This is registry-global archive recovery, not a fake flag on the plugin.
     await app.ctx.workspaceRegistry.archiveSession(id)

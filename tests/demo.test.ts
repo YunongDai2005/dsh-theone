@@ -24,8 +24,11 @@ test('DSH: single gateway → Qwen → thesis → Qwen, then gateway rebuild', {
     const [qwen, thesis, qwenAgain] = app.model.requests
     assert.equal(qwen.sessionId, qwenAgain.sessionId)
     assert.notEqual(qwen.sessionId, thesis.sessionId)
-    assert.ok(!JSON.stringify(thesis.messages).includes('ctx_qwen_9070xt'))
-    assert.ok(!JSON.stringify(qwenAgain.messages).includes('ctx_thesis'))
+    // Another topic reaches a Worker only as the marked cross-topic reference, never as its own history.
+    const own = (messages: typeof thesis.messages) => JSON.stringify(messages.filter(m => !('source' in m) || m.source?.kind !== 'theone-links'))
+    assert.ok(!own(thesis.messages).includes('ctx_qwen_9070xt'))
+    assert.ok(!own(qwenAgain.messages).includes('ctx_thesis'))
+    assert.ok(thesis.messages.some(m => 'source' in m && m.source?.kind === 'theone-links'))
     const workerId = qwen.sessionId
     await app.close()
     app = await harness(root)
