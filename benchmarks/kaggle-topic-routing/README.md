@@ -37,7 +37,7 @@ Kaggle account phone and identity verification are required for model access. Ch
 
 These are single completed Kaggle executions on identical frozen cases. Both models misrouted `collision-2`: a request to add a moving bill to a monthly budget went to the apartment-move topic rather than the household budget. GPT also chose the thesis for `ambiguous-4`, where the policy requires clarification. A one-case difference cannot establish broad model superiority. Costs are recorded request metrics for these runs, not general workload prices or all account usage.
 
-Qwen 3 Next 80B Instruct was scheduled as run 4630865 but remains incomplete at this update. It is excluded from the table; incomplete execution is not scored as a routing failure.
+Qwen 3 Next 80B Instruct run 4630865 ended with a provider HTTP 429: the model was experiencing heavy load. Official Kaggle status was checked on October 11, 2026. It is excluded from the table; a service failure is not an accuracy result. No replacement run was started.
 
 `results.json` and `cases.csv` contain sanitized summaries. `summarize_results.py` recomputes exact-match case scores from completed server traces, checks all 36 cases and the parent score, and excludes scripted harness runs. After downloading traces with the CLI, provide each completed run directory:
 
