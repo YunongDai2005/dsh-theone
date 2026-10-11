@@ -43,6 +43,8 @@ node demo-host.mjs
 
 Open `http://127.0.0.1:3036`. The five buttons are explicit scripted user actions, making actual calls through the official MCP client to the separate HTTP server. They save a synthetic bill, correct its topic, replay the save, reject a stale correction and reread the stored workspaces. The page shows the returned receipts; it is not a language model or Alexa device. Its default persistent demo database is `.theone/demo-host.db`; set `THEONE_DEMO_DB` to a separate new path for a fresh demonstration. `DEMO_PORT` changes the host port. Both services stay on loopback, with Host and Origin checks. Stored note bodies are rendered with `textContent`, never HTML.
 
+Public 90-second demonstration: https://youtu.be/mgPtqg8H8tk . Actual browser screenshots are held and edited for pacing; scripted inputs make real MCP calls. No Alexa device or LLM inference is shown.
+
 ## Current boundaries
 
 - The server binds to loopback, validates Host headers using the SDK and rejects foreign Origins. Do not expose it through an unauthenticated public tunnel. Remote deployment would require TLS and per-user authorization.
@@ -53,6 +55,6 @@ Open `http://127.0.0.1:3036`. The five buttons are explicit scripted user action
 
 ## Existing code and event work
 
-The base TheOne project existed before this event. This branch starts from the public build-fix commit `5e5e395`. The existing rule router is reused unchanged. The new HTTP entry point, tool schemas, independent SQLite memory, retry/correction workflow, official-client demos, browser host and HTTP verification were built on October 11, 2026, within the event's submission window. Codex assisted with implementation, tests, demonstration capture and documentation. This source is covered by the repository's MIT license; third-party SDK dependencies retain their own licenses.
+The base TheOne repository history starts on September 30, 2026, within the event submission window. This extension reuses that plugin. This branch starts from the public build-fix commit `5e5e395`. The existing rule router is reused unchanged. The new HTTP entry point, tool schemas, independent SQLite memory, retry/correction workflow, official-client demos, browser host and HTTP verification were built on October 11, 2026, within the event's submission window. Codex assisted with implementation, tests, demonstration capture and documentation. This source is covered by the repository's MIT license; third-party SDK dependencies retain their own licenses.
 
 Official sources: [Amazon rules](https://amazonappdev2026.devpost.com/rules), [MCP TypeScript SDK v1 branch](https://github.com/modelcontextprotocol/typescript-sdk/tree/v1.x).
