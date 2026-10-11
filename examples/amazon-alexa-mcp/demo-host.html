@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TheOne MCP demonstration host</title>
+<style>
+:root{font-family:system-ui,sans-serif;color:#e9eef4;background:#11151b}*{box-sizing:border-box}body{margin:0;padding:36px 48px;max-width:1500px}header{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #35404d;padding-bottom:20px}h1{font-size:32px;margin:5px 0}h2{font-size:22px;margin:0 0 16px}.kicker{color:#6dd7ca;font-weight:650;font-size:14px}p{line-height:1.5;color:#bdc8d4}.pill{font-size:13px;border:1px solid #46756d;padding:9px 14px;border-radius:20px;color:#82d7c9}.layout{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:24px}.panel{border:1px solid #35404d;border-radius:14px;padding:24px;background:#1b222c}button{display:block;width:100%;text-align:left;padding:14px 16px;margin:10px 0;border-radius:9px;border:1px solid #485666;background:#253140;color:white;font-size:16px;cursor:pointer}button:hover{border-color:#82d7c9}button:disabled{opacity:.5;cursor:wait}#reply{color:#83e1cf;min-height:60px;font-size:18px}.workspace{border:1px solid #3f4b5a;padding:18px;border-radius:10px;margin-top:12px}.workspace h3{font-size:18px;margin:0 0 10px}ul{margin:0;padding:0;list-style:none}li{background:#283341;padding:12px;border-radius:7px;font-size:17px;margin:8px 0}.empty{color:#a5b2c1;font-size:15px}.version{color:#9dc0e5;font-size:13px;margin-top:8px}.trace{margin-top:22px;max-height:190px;overflow:auto;border-top:1px solid #3f4b5a;padding-top:12px;font:13px/1.5 ui-monospace,monospace;white-space:pre-wrap;overflow-wrap:anywhere}.footer{font-size:13px;margin-top:18px}.bad{color:#ffb094}
+</style>
+<header><div><div class="kicker">TheOne · Local MCP host demo</div><h1>One conversation. Work stays with its topic.</h1></div><span class="pill">Streamable HTTP · MCP 2025-11-25</span></header>
+<p>Correct a misfiled bill without duplicating it or losing a later correction.</p>
+<div class="layout"><section class="panel"><h2>Scripted user actions</h2>
+<button data-action="save">1. Remember my moving bill: 480 EUR</button>
+<button data-action="correct">2. Put that bill in my monthly budget instead</button>
+<button data-action="retry">3. Retry the original save request</button>
+<button data-action="stale">4. Try an outdated correction</button>
+<button data-action="refresh">5. Read saved topics again</button>
+<p id="reply" role="status">Connecting to the local MCP server…</p>
+<p class="footer">Synthetic demonstration inputs. Buttons make real tool calls through the official MCP client. No LLM inference, Alexa device or Amazon certification is claimed.</p>
+</section><section class="panel"><h2>Independent topic memory</h2><div id="topics"></div><div class="trace" id="trace"></div></section></div>
+<p class="footer">Single-owner prototype · Separate SQLite database · No payments · MIT source · Built with Codex assistance</p>
+<script>
+const reply=document.querySelector('#reply'), topics=document.querySelector('#topics'), trace=document.querySelector('#trace');
+function paint(s){
+ topics.replaceChildren();
+ for(const t of [s.moving,s.budgeting]){
+  const box=document.createElement('div');box.className='workspace';const h=document.createElement('h3');h.textContent=t.title;box.append(h);
+  if(!t.notes.length){const p=document.createElement('p');p.className='empty';p.textContent='No notes in this topic';box.append(p)}
+  for(const n of t.notes){const li=document.createElement('li');li.textContent=n.text;const version=document.createElement('div');version.className='version';version.textContent='Version '+n.version+' · '+n.id.slice(0,8);li.append(version);box.append(li)}
+  topics.append(box);
+ }
+ trace.textContent=s.events.slice(-4).map(e=>(e.error?'REFUSED ':'MCP → ')+e.tool+'\n'+e.result).join('\n\n');
+ reply.textContent=s.message||'Connected. Two topic workspaces are ready.';
+}
+async function request(action){document.querySelectorAll('button').forEach(b=>b.disabled=true);try{const r=await fetch('/api/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action})});const s=await r.json();if(!r.ok)throw Error(s.error);paint(s)}catch(e){reply.textContent=e.message;reply.classList.add('bad')}finally{document.querySelectorAll('button').forEach(b=>b.disabled=false)}}
+document.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>request(b.dataset.action)));
+fetch('/api/state').then(r=>r.json()).then(paint).catch(e=>reply.textContent=e.message);
+</script></html>
