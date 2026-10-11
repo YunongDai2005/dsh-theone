@@ -78,5 +78,5 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   } });
   const port = Number(env.PORT || 3047);
   if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error('Invalid port');
-  app.listen(port, '127.0.0.1', () => console.log(`TheOne Invoice Desk: http://127.0.0.1:${port} (Sandbox only; live verification pending)`));
+  app.listen(port, '127.0.0.1', () => console.log(`TheOne Invoice Desk: http://127.0.0.1:${port} (Sandbox drafts only)`));
 }

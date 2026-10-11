@@ -4,9 +4,9 @@
 body{margin:0;background:#f4f1e9;color:#242d2d;font:16px system-ui}main{max-width:1000px;margin:40px auto;padding:24px}h1{font-size:36px;margin-bottom:8px}p{line-height:1.6}small{color:#657574}header{border-bottom:1px solid #c8d2cf;padding-bottom:20px}.chat{margin:24px 0}textarea{width:100%;box-sizing:border-box;height:110px;padding:16px;font:inherit;border:1px solid #b9c5bf;border-radius:10px;resize:vertical}button,select{font:inherit;border:1px solid #819891;border-radius:8px;padding:10px 14px;margin:6px 8px 6px 0;background:white;cursor:pointer}button.primary{background:#205c4d;color:white}button:disabled{opacity:.5;cursor:default}#feedback{white-space:pre-wrap;line-height:1.6}#topics{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}section{padding:20px;border:1px solid #c5d1ca;border-radius:12px;background:#fff}article{margin-top:18px;border-top:1px solid #dce1dc;padding-top:14px}strong{display:block;font-size:23px}.state{font:12px monospace;background:#e8efea;display:inline-block;padding:6px;border-radius:6px}code{overflow-wrap:anywhere;font-size:12px}#notice{padding:12px;background:#e4ebe4;border-radius:8px;font-size:14px}label{display:block}footer{margin-top:24px;font-size:13px;line-height:1.5;color:#64756d}
 </style>
 <main><header><small>TheOne · PayPal Sandbox adaptation</small><h1>One chat. Each project's invoice stays with it.</h1><p>Describe the work. Review the proposed project, recipient and amount. Create an unsent Sandbox draft.</p></header>
-<p id="notice">Development build. Cloud verification and contest submission are pending. This app has no invoice-send or payment action. Use synthetic messages and Sandbox accounts.</p>
+<p id="notice">Sandbox test mode. Review the project, recipient and amount before creating an unsent draft. No invoice-send or payment action.</p>
 <div class="chat"><label for="message">What are you working on?</label><textarea id="message" placeholder="Draft a 480 EUR invoice for the design client's website assets."></textarea><button class="primary" id="plan">Propose with AI</button><button id="refresh">Refresh ledger</button><div id="feedback" role="status"></div></div>
-<div id="topics"></div><footer>Standalone experiment: does not access your DSH conversations. Model suggestions can be wrong. Local tests use explicitly mocked APIs; only a genuine Sandbox response counts as cloud evidence. Codex assisted implementation.</footer></main>
+<div id="topics"></div><footer>Standalone demo: does not access your DSH conversations. Model suggestions can be wrong. Use Sandbox accounts only.</footer></main>
 <script nonce="__TOKEN__">
 const token='__TOKEN__';
 const $=id=>document.getElementById(id), feedback=$('feedback');
@@ -16,7 +16,7 @@ async function action(button,fn){button.disabled=true;feedback.textContent='Work
 async function refresh() {
   const state=await api('/state');
   $('plan').disabled=!state.capabilities.model;
-  $('notice').textContent='Development build; cloud verification and contest submission pending. No invoice-send or payment action. Use synthetic messages and Sandbox accounts. '+
+  $('notice').textContent='Sandbox test mode. Review each proposal before creating an unsent draft. No invoice-send or payment action. '+
     `Model credentials: ${state.capabilities.model?'configured':'missing'}. PayPal Sandbox credentials: ${state.capabilities.paypal?'configured':'missing'}.`;
   $('topics').replaceChildren();
   for(const topic of state.topics) {
@@ -40,7 +40,7 @@ async function refresh() {
         const correct=node('button','Correct project',card);
         correct.onclick=()=>action(correct,async()=>{
           await api('/correct',{id:p.id,revision:p.revision,topic_id:select.value});
-          feedback.textContent='Project corrected. Review the changed recipient before creating the draft.';
+          feedback.textContent='Project corrected. Review the project and recipient before creating the draft.';
         });
         const approve=node('button','Create reviewed Sandbox draft',card);
         approve.className='primary'; approve.disabled=!state.capabilities.paypal;
