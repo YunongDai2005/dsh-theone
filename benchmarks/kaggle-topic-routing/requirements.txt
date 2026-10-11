@@ -1,0 +1,2 @@
+kaggle==2.2.4
+kaggle-benchmarks==0.6.1

@@ -1,0 +1,7 @@
+.venv/
+.env
+*.private.env
+__pycache__/
+*.run.json
+*.task.json
+results-private/
