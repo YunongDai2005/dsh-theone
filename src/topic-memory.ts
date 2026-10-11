@@ -88,3 +88,20 @@ export function activityLabel(lastAt: number | undefined, threshold: number, now
   const text = age < MINUTE ? '刚刚' : age < HOUR ? `${Math.floor(age / MINUTE)} 分钟前` : age < DAY ? `${Math.floor(age / HOUR)} 小时前` : `${Math.floor(age / DAY)} 天前`
   return { text, dormant: false }
 }
+
+/** Where a topic's matter stands, kept apart from its run records and derived from them. */
+export type TopicStatus = 'active' | 'waiting' | 'dormant' | 'done'
+
+/**
+ * A topic's status from its newest run, what the user said about it and how long it has been
+ * left. Waiting: it asks the user something now, or its last run was cut off and has not been taken
+ * up again. Done: the user said so, and no message reached it since (a new one reopens it).
+ * Dormant: untouched for longer than this user usually comes back.
+ */
+export function topicStatus(input: { latest?: { outcome: string; startedAt: number }; declaredDoneAt?: number; dormant: boolean; asking?: boolean }): TopicStatus {
+  if (input.asking) return 'waiting'
+  if (input.latest?.outcome === 'running') return 'active'
+  if (input.latest?.outcome === 'interrupted' && !input.dormant) return 'waiting'
+  if (input.declaredDoneAt !== undefined && !(input.latest && input.latest.startedAt > input.declaredDoneAt)) return 'done'
+  return input.dormant ? 'dormant' : 'active'
+}

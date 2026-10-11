@@ -1,10 +1,14 @@
+import type { TopicStatus } from './topic-memory.ts'
 import type { ContextDescriptor } from './types.ts'
 
 export interface TopicGroup { id: string; title: string; summary: string; contextIds: string[] }
 /** Every conversation a topic draws on is gone from disk (`orphaned`) or archived in DSH (`archived`). */
 export type HiddenReason = 'orphaned' | 'archived'
 /** `hidden` says why routing and briefings skip this topic; the directory still lists it. */
-export interface CatalogContext extends ContextDescriptor { workingSessionId: string; sourceSessionIds: string[]; hidden?: HiddenReason }
+export interface CatalogContext extends ContextDescriptor { workingSessionId: string; sourceSessionIds: string[]; hidden?: HiddenReason
+  /** The DSH project (workspace) the topic works in; none for DSH's default workspace. */
+  projectInfo?: { name: string; path: string }
+  topicStatus?: TopicStatus }
 export interface CatalogStatus {
   running: boolean; scanned: number; indexed: number; skipped: number; failed: number
   pending: number; lastCompletedAt?: number; searchUnavailable?: boolean; hidden?: number

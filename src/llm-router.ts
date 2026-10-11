@@ -43,6 +43,7 @@ CREATE 时还要判断 historyIndependent：本轮输入给足目标和必要信
 区分“路由缺少历史信息”和“回答问题缺少事实信息”：陌生人名、事实不知道、人物可能重名、目标还需补充细节，都由 Worker 处理，不能因此 CLARIFY，也不能因此把 historyIndependent 设为 false。“余俊豪是安徽人吗？”在目录无可信匹配时应 CREATE，historyIndependent=true；不要编造“之前提到过”。明确命名的人物/地点/产品通常已经足够路由到新话题。
 一句话要同时用到多个已有话题（结合、对比、把 A 的结果用到 B）时，不要 CLARIFY：选实际要做事的话题（EXISTING，或新事项 CREATE），把其余用到的目录 ID 放进 relatedIds（最多 3 个），由程序把它们作为参考资料一起带上。
 目录中的 activity（可能没有）是该话题最近一次活跃的时间。标为「已搁置」的话题用户很久没提，只有明确相关证据时才选它，但有证据时照常选，不要因此改成 CREATE。
+目录中的 project（可能没有）是该话题工作所在的项目文件夹名。消息明确提到某个项目或其中的文件时，优先选同一项目的话题；不同项目里名字相近的话题不是同一件事。status 为 done 表示用户说过这件事已经做完：新消息明显是它的后续时照常选它（话题会重新打开），只是泛泛相似时不要选它。status 为 waiting 表示该话题正等用户回应（授权、提问，或中断后等用户说继续）。
 CLARIFY 仅限：用户明确引用缺失旧聊天（如“继续上次那个”“用之前的链接”）；或者用户只指一个话题，但有两个以上确实相关的旧话题都可能是它，选错会改变后续处理且近期消息无法判断。第二种必须在 candidateIds 列出至少两个相关目录 ID。弱相关候选不构成澄清理由。多件独立任务可在一个新会话交给 Worker 处理，不因任务多而追问。
 只判断语义选择：EXISTING 选择一个已有话题；CREATE 创建新话题；CLARIFY 请求澄清。已有话题的KEEP、MOUNT、SWAP由程序根据挂载状态计算，你不要输出这三个机械动作。currentId为null表示尚未挂载话题，近期对话不代表已经挂载。
 输出 JSON：{"action":"EXISTING|CREATE|CLARIFY","contextId":"已有目录ID或null","title":"CREATE时的新话题标题，否则null","question":"CLARIFY时的简短澄清问题，否则null","reason":"不超过120字的判断依据","historyIndependent":"CREATE时为boolean，其他为null","candidateIds":"CLARIFY时真正难以选择的多个目录ID数组，否则空数组","relatedIds":"EXISTING或CREATE时本轮同时用到的其他目录ID数组，否则空数组"}。
@@ -76,6 +77,8 @@ export function routingPayload(input: RoutingInput): Omit<RoutingInput, 'current
     keywords: context.keywords.slice(0, 24).map(redactRoutingText),
     lastState: redactRoutingText(context.lastState).slice(0, 400),
     ...(context.activity ? { activity: context.activity.slice(0, 40) } : {}),
+    ...(context.project ? { project: redactRoutingText(context.project).slice(0, 80) } : {}),
+    ...(context.status ? { status: context.status } : {}),
   }))
   const recent = (input.recent ?? []).slice(-12).map(message => ({role:message.role,text:redactRoutingText(message.text).slice(0, 700)}))
   const offered = new Set(input.contexts.map(context => context.id))

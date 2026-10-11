@@ -32,6 +32,17 @@ export declare const WHOLE_SESSION: {
     endSeq: number;
 };
 /** Stores descriptors and routing metadata. Original conversation stays in DSH. */
+/** Run records a topic keeps; older ones are dropped as new ones start. */
+export declare const RUNS_KEPT = 20;
+/** One message a topic worked on, and how that ended. */
+export interface TopicRun {
+    messageId: string;
+    contextId: string;
+    sessionId: string;
+    outcome: 'running' | 'completed' | 'failed' | 'stopped' | 'interrupted' | 'moved';
+    startedAt: number;
+    endedAt?: number;
+}
 export declare class ContextStore {
     private readonly db;
     constructor(path: string);
@@ -268,6 +279,25 @@ export declare class ContextStore {
      * topics which used them can be told once that they are gone. What the topic itself received goes.
      */
     private purgeFacts;
+    /** A topic took up a message (one per message); a topic keeps its latest RUNS_KEPT records. */
+    startTopicRun(messageId: string, contextId: string, sessionId: string, now?: number): void;
+    /** How the topic's work on a message ended. A record already settled keeps its outcome, except a move. */
+    endTopicRun(messageId: string, outcome: Exclude<TopicRun['outcome'], 'running'>, now?: number): void;
+    /** Work never shown (the message was deleted from main chat's queue) leaves no record. */
+    dropTopicRun(messageId: string): void;
+    /** Work that was running when TheOne stopped (a restart) did not finish: it is interrupted. */
+    interruptTopicRuns(now?: number): string[];
+    topicRun(messageId: string): TopicRun | undefined;
+    /** The topic's runs, newest first. */
+    topicRuns(contextId: string, limit?: number): TopicRun[];
+    /** The newest run of every topic. */
+    latestTopicRuns(): Map<string, TopicRun>;
+    /** The user said the topic's matter is done (`undefined` reopens it). */
+    declareTopic(contextId: string, declared: 'done' | undefined, now?: number): void;
+    declaredTopics(): Map<string, {
+        declared: 'done';
+        at: number;
+    }>;
     /** A changed-files card in main chat (`gatewayId`, `seq`) reads the topic's record (`sessionId`, `seq`). */
     linkChange(gatewayId: string, seq: number, source: {
         sessionId: string;

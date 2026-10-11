@@ -38,6 +38,23 @@ export const TERM_HALF_LIFE_MS = 30 * 86400000
 export const WHOLE_SESSION = { startSeq: 0, endSeq: Number.MAX_SAFE_INTEGER }
 
 /** Stores descriptors and routing metadata. Original conversation stays in DSH. */
+/** Run records a topic keeps; older ones are dropped as new ones start. */
+export const RUNS_KEPT = 20
+
+/** One message a topic worked on, and how that ended. */
+export interface TopicRun {
+  messageId: string
+  contextId: string
+  sessionId: string
+  outcome: 'running' | 'completed' | 'failed' | 'stopped' | 'interrupted' | 'moved'
+  startedAt: number
+  endedAt?: number
+}
+
+const runOf = (row: Record<string, unknown>): TopicRun => ({ messageId: String(row.message_id), contextId: String(row.context_id),
+  sessionId: String(row.session_id), outcome: String(row.outcome) as TopicRun['outcome'], startedAt: Number(row.started_at),
+  ...(row.ended_at == null ? {} : { endedAt: Number(row.ended_at) }) })
+
 export class ContextStore {
   private readonly db: DatabaseSync
 
@@ -124,6 +141,13 @@ export class ContextStore {
       CREATE TABLE IF NOT EXISTS learned_terms (
         context_id TEXT NOT NULL, term TEXT NOT NULL, weight REAL NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY(context_id, term)
       );
+      CREATE TABLE IF NOT EXISTS topic_runs (
+        message_id TEXT PRIMARY KEY, context_id TEXT NOT NULL, session_id TEXT NOT NULL,
+        outcome TEXT NOT NULL CHECK (outcome IN ('running', 'completed', 'failed', 'stopped', 'interrupted', 'moved')),
+        started_at INTEGER NOT NULL, ended_at INTEGER
+      );
+      CREATE INDEX IF NOT EXISTS topic_runs_by_topic ON topic_runs(context_id, started_at);
+      CREATE TABLE IF NOT EXISTS topic_status (context_id TEXT PRIMARY KEY, declared TEXT NOT NULL CHECK (declared IN ('done')), declared_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS change_links (
         gateway_id TEXT NOT NULL, seq INTEGER NOT NULL, session_id TEXT NOT NULL, source_seq INTEGER NOT NULL, turn INTEGER NOT NULL, PRIMARY KEY(gateway_id, seq)
       );
@@ -789,7 +813,7 @@ export class ContextStore {
       // The source's own Worker conversation is now reviewed history of the target, not a new catalog source.
       this.markIndex(source.workingSessionId, Number.MAX_SAFE_INTEGER, 'excluded')
       this.db.prepare('INSERT OR IGNORE INTO context_source_ranges VALUES (?, ?, ?, ?)').run(targetId, source.workingSessionId, WHOLE_SESSION.startSeq, WHOLE_SESSION.endSeq)
-      for (const table of ['history_turns', 'context_state_updates']) this.db.prepare(`UPDATE ${table} SET context_id = ? WHERE context_id = ?`).run(targetId, sourceId)
+      for (const table of ['history_turns', 'context_state_updates', 'topic_runs']) this.db.prepare(`UPDATE ${table} SET context_id = ? WHERE context_id = ?`).run(targetId, sourceId)
       this.db.prepare('UPDATE OR IGNORE context_summary_updates SET context_id = ? WHERE context_id = ?').run(targetId, sourceId)
       this.db.prepare('UPDATE gateway_state SET context_id = ? WHERE context_id = ?').run(targetId, sourceId)
       this.db.prepare('UPDATE route_details SET corrected_to = ? WHERE corrected_to = ?').run(targetId, sourceId)
@@ -823,7 +847,8 @@ export class ContextStore {
 
   private purge(contextId: string): void {
     for (const table of ['topic_group_members', 'history_turns', 'context_origins', 'context_sources', 'context_source_ranges',
-      'gateway_state', 'context_state_updates', 'context_summary_updates', 'topic_flags', 'compaction_digests', 'learned_terms'])
+      'gateway_state', 'context_state_updates', 'context_summary_updates', 'topic_flags', 'compaction_digests', 'learned_terms',
+      'topic_runs', 'topic_status'])
       this.db.prepare(`DELETE FROM ${table} WHERE context_id = ?`).run(contextId)
     this.db.prepare('DELETE FROM topic_links WHERE a = ? OR b = ?').run(contextId, contextId)
     this.db.prepare('DELETE FROM hidden_contexts WHERE context_id = ?').run(contextId)
@@ -1009,6 +1034,59 @@ export class ContextStore {
     this.db.prepare("UPDATE facts SET deleted_at = ?, aliases = '[]', current_version = 0 WHERE context_id = ? AND deleted_at IS NULL").run(now, contextId)
     this.db.prepare('DELETE FROM fact_dependencies WHERE context_id = ?').run(contextId)
     this.db.prepare('DELETE FROM fact_deliveries WHERE context_id = ?').run(contextId)
+  }
+
+  /** A topic took up a message (one per message); a topic keeps its latest RUNS_KEPT records. */
+  startTopicRun(messageId: string, contextId: string, sessionId: string, now = Date.now()): void {
+    this.db.prepare("INSERT OR REPLACE INTO topic_runs VALUES (?, ?, ?, 'running', ?, NULL)").run(messageId, contextId, sessionId, now)
+    this.db.prepare(`DELETE FROM topic_runs WHERE context_id = ? AND message_id NOT IN
+      (SELECT message_id FROM topic_runs WHERE context_id = ? ORDER BY started_at DESC, rowid DESC LIMIT ${RUNS_KEPT})`).run(contextId, contextId)
+  }
+
+  /** How the topic's work on a message ended. A record already settled keeps its outcome, except a move. */
+  endTopicRun(messageId: string, outcome: Exclude<TopicRun['outcome'], 'running'>, now = Date.now()): void {
+    this.db.prepare(`UPDATE topic_runs SET outcome = ?, ended_at = ? WHERE message_id = ? AND (outcome = 'running' OR ? = 'moved')`)
+      .run(outcome, now, messageId, outcome)
+  }
+
+  /** Work never shown (the message was deleted from main chat's queue) leaves no record. */
+  dropTopicRun(messageId: string): void {
+    this.db.prepare('DELETE FROM topic_runs WHERE message_id = ?').run(messageId)
+  }
+
+  /** Work that was running when TheOne stopped (a restart) did not finish: it is interrupted. */
+  interruptTopicRuns(now = Date.now()): string[] {
+    const rows = this.db.prepare("SELECT message_id FROM topic_runs WHERE outcome = 'running'").all().map(row => String(row.message_id))
+    this.db.prepare("UPDATE topic_runs SET outcome = 'interrupted', ended_at = ? WHERE outcome = 'running'").run(now)
+    return rows
+  }
+
+  topicRun(messageId: string): TopicRun | undefined {
+    const row = this.db.prepare('SELECT * FROM topic_runs WHERE message_id = ?').get(messageId)
+    return row ? runOf(row) : undefined
+  }
+
+  /** The topic's runs, newest first. */
+  topicRuns(contextId: string, limit = RUNS_KEPT): TopicRun[] {
+    return this.db.prepare('SELECT * FROM topic_runs WHERE context_id = ? ORDER BY started_at DESC, rowid DESC LIMIT ?').all(contextId, limit).map(runOf)
+  }
+
+  /** The newest run of every topic. */
+  latestTopicRuns(): Map<string, TopicRun> {
+    const rows = this.db.prepare(`SELECT * FROM topic_runs r WHERE rowid = (SELECT rowid FROM topic_runs WHERE context_id = r.context_id
+      ORDER BY started_at DESC, rowid DESC LIMIT 1)`).all()
+    return new Map(rows.map(row => [String(row.context_id), runOf(row)]))
+  }
+
+  /** The user said the topic's matter is done (`undefined` reopens it). */
+  declareTopic(contextId: string, declared: 'done' | undefined, now = Date.now()): void {
+    this.context(contextId)
+    if (declared) this.db.prepare('INSERT OR REPLACE INTO topic_status VALUES (?, ?, ?)').run(contextId, declared, now)
+    else this.db.prepare('DELETE FROM topic_status WHERE context_id = ?').run(contextId)
+  }
+
+  declaredTopics(): Map<string, { declared: 'done'; at: number }> {
+    return new Map(this.db.prepare('SELECT * FROM topic_status').all().map(row => [String(row.context_id), { declared: 'done' as const, at: Number(row.declared_at) }]))
   }
 
   /** A changed-files card in main chat (`gatewayId`, `seq`) reads the topic's record (`sessionId`, `seq`). */

@@ -7,6 +7,10 @@ export interface ContextDescriptor {
   lastState: string
   /** Routing only, never stored: when the topic was last active ("3 小时前", "已搁置（12 天未动）"). */
   activity?: string
+  /** Routing only, never stored: the name of the project (DSH workspace) the topic works in. */
+  project?: string
+  /** Routing only, never stored: the user said it is done, or it waits on the user. */
+  status?: 'done' | 'waiting'
 }
 
 export interface StoredContext extends ContextDescriptor {

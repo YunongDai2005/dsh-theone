@@ -276,6 +276,11 @@ export default class TheOne extends Service {
      * restart (its work is gone then, so main chat just shows what it says).
      */
     private isRelay;
+    /**
+     * Main chat's answer to a message a topic began on before a restart cut it off. It may have changed
+     * things already, so it is not redone on its own: the user sees where it went and can say "continue".
+     */
+    private interruptedNotice;
     /** Move an interjection to the queue, after what is already queued: it is answered as its own turn. */
     private requeue;
     /** Stop background work on a message main chat will not show (deleted, or answered with other input). */
@@ -308,6 +313,19 @@ export default class TheOne extends Service {
     private applyCorrection;
     /** Ask the selected model, thinking off, for the few terms that tie a message to its topic. */
     private pickTerms;
+    /** Work a topic's session is asking the user about (approvals, questions) counts as waiting on the user. */
+    private readonly asking;
+    private whileAsking;
+    /**
+     * The project a folder belongs to: the user's DSH workspace that holds it (the innermost one).
+     * DSH's default workspace and TheOne's own folder belong to no project.
+     */
+    private projectOf;
+    /**
+     * Each topic's project and status. Status is kept apart from the topic's run records and derived
+     * from the newest one, what the user said, and how long the topic has been left.
+     */
+    private topicStates;
     /**
      * Topics as routing sees them: with the terms corrections taught them, and when each was last
      * active. Topics set aside (untouched for longer than this user usually comes back) go last.

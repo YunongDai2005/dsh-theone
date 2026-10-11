@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { basename, dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve, sep } from 'node:path';
 import { LlmAdapter, createUserMessage, resolveRetryPolicy } from '@deepseek-ai/dsh-llm';
 import { installModelSelection } from '@deepseek-ai/dsh-agent';
 import { defineTool } from '@deepseek-ai/dsh-tools';
@@ -23,7 +23,7 @@ import { RESTART_CODE, WorkerRun } from "./run.js";
 import { buildBriefing, LINK_SIGNAL, mayShare, relatedTopics } from "./linkage.js";
 import { evidenceEvents, FACT_KINDS, FACT_LIMITS, findQuote, rankCandidates, retracts, safe, verify } from "./facts.js";
 import { applyExtraction, EXTRACT_PROMPT, extractionPayload, factCandidates, factDelivery, ownFactsText } from "./fact-flow.js";
-import { activityLabel, CARD_AFTER_REPLIES, CARD_PROMPT, cardPayload, learnDormancy, parseCard } from "./topic-memory.js";
+import { activityLabel, CARD_AFTER_REPLIES, CARD_PROMPT, cardPayload, learnDormancy, parseCard, topicStatus } from "./topic-memory.js";
 import { PACKAGE_NAME, Updater } from "./update.js";
 import { NOTICE_URL, NoticeBoard } from "./notices.js";
 import { exchange, FEEDBACK_EMAIL, FEEDBACK_LIMITS, FEEDBACK_URL, finalReport, replySection, routeDigest, scrub, sendReport } from "./feedback.js";
@@ -278,6 +278,8 @@ export default class TheOne extends Service {
             throw new Error('Worker cannot use the gateway provider');
         const databasePath = config.databasePath || join(process.env.DSH_HOME || join(homedir(), '.dsh'), 'theone', 'contexts.db');
         this.store = new ContextStore(databasePath);
+        // Work a topic was doing when DSH or TheOne stopped did not finish; it is never redone on its own.
+        this.store.interruptTopicRuns();
         const saved = this.store.settings(config.gatewayKey);
         let descriptors;
         if (saved) {
@@ -700,7 +702,9 @@ export default class TheOne extends Service {
             let route;
             const currentBefore = this.store.current(config.gatewayKey);
             const receipt = early?.receipt ?? { mode: this.router ? 'llm' : 'rules' };
-            const adopted = early && this.store.route(input.id);
+            const known = this.store.route(input.id);
+            // Taken up in the background (now, or before a restart cut it off): it is not classified again.
+            const adopted = known && (early || known.status === 'running') ? known : undefined;
             if (adopted) {
                 // Classified when it was sent; the topic it went to is in use from now on.
                 route = adopted;
@@ -869,7 +873,12 @@ export default class TheOne extends Service {
                         contexts: this.store.contexts().map(c => ({ ...c, sourceSessionIds: this.store.sources(c.id),
                             ...(hidden.has(c.id) ? { hidden: hidden.get(c.id) } : {}) })),
                         status: { running: false, scanned: 0, indexed: 0, skipped: 0, failed: 0, pending: 0, hidden: hidden.size } };
-                    return Response.json({ ...this.catalog?.snapshot() ?? fallback, linkage: this.linkageSnapshot() }, { headers: { 'cache-control': 'no-store' } });
+                    const snapshot = this.catalog?.snapshot() ?? fallback, states = this.topicStates();
+                    const contexts = snapshot.contexts.map(context => {
+                        const state = states.get(context.id);
+                        return { ...context, ...(state ? { topicStatus: state.status } : {}), ...(state?.project ? { projectInfo: state.project } : {}) };
+                    });
+                    return Response.json({ ...snapshot, contexts, linkage: this.linkageSnapshot() }, { headers: { 'cache-control': 'no-store' } });
                 } }));
             // Recent routing decisions, and moving a misrouted message to the right topic.
             child.effect(() => connection.fetch.register({ path: '/api/theone/routes', methods: ['GET', 'POST'], requestBody: 'buffered', fetch: async (request) => {
@@ -1058,6 +1067,14 @@ export default class TheOne extends Service {
                 catch (error) {
                     return fail(error);
                 }
+                return { id };
+            }
+            case 'status': {
+                // The user says the matter is done, or takes it up again; a new message to it also reopens it.
+                const id = known(row.id);
+                if (typeof row.done !== 'boolean')
+                    throw new Error('INVALID_INPUT');
+                this.store.declareTopic(id, row.done ? 'done' : undefined);
                 return { id };
             }
             case 'move': {
@@ -1671,12 +1688,12 @@ export default class TheOne extends Service {
             try {
                 // The main chat shows the same call under the same id; attach the prompt to that card.
                 const shown = request.callId !== undefined && await this.mirroredCall(gateway, request.callId, request.signal);
-                return await approval.request({ agent: gateway, toolName: request.toolName,
+                return await this.whileAsking(worker, () => approval.request({ agent: gateway, toolName: request.toolName,
                     ...(shown ? { callId: request.callId } : {}),
                     ...(request.reason === undefined ? {} : { reason: request.reason }),
                     displayReason: { en: [base?.en, `Requested in the background task${topic ? ` "${topic}"` : ''}: ${detail}`].filter(Boolean).join('\n'),
                         zh: [base?.zh ?? base?.en, `后台任务${topic ? `「${topic}」` : ''}请求执行：${detail}`].filter(Boolean).join('\n') },
-                    ...(request.signal === undefined ? {} : { signal: request.signal }) });
+                    ...(request.signal === undefined ? {} : { signal: request.signal }) }));
             }
             catch {
                 // The gateway turn closed or approval is unavailable: answer as the Worker's own chain would.
@@ -1732,7 +1749,7 @@ export default class TheOne extends Service {
             const topic = this.backgroundTopic(run);
             const items = plain.questions;
             const named = topic && Array.isArray(items) ? { questions: items.map(item => ({ ...item, header: item.header ? `${topic} · ${item.header}` : topic })) } : {};
-            return await questions.ask({ ...plain, ...named, agent: run.gateway });
+            return await this.whileAsking(worker, () => questions.ask({ ...plain, ...named, agent: run.gateway }));
             // Before DSH's own forwarding to the browser, for the same reason as approvals.
         }, { prepend: true });
     }
@@ -1966,6 +1983,12 @@ export default class TheOne extends Service {
         const background = this.background.get(input.id);
         if (background)
             this.background.delete(input.id);
+        else if (route.status === 'running') {
+            // Started in the background, yet nothing here follows it: a restart cut it off. Say so, and
+            // leave redoing it to the user.
+            yield* this.interruptedNotice(input, route.decision.contextId);
+            return;
+        }
         else
             this.store.claim(input.id);
         this.active = true;
@@ -2197,6 +2220,7 @@ export default class TheOne extends Service {
             entry?.run.cancel();
             entry?.run.dispose();
             this.store.forget(message.id);
+            this.store.dropTopicRun(message.id);
             // A topic made for this message alone goes again; main chat routes the message when it gets to it.
             if (route.decision.action === 'CREATE' && route.decision.contextId && !entry)
                 this.store.deleteTopic(route.decision.contextId);
@@ -2221,6 +2245,7 @@ export default class TheOne extends Service {
         const current = this.store.current(this.config.gatewayKey);
         this.store.plan(note.id, gateway.id, this.config.gatewayKey, { action: current === contextId ? 'KEEP' : current ? 'SWAP' : 'MOUNT', contextId, reason: 'topic-continues' }, false);
         this.store.claim(note.id);
+        this.store.startTopicRun(note.id, contextId, worker.id);
         this.background.set(note.id, { run, receipt: { mode: 'rules' } });
         gateway.followup(note);
     }
@@ -2230,6 +2255,24 @@ export default class TheOne extends Service {
      */
     isRelay(message) {
         return this.relays.has(message.id) || WAKING_SOURCES.has(message.source?.kind);
+    }
+    /**
+     * Main chat's answer to a message a topic began on before a restart cut it off. It may have changed
+     * things already, so it is not redone on its own: the user sees where it went and can say "continue".
+     */
+    *interruptedNotice(input, contextId) {
+        const title = this.store.contexts().find(context => context.id === contextId)?.title;
+        if (contextId && title)
+            this.store.mount(this.config.gatewayKey, contextId);
+        const english = writtenInEnglish(messageText(input));
+        const text = english
+            ? `A restart interrupted this while ${title ? `"${title}"` : 'its topic'} was working on it. It was not redone automatically, since it may already have changed something. You can open the topic to see how far it got, or say "continue" to carry on.`
+            : `这条消息在 DSH 重启前已经交给${title ? `「${title}」` : '话题'}处理，重启打断了它。它可能已经改动了一些东西，所以没有自动重做。可以打开这个话题看它做到了哪一步，或者说「继续」让它接着做。`;
+        this.store.finish(input.id, 'failed');
+        yield { type: 'block-start', index: 0, blockType: 'text' };
+        yield { type: 'text-delta', index: 0, text };
+        yield { type: 'block-end', index: 0, block: { type: 'text', text } };
+        yield { type: 'finish', reason: { kind: 'stop' } };
     }
     /** Move an interjection to the queue, after what is already queued: it is answered as its own turn. */
     requeue(gateway, message) {
@@ -2251,6 +2294,7 @@ export default class TheOne extends Service {
         entry.run.cancel();
         void entry.run.settled.then(() => { entry.run.dispose(); this.stowWhenIdle(entry.run.worker.id); });
         this.store.forget(messageId);
+        this.store.dropTopicRun(messageId);
     }
     /** A reply or background work is under way. */
     get busy() {
@@ -2273,6 +2317,7 @@ export default class TheOne extends Service {
         const run = new WorkerRun(this.ctx, worker, gateway, input.id, this.config.maxResponseChars, names => this.showWorkerTools(gateway, worker, names));
         run.request = messageText(input);
         register(run);
+        this.store.startTopicRun(input.id, context.id, worker.id);
         // Linking only adds reference; a failure in it must never stop the reply.
         const links = await this.briefingFor(refreshed, route.decision, gateway, input.id, signal).catch(() => undefined);
         run.briefed = links?.shown ?? [];
@@ -2407,6 +2452,9 @@ export default class TheOne extends Service {
         const route = this.store.route(messageId);
         if (record)
             this.store.correctRoute(messageId, contextId);
+        // The wrong topic's work on it no longer counts as its own.
+        if (record && this.store.topicRun(messageId)?.contextId !== contextId)
+            this.store.endTopicRun(messageId, 'moved');
         const wrongId = route?.decision.contextId !== contextId ? route?.decision.contextId : undefined;
         const source = text ?? this.store.recentRoutes(this.config.gatewayKey, 200).find(item => item.messageId === messageId)?.excerpt ?? '';
         if (!source.trim())
@@ -2446,15 +2494,57 @@ export default class TheOne extends Service {
             return [];
         return value.filter((term) => typeof term === 'string' && term.trim().length >= 2 && term.trim().length <= 24).map(term => term.trim()).slice(0, 4);
     }
+    /** Work a topic's session is asking the user about (approvals, questions) counts as waiting on the user. */
+    asking = new Map();
+    async whileAsking(worker, ask) {
+        this.asking.set(worker.id, (this.asking.get(worker.id) ?? 0) + 1);
+        try {
+            return await ask();
+        }
+        finally {
+            const left = (this.asking.get(worker.id) ?? 1) - 1;
+            if (left > 0)
+                this.asking.set(worker.id, left);
+            else
+                this.asking.delete(worker.id);
+        }
+    }
+    /**
+     * The project a folder belongs to: the user's DSH workspace that holds it (the innermost one).
+     * DSH's default workspace and TheOne's own folder belong to no project.
+     */
+    projectOf(cwd, folders = this.projectFolders()) {
+        if (!cwd)
+            return undefined;
+        const inside = folders.filter(folder => cwd === folder.path || cwd.startsWith(folder.path.endsWith(sep) ? folder.path : folder.path + sep));
+        const project = inside.sort((a, b) => b.path.length - a.path.length)[0];
+        return project && { name: project.name, path: project.path };
+    }
+    /**
+     * Each topic's project and status. Status is kept apart from the topic's run records and derived
+     * from the newest one, what the user said, and how long the topic has been left.
+     */
+    topicStates(now = Date.now()) {
+        const timeline = this.store.routeTimeline(this.config.gatewayKey);
+        const dormancy = learnDormancy(timeline);
+        const lastAt = new Map(timeline.map(route => [route.contextId, route.at]));
+        const latest = this.store.latestTopicRuns(), declared = this.store.declaredTopics();
+        const folders = this.projectFolders();
+        const asking = new Set([...this.workers].filter(([, handle]) => this.asking.has(handle.agent.id)).map(([id]) => id));
+        return new Map(this.store.contexts().map(context => {
+            const activity = activityLabel(lastAt.get(context.id), dormancy.perTopic.get(context.id) ?? dormancy.global, now);
+            const status = topicStatus({ latest: latest.get(context.id), declaredDoneAt: declared.get(context.id)?.at, dormant: activity.dormant, asking: asking.has(context.id) });
+            const project = this.projectOf(this.store.origin(context.id)?.cwd, folders);
+            return [context.id, { status, dormant: activity.dormant, ...(activity.text ? { activity: activity.text } : {}), ...(project ? { project } : {}) }];
+        }));
+    }
     /**
      * Topics as routing sees them: with the terms corrections taught them, and when each was last
      * active. Topics set aside (untouched for longer than this user usually comes back) go last.
      */
     routingContexts(now = Date.now()) {
         const learned = this.store.learnedTerms();
-        const timeline = this.store.routeTimeline(this.config.gatewayKey);
-        const dormancy = learnDormancy(timeline);
-        const lastAt = new Map(timeline.map(route => [route.contextId, route.at]));
+        const states = this.topicStates(now);
         const dormant = new Set();
         // A topic whose conversations are all gone from disk or archived stays in the directory but is
         // never offered to the classifier, so a message cannot be routed to a Worker with nothing left.
@@ -2463,10 +2553,13 @@ export default class TheOne extends Service {
             const terms = learned.get(context.id);
             const own = new Set(context.keywords.map(term => term.toLowerCase()));
             const keywords = terms?.length ? [...context.keywords, ...terms.filter(term => !own.has(term.toLowerCase()))].slice(0, 40) : context.keywords;
-            const activity = activityLabel(lastAt.get(context.id), dormancy.perTopic.get(context.id) ?? dormancy.global, now);
-            if (activity.dormant)
+            const state = states.get(context.id);
+            // Set aside or done: offered after the others, still chosen when the message is clearly about it.
+            if (state?.dormant || state?.status === 'done')
                 dormant.add(context.id);
-            return { ...context, keywords, ...(activity.text ? { activity: activity.text } : {}) };
+            return { ...context, keywords, ...(state?.activity ? { activity: state.activity } : {}),
+                ...(state?.project ? { project: state.project.name } : {}),
+                ...(state?.status === 'done' || state?.status === 'waiting' ? { status: state.status } : {}) };
         });
         return [...contexts.filter(context => !dormant.has(context.id)), ...contexts.filter(context => dormant.has(context.id))];
     }
@@ -2710,6 +2803,7 @@ export default class TheOne extends Service {
             this.stowWhenIdle(run.worker.id);
             if (!abandon)
                 this.store.finish(run.inputId, !run.failure && run.outcome?.kind === 'completed' ? 'completed' : 'failed');
+            this.store.endTopicRun(run.inputId, abandon ? 'stopped' : !run.failure && run.outcome?.kind === 'completed' ? 'completed' : 'failed');
             const contextId = this.store.route(run.inputId)?.decision.contextId;
             if (contextId)
                 this.refreshCompactionSummary(run.worker, contextId);

@@ -59,3 +59,20 @@ export declare function activityLabel(lastAt: number | undefined, threshold: num
     text?: string;
     dormant: boolean;
 };
+/** Where a topic's matter stands, kept apart from its run records and derived from them. */
+export type TopicStatus = 'active' | 'waiting' | 'dormant' | 'done';
+/**
+ * A topic's status from its newest run, what the user said about it and how long it has been
+ * left. Waiting: it asks the user something now, or its last run was cut off and has not been taken
+ * up again. Done: the user said so, and no message reached it since (a new one reopens it).
+ * Dormant: untouched for longer than this user usually comes back.
+ */
+export declare function topicStatus(input: {
+    latest?: {
+        outcome: string;
+        startedAt: number;
+    };
+    declaredDoneAt?: number;
+    dormant: boolean;
+    asking?: boolean;
+}): TopicStatus;

@@ -1,3 +1,4 @@
+import type { TopicStatus } from './topic-memory.ts';
 import type { ContextDescriptor } from './types.ts';
 export interface TopicGroup {
     id: string;
@@ -12,6 +13,12 @@ export interface CatalogContext extends ContextDescriptor {
     workingSessionId: string;
     sourceSessionIds: string[];
     hidden?: HiddenReason;
+    /** The DSH project (workspace) the topic works in; none for DSH's default workspace. */
+    projectInfo?: {
+        name: string;
+        path: string;
+    };
+    topicStatus?: TopicStatus;
 }
 export interface CatalogStatus {
     running: boolean;

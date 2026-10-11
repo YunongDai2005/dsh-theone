@@ -1048,10 +1048,12 @@ export function apply(ctx: Context) {
             const links = linkRow(id)
             return [h('li', { key: id, className: `theone-topic-card${open ? ' theone-open' : ''}${topic.hidden ? ' theone-hidden' : ''}` },
               h('div', { className: 'theone-topic-main' },
-                h('h3', null, topic.title),
+                h('h3', null, topic.title, topic.topicStatus && topic.topicStatus !== 'active'
+                  ? h('span', { className: `theone-tag theone-status-${topic.topicStatus}` }, t(`topic.status.${topic.topicStatus}` as TheOneLocaleKey)) : null),
                 topic.summary && topic.summary.trim() !== topic.title.trim() ? h('p', { className: 'theone-topic-summary' }, topic.summary) : null,
                 topic.hidden ? h('p', { className: 'theone-topic-warning' }, t(topic.hidden === 'archived' ? 'topic.hiddenArchived' : 'topic.hiddenOrphaned')) : null,
-                topic.lastState || constraints || (links && !open) ? h('dl', { className: 'theone-topic-meta' },
+                topic.lastState || constraints || topic.projectInfo || (links && !open) ? h('dl', { className: 'theone-topic-meta' },
+                  topic.projectInfo ? [h('dt', { key: 'p' }, label(t('topic.project'))), h('dd', { key: 'pv', title: topic.projectInfo.path }, topic.projectInfo.name)] : null,
                   topic.lastState ? [h('dt', { key: 's' }, label(t('topic.state'))), h('dd', { key: 'sv' }, topic.lastState)] : null,
                   constraints ? [h('dt', { key: 'c' }, label(t('topic.constraints'))), h('dd', { key: 'cv' }, constraints)] : null,
                   open ? null : links) : null),
@@ -1060,6 +1062,9 @@ export function apply(ctx: Context) {
                 h('button', { type: 'button', className: 'theone-continue', disabled: !!busy || !!topic.hidden, title: topic.hidden ? t('topic.continueHidden') : undefined,
                   onClick: () => { void continueTopic(id) } }, t(busy === id ? 'topic.opening' : 'topic.continue'), h('span', { 'aria-hidden': true }, ' →')),
                 h('button', { type: 'button', className: 'theone-quiet', 'aria-expanded': open, onClick: () => setManaging(current => current === id ? undefined : id) }, t(open ? 'manage.close' : 'manage.open')),
+                topic.hidden ? null : h('button', { type: 'button', className: 'theone-quiet', disabled: !!busy,
+                  onClick: () => { void post('/api/theone/topics', { action: 'status', id, done: topic.topicStatus !== 'done' }) } },
+                  t(topic.topicStatus === 'done' ? 'topic.reopen' : 'topic.markDone')),
                 ...(topic.hidden === 'orphaned' ? [] : topic.sourceSessionIds).slice(0, 3).map((sessionId, i) => h('button', { key: sessionId, type: 'button', className: 'theone-quiet',
                   onClick: () => { ctx.layout.beginNavigation(); ctx.uiWorkspace.openSession(sessionId as SessionId) } }, t('topic.source') + (topic.sourceSessionIds.length > 1 ? ' ' + (i + 1) : '')))),
               open ? h('div', { className: 'theone-topic-edit' }, links,
@@ -1307,6 +1312,9 @@ button:has(.theone-catalog-entry)>span:not(:has(.theone-catalog-entry)){display:
 .theone-topic-meta dt{color:var(--t-muted);font-size:12px;white-space:nowrap}
 .theone-topic-meta dd{margin:0}
 .theone-tag{display:inline-block;margin-left:8px;padding:0 6px;border:1px solid var(--t-rule);border-radius:4px;font-size:11px;color:var(--t-muted)}
+.theone-topic-main h3 .theone-tag{vertical-align:middle;font-weight:400;letter-spacing:0}
+.theone-status-waiting{color:var(--t-warn);border-color:currentColor}
+.theone-status-done{color:var(--t-accent);border-color:currentColor}
 .theone-topic-warning{margin:10px 0 0;padding-left:12px;border-left:2px solid var(--t-warn);font-size:12px;line-height:1.6}
 .theone-topic-actions{display:flex;flex-direction:column;align-items:flex-end;gap:0}.theone-topic-actions button{padding-top:3px;padding-bottom:3px}
 .theone-topic-edit{grid-column:1/-1;margin-top:12px;padding:4px 0 4px 20px;border-left:2px solid var(--t-accent)}

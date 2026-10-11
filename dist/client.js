@@ -252,6 +252,12 @@ var zh = {
   "topic.source": "\u67E5\u770B\u539F\u4F1A\u8BDD",
   "topic.state": "\u8FDB\u5C55\uFF1A",
   "topic.constraints": "\u7EA6\u675F\uFF1A",
+  "topic.project": "\u9879\u76EE\uFF1A",
+  "topic.status.waiting": "\u5728\u7B49\u4F60",
+  "topic.status.dormant": "\u6401\u7F6E",
+  "topic.status.done": "\u5DF2\u5B8C\u6210",
+  "topic.markDone": "\u6807\u4E3A\u5B8C\u6210",
+  "topic.reopen": "\u91CD\u65B0\u6253\u5F00",
   "topic.hiddenOrphaned": "\u6765\u6E90\u4F1A\u8BDD\u5DF2\u4ECE\u78C1\u76D8\u4E0A\u6D88\u5931\uFF1A\u672C\u8BDD\u9898\u4E0D\u518D\u53C2\u4E0E\u8DEF\u7531\uFF0C\u5220\u9664\u5373\u53EF\u4ECE\u76EE\u5F55\u79FB\u9664\u3002",
   "topic.hiddenArchived": "\u6765\u6E90\u4F1A\u8BDD\u5DF2\u5F52\u6863\uFF1A\u672C\u8BDD\u9898\u4E0D\u518D\u53C2\u4E0E\u8DEF\u7531\uFF0C\u53D6\u6D88\u5F52\u6863\u6216\u5220\u9664\u5B83\u5373\u53EF\u3002",
   "manage.open": "\u7BA1\u7406",
@@ -510,6 +516,12 @@ var en = {
   "topic.source": "View original chat",
   "topic.state": "Progress:",
   "topic.constraints": "Constraints:",
+  "topic.project": "Project:",
+  "topic.status.waiting": "Waiting on you",
+  "topic.status.dormant": "Set aside",
+  "topic.status.done": "Done",
+  "topic.markDone": "Mark done",
+  "topic.reopen": "Reopen",
   "topic.hiddenOrphaned": "Its conversations are gone from disk: this topic no longer takes part in routing. Delete it to remove it from the directory.",
   "topic.hiddenArchived": "Its conversations are archived: this topic no longer takes part in routing. Unarchive or delete it.",
   "manage.open": "Manage",
@@ -2227,12 +2239,13 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
             (0, import_react.createElement)(
               "div",
               { className: "theone-topic-main" },
-              (0, import_react.createElement)("h3", null, topic.title),
+              (0, import_react.createElement)("h3", null, topic.title, topic.topicStatus && topic.topicStatus !== "active" ? (0, import_react.createElement)("span", { className: `theone-tag theone-status-${topic.topicStatus}` }, t2(`topic.status.${topic.topicStatus}`)) : null),
               topic.summary && topic.summary.trim() !== topic.title.trim() ? (0, import_react.createElement)("p", { className: "theone-topic-summary" }, topic.summary) : null,
               topic.hidden ? (0, import_react.createElement)("p", { className: "theone-topic-warning" }, t2(topic.hidden === "archived" ? "topic.hiddenArchived" : "topic.hiddenOrphaned")) : null,
-              topic.lastState || constraints || links && !open ? (0, import_react.createElement)(
+              topic.lastState || constraints || topic.projectInfo || links && !open ? (0, import_react.createElement)(
                 "dl",
                 { className: "theone-topic-meta" },
+                topic.projectInfo ? [(0, import_react.createElement)("dt", { key: "p" }, label(t2("topic.project"))), (0, import_react.createElement)("dd", { key: "pv", title: topic.projectInfo.path }, topic.projectInfo.name)] : null,
                 topic.lastState ? [(0, import_react.createElement)("dt", { key: "s" }, label(t2("topic.state"))), (0, import_react.createElement)("dd", { key: "sv" }, topic.lastState)] : null,
                 constraints ? [(0, import_react.createElement)("dt", { key: "c" }, label(t2("topic.constraints"))), (0, import_react.createElement)("dd", { key: "cv" }, constraints)] : null,
                 open ? null : links
@@ -2252,6 +2265,18 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
                 }
               }, t2(busy === id ? "topic.opening" : "topic.continue"), (0, import_react.createElement)("span", { "aria-hidden": true }, " \u2192")),
               (0, import_react.createElement)("button", { type: "button", className: "theone-quiet", "aria-expanded": open, onClick: () => setManaging((current) => current === id ? void 0 : id) }, t2(open ? "manage.close" : "manage.open")),
+              topic.hidden ? null : (0, import_react.createElement)(
+                "button",
+                {
+                  type: "button",
+                  className: "theone-quiet",
+                  disabled: !!busy,
+                  onClick: () => {
+                    void post("/api/theone/topics", { action: "status", id, done: topic.topicStatus !== "done" });
+                  }
+                },
+                t2(topic.topicStatus === "done" ? "topic.reopen" : "topic.markDone")
+              ),
               ...(topic.hidden === "orphaned" ? [] : topic.sourceSessionIds).slice(0, 3).map((sessionId, i) => (0, import_react.createElement)("button", {
                 key: sessionId,
                 type: "button",
@@ -2521,6 +2546,9 @@ button:has(.theone-catalog-entry)>span:not(:has(.theone-catalog-entry)){display:
 .theone-topic-meta dt{color:var(--t-muted);font-size:12px;white-space:nowrap}
 .theone-topic-meta dd{margin:0}
 .theone-tag{display:inline-block;margin-left:8px;padding:0 6px;border:1px solid var(--t-rule);border-radius:4px;font-size:11px;color:var(--t-muted)}
+.theone-topic-main h3 .theone-tag{vertical-align:middle;font-weight:400;letter-spacing:0}
+.theone-status-waiting{color:var(--t-warn);border-color:currentColor}
+.theone-status-done{color:var(--t-accent);border-color:currentColor}
 .theone-topic-warning{margin:10px 0 0;padding-left:12px;border-left:2px solid var(--t-warn);font-size:12px;line-height:1.6}
 .theone-topic-actions{display:flex;flex-direction:column;align-items:flex-end;gap:0}.theone-topic-actions button{padding-top:3px;padding-bottom:3px}
 .theone-topic-edit{grid-column:1/-1;margin-top:12px;padding:4px 0 4px 20px;border-left:2px solid var(--t-accent)}
