@@ -1,0 +1,5 @@
+.env
+.data/
+*.sqlite*
+live-evidence*.json
+topics.private.json

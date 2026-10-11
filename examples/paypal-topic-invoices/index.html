@@ -1,0 +1,66 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TheOne Invoice Desk</title>
+<style nonce="__TOKEN__">
+body{margin:0;background:#f4f1e9;color:#242d2d;font:16px system-ui}main{max-width:1000px;margin:40px auto;padding:24px}h1{font-size:36px;margin-bottom:8px}p{line-height:1.6}small{color:#657574}header{border-bottom:1px solid #c8d2cf;padding-bottom:20px}.chat{margin:24px 0}textarea{width:100%;box-sizing:border-box;height:110px;padding:16px;font:inherit;border:1px solid #b9c5bf;border-radius:10px;resize:vertical}button,select{font:inherit;border:1px solid #819891;border-radius:8px;padding:10px 14px;margin:6px 8px 6px 0;background:white;cursor:pointer}button.primary{background:#205c4d;color:white}button:disabled{opacity:.5;cursor:default}#feedback{white-space:pre-wrap;line-height:1.6}#topics{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}section{padding:20px;border:1px solid #c5d1ca;border-radius:12px;background:#fff}article{margin-top:18px;border-top:1px solid #dce1dc;padding-top:14px}strong{display:block;font-size:23px}.state{font:12px monospace;background:#e8efea;display:inline-block;padding:6px;border-radius:6px}code{overflow-wrap:anywhere;font-size:12px}#notice{padding:12px;background:#e4ebe4;border-radius:8px;font-size:14px}label{display:block}footer{margin-top:24px;font-size:13px;line-height:1.5;color:#64756d}
+</style>
+<main><header><small>TheOne · PayPal Sandbox adaptation</small><h1>One chat. Each project's invoice stays with it.</h1><p>Describe the work. Review the proposed project, recipient and amount. Create an unsent Sandbox draft.</p></header>
+<p id="notice">Development build. Cloud verification and contest submission are pending. This app has no invoice-send or payment action. Use synthetic messages and Sandbox accounts.</p>
+<div class="chat"><label for="message">What are you working on?</label><textarea id="message" placeholder="Draft a 480 EUR invoice for the design client's website assets."></textarea><button class="primary" id="plan">Propose with AI</button><button id="refresh">Refresh ledger</button><div id="feedback" role="status"></div></div>
+<div id="topics"></div><footer>Standalone experiment: does not access your DSH conversations. Model suggestions can be wrong. Local tests use explicitly mocked APIs; only a genuine Sandbox response counts as cloud evidence. Codex assisted implementation.</footer></main>
+<script nonce="__TOKEN__">
+const token='__TOKEN__';
+const $=id=>document.getElementById(id), feedback=$('feedback');
+async function api(path,data){const response=await fetch(path,{method:data?'POST':'GET',headers:{'X-TheOne-Token':token,...(data?{'Content-Type':'application/json'}:{})},body:data?JSON.stringify(data):undefined});const result=await response.json();if(!response.ok)throw Error(result.error);return result;}
+function node(tag,content,parent){const e=document.createElement(tag);if(content!==undefined)e.textContent=content;if(parent)parent.append(e);return e;}
+async function action(button,fn){button.disabled=true;feedback.textContent='Working…';try{await fn();await refresh();}catch(error){feedback.textContent=error.message;await refresh();}finally{button.disabled=false;}}
+async function refresh() {
+  const state=await api('/state');
+  $('plan').disabled=!state.capabilities.model;
+  $('notice').textContent='Development build; cloud verification and contest submission pending. No invoice-send or payment action. Use synthetic messages and Sandbox accounts. '+
+    `Model credentials: ${state.capabilities.model?'configured':'missing'}. PayPal Sandbox credentials: ${state.capabilities.paypal?'configured':'missing'}.`;
+  $('topics').replaceChildren();
+  for(const topic of state.topics) {
+    const section=node('section',undefined,$('topics'));
+    node('h2',topic.title,section); node('small',topic.summary,section);
+    const rows=state.proposals.filter(p=>p.topic_id===topic.id);
+    if(!rows.length) node('p',topic.invoice_enabled?'No invoice drafts.':'Notes only; invoices disabled.',section);
+    for(const p of rows) {
+      const card=node('article',undefined,section),item=p.payload.items[0];
+      node('strong',`${item.unit_amount.value} ${item.unit_amount.currency_code}`,card);
+      node('p',item.name,card);
+      node('p',`Recipient: ${p.payload.primary_recipients[0].billing_info.email_address}`,card);
+      node('span',p.state,card).className='state'; node('p',`Revision ${p.revision}`,card);
+      if(p.remote_id)node('code',p.remote_id,card);
+      if(p.failure)node('p',p.failure,card);
+      if(p.state==='REVIEW') {
+        const select=node('select',undefined,card);
+        for(const t of state.topics.filter(t=>t.invoice_enabled)) {
+          const opt=node('option',t.title,select); opt.value=t.id; opt.selected=t.id===p.topic_id;
+        }
+        const correct=node('button','Correct project',card);
+        correct.onclick=()=>action(correct,async()=>{
+          await api('/correct',{id:p.id,revision:p.revision,topic_id:select.value});
+          feedback.textContent='Project corrected. Review the changed recipient before creating the draft.';
+        });
+        const approve=node('button','Create reviewed Sandbox draft',card);
+        approve.className='primary'; approve.disabled=!state.capabilities.paypal;
+        approve.onclick=()=>action(approve,async()=>{
+          const result=await api('/approve',{id:p.id,digest:p.digest});
+          feedback.textContent=`Verified unsent Sandbox draft: ${result.remote_id}`;
+        });
+      }
+      if(['UNCERTAIN','VERIFYING'].includes(p.state)&&p.remote_id) {
+        const reconcile=node('button','Read existing Sandbox draft',card);
+        reconcile.disabled=!state.capabilities.paypal;
+        reconcile.onclick=()=>action(reconcile,async()=>{
+          await api('/reconcile',{id:p.id});
+          feedback.textContent='Existing draft verified without creating another invoice.';
+        });
+      }
+    }
+  }
+}
+$('plan').onclick=()=>action($('plan'),async()=>{const result=await api('/plan',{message:$('message').value});feedback.textContent=`${result.plan.reply||'Invoice proposal ready for review.'}\nModel: ${result.model}\n${result.proposal?'Review the card below before creating a Sandbox draft.':'No Sandbox operation proposed.'}`;});
+$('refresh').onclick=()=>action($('refresh'),async()=>{feedback.textContent='Ledger refreshed.';});
+refresh().catch(error=>feedback.textContent=error.message);
+</script></html>
