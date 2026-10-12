@@ -1,0 +1,125 @@
+{
+  "checkedAt": "2026-10-12T04:41:34.902Z",
+  "coreSha256": "7b8391cc5660a4e83cf090526b912d2cd86dd762065558269ed396f4ab0f0f2b",
+  "model": "nvidia/nemotron-3-super-120b-a12b",
+  "realModelRequests": 3,
+  "syntheticInputs": true,
+  "actualQlooRequests": 0,
+  "endToEndAppVerified": false,
+  "results": [
+    {
+      "name": "explicit-existing",
+      "input": "For my family animation weekend, recommend another movie from the favorites already saved.",
+      "expected": {
+        "action": "recommend",
+        "topicId": "family",
+        "category": "movie"
+      },
+      "plan": {
+        "topicId": "family",
+        "newTopicTitle": null,
+        "action": "recommend",
+        "category": "movie",
+        "query": ""
+      },
+      "matched": true
+    },
+    {
+      "name": "explicit-new",
+      "input": "Start a separate topic called Sunday jazz listening. Remember that I like Miles Davis.",
+      "expected": {
+        "action": "search",
+        "topicId": null,
+        "category": "artist",
+        "query": "Miles Davis"
+      },
+      "plan": {
+        "topicId": null,
+        "newTopicTitle": "Sunday jazz listening",
+        "action": "search",
+        "category": "artist",
+        "query": "Miles Davis"
+      },
+      "matched": true
+    },
+    {
+      "name": "ambiguous",
+      "input": "Give me more like that one.",
+      "expected": {
+        "action": "clarify"
+      },
+      "plan": {
+        "action": "clarify",
+        "question": "Which one do you mean? Could you specify what 'that one' refers to?"
+      },
+      "matched": true
+    }
+  ],
+  "trace": [
+    {
+      "status": 200,
+      "maxTokens": 400,
+      "thinkingDisabled": true,
+      "finishReason": "stop",
+      "contentCharacters": 117,
+      "responsePlan": {
+        "topicId": "family",
+        "newTopicTitle": null,
+        "action": "recommend",
+        "category": "movie",
+        "query": "",
+        "question": ""
+      },
+      "usage": {
+        "promptTokens": 458,
+        "completionTokens": 37,
+        "totalTokens": 495
+      }
+    },
+    {
+      "status": 200,
+      "maxTokens": 400,
+      "thinkingDisabled": true,
+      "finishReason": "stop",
+      "contentCharacters": 141,
+      "responsePlan": {
+        "topicId": null,
+        "newTopicTitle": "Sunday jazz listening",
+        "action": "search",
+        "category": "artist",
+        "query": "Miles Davis",
+        "question": ""
+      },
+      "usage": {
+        "promptTokens": 459,
+        "completionTokens": 42,
+        "totalTokens": 501
+      }
+    },
+    {
+      "status": 200,
+      "maxTokens": 400,
+      "thinkingDisabled": true,
+      "finishReason": "stop",
+      "contentCharacters": 178,
+      "responsePlan": {
+        "topicId": null,
+        "newTopicTitle": null,
+        "action": "clarify",
+        "category": "movie",
+        "query": "",
+        "question": "Which one do you mean? Could you specify what 'that one' refers to?"
+      },
+      "usage": {
+        "promptTokens": 450,
+        "completionTokens": 53,
+        "totalTokens": 503
+      }
+    }
+  ],
+  "scope": "ModelRouter only; development smoke cases used during debugging, not held-out accuracy",
+  "baseRevision": "99a2544ea49aa06209aae9c5e727d9d8a686996a",
+  "requestOrigin": "https://api.tokenfactory.nebius.com/v1",
+  "browserJourneyVerified": false,
+  "hostedDemoVerified": false
+}

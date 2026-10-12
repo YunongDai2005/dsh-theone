@@ -2,7 +2,7 @@
 
 One chat for different plans, with separate confirmed favorites for each topic. A family weekend's taste should not silently become a solo movie night's taste.
 
-**Status, October 12, 2026:** source implementation and ten offline integration tests are complete. The Qloo hackathon key has been requested but not received. No live Qloo search/recommendation, hosted judge demo, public demonstration video or final Qloo submission has been verified. The web preview explicitly reports this state. Tests use invented responses and are not model scores or evidence of a working cloud integration.
+**Status, October 12, 2026:** source implementation and twelve offline integration tests are complete. Three real Nebius/Nemotron planning smoke calls now pass for synthetic existing-topic, new-topic favorite and ambiguous-reference inputs; see `evidence/model-smoke.json`. These development cases were used while debugging, not held-out accuracy measurements. The Qloo hackathon key has been requested but not received. No live Qloo search/recommendation, complete browser journey, hosted judge demo, public demonstration video or final Qloo submission has been verified. The web preview explicitly reports its configured dependencies. Offline tests use invented upstream responses and are not cloud results.
 
 This is a standalone Node.js adaptation of TheOne's one-chat/per-topic design. It does not require DSH and does not claim to run the original DSH routing implementation. The original plugin remains unchanged on this branch. New Qloo-specific work started October 12, during the official September 30–October 30 build period. The existing MIT project and Codex assistance must be disclosed in the entry.
 
@@ -27,9 +27,19 @@ node --env-file=.env server.mjs
 node --test test/*.test.mjs
 ```
 
-The default database is `.data/taste.db`, excluded from Git. `TASTE_DB` can point to private persistent storage. The model endpoint defaults to Nebius's OpenAI-compatible API and Nemotron; the same validated plan interface supports a configured compatible endpoint. Neither model quality nor live operation has been measured for this adaptation yet.
+The default database is `.data/taste.db`, excluded from Git. `TASTE_DB` can point to private persistent storage. The model defaults to the current Nebius Token Factory origin and Nemotron. A configured alternative must support strict JSON-schema responses. Nemotron reasoning is disabled for these bounded 400-token plans; the provider-specific flag is omitted by default for other model names. A genuine smoke run has verified this configured planning path, not general model quality or the complete application.
 
 Without keys, manual topic creation works and live operations report unavailable. There is no fixture mode in the running app.
+
+## Verify the routing model separately
+
+```sh
+node --env-file=.env verify-model.mjs
+```
+
+This makes at most three real model requests using synthetic topic titles and inputs. It needs only the model key and fails rather than substituting fixtures. It checks existing-topic recommendations, resolving a favorite in a clearly new topic, and asking about an ambiguous reference. It makes zero Qloo calls. The real development probe used this same ModelRouter path; the generic reproduction script is provided for another legitimately configured endpoint.
+
+During debugging, arbitrary JSON mode produced missing plan fields and some reasoning-enabled requests reached the token limit. A later structured response still confused a performer with a book. The final request supplies the schema both to constrained decoding and in the system prompt, defines category meanings, prioritizes favorite resolution, and rejects truncated or mixed-operation output. The three saved calls then passed. Keep broader live checks before claiming a reliable product; these examples do not establish accuracy or a successful Qloo integration.
 
 ## Verify the real service after the key arrives
 
@@ -64,6 +74,7 @@ No Qloo response datasets, recorded responses, keys or user preferences are comm
 Primary references checked October 12:
 
 - [Qloo event rules](https://qloo.devpost.com/rules)
+- [Nebius current API quickstart](https://docs.tokenfactory.nebius.com/quickstart) and [structured-output contract](https://docs.tokenfactory.nebius.com/ai-models-inference/json)
 - [Official event key guide](https://docs.qloo.com/reference/qloo-llm-hackathon-developer-guide) (current main documentation host did not load during this check)
 - [Official Qloo documentation mirror](https://github.com/qloo/docs-public/tree/d4a0eb978518f7fb404993d1509d11b21239ada6), especially `reference/get-search.md`, `reference/api-onboarding.md` and `reference/insights-api-deep-dive.md`.
 
@@ -73,4 +84,4 @@ The mirror's `openapi-schema.json` at that revision is a generic OpenAPI schema 
 
 Original project: TheOne, existing before this contest. New work: standalone taste workflow, Qloo client, constrained model planner, preference confirmation, topic/browser isolation, SQLite and browser UI. Codex assisted code, tests and documentation under the author's direction. MIT license remains at repository root.
 
-Remaining: received key; actual API response validation; real model/Qloo/browser evidence; free public deployment; accurate public demo; sponsor qualification and actual final-rule approval; one final entry and its receipt. Registration alone is not submission, award or shortlist.
+Remaining: received key; actual Qloo response validation; complete real model/Qloo/browser evidence; free public deployment; accurate public demo; sponsor qualification and actual final-rule approval; one final entry and its receipt. Registration alone is not submission, award or shortlist.

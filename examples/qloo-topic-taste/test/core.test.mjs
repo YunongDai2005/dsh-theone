@@ -80,6 +80,27 @@ test('missing Qloo does not spend model quota or create ghost topics', async () 
   const store = new TasteStore(), owner = store.visitor(); const agent = new TasteAgent(store, new QlooClient(), { plan: () => { throw new Error('must not call model'); } });
   try { await assert.rejects(agent.chat(owner, 'Remember Arrival'), /key pending/); assert.equal(store.topics(owner).length, 0); } finally { store.close(); }
 });
+test('bounded Nemotron plans disable reasoning; other model requests omit the provider-specific option', async () => {
+  const bodies = [];
+  const fetchImpl = async (url, init) => {
+    const body = JSON.parse(init.body); bodies.push(body);
+    const truncated = body.model === 'nvidia/nemotron-3-super-120b-a12b' && body.chat_template_kwargs?.enable_thinking !== false;
+    return { ok: true, json: async () => ({ choices: [{ finish_reason: truncated ? 'length' : 'stop', message: {
+      content: truncated ? '' : JSON.stringify({ action: 'clarify', question: 'Which topic and category?' }) } }] }) };
+  };
+  const result = await new ModelRouter({ apiKey: 'synthetic', fetchImpl }).plan('More like that one', []);
+  assert.equal(result.action, 'clarify'); assert.equal(bodies[0].max_tokens, 400);
+  await new ModelRouter({ apiKey: 'synthetic', model: 'other-compatible-model', fetchImpl }).plan('More like that one', []);
+  assert.ok(!Object.hasOwn(bodies[1], 'chat_template_kwargs'));
+});
+test('truncated or mixed-intent model output is rejected before a recommendation can run', async () => {
+  const plan = { topicId: 'one', newTopicTitle: null, action: 'recommend', category: 'movie', query: '' };
+  const topics = [{ id: 'one', title: 'Movie night' }];
+  const router = (content, finish_reason) => new ModelRouter({ apiKey: 'synthetic', fetchImpl: async () => ({ ok: true,
+    json: async () => ({ choices: [{ finish_reason, message: { content: JSON.stringify(content) } }] }) }) });
+  await assert.rejects(router(plan, 'length').plan('More movies', topics), /cut short/);
+  await assert.rejects(router({ ...plan, query: 'Arrival' }, 'stop').plan('Remember Arrival', topics), /mixed saving/);
+});
 test('HTTP sessions ignore client owner IDs, enforce origin and do not expose server keys', async () => {
   const store = new TasteStore(), qloo = fakeQloo(() => ({ results: [] })), router = new ModelRouter({ apiKey: 'private-model-key', fetchImpl: async () => ({ ok: false, status: 503 }) }); const app = createApp({ store, qloo, router });
   await new Promise(resolve => app.listen(0, '127.0.0.1', resolve)); const base = `http://127.0.0.1:${app.address().port}`;
