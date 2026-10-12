@@ -1,0 +1,20 @@
+# Prepared only. Do not deploy before reviewing public exposure and secret storage.
+services:
+  - type: web
+    name: theone-synthetic-topic-mcp
+    runtime: node
+    plan: free
+    repo: https://github.com/YunongDai2005/dsh-theone
+    branch: codex/hackathon-flow-state
+    autoDeployTrigger: "off"
+    buildCommand: npm ci --ignore-scripts && npm run build:armoriq
+    startCommand: node examples/armoriq-topic-mcp/hosted-demo.mjs
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 24.21.0
+      - key: THEONE_MCP_PUBLIC_DEMO
+        sync: false
+      - key: THEONE_MCP_BEARER_TOKEN
+        sync: false
+# Provider-managed PORT; no disk, provider API key, private notes or paid upgrade.

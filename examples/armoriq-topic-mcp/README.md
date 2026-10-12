@@ -24,6 +24,10 @@ The command listens only on `127.0.0.1:3059`. `POST /mcp` requires `Authorizatio
 
 ## Remaining gates
 
+`render.yaml` and `hosted-demo.mjs` prepare a separate native **Free** hosting path; no service has been deployed or cloud-verified. The hosted entry point requires an explicit `SYNTHETIC_ONLY` acknowledgement and a private demo bearer, fixes one synthetic topic and a `/tmp` database, and rejects an external database or topic. Two configuration tests supplement the three transport tests; these do not test remote deployment. It binds publicly only when started explicitly, so review that action first. Free hosting sleeps and resets notes on restart/redeploy; request counters also reset and are not a persistent quota. It has no model/provider keys, paid disk, automatic deployment or financial operations.
+
+Before hosting, approve the concrete service and storage of a newly generated synthetic-demo bearer with Render. Before registering, review sharing that limited bearer with ArmorIQ's proxy; Python SDK `invoke` forwards MCP credentials in `X-Armoriq-MCP-Auth`. SDK local discovery resolving an environment reference is distinct from `register`, which posts the YAML values to the control plane. Never transmit user-note credentials, assume server-side environment expansion, or rely on the CLI's dry-run success messages as cloud proof.
+
 This loopback endpoint is not reachable by a remote registry. Establish supported hosting or a documented local transport before registration; do not enter a local filesystem path as a cloud executable. Any public hosting/authentication grant requires review at its concrete action step. Register only the actual two discovered tools, bind a narrow operator/topic policy, verify activation and run genuine cloud allow/deny calls. Never register an unrestricted placeholder, claim local tests as cloud success, or attach a private user notes database to the demonstration.
 
 Codex assisted implementation and tests. No provider credentials, private notes, remote permissions, actual cloud result or competition submission are included.

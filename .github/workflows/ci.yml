@@ -12,7 +12,7 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm run typecheck
       - run: npm test
-      - run: node --test examples/armoriq-topic-mcp/test/server.test.mjs
+      - run: node --test examples/armoriq-topic-mcp/test/*.test.mjs
       - run: npm run pack:plugin
       - run: git diff --exit-code -- dist
       - uses: actions/upload-artifact@v4
