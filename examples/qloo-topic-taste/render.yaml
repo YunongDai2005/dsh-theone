@@ -1,0 +1,27 @@
+# Prepared configuration only. No deployment or provider keys included.
+# Select this Blueprint path explicitly, or enter these settings in the dashboard.
+services:
+  - type: web
+    name: theone-topic-taste
+    runtime: node
+    plan: free
+    repo: https://github.com/YunongDai2005/dsh-theone
+    branch: codex/hackathon-qloo-taste
+    rootDir: examples/qloo-topic-taste
+    autoDeployTrigger: "off"
+    buildCommand: node --check server.mjs && node --check core.mjs
+    startCommand: node server.mjs
+    healthCheckPath: /
+    envVars:
+      - key: NODE_VERSION
+        value: 24.21.0
+      - key: HOST
+        value: 0.0.0.0
+      - key: TASTE_EPHEMERAL
+        value: "1"
+      - key: QLOO_MAX_REQUESTS
+        value: "200"
+      - key: LLM_MAX_REQUESTS
+        value: "100"
+# Add QLOO_API_KEY / LLM_API_KEY as server secrets only after their scope is
+# approved and the actual service has been validated. No automatic paid upgrade.

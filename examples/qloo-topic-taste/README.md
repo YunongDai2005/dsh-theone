@@ -45,6 +45,14 @@ The script is a cloud integration gate, not a routing accuracy benchmark. Before
 
 The Dockerfile runs the same Node server on port 7860 with no external package install. Deployment is **not done**. Choose a free, legitimate hosting service and confirm its actual terms and secret-storage permission at deployment time. Use HTTPS and a trusted proxy that supplies `X-Forwarded-Proto`; expose no database files or provider keys. A host without a persistent disk can reset favorites on cold restarts; disclose that limitation rather than promise durable storage. Do not set an unaffordable/unbounded API budget.
 
+### Free Node hosting candidate
+
+`render.yaml` prepares a **Free** native Node service from this public branch, without Docker Hub, a persistent disk, database service, provider keys or automatic redeploys. If using a Blueprint, choose `examples/qloo-topic-taste/render.yaml` explicitly; the file is not at the repository root. Native Node 24 is pinned and requires no package installation. Configuration is prepared, not an accepted/deployed service.
+
+Render's [free-service documentation](https://render.com/docs/free) says idle services sleep after 15 minutes, wake on a request, and lose local SQLite data on sleep/restart/redeploy. `TASTE_EPHEMERAL=1` discloses this in the actual page. Keep secrets absent until actual provider validation and destination approval; request counters are process-local and reset on restart, so also require provider-level quota/spend controls before enabling public traffic. Do not add a payment method or paid upgrade. Keep an offline reproduction path if the free service is suspended or sleeping.
+
+Hugging Face's current [Spaces overview](https://huggingface.co/docs/hub/spaces-overview) requires a paid plan to create Docker Spaces, so it is not the chosen free candidate. A local Docker build attempted October 12 failed retrieving the official Node image's registry token; no image-build success is claimed. This ordinary hosting image is unrelated to the Docker Sandbox contest.
+
 ## API contract and data
 
 Server-to-Qloo calls: `GET /search` (`query`, `types`, `take`), and `GET /v2/insights` (`filter.type`, `signal.interests.entities`, `filter.exclude.entities`, `feature.explainability`, `take`). Authentication is `X-Api-Key`, never a URL parameter. The default event origin is `https://hackathon.api.qloo.com`; the standard official origin can be configured if issued credentials require it.

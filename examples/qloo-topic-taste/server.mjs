@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { AppError, TasteStore, QlooClient, ModelRouter, TasteAgent, text } from './core.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
-export function createApp({ store, qloo, router }) {
+export function createApp({ store, qloo, router, ephemeralStorage = false }) {
   const agent = new TasteAgent(store, qloo, router), limits = new Map(), queues = new Map();
   const assets = new Map([['/', ['text/html', readFileSync(join(here, 'public/index.html'))]], ['/app.js', ['text/javascript', readFileSync(join(here, 'public/app.js'))]], ['/style.css', ['text/css', readFileSync(join(here, 'public/style.css'))]]]);
   return createServer(async (req, res) => {
@@ -18,7 +18,7 @@ export function createApp({ store, qloo, router }) {
       const owner = store.visitor(cookie);
       if (owner !== cookie) res.setHeader('Set-Cookie', `taste_session=${owner}; Path=/; HttpOnly; SameSite=Strict; Max-Age=604800${req.headers['x-forwarded-proto'] === 'https' ? '; Secure' : ''}`);
       let result;
-      if (req.method === 'GET' && path === '/api/state') result = { topics: store.topics(owner), qlooReady: Boolean(qloo.apiKey), modelReady: Boolean(router.apiKey), liveVerified: false };
+      if (req.method === 'GET' && path === '/api/state') result = { topics: store.topics(owner), qlooReady: Boolean(qloo.apiKey), modelReady: Boolean(router.apiKey), liveVerified: false, ephemeralStorage };
       else if (req.method === 'POST') {
         if (!req.headers['content-type']?.startsWith('application/json')) throw new AppError('Use JSON requests.', 415);
         if (req.headers.origin && new URL(req.headers.origin).host !== req.headers.host) throw new AppError('Cross-site requests are not allowed.', 403);
@@ -50,7 +50,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const store = new TasteStore(dbPath);
   const qloo = new QlooClient({ apiKey: process.env.QLOO_API_KEY, baseURL: process.env.QLOO_BASE_URL, maxRequests: process.env.QLOO_MAX_REQUESTS ?? 200 });
   const router = new ModelRouter({ apiKey: process.env.LLM_API_KEY, baseURL: process.env.LLM_BASE_URL, model: process.env.LLM_MODEL, maxRequests: process.env.LLM_MAX_REQUESTS ?? 100 });
-  const app = createApp({ store, qloo, router });
+  const app = createApp({ store, qloo, router, ephemeralStorage: process.env.TASTE_EPHEMERAL === '1' });
   app.listen(Number(process.env.PORT ?? 3057), process.env.HOST ?? '127.0.0.1', () => console.log('TheOne Topic Taste ready. Keys remain server-side; live Qloo validation is pending.'));
   for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => app.close(() => { store.close(); process.exit(0); }));
 }

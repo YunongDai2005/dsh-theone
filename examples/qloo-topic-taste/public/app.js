@@ -35,6 +35,7 @@ async function refresh() {
   const state = await api('state'); const ready = state.qlooReady && state.modelReady;
   $('readiness').className = ready ? 'ready' : '';
   $('readiness').textContent = ready ? 'Live endpoints configured. Picks come from Qloo; only your confirmed favorites are used.' : `Development preview. ${state.qlooReady ? '' : 'Qloo key pending: no live picks yet. '}${state.modelReady ? '' : 'Routing model not configured. '}`;
+  if (state.ephemeralStorage) $('readiness').textContent += ' Free hosted demo: topics and favorites reset when the service sleeps or restarts.';
   $('topics').replaceChildren();
   for (const topic of state.topics) {
     const card = node('section', undefined, 'topic'); card.append(node('h3', topic.title), node('div', topic.seeds.length ? topic.seeds.map(s => s.name).join(' · ') : 'No confirmed favorites yet', 'seeds'));
