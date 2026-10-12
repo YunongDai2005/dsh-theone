@@ -12,6 +12,7 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm run typecheck
       - run: npm test
+      - run: python3 examples/gemma-coder/test_package.py
       - run: npm run pack:plugin
       - run: git diff --exit-code -- dist
       - uses: actions/upload-artifact@v4

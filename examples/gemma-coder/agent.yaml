@@ -1,0 +1,15 @@
+agent_class: LlmAgent
+name: theone_gemma_coder
+model: gemma-4-31b-it-qat-w4a16-ct
+instruction: !include prompts/task.md
+generate_content_config: !include configs/sampling.yaml
+tools:
+  - run_command
+  - read_file
+  - edit_file
+  - write_file
+  - get_code_neighbors
+  - search_similar_code
+  - get_code_subgraph
+  - get_status
+  - submit_patch
