@@ -1,0 +1,15 @@
+{
+  "sdk_version": "0.6.10",
+  "transport": "local loopback HTTP/SSE",
+  "real_discovery_reachable": true,
+  "actual_tools": [
+    "topic_162b8d03f755ba5fc7a8ac51f20bc0de8272ddf602c7857cc79fe482034f5318_read",
+    "topic_162b8d03f755ba5fc7a8ac51f20bc0de8272ddf602c7857cc79fe482034f5318_write"
+  ],
+  "wrong_bearer": "HTTP 401",
+  "local_policy_reference_check": "two discovered refs accepted, invented terminal ref rejected",
+  "cloud_registration": false,
+  "cloud_enforcement_verified": false,
+  "cloud_requests": 0,
+  "provider_credentials_used": false
+}

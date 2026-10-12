@@ -2,7 +2,7 @@
 
 This companion exposes two real SQLite note operations over the HTTP/SSE format described by the [ArmorIQ MCP guide](https://docs.armoriq.ai/sdk/mcp-directory/mcp-format/index). It imports `scopedAction` from the plugin so discovered action names match the existing DSH guard. The operator fixes one synthetic topic and database at startup; callers cannot choose another topic or execute shell commands.
 
-**Status:** three loopback integration tests pass for discovery, actual persistent notes, authentication and cross-topic rejection. This is not evidence of ArmorIQ cloud registration or enforcement. The service does not invoke the cloud guard or mint tokens. The existing DSH pre-execution guard remains separate and must continue to reject calls without a matching server policy.
+**Status:** three loopback integration tests pass for discovery, actual persistent notes, authentication and cross-topic rejection. The actual official Python SDK 0.6.10 also discovered precisely these two tools through its `discover_mcp_tools` function; a wrong bearer returned HTTP 401. Its local policy-reference validator accepted those two discovered references and rejected an invented terminal reference. This separate smoke check used a temporary database and random synthetic token, with zero provider/cloud requests; sanitized evidence is in `evidence/python-sdk-discovery.json`. This is not evidence of ArmorIQ cloud registration or enforcement. The service does not invoke the cloud guard or mint tokens. The existing DSH pre-execution guard remains separate and must continue to reject calls without a matching server policy.
 
 ## Local preparation
 
