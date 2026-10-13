@@ -12,6 +12,24 @@ const entity = (id, name, subtype = TYPES.movie) => ({ entity_id: id, name, subt
 function fakeQloo(fn, options = {}) { return new QlooClient({ apiKey: 'synthetic-key', fetchImpl: async (url, init) => { assert.equal(init.headers['X-Api-Key'], 'synthetic-key'); assert.equal(init.redirect, 'error'); return { ok: true, json: async () => fn(new URL(url)) }; }, ...options }); }
 function setup(qloo) { const store = new TasteStore(); const owner = store.visitor(); return { store, owner, agent: new TasteAgent(store, qloo, null) }; }
 
+test('search types arrays normalize only explicit category matches for confirmed favorites', async () => {
+  const qloo = fakeQloo(() => ({ results: [
+    { entity_id: A, name: 'Synthetic search movie', types: [TYPES.movie] },
+    { entity_id: B, name: 'Wrong category', types: [TYPES.book] },
+    { entity_id: C, name: 'Conflicting category', subtype: TYPES.book, types: [TYPES.movie] },
+    { entity_id: C, name: 'Missing category' },
+    { entity_id: 'invalid', name: 'Invalid identifier', types: [TYPES.movie] },
+  ] }));
+  const { store, owner, agent } = setup(qloo);
+  try {
+    const topic = store.createTopic(owner, 'Search schema');
+    const result = await agent.search(owner, topic.id, 'Synthetic movie', 'movie');
+    assert.deepEqual(result.candidates.map(row => ({ id: row.id, type: row.type })), [{ id: A, type: TYPES.movie }]);
+    agent.confirm(owner, result.token, A);
+    assert.equal(store.topic(owner, topic.id).seeds[0].type, TYPES.movie);
+  } finally { store.close(); }
+});
+
 test('topic signals never bleed into a different topic, including cross-domain recommendations', async () => {
   const sent = [];
   const qloo = fakeQloo(url => { sent.push(url); return url.pathname === '/search' ? { results: [entity(url.searchParams.get('query') === 'Family fixture' ? A : B, 'Synthetic favorite')] } : { success: true, results: { entities: [entity(C, 'Synthetic book', TYPES.book)] } }; });

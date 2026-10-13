@@ -52,8 +52,11 @@ export class TasteStore {
 function entities(payload, type) {
   const rows = Array.isArray(payload?.results) ? payload.results : payload?.results?.entities;
   if (!Array.isArray(rows) || payload.success === false) throw new AppError('Qloo returned an unexpected response. No picks were invented.', 502);
-  return rows.filter(row => /^[a-f0-9-]{36}$/i.test(row?.entity_id ?? '') && typeof row.name === 'string' && row.subtype === type)
-    .map(row => ({ id: row.entity_id, name: row.name, type: row.subtype,
+  // Search uses a types array; Insights uses subtype. Accept an explicit
+  // upstream category match in either shape, never infer it from the query.
+  return rows.filter(row => /^[a-f0-9-]{36}$/i.test(row?.entity_id ?? '') && typeof row.name === 'string'
+      && (typeof row.subtype === 'string' ? row.subtype === type : Array.isArray(row.types) && row.types.includes(type)))
+    .map(row => ({ id: row.entity_id, name: row.name, type,
       affinity: typeof row.query?.affinity === 'number' && Number.isFinite(row.query.affinity) ? row.query.affinity : null,
       explainability: row.query?.explainability ?? null }));
 }
