@@ -97,6 +97,18 @@ A new version from npm installs once it has been published for 24 hours; when an
 
 > Unofficial community project, maintained independently. It is not affiliated with or endorsed by DeepSeek.
 
+## From your phone (experimental)
+
+Talk to main chat away from your computer: bind a messaging app in **TheOne Settings**, and what you send from your phone works like typing in main chat. It goes to its topic and runs in the background, and the reply comes back to your phone. Approvals and the AI's questions come too; answer with a number (no answer within 10 minutes declines). Main chat on your computer shows the same conversation. Only you are listened to; nobody else's messages reach main chat.
+
+| App | How to bind | Notes |
+| --- | --- | --- |
+| WeChat | **Scan to bind** in Settings, then scan with WeChat on your phone | Uses Tencent's iLink interface (the same as the OpenClaw WeChat plugin), a private Tencent protocol; follow WeChat's terms |
+| Telegram | Make a bot with @BotFather, paste its token in Settings, then scan the code (or send `/start <code>`) to pair | The token stays on your computer |
+| iMessage | Mac only: enter the phone number or Apple ID you text from | Give the app running DSH Full Disk Access, and allow it to control Messages on the first reply |
+
+Messages arrive only while DSH is running, not while the computer sleeps or DSH is closed. After a network drop or a restart it picks up where it left off, without losing or repeating messages.
+
 ## How well does it route?
 
 Claims are cheap, so we built a public benchmark, **InterleaveBench**: one person pushing 3–5 things forward in the same chat at once (a trip, a budget, a paper, a training plan…), half in Chinese and half in English, 50 conversations and 2,466 messages, each labelled in advance with the thing it belongs to. Below, the 40-conversation dev split replayed message by message through TheOne's own routing code with DeepSeek V4.1 Flash (messages even a careful human could not attribute are not scored):

@@ -27,21 +27,6 @@ export function messageWords(items) {
     return (items ?? []).flatMap(item => item.type === 1 && item.text_item?.text ? [item.text_item.text]
         : item.type === 3 && item.voice_item?.text ? [item.voice_item.text] : []).join('\n').trim();
 }
-/** Split a reply into parts WeChat accepts, at paragraph or line breaks where possible. */
-export function splitText(text, limit = TEXT_LIMIT) {
-    const parts = [];
-    let rest = text.trim();
-    while (rest.length > limit) {
-        const window = rest.slice(0, limit);
-        const cut = Math.max(window.lastIndexOf('\n\n'), window.lastIndexOf('\n'));
-        const at = cut > limit / 2 ? cut : limit;
-        parts.push(rest.slice(0, at).trimEnd());
-        rest = rest.slice(at).trimStart();
-    }
-    if (rest)
-        parts.push(rest);
-    return parts;
-}
 export class IlinkClient {
     botAgent;
     version;

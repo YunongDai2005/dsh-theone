@@ -1,6 +1,8 @@
-# 微信入口：扫码后在微信里和主聊天说话
+# 手机入口：在微信、Telegram、iMessage 里和主聊天说话
 
-状态：用户 2026-10-13 确认方案（下文「已定的事」），第 1–4 步已完成：单元测试、模拟 iLink 服务端的集成测试，以及真实 DSH 0.2.0-rc.2 里的端到端检查（`e2e/README.md`「WeChat」）。图片收发（第 5 步）和发版（第 6 步）未做。
+状态：微信、Telegram、iMessage 都已实现，0.3.33 作为实验功能发布。微信在真实 DSH 0.2.0-rc.2 里对着模拟 iLink 服务端做了端到端检查（`e2e/README.md`「WeChat」）；Telegram 在真实 DSH 里调用过真实的 Telegram 接口（token 校验），收发在测试里对着模拟的 Bot API；iMessage 只有对着伪造的「信息」数据库的测试，没有在 Mac 上跑过。真实扫码登录微信、真实 Telegram 机器人的收发都还没有人试过。图片收发未做。
+
+下文先写微信（方案最早为它写），Telegram 和 iMessage 见「Telegram」「iMessage」两节。
 
 ## 要做的事
 
@@ -66,15 +68,17 @@
 
 ## 放在哪
 
-分两层，以后加别的聊天软件只写第二层：
+通用的三层，每个聊天软件只写自己的协议和登录：
 
-- `src/remote-relay.ts`：通用的「远程入口」。消息进主聊天、这一轮结束后把回复发回去、授权和提问转发。每个聊天软件只要提供一个 `RemoteChannel`（名字、能不能发、怎么发、可选的"正在输入"）。
-- `src/remote-plain.ts`：Markdown 转成纯文本。
-- `src/weixin-ilink.ts`：iLink 协议（扫码、收发、typing），不依赖 DSH，单独可测。
-- `src/weixin-link.ts`：账号的一直在线：扫码流程、收消息循环、游标、退避、看门狗、-14 处理。
-- `src/weixin.ts`：把上面两者接起来，加上设置页用的 `/api/theone/weixin`。
-- 登录状态存在 `contexts.db` 的 `remote_links` 表里（token 只在本机，接口和页面都拿不到）。
-- 设置页的「微信」一栏：扫码、暂停 / 恢复、退出登录、状态，点了立即生效，不经过下面的"保存"。
+- `src/remote-relay.ts`：消息进主聊天、这一轮结束后把回复发回去、授权和提问转发。每个聊天软件提供一个 `RemoteChannel`（名字、能不能发、怎么发、可选的"正在输入"）。
+- `src/remote-link.ts`：一直在线：收消息循环、游标存盘、退避、凭证失效处理、看门狗、去重。每个聊天软件提供一个 `LinkSource`（怎么拉一轮新消息、只留本人的）。
+- `src/remote-app.ts`：把上面两者接起来、随 TheOne 启停，加上设置页共用的暂停 / 恢复 / 退出登录。
+- `src/remote-plain.ts`：Markdown 转纯文本、按长度分段。
+- 微信：`src/weixin-ilink.ts`（iLink 协议）、`src/weixin-link.ts`（扫码登录）、`src/weixin.ts`。
+- Telegram：`src/telegram-bot.ts`（Bot API 和配对）、`src/telegram.ts`。
+- iMessage：`src/imessage-db.ts`（读「信息」数据库、AppleScript 发送）、`src/imessage.ts`。
+- 登录状态存在 `contexts.db` 的 `remote_links` 表里，每个聊天软件一行（token 只在本机，接口和页面都拿不到）。
+- 设置页每个聊天软件一栏，点了立即生效，不经过下面的"保存"。接口是 `/api/theone/weixin`、`/api/theone/telegram`、`/api/theone/imessage`。
 
 不做成单独插件，是因为它需要知道主聊天的身份、一轮的起止，还要插进授权流程，这些都是 TheOne 内部的东西。
 协议层不依赖 DSH，以后做独立路由（`docs/backlog.md`）时可以直接拿走。
@@ -95,10 +99,17 @@
 3. 授权 10 分钟不回按拒绝。
 4. 放进 TheOne 包里。
 
-## 其他聊天软件（调研，未做）
+## Telegram
 
-都能接到同一个 `RemoteChannel` 上，难度不同：
+- **绑定**：用户在 @BotFather 建机器人，把 token 填进设置；TheOne 用 `getMe` 校验，然后显示一个 6 位配对码和打开机器人的二维码（`https://t.me/<bot>?start=<码>`）。第一个给机器人发来配对码的人成为主人，之后只认他的私聊，群聊一律不进。
+- **收发**：`getUpdates` 长轮询（30 秒），游标是下一个 `update_id`；`sendMessage` 每段最多 4096 字；`sendChatAction` 显示"正在输入"。
+- **失效**：401 表示 token 被重置，标为失效并在主聊天里说一句；409 且提示有 webhook 时，清一次 webhook 后接着收。
+- 计划表要求"不要求用户粘贴 Token"，Telegram 做不到（不粘 token 就得走用户账号登录，复杂得多）；用户 2026-10-13 要求照做，接受这一点。
 
-- **Telegram**：官方 Bot API，长轮询 `getUpdates`，和 iLink 很像，最容易。但要用户在 BotFather 建 bot 并填 token，和计划表"不要求用户粘贴 Token"冲突；不想填 token 就得走用户账号登录（MTProto 扫码），复杂得多。
-- **WhatsApp**：官方 Cloud API 要企业账号、公网回调地址，个人用不了。能扫码的是非官方的网页版协议（如 Baileys），有封号风险，违反服务条款。
-- **iMessage**：没有接口，只能在 Mac 上读 `~/Library/Messages/chat.db`（要"完全磁盘访问"权限）、用 AppleScript 发消息。只有 DSH 跑在开着的 Mac 上才行。
+## iMessage
+
+- 没有接口，只能在 Mac 上：读「信息」自己的数据库 `~/Library/Messages/chat.db`（只读，要给运行 DSH 的程序"完全磁盘访问"），每 2 秒看一次新消息；回复用 AppleScript 让「信息」发送，文字作为参数传入，不拼进脚本。
+- **绑定**：用户填自己发消息用的手机号或 Apple ID；从当前最新一条消息开始收，不读历史。手机号按后 9 位比较（国家码、空格写法不同），邮箱不分大小写。只认一对一聊天，群聊不进。
+- **给自己发消息**：如果填的号码就是这台 Mac 自己的账号，用户的消息在数据库里也算"发出"，回复同样出现在这个聊天里。这时按文字区分：5 分钟内我们发过的文字不算用户的；同一条消息的发出和收到两份副本只算一次。
+- 新版 macOS 只把正文存在 `attributedBody`（序列化的 NSAttributedString），从中读出文字。
+- 没在真的 Mac 上跑过；测试用伪造的数据库和假的 osascript。

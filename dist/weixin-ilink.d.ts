@@ -52,8 +52,6 @@ export declare function messageWords(items: readonly {
         text?: string;
     };
 }[] | undefined): string;
-/** Split a reply into parts WeChat accepts, at paragraph or line breaks where possible. */
-export declare function splitText(text: string, limit?: number): string[];
 export declare class IlinkClient {
     private readonly botAgent;
     private readonly version;

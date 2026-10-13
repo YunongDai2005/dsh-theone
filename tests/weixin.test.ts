@@ -1,7 +1,10 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { IlinkClient, clientVersion, messageWords, splitText, type IlinkAccount, type InboundMessage } from '../src/weixin-ilink.ts'
-import { WeixinLink, backoff, type WeixinSaved } from '../src/weixin-link.ts'
+import { IlinkClient, TEXT_LIMIT, clientVersion, messageWords, type IlinkAccount } from '../src/weixin-ilink.ts'
+import { splitText } from '../src/remote-plain.ts'
+import type { LinkMessage } from '../src/remote-link.ts'
+import { WeixinLink, type WeixinSaved } from '../src/weixin-link.ts'
+import { backoff } from '../src/remote-link.ts'
 import { FakeIlink } from './fake-ilink.ts'
 
 const account: IlinkAccount = { botId: 'bot-123456789', token: 'secret-token', baseUrl: 'https://bot.example', userId: 'owner@im.wechat' }
@@ -12,11 +15,10 @@ function setup(saved?: WeixinSaved) {
   const client = new IlinkClient('0.3.33', server.fetch)
   let store = saved
   let clock = 1_000_000
-  const delivered: InboundMessage[] = []
+  const delivered: LinkMessage[] = []
   const sleeps: number[] = []
   let expired = 0
-  const link = new WeixinLink({
-    client,
+  const link = new WeixinLink(client, {
     load: () => store,
     save: value => { store = value },
     deliver: async message => { delivered.push(message) },
@@ -45,8 +47,8 @@ test('words come from text items and the transcript of a voice message; long rep
   assert.equal(messageWords([{ type: 1, text_item: { text: '你好' } }, { type: 3, voice_item: { text: '语音转的字' } }, { type: 2 }]), '你好\n语音转的字')
   assert.equal(messageWords(undefined), '')
   const long = `${'a'.repeat(3000)}\n\n${'b'.repeat(3000)}`
-  assert.deepEqual(splitText(long).map(part => part.length), [3000, 3000])
-  assert.deepEqual(splitText('x'.repeat(9000)).map(part => part.length), [4000, 4000, 1000])
+  assert.deepEqual(splitText(long, TEXT_LIMIT).map(part => part.length), [3000, 3000])
+  assert.deepEqual(splitText('x'.repeat(9000), TEXT_LIMIT).map(part => part.length), [4000, 4000, 1000])
   assert.equal(clientVersion('1.0.11'), 0x0001000b)
 })
 
@@ -91,17 +93,17 @@ test('scanning the code binds the account and starts receiving; only the owner r
   assert.deepEqual(link.status().login, { step: 'scanned' })
   server.answer('get_qrcode_status', { status: 'confirmed', bot_token: 'secret-token', ilink_bot_id: 'bot-123456789', ilink_user_id: 'owner@im.wechat', baseurl: 'https://bot.example' })
   await server.until('notifystart', 1)
-  assert.deepEqual(saved(), { account, enabled: true, buf: '' })
+  assert.deepEqual(saved(), { account, enabled: true, cursor: '' })
   assert.equal(link.status().login, undefined)
   assert.equal(link.status().account, 'bot-1234')
   const round = { ret: 0, get_updates_buf: 'b1', msgs: [FakeIlink.message(7, 'owner@im.wechat', '帮我看下周末的酒店'), FakeIlink.message(8, 'stranger@im.wechat', '你好')] }
   server.answer('getupdates', round)
-  await until(() => saved()?.buf === 'b1')
+  await until(() => saved()?.cursor === 'b1')
   assert.deepEqual(delivered.map(message => message.text), ['帮我看下周末的酒店'])
   assert.equal(saved()?.contextToken, 'ctx-7')
   // A round the server repeats (we crashed before saving the cursor) is not delivered again.
   server.answer('getupdates', { ...round, get_updates_buf: 'b2' })
-  await until(() => saved()?.buf === 'b2')
+  await until(() => saved()?.cursor === 'b2')
   assert.equal(delivered.length, 1)
   assert.equal(link.status().state, 'online')
   await link.stop()
@@ -131,10 +133,10 @@ test('a code that expires is replaced, and a verification code is passed on when
 test('failures back off and recover; an expired token pauses an hour, and a second refusal asks to scan again', async () => {
   assert.deepEqual([1, 2, 3, 4, 5, 6, 7, 10].map(n => backoff(n, () => 0.5)), [2000, 4000, 8000, 16000, 32000, 60000, 60000, 60000])
   assert.equal(backoff(1, () => 0), 1600)
-  const { server, link, sleeps, saved, expired } = setup({ account, enabled: true, buf: 'b0' })
+  const { server, link, sleeps, saved, expired } = setup({ account, enabled: true, cursor: 'b0' })
   server.answer('getupdates', { errcode: 500 }, { errcode: 500 }, { ret: 0, get_updates_buf: 'b1' })
   link.start()
-  await until(() => saved()?.buf === 'b1')
+  await until(() => saved()?.cursor === 'b1')
   assert.deepEqual(sleeps, [2000, 4000])
   assert.equal(link.status().lastError, undefined)
   server.answer('getupdates', { ret: -14 })
@@ -150,7 +152,7 @@ test('failures back off and recover; an expired token pauses an hour, and a seco
 })
 
 test('pausing stops receiving and keeps the login; logging out forgets it', async () => {
-  const { server, link, saved } = setup({ account, enabled: true, buf: '' })
+  const { server, link, saved } = setup({ account, enabled: true, cursor: '' })
   link.start()
   await server.until('getupdates', 1)
   await link.setEnabled(false)
@@ -167,7 +169,7 @@ test('pausing stops receiving and keeps the login; logging out forgets it', asyn
 })
 
 test('a loop that stops polling is started again by the watchdog', async () => {
-  const { server, link } = setup({ account, enabled: true, buf: '' })
+  const { server, link } = setup({ account, enabled: true, cursor: '' })
   const clock = { now: 1_000_000 }
   ;(link as unknown as { now: () => number }).now = () => clock.now
   link.start()

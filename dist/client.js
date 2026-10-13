@@ -156,17 +156,35 @@ var zh = {
   "settings.weixinVerifySubmit": "\u63D0\u4EA4",
   "settings.weixinCancel": "\u53D6\u6D88",
   "settings.weixinFailed": "\u7ED1\u5B9A\u6CA1\u6709\u6210\u529F\uFF08{reason}\uFF09\uFF0C\u53EF\u4EE5\u91CD\u8BD5\u3002",
-  "settings.weixinOnline": "\u5DF2\u8FDE\u63A5 \xB7 \u8D26\u53F7 {account}",
-  "settings.weixinConnecting": "\u6B63\u5728\u8FDE\u63A5 \xB7 \u8D26\u53F7 {account}",
-  "settings.weixinPaused": "\u670D\u52A1\u5668\u6682\u65F6\u62D2\u7EDD\u4E86\u767B\u5F55\uFF0C{minutes} \u5206\u949F\u540E\u81EA\u52A8\u91CD\u8BD5 \xB7 \u8D26\u53F7 {account}",
+  "settings.remoteOnline": "\u5DF2\u8FDE\u63A5 \xB7 \u8D26\u53F7 {account}",
+  "settings.remoteConnecting": "\u6B63\u5728\u8FDE\u63A5 \xB7 \u8D26\u53F7 {account}",
+  "settings.remotePaused": "\u670D\u52A1\u5668\u6682\u65F6\u62D2\u7EDD\u4E86\u767B\u5F55\uFF0C{minutes} \u5206\u949F\u540E\u81EA\u52A8\u91CD\u8BD5 \xB7 \u8D26\u53F7 {account}",
   "settings.weixinExpired": "\u767B\u5F55\u5DF2\u5931\u6548\uFF0C\u8BF7\u91CD\u65B0\u626B\u7801\u3002",
-  "settings.weixinOff": "\u5DF2\u6682\u505C\u63A5\u6536 \xB7 \u8D26\u53F7 {account}",
-  "settings.weixinPause": "\u6682\u505C\u63A5\u6536",
-  "settings.weixinResume": "\u6062\u590D\u63A5\u6536",
-  "settings.weixinLogout": "\u9000\u51FA\u767B\u5F55",
+  "settings.remoteOff": "\u5DF2\u6682\u505C\u63A5\u6536 \xB7 \u8D26\u53F7 {account}",
+  "settings.remotePause": "\u6682\u505C\u63A5\u6536",
+  "settings.remoteResume": "\u6062\u590D\u63A5\u6536",
+  "settings.remoteLogout": "\u9000\u51FA\u767B\u5F55",
   "settings.weixinRescan": "\u91CD\u65B0\u626B\u7801",
-  "settings.weixinError": "\u8BFB\u4E0D\u5230\u5FAE\u4FE1\u72B6\u6001\u3002",
-  "settings.weixinLastError": "\u6700\u8FD1\u4E00\u6B21\u51FA\u9519\uFF1A{error}",
+  "settings.remoteError": "\u8BFB\u4E0D\u5230\u8FDE\u63A5\u72B6\u6001\u3002",
+  "settings.remoteLastError": "\u6700\u8FD1\u4E00\u6B21\u51FA\u9519\uFF1A{error}",
+  "settings.remoteConnect": "\u8FDE\u63A5",
+  "settings.telegram": "Telegram",
+  "settings.telegramIntro": "\u7ED1\u5B9A\u4E00\u4E2A\u4F60\u81EA\u5DF1\u7684 Telegram \u673A\u5668\u4EBA\uFF0C\u4E4B\u540E\u7ED9\u5B83\u53D1\u6D88\u606F\u5C31\u548C\u5728\u4E3B\u804A\u5929\u91CC\u8BF4\u8BDD\u4E00\u6837\uFF0C\u56DE\u590D\u4F1A\u53D1\u56DE Telegram\u3002\u53EA\u8BA4\u5B8C\u6210\u914D\u5BF9\u7684\u672C\u4EBA\u3002",
+  "settings.telegramToken": "\u5728 Telegram \u91CC\u627E @BotFather\uFF0C\u53D1\u9001 /newbot \u5EFA\u4E00\u4E2A\u673A\u5668\u4EBA\uFF0C\u628A\u5B83\u7ED9\u7684 token \u7C98\u8D34\u5230\u8FD9\u91CC\uFF1A",
+  "settings.telegramTokenInvalid": "\u8FD9\u4E2A token \u4E0D\u5BF9\uFF0C\u8BF7\u4ECE @BotFather \u91CD\u65B0\u590D\u5236\u3002",
+  "settings.telegramUnreachable": "\u8FDE\u4E0D\u4E0A Telegram\uFF0C\u8BF7\u68C0\u67E5\u7F51\u7EDC\uFF08\u53EF\u80FD\u9700\u8981\u4EE3\u7406\uFF09\u540E\u91CD\u8BD5\u3002",
+  "settings.telegramPair": "\u7528\u624B\u673A\u626B\u8FD9\u4E2A\u7801\u6253\u5F00 {bot} \u5E76\u70B9\u300C\u5F00\u59CB\u300D\uFF1B\u6216\u8005\u5728 Telegram \u91CC\u7ED9 {bot} \u53D1\u9001 /start {code}\u3002\u7B2C\u4E00\u4E2A\u53D1\u6765\u914D\u5BF9\u7801\u7684\u4EBA\u4F1A\u6210\u4E3A\u5B83\u7684\u4E3B\u4EBA\u3002",
+  "settings.telegramPairScan": "\u626B\u7801\u6253\u5F00\u673A\u5668\u4EBA",
+  "settings.telegramWaiting": "\u7B49\u5F85\u914D\u5BF9 \xB7 \u673A\u5668\u4EBA {account}",
+  "settings.telegramExpired": "\u673A\u5668\u4EBA\u7684 token \u5DF2\u5931\u6548\uFF08\u53EF\u80FD\u5728 @BotFather \u91CC\u91CD\u7F6E\u8FC7\uFF09\uFF0C\u8BF7\u91CD\u65B0\u586B\u5199\u3002",
+  "settings.telegramNote": "token \u53EA\u5B58\u5728\u8FD9\u53F0\u7535\u8111\u4E0A\u3002DSH \u5F00\u7740\u624D\u80FD\u6536\u5230\u6D88\u606F\u3002",
+  "settings.imessage": "iMessage",
+  "settings.imessageIntro": "\u5728 Mac \u4E0A\uFF0C\u7528\u4F60\u81EA\u5DF1\u7684\u624B\u673A\u53F7\u6216 Apple ID \u53D1 iMessage \u7ED9\u8FD9\u53F0 Mac\uFF0C\u5C31\u548C\u5728\u4E3B\u804A\u5929\u91CC\u8BF4\u8BDD\u4E00\u6837\uFF0C\u56DE\u590D\u4F1A\u7528\u300C\u4FE1\u606F\u300D\u53D1\u56DE\u53BB\u3002\u53EA\u8BA4\u4F60\u586B\u7684\u8FD9\u4E2A\u53F7\u7801\u3002",
+  "settings.imessageUnsupported": "iMessage \u53EA\u80FD\u5728 macOS \u4E0A\u7528\uFF1ADSH \u9700\u8981\u8FD0\u884C\u5728\u767B\u5F55\u4E86\u300C\u4FE1\u606F\u300D\u7684 Mac \u4E0A\u3002",
+  "settings.imessageHandle": "\u4F60\u53D1\u6D88\u606F\u7528\u7684\u624B\u673A\u53F7\u6216 Apple ID\uFF1A",
+  "settings.imessageHandleInvalid": "\u8BF7\u586B\u624B\u673A\u53F7\u6216\u90AE\u7BB1\u5F62\u5F0F\u7684 Apple ID\u3002",
+  "settings.imessageNoAccess": "\u8BFB\u4E0D\u5230\u300C\u4FE1\u606F\u300D\u7684\u6570\u636E\uFF1A\u8BF7\u5728\u300C\u7CFB\u7EDF\u8BBE\u7F6E \u2192 \u9690\u79C1\u4E0E\u5B89\u5168\u6027 \u2192 \u5B8C\u5168\u78C1\u76D8\u8BBF\u95EE\u6743\u9650\u300D\u91CC\u5141\u8BB8\u8FD0\u884C DSH \u7684\u7A0B\u5E8F\uFF0C\u7136\u540E\u91CD\u8BD5\u3002",
+  "settings.imessageNote": "\u7B2C\u4E00\u6B21\u56DE\u590D\u65F6 macOS \u4F1A\u8BE2\u95EE\u662F\u5426\u5141\u8BB8\u63A7\u5236\u300C\u4FE1\u606F\u300D\uFF0C\u8BF7\u70B9\u5141\u8BB8\u3002Mac \u7761\u7720\u6216 DSH \u9000\u51FA\u65F6\u6536\u4E0D\u5230\u6D88\u606F\u3002",
   "settings.menu": "\u8BBE\u7F6E",
   "settings.subtitle": "\u67E5\u770B\u5F53\u524D\u751F\u6548\u7684\u914D\u7F6E\u548C\u5404\u9879\u7528\u9014\u3002",
   "settings.readOnly": "\u4FDD\u5B58\u540E\u7ACB\u5373\u751F\u6548\uFF1B\u53EA\u6709\u300C\u81EA\u52A8\u6574\u7406\u5386\u53F2\u300D\u548C\u300C\u5386\u53F2\u8865\u626B\u95F4\u9694\u300D\u9700\u8981\u91CD\u542F DSH\u3002\u6570\u636E\u5E93\u4F4D\u7F6E\u548C\u4E3B\u5165\u53E3\u6807\u8BC6\u53EA\u80FD\u901A\u8FC7\u73AF\u5883\u53D8\u91CF\u4FEE\u6539\uFF0C\u89C1\u5404\u9879\u8BF4\u660E\u3002",
@@ -441,17 +459,35 @@ var en = {
   "settings.weixinVerifySubmit": "Submit",
   "settings.weixinCancel": "Cancel",
   "settings.weixinFailed": "Binding did not work ({reason}). You can try again.",
-  "settings.weixinOnline": "Connected \xB7 account {account}",
-  "settings.weixinConnecting": "Connecting \xB7 account {account}",
-  "settings.weixinPaused": "The server refused the login for now; retrying in {minutes} min \xB7 account {account}",
+  "settings.remoteOnline": "Connected \xB7 account {account}",
+  "settings.remoteConnecting": "Connecting \xB7 account {account}",
+  "settings.remotePaused": "The server refused the login for now; retrying in {minutes} min \xB7 account {account}",
   "settings.weixinExpired": "The login has expired. Scan again.",
-  "settings.weixinOff": "Receiving paused \xB7 account {account}",
-  "settings.weixinPause": "Pause receiving",
-  "settings.weixinResume": "Resume receiving",
-  "settings.weixinLogout": "Log out",
+  "settings.remoteOff": "Receiving paused \xB7 account {account}",
+  "settings.remotePause": "Pause receiving",
+  "settings.remoteResume": "Resume receiving",
+  "settings.remoteLogout": "Log out",
   "settings.weixinRescan": "Scan again",
-  "settings.weixinError": "Could not read the WeChat status.",
-  "settings.weixinLastError": "Last error: {error}",
+  "settings.remoteError": "Could not read the connection status.",
+  "settings.remoteLastError": "Last error: {error}",
+  "settings.remoteConnect": "Connect",
+  "settings.telegram": "Telegram",
+  "settings.telegramIntro": "Bind a Telegram bot of your own. Messages you send it work like talking in main chat, and the replies come back to Telegram. Only the person who completes pairing is listened to.",
+  "settings.telegramToken": "In Telegram, message @BotFather, send /newbot to make a bot, and paste the token it gives you here:",
+  "settings.telegramTokenInvalid": "That token does not work. Copy it again from @BotFather.",
+  "settings.telegramUnreachable": "Could not reach Telegram. Check the network (a proxy may be needed) and try again.",
+  "settings.telegramPair": "Scan this code to open {bot} and tap Start, or send {bot} the message /start {code} in Telegram. The first person to send the code becomes its owner.",
+  "settings.telegramPairScan": "Scan to open the bot",
+  "settings.telegramWaiting": "Waiting for pairing \xB7 bot {account}",
+  "settings.telegramExpired": "The bot's token no longer works (it may have been reset in @BotFather). Enter it again.",
+  "settings.telegramNote": "The token stays on this computer. Messages arrive only while DSH is running.",
+  "settings.imessage": "iMessage",
+  "settings.imessageIntro": "On a Mac: iMessage this Mac from your own phone number or Apple ID, and it works like talking in main chat; replies go back through Messages. Only the number you enter is listened to.",
+  "settings.imessageUnsupported": "iMessage works only on macOS: DSH has to run on a Mac signed in to Messages.",
+  "settings.imessageHandle": "The phone number or Apple ID you text from:",
+  "settings.imessageHandleInvalid": "Enter a phone number or an Apple ID email.",
+  "settings.imessageNoAccess": "Messages' data cannot be read. Allow the app running DSH under System Settings \u2192 Privacy & Security \u2192 Full Disk Access, then try again.",
+  "settings.imessageNote": "The first reply makes macOS ask whether DSH may control Messages; allow it. Nothing arrives while the Mac sleeps or DSH is closed.",
   "settings.menu": "Settings",
   "settings.subtitle": "Review active configuration and what each option does.",
   "settings.readOnly": "Changes apply when saved; only History catalog and Rescan interval need a DSH restart. The database location and entry identifier can only be changed through environment variables; see their descriptions.",
@@ -3232,22 +3268,29 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
       )
     );
   }
-  function WeixinSection() {
-    const t2 = useText();
+  function useRemote(name, fast) {
     const [status, setStatus] = (0, import_react.useState)();
     const [failed, setFailed] = (0, import_react.useState)(false);
     const [busy, setBusy] = (0, import_react.useState)(false);
-    const [code, setCode] = (0, import_react.useState)("");
+    const [error, setError] = (0, import_react.useState)();
     const call = async (body) => {
       try {
-        const response = await fetch("/api/theone/weixin", {
+        const response = await fetch(`/api/theone/${name}`, {
           signal: lifetime.signal,
           cache: "no-store",
           ...body ? { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) } : {}
         });
-        if (!response.ok) throw new Error("WeChat status unavailable");
-        setStatus(await response.json());
+        const value = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          if (body && value.error) {
+            setError(value.error);
+            return;
+          }
+          throw new Error("Status unavailable");
+        }
+        setStatus(value);
         setFailed(false);
+        if (body) setError(void 0);
       } catch {
         if (!lifetime.signal.aborted) setFailed(true);
       }
@@ -3260,41 +3303,67 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
         setBusy(false);
       }
     };
-    const login = status?.login;
-    const waiting = login?.step === "qr" || login?.step === "scanned" || login?.step === "verify";
+    const quick = fast(status);
     (0, import_react.useEffect)(() => {
       void call();
       const timer = setInterval(() => {
         void call();
-      }, waiting ? 1500 : 15e3);
+      }, quick ? 1500 : 15e3);
       return () => clearInterval(timer);
-    }, [waiting]);
-    const image = (url) => {
-      const qr = qrcode_default(0, "M");
-      qr.addData(url);
-      qr.make();
-      return (0, import_react.createElement)("img", { className: "theone-weixin-qr", src: qr.createDataURL(6, 3), alt: t2("settings.weixinScan"), width: 220, height: 220 });
-    };
+    }, [quick]);
+    return { status, failed, busy, error, act };
+  }
+  function qrImage(url, alt) {
+    const qr = qrcode_default(0, "M");
+    qr.addData(url);
+    qr.make();
+    return (0, import_react.createElement)("img", { className: "theone-weixin-qr", src: qr.createDataURL(6, 3), alt, width: 220, height: 220 });
+  }
+  function remoteState(t2, remote, expiredKey, explain = (code) => code) {
+    const { status, failed } = remote;
     const account = status?.account ?? "";
-    const line = !status ? failed ? t2("settings.weixinError") : t2("settings.loading") : status.state === "online" ? t2("settings.weixinOnline", { account }) : status.state === "connecting" ? t2("settings.weixinConnecting", { account }) : status.state === "paused" ? t2("settings.weixinPaused", { account, minutes: Math.max(1, Math.ceil(((status.pausedUntil ?? Date.now()) - Date.now()) / 6e4)) }) : status.state === "expired" ? t2("settings.weixinExpired") : account ? t2("settings.weixinOff", { account }) : "";
-    const button = (label2, body, primary = false) => (0, import_react.createElement)("button", { type: "button", disabled: busy, className: primary ? "theone-settings-save" : void 0, onClick: () => {
-      void act(body);
-    } }, t2(label2));
+    const line = !status ? failed ? t2("settings.remoteError") : t2("settings.loading") : status.state === "online" ? t2("settings.remoteOnline", { account }) : status.state === "connecting" ? t2("settings.remoteConnecting", { account }) : status.state === "paused" ? t2("settings.remotePaused", { account, minutes: Math.max(1, Math.ceil(((status.pausedUntil ?? Date.now()) - Date.now()) / 6e4)) }) : status.state === "expired" ? t2(expiredKey) : account ? t2("settings.remoteOff", { account }) : "";
+    return [
+      line ? (0, import_react.createElement)("p", { role: "status", key: "line" }, line) : null,
+      status?.lastError && status.state !== "off" ? (0, import_react.createElement)("p", { className: "theone-settings-update-version", key: "error" }, t2("settings.remoteLastError", { error: explain(status.lastError) })) : null
+    ];
+  }
+  function remoteButton(t2, busy, act, label2, body, primary = false) {
+    return (0, import_react.createElement)("button", { type: "button", key: label2, disabled: busy, className: primary ? "theone-settings-save" : void 0, onClick: () => act(body) }, t2(label2));
+  }
+  function remoteControls(t2, remote) {
+    const { status, busy, act } = remote;
+    if (!status?.account || status.state === "expired") return [];
+    return [
+      status.state === "off" ? remoteButton(t2, busy, act, "settings.remoteResume", { action: "enable" }, true) : remoteButton(t2, busy, act, "settings.remotePause", { action: "disable" }),
+      remoteButton(t2, busy, act, "settings.remoteLogout", { action: "logout" })
+    ];
+  }
+  function WeixinSection() {
+    const t2 = useText();
+    const remote = useRemote("weixin", (status2) => !!status2?.login && status2.login.step !== "failed");
+    const { status, busy } = remote;
+    const act = (body) => {
+      void remote.act(body);
+    };
+    const [code, setCode] = (0, import_react.useState)("");
+    const login = status?.login;
+    const waiting = !!login && login.step !== "failed";
+    const button = (label2, body, primary = false) => remoteButton(t2, busy, act, label2, body, primary);
     return (0, import_react.createElement)(
       "section",
       { className: "theone-settings-group theone-settings-update theone-weixin" },
       (0, import_react.createElement)("h2", null, t2("settings.weixin")),
       (0, import_react.createElement)("p", null, t2("settings.weixinIntro")),
-      line ? (0, import_react.createElement)("p", { role: "status" }, line) : null,
-      status?.lastError && status.state !== "off" ? (0, import_react.createElement)("p", { className: "theone-settings-update-version" }, t2("settings.weixinLastError", { error: status.lastError })) : null,
-      login?.step === "qr" ? (0, import_react.createElement)("div", { className: "theone-weixin-login" }, image(login.url), (0, import_react.createElement)("p", null, t2("settings.weixinScan"))) : null,
+      ...remoteState(t2, remote, "settings.weixinExpired"),
+      login?.step === "qr" ? (0, import_react.createElement)("div", { className: "theone-weixin-login" }, qrImage(login.url, t2("settings.weixinScan")), (0, import_react.createElement)("p", null, t2("settings.weixinScan"))) : null,
       login?.step === "scanned" ? (0, import_react.createElement)("p", { role: "status" }, t2("settings.weixinScanned")) : null,
       login?.step === "verify" ? (0, import_react.createElement)(
         "form",
         { className: "theone-settings-update-actions", onSubmit: (event) => {
           event.preventDefault();
           if (code.trim()) {
-            void act({ action: "verify", code });
+            act({ action: "verify", code });
             setCode("");
           }
         } },
@@ -3306,10 +3375,98 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
       (0, import_react.createElement)(
         "div",
         { className: "theone-settings-update-actions" },
-        waiting ? button("settings.weixinCancel", { action: "cancel" }) : !status || status.state === "off" && !account ? button("settings.weixinBind", { action: "login" }, true) : status.state === "expired" ? button("settings.weixinRescan", { action: "login" }, true) : status.state === "off" ? button("settings.weixinResume", { action: "enable" }, true) : button("settings.weixinPause", { action: "disable" }),
-        account && !waiting ? button("settings.weixinLogout", { action: "logout" }) : null
+        waiting ? button("settings.weixinCancel", { action: "cancel" }) : !status?.account ? button("settings.weixinBind", { action: "login" }, true) : status.state === "expired" ? button("settings.weixinRescan", { action: "login" }, true) : null,
+        ...waiting ? [] : remoteControls(t2, { ...remote, act })
       ),
       (0, import_react.createElement)("p", { className: "theone-settings-update-version" }, t2("settings.weixinNote"))
+    );
+  }
+  function TelegramSection() {
+    const t2 = useText();
+    const remote = useRemote("telegram", (status2) => !!status2?.pairing);
+    const { status, busy, error } = remote;
+    const act = (body) => {
+      void remote.act(body);
+    };
+    const [token, setToken] = (0, import_react.useState)("");
+    const pairing = status?.pairing;
+    const asking = !status?.account || status.state === "expired";
+    return (0, import_react.createElement)(
+      "section",
+      { className: "theone-settings-group theone-settings-update theone-weixin" },
+      (0, import_react.createElement)("h2", null, t2("settings.telegram")),
+      (0, import_react.createElement)("p", null, t2("settings.telegramIntro")),
+      ...pairing ? [(0, import_react.createElement)("p", { role: "status", key: "line" }, t2("settings.telegramWaiting", { account: `@${pairing.bot}` }))] : remoteState(t2, remote, "settings.telegramExpired"),
+      pairing ? (0, import_react.createElement)(
+        "div",
+        { className: "theone-weixin-login" },
+        qrImage(`https://t.me/${pairing.bot}?start=${pairing.code}`, t2("settings.telegramPairScan")),
+        (0, import_react.createElement)("p", null, t2("settings.telegramPair", { bot: `@${pairing.bot}`, code: pairing.code }))
+      ) : null,
+      asking ? (0, import_react.createElement)(
+        "form",
+        { className: "theone-settings-update-actions", onSubmit: (event) => {
+          event.preventDefault();
+          if (token.trim()) {
+            act({ action: "connect", token });
+            setToken("");
+          }
+        } },
+        (0, import_react.createElement)("label", { htmlFor: "theone-telegram-token" }, t2("settings.telegramToken")),
+        (0, import_react.createElement)("input", {
+          id: "theone-telegram-token",
+          type: "password",
+          value: token,
+          maxLength: 200,
+          autoComplete: "off",
+          spellCheck: false,
+          placeholder: "123456789:AA\u2026",
+          onChange: (event) => setToken(event.target.value)
+        }),
+        (0, import_react.createElement)("button", { type: "submit", className: "theone-settings-save", disabled: busy || !token.trim() }, t2("settings.remoteConnect"))
+      ) : null,
+      error ? (0, import_react.createElement)("p", { role: "alert" }, t2(error === "TELEGRAM_TOKEN_INVALID" ? "settings.telegramTokenInvalid" : "settings.telegramUnreachable")) : null,
+      (0, import_react.createElement)("div", { className: "theone-settings-update-actions" }, ...remoteControls(t2, { ...remote, act })),
+      (0, import_react.createElement)("p", { className: "theone-settings-update-version" }, t2("settings.telegramNote"))
+    );
+  }
+  function IMessageSection() {
+    const t2 = useText();
+    const remote = useRemote("imessage", () => false);
+    const { status, busy, error } = remote;
+    const act = (body) => {
+      void remote.act(body);
+    };
+    const [handle, setHandle] = (0, import_react.useState)("");
+    const explain = (code) => code === "IMESSAGE_NO_ACCESS" ? t2("settings.imessageNoAccess") : code;
+    const asking = status?.supported && !status.account;
+    return (0, import_react.createElement)(
+      "section",
+      { className: "theone-settings-group theone-settings-update theone-weixin" },
+      (0, import_react.createElement)("h2", null, t2("settings.imessage")),
+      (0, import_react.createElement)("p", null, t2("settings.imessageIntro")),
+      status && !status.supported && !status.account ? (0, import_react.createElement)("p", { role: "status" }, t2("settings.imessageUnsupported")) : null,
+      ...remoteState(t2, remote, "settings.imessageNoAccess", explain),
+      asking ? (0, import_react.createElement)(
+        "form",
+        { className: "theone-settings-update-actions", onSubmit: (event) => {
+          event.preventDefault();
+          if (handle.trim()) act({ action: "connect", handle });
+        } },
+        (0, import_react.createElement)("label", { htmlFor: "theone-imessage-handle" }, t2("settings.imessageHandle")),
+        (0, import_react.createElement)("input", {
+          id: "theone-imessage-handle",
+          value: handle,
+          maxLength: 200,
+          autoComplete: "off",
+          placeholder: "+86 138 0000 0000",
+          onChange: (event) => setHandle(event.target.value)
+        }),
+        (0, import_react.createElement)("button", { type: "submit", className: "theone-settings-save", disabled: busy || !handle.trim() }, t2("settings.remoteConnect"))
+      ) : null,
+      error ? (0, import_react.createElement)("p", { role: "alert" }, error === "IMESSAGE_NO_ACCESS" ? t2("settings.imessageNoAccess") : t2(error === "IMESSAGE_HANDLE_INVALID" ? "settings.imessageHandleInvalid" : "settings.imessageUnsupported")) : null,
+      (0, import_react.createElement)("div", { className: "theone-settings-update-actions" }, ...remoteControls(t2, { ...remote, act })),
+      status?.supported ? (0, import_react.createElement)("p", { className: "theone-settings-update-version" }, t2("settings.imessageNote")) : null
     );
   }
   function SettingsPanel() {
@@ -3462,6 +3619,8 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
       (0, import_react.createElement)("p", { className: "theone-settings-notice" }, t2("settings.readOnly")),
       (0, import_react.createElement)(UpdateSection),
       (0, import_react.createElement)(WeixinSection),
+      (0, import_react.createElement)(TelegramSection),
+      (0, import_react.createElement)(IMessageSection),
       !snapshot && !error ? (0, import_react.createElement)("p", { role: "status" }, t2("settings.loading")) : null,
       error ? (0, import_react.createElement)("p", { role: "alert" }, t2("settings.error"), " ", (0, import_react.createElement)("button", { type: "button", onClick: () => setAttempt((n) => n + 1) }, t2("retry"))) : null,
       snapshot && draft && (0, import_react.createElement)(

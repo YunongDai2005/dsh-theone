@@ -23,3 +23,18 @@ export function plainText(markdown: string): string {
   }
   return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim()
 }
+
+/** Split a reply into parts of at most `limit` characters, at paragraph or line breaks where possible. */
+export function splitText(text: string, limit: number): string[] {
+  const parts: string[] = []
+  let rest = text.trim()
+  while (rest.length > limit) {
+    const window = rest.slice(0, limit)
+    const cut = Math.max(window.lastIndexOf('\n\n'), window.lastIndexOf('\n'))
+    const at = cut > limit / 2 ? cut : limit
+    parts.push(rest.slice(0, at).trimEnd())
+    rest = rest.slice(at).trimStart()
+  }
+  if (rest) parts.push(rest)
+  return parts
+}

@@ -13,6 +13,8 @@ import { Updater } from './update.ts';
 import { NoticeBoard } from './notices.ts';
 import { type FeedbackDraft } from './feedback.ts';
 import { WeixinBridge } from './weixin.ts';
+import { TelegramApp } from './telegram.ts';
+import { IMessageApp } from './imessage.ts';
 export interface Config {
     databasePath?: string;
     contextsPath?: string;
@@ -119,8 +121,10 @@ export default class TheOne extends Service {
     /** Update checks and one-click install through DSH's plugin manager. */
     readonly updater: Updater;
     readonly noticeBoard: NoticeBoard;
-    /** WeChat as a second input box for main chat (off until the user scans the code in Settings). */
+    /** Messaging apps as second input boxes for main chat; each is off until the user signs it in under Settings. */
     readonly weixin: WeixinBridge;
+    readonly telegram: TelegramApp;
+    readonly imessage: IMessageApp;
     /** Goal id → the topic its rounds work in (the topic in use when the goal was set). */
     private readonly goalTopics;
     /** Sessions whose current step answers through TheOne; only these refuse to run tools themselves. */

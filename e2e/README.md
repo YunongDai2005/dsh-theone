@@ -59,9 +59,11 @@ history catalog makes of an ordinary session, `[run] CMD` runs CMD with the bash
 ## WeChat (all passed on 2026-10-13)
 
 `node fake-ilink-server.mjs 3099` stands in for Tencent's iLink server. With DSH stopped, bind an account to it by
-writing TheOne's `remote_links` row (`channel` `weixin`, `state` `{"account":{"botId":"bot-e2e-0001","token":"e2e-token","baseUrl":"http://127.0.0.1:3099","userId":"owner@im.wechat"},"enabled":true,"buf":""}`)
+writing TheOne's `remote_links` row (`channel` `weixin`, `state` `{"account":{"botId":"bot-e2e-0001","token":"e2e-token","baseUrl":"http://127.0.0.1:3099","userId":"owner@im.wechat"},"enabled":true,"cursor":""}`)
 into `<DSH_HOME>/theone/contexts.db`, then start DSH with `NO_PROXY=127.0.0.1`. Send as the owner with
-`curl -X POST -d '{"text":"…"}' http://127.0.0.1:3099/control/say`; `GET /control/sent` lists what the bot sent.
+`curl -X POST -d '{"text":"…"}' http://127.0.0.1:3099/control/say`; `GET /control/sent` lists what the bot sent. The fake numbers
+messages from 1 each time it starts, and TheOne remembers the ids it delivered: after restarting the fake, rebind (or clear
+`seen`) so new messages are not taken for repeats.
 
 | Check | Expected |
 | --- | --- |

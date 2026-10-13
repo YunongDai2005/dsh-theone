@@ -19,6 +19,9 @@ import { EDITABLE_SETTINGS_KEYS, type EditableSettings, type SettingsSnapshot } 
 import { GatewayNavigation } from './client-navigation.ts'
 import { zh, en, type TheOneLocaleKey } from './client-locales.ts'
 import type { WeixinStatus } from './weixin-link.ts'
+import type { TelegramStatus } from './telegram-bot.ts'
+import type { IMessageStatus } from './imessage-db.ts'
+import type { LinkStatus } from './remote-link.ts'
 import qrcode from 'qrcode-generator'
 
 // ui-workspace retains the selected conversation with this public source label.
@@ -661,64 +664,147 @@ export function apply(ctx: Context) {
           onClick: () => { if (status) startUpdate(status) } }, t(status?.state === 'installing' ? 'update.installing' : status?.state === 'reloading' ? 'update.reloading' : 'settings.updateInstall'))))
   }
 
-  /** Bind WeChat by scanning a code, and pause, resume or log out; applies at once, outside the form below. */
-  function WeixinSection() {
-    const t = useText()
-    const [status, setStatus] = useState<WeixinStatus>()
+  /**
+   * One messaging app's status from TheOne, polled quickly while a sign-in is under way; `act` sends
+   * an action and keeps the error code of a refused one for the section to explain.
+   */
+  function useRemote<T extends LinkStatus>(name: string, fast: (status: T | undefined) => boolean) {
+    const [status, setStatus] = useState<T>()
     const [failed, setFailed] = useState(false)
     const [busy, setBusy] = useState(false)
-    const [code, setCode] = useState('')
+    const [error, setError] = useState<string>()
     const call = async (body?: Record<string, unknown>) => {
       try {
-        const response = await fetch('/api/theone/weixin', { signal: lifetime.signal, cache: 'no-store',
+        const response = await fetch(`/api/theone/${name}`, { signal: lifetime.signal, cache: 'no-store',
           ...(body ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : {}) })
-        if (!response.ok) throw new Error('WeChat status unavailable')
-        setStatus(await response.json() as WeixinStatus); setFailed(false)
+        const value = await response.json().catch(() => ({})) as T & { error?: string }
+        if (!response.ok) { if (body && value.error) { setError(value.error); return } throw new Error('Status unavailable') }
+        setStatus(value); setFailed(false); if (body) setError(undefined)
       } catch { if (!lifetime.signal.aborted) setFailed(true) }
     }
     const act = async (body: Record<string, unknown>) => { setBusy(true); try { await call(body) } finally { setBusy(false) } }
-    const login = status?.login
-    const waiting = login?.step === 'qr' || login?.step === 'scanned' || login?.step === 'verify'
-    // Quick while a login is under way, so scanning shows at once; slow otherwise.
+    const quick = fast(status)
     useEffect(() => {
       void call()
-      const timer = setInterval(() => { void call() }, waiting ? 1500 : 15000)
+      const timer = setInterval(() => { void call() }, quick ? 1500 : 15000)
       return () => clearInterval(timer)
-    }, [waiting])
-    const image = (url: string) => {
-      const qr = qrcode(0, 'M'); qr.addData(url); qr.make()
-      return h('img', { className: 'theone-weixin-qr', src: qr.createDataURL(6, 3), alt: t('settings.weixinScan'), width: 220, height: 220 })
-    }
+    }, [quick])
+    return { status, failed, busy, error, act }
+  }
+
+  /** A QR code for `url`, to scan with the phone. */
+  function qrImage(url: string, alt: string) {
+    const qr = qrcode(0, 'M'); qr.addData(url); qr.make()
+    return h('img', { className: 'theone-weixin-qr', src: qr.createDataURL(6, 3), alt, width: 220, height: 220 })
+  }
+
+  /** What every app shows: where it stands, the last error, and pause / resume / log out once signed in. */
+  function remoteState(t: (key: TheOneLocaleKey, params?: Record<string, unknown>) => string, remote: { status?: LinkStatus; failed: boolean },
+    expiredKey: TheOneLocaleKey, explain: (code: string) => string = code => code) {
+    const { status, failed } = remote
     const account = status?.account ?? ''
-    const line = !status ? (failed ? t('settings.weixinError') : t('settings.loading'))
-      : status.state === 'online' ? t('settings.weixinOnline', { account })
-      : status.state === 'connecting' ? t('settings.weixinConnecting', { account })
-      : status.state === 'paused' ? t('settings.weixinPaused', { account, minutes: Math.max(1, Math.ceil(((status.pausedUntil ?? Date.now()) - Date.now()) / 60000)) })
-      : status.state === 'expired' ? t('settings.weixinExpired')
-      : account ? t('settings.weixinOff', { account }) : ''
-    const button = (label: TheOneLocaleKey, body: Record<string, unknown>, primary = false) =>
-      h('button', { type: 'button', disabled: busy, className: primary ? 'theone-settings-save' : undefined, onClick: () => { void act(body) } }, t(label))
+    const line = !status ? (failed ? t('settings.remoteError') : t('settings.loading'))
+      : status.state === 'online' ? t('settings.remoteOnline', { account })
+      : status.state === 'connecting' ? t('settings.remoteConnecting', { account })
+      : status.state === 'paused' ? t('settings.remotePaused', { account, minutes: Math.max(1, Math.ceil(((status.pausedUntil ?? Date.now()) - Date.now()) / 60000)) })
+      : status.state === 'expired' ? t(expiredKey)
+      : account ? t('settings.remoteOff', { account }) : ''
+    return [line ? h('p', { role: 'status', key: 'line' }, line) : null,
+      status?.lastError && status.state !== 'off' ? h('p', { className: 'theone-settings-update-version', key: 'error' }, t('settings.remoteLastError', { error: explain(status.lastError) })) : null]
+  }
+
+  function remoteButton(t: (key: TheOneLocaleKey) => string, busy: boolean, act: (body: Record<string, unknown>) => void, label: TheOneLocaleKey, body: Record<string, unknown>, primary = false) {
+    return h('button', { type: 'button', key: label, disabled: busy, className: primary ? 'theone-settings-save' : undefined, onClick: () => act(body) }, t(label))
+  }
+
+  /** Pause or resume, and log out, for a signed-in app. */
+  function remoteControls(t: (key: TheOneLocaleKey) => string, remote: { status?: LinkStatus; busy: boolean; act: (body: Record<string, unknown>) => void }) {
+    const { status, busy, act } = remote
+    if (!status?.account || status.state === 'expired') return []
+    return [status.state === 'off' ? remoteButton(t, busy, act, 'settings.remoteResume', { action: 'enable' }, true) : remoteButton(t, busy, act, 'settings.remotePause', { action: 'disable' }),
+      remoteButton(t, busy, act, 'settings.remoteLogout', { action: 'logout' })]
+  }
+
+  /** Bind WeChat by scanning a code, and pause, resume or log out; applies at once, outside the form below. */
+  function WeixinSection() {
+    const t = useText()
+    const remote = useRemote<WeixinStatus>('weixin', status => !!status?.login && status.login.step !== 'failed')
+    const { status, busy } = remote
+    const act = (body: Record<string, unknown>) => { void remote.act(body) }
+    const [code, setCode] = useState('')
+    const login = status?.login
+    const waiting = !!login && login.step !== 'failed'
+    const button = (label: TheOneLocaleKey, body: Record<string, unknown>, primary = false) => remoteButton(t, busy, act, label, body, primary)
     return h('section', { className: 'theone-settings-group theone-settings-update theone-weixin' },
       h('h2', null, t('settings.weixin')),
       h('p', null, t('settings.weixinIntro')),
-      line ? h('p', { role: 'status' }, line) : null,
-      status?.lastError && status.state !== 'off' ? h('p', { className: 'theone-settings-update-version' }, t('settings.weixinLastError', { error: status.lastError })) : null,
-      login?.step === 'qr' ? h('div', { className: 'theone-weixin-login' }, image(login.url), h('p', null, t('settings.weixinScan'))) : null,
+      ...remoteState(t, remote, 'settings.weixinExpired'),
+      login?.step === 'qr' ? h('div', { className: 'theone-weixin-login' }, qrImage(login.url, t('settings.weixinScan')), h('p', null, t('settings.weixinScan'))) : null,
       login?.step === 'scanned' ? h('p', { role: 'status' }, t('settings.weixinScanned')) : null,
       login?.step === 'verify' ? h('form', { className: 'theone-settings-update-actions', onSubmit: (event: React.FormEvent<HTMLFormElement>) => {
-        event.preventDefault(); if (code.trim()) { void act({ action: 'verify', code }); setCode('') } } },
+        event.preventDefault(); if (code.trim()) { act({ action: 'verify', code }); setCode('') } } },
         h('label', { htmlFor: 'theone-weixin-code' }, t('settings.weixinVerify')),
         h('input', { id: 'theone-weixin-code', value: code, maxLength: 16, autoComplete: 'one-time-code', onChange: (event: React.ChangeEvent<HTMLInputElement>) => setCode(event.target.value) }),
         h('button', { type: 'submit', disabled: busy || !code.trim() }, t('settings.weixinVerifySubmit'))) : null,
       login?.step === 'failed' ? h('p', { role: 'alert' }, t('settings.weixinFailed', { reason: login.reason })) : null,
       h('div', { className: 'theone-settings-update-actions' },
         waiting ? button('settings.weixinCancel', { action: 'cancel' })
-          : !status || status.state === 'off' && !account ? button('settings.weixinBind', { action: 'login' }, true)
-          : status.state === 'expired' ? button('settings.weixinRescan', { action: 'login' }, true)
-          : status.state === 'off' ? button('settings.weixinResume', { action: 'enable' }, true)
-          : button('settings.weixinPause', { action: 'disable' }),
-        account && !waiting ? button('settings.weixinLogout', { action: 'logout' }) : null),
+          : !status?.account ? button('settings.weixinBind', { action: 'login' }, true)
+          : status.state === 'expired' ? button('settings.weixinRescan', { action: 'login' }, true) : null,
+        ...waiting ? [] : remoteControls(t, { ...remote, act })),
       h('p', { className: 'theone-settings-update-version' }, t('settings.weixinNote')))
+  }
+
+  /** Bind a Telegram bot: paste its token, then send it the pairing code (or scan the code that opens it). */
+  function TelegramSection() {
+    const t = useText()
+    const remote = useRemote<TelegramStatus>('telegram', status => !!status?.pairing)
+    const { status, busy, error } = remote
+    const act = (body: Record<string, unknown>) => { void remote.act(body) }
+    const [token, setToken] = useState('')
+    const pairing = status?.pairing
+    const asking = !status?.account || status.state === 'expired'
+    return h('section', { className: 'theone-settings-group theone-settings-update theone-weixin' },
+      h('h2', null, t('settings.telegram')),
+      h('p', null, t('settings.telegramIntro')),
+      ...pairing ? [h('p', { role: 'status', key: 'line' }, t('settings.telegramWaiting', { account: `@${pairing.bot}` }))] : remoteState(t, remote, 'settings.telegramExpired'),
+      pairing ? h('div', { className: 'theone-weixin-login' }, qrImage(`https://t.me/${pairing.bot}?start=${pairing.code}`, t('settings.telegramPairScan')),
+        h('p', null, t('settings.telegramPair', { bot: `@${pairing.bot}`, code: pairing.code }))) : null,
+      asking ? h('form', { className: 'theone-settings-update-actions', onSubmit: (event: React.FormEvent<HTMLFormElement>) => {
+        event.preventDefault(); if (token.trim()) { act({ action: 'connect', token }); setToken('') } } },
+        h('label', { htmlFor: 'theone-telegram-token' }, t('settings.telegramToken')),
+        h('input', { id: 'theone-telegram-token', type: 'password', value: token, maxLength: 200, autoComplete: 'off', spellCheck: false,
+          placeholder: '123456789:AA…', onChange: (event: React.ChangeEvent<HTMLInputElement>) => setToken(event.target.value) }),
+        h('button', { type: 'submit', className: 'theone-settings-save', disabled: busy || !token.trim() }, t('settings.remoteConnect'))) : null,
+      error ? h('p', { role: 'alert' }, t(error === 'TELEGRAM_TOKEN_INVALID' ? 'settings.telegramTokenInvalid' : 'settings.telegramUnreachable')) : null,
+      h('div', { className: 'theone-settings-update-actions' }, ...remoteControls(t, { ...remote, act })),
+      h('p', { className: 'theone-settings-update-version' }, t('settings.telegramNote')))
+  }
+
+  /** Bind iMessage on a Mac: name the phone number or Apple ID the user texts from. */
+  function IMessageSection() {
+    const t = useText()
+    const remote = useRemote<IMessageStatus>('imessage', () => false)
+    const { status, busy, error } = remote
+    const act = (body: Record<string, unknown>) => { void remote.act(body) }
+    const [handle, setHandle] = useState('')
+    const explain = (code: string) => code === 'IMESSAGE_NO_ACCESS' ? t('settings.imessageNoAccess') : code
+    const asking = status?.supported && !status.account
+    return h('section', { className: 'theone-settings-group theone-settings-update theone-weixin' },
+      h('h2', null, t('settings.imessage')),
+      h('p', null, t('settings.imessageIntro')),
+      status && !status.supported && !status.account ? h('p', { role: 'status' }, t('settings.imessageUnsupported')) : null,
+      ...remoteState(t, remote, 'settings.imessageNoAccess', explain),
+      asking ? h('form', { className: 'theone-settings-update-actions', onSubmit: (event: React.FormEvent<HTMLFormElement>) => {
+        event.preventDefault(); if (handle.trim()) act({ action: 'connect', handle }) } },
+        h('label', { htmlFor: 'theone-imessage-handle' }, t('settings.imessageHandle')),
+        h('input', { id: 'theone-imessage-handle', value: handle, maxLength: 200, autoComplete: 'off', placeholder: '+86 138 0000 0000',
+          onChange: (event: React.ChangeEvent<HTMLInputElement>) => setHandle(event.target.value) }),
+        h('button', { type: 'submit', className: 'theone-settings-save', disabled: busy || !handle.trim() }, t('settings.remoteConnect'))) : null,
+      error ? h('p', { role: 'alert' }, error === 'IMESSAGE_NO_ACCESS' ? t('settings.imessageNoAccess')
+        : t(error === 'IMESSAGE_HANDLE_INVALID' ? 'settings.imessageHandleInvalid' : 'settings.imessageUnsupported')) : null,
+      h('div', { className: 'theone-settings-update-actions' }, ...remoteControls(t, { ...remote, act })),
+      status?.supported ? h('p', { className: 'theone-settings-update-version' }, t('settings.imessageNote')) : null)
   }
 
   function SettingsPanel() {
@@ -831,6 +917,8 @@ export function apply(ctx: Context) {
       h('p', { className: 'theone-settings-notice' }, t('settings.readOnly')),
       h(UpdateSection),
       h(WeixinSection),
+      h(TelegramSection),
+      h(IMessageSection),
       !snapshot && !error ? h('p', { role: 'status' }, t('settings.loading')) : null,
       error ? h('p', { role: 'alert' }, t('settings.error'), ' ', h('button', { type: 'button', onClick: () => setAttempt(n => n + 1) }, t('retry'))) : null,
       snapshot && draft && h('form', { onSubmit: (event: React.FormEvent<HTMLFormElement>) => { event.preventDefault(); void save() } },

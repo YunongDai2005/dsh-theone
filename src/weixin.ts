@@ -1,33 +1,29 @@
 /**
- * WeChat for main chat: the iLink account (login, staying connected) plus the relay that carries its
- * owner's messages into main chat and the replies, approvals and questions back.
+ * WeChat for main chat: the iLink account (QR login, staying connected) plus the relay that carries
+ * its owner's messages into main chat and the replies, approvals and questions back.
  */
 import type { Context } from '@deepseek-ai/cordis'
-import { RELAY_WORDS, RemoteRelay, type RelayHost } from './remote-relay.ts'
-import { plainText } from './remote-plain.ts'
-import { IlinkClient, splitText } from './weixin-ilink.ts'
+import { RELAY_WORDS, RemoteRelay } from './remote-relay.ts'
+import { plainText, splitText } from './remote-plain.ts'
+import { RemoteApp, refused, type AppHost } from './remote-app.ts'
+import { IlinkClient, TEXT_LIMIT } from './weixin-ilink.ts'
 import { WeixinLink, type WeixinSaved } from './weixin-link.ts'
 
 /** Main chat messages from WeChat carry this prefix on their request id (`source.rpcId`). */
 export const WEIXIN_REQUEST = 'weixin:'
-
-export interface BridgeHost extends RelayHost {
-  load(): WeixinSaved | undefined
-  save(saved: WeixinSaved | undefined): void
-  version: string
-}
 
 const EXPIRED = {
   zh: '微信登录已失效，在 TheOne 设置的「微信」里重新扫码即可恢复。',
   en: 'The WeChat login has expired. Scan again under WeChat in TheOne\'s settings to restore it.',
 }
 
-export class WeixinBridge {
+export class WeixinBridge extends RemoteApp<WeixinSaved> {
   readonly client: IlinkClient
   readonly link: WeixinLink
   readonly relay: RemoteRelay
 
-  constructor(private readonly ctx: Context, host: BridgeHost) {
+  constructor(ctx: Context, host: AppHost<WeixinSaved>) {
+    super(ctx)
     this.client = new IlinkClient(host.version)
     this.relay = new RemoteRelay(ctx, host, {
       name: WEIXIN_REQUEST.slice(0, -1),
@@ -38,8 +34,7 @@ export class WeixinBridge {
         if (account) await this.client.typing(account, account.userId, true, this.link.contextToken())
       },
     })
-    this.link = new WeixinLink({
-      client: this.client,
+    this.link = new WeixinLink(this.client, {
       load: host.load,
       save: host.save,
       deliver: message => this.relay.receive(message.id, message.text),
@@ -48,43 +43,27 @@ export class WeixinBridge {
     })
   }
 
-  /** Answer main chat's WeChat turns, and receive while TheOne runs. */
-  apply(): void {
-    this.relay.apply()
-    this.ctx.effect(() => {
-      this.link.start()
-      return async () => {
-        this.link.cancelLogin()
-        await this.link.stop()
-      }
-    })
-  }
-
   /** Text to the owner, plain and in parts WeChat accepts, in the conversation they last wrote in. */
   async say(text: string): Promise<void> {
     const account = this.link.account()
     if (!account) return
     const token = this.link.contextToken()
-    for (const part of splitText(plainText(text))) await this.client.send(account, account.userId, part, token)
+    for (const part of splitText(plainText(text), TEXT_LIMIT)) await this.client.send(account, account.userId, part, token)
   }
 
-  /** The settings page: status, and login, pause, resume and logout. */
-  async handle(request: Request): Promise<Response> {
-    if (request.method === 'POST') {
-      let row: Record<string, unknown>
-      try { row = await request.json() as Record<string, unknown> } catch { return Response.json({ error: 'INVALID_INPUT' }, { status: 400 }) }
-      switch (row?.action) {
-        case 'login': await this.link.beginLogin(); break
-        case 'cancel': this.link.cancelLogin(); break
-        case 'verify':
-          if (typeof row.code !== 'string' || !/^\s*\w{1,16}\s*$/.test(row.code)) return Response.json({ error: 'INVALID_INPUT' }, { status: 400 })
-          this.link.verify(row.code)
-          break
-        case 'enable': case 'disable': await this.link.setEnabled(row.action === 'enable'); break
-        case 'logout': await this.link.logout(); break
-        default: return Response.json({ error: 'INVALID_INPUT' }, { status: 400 })
-      }
+  protected override cancel(): void {
+    this.link.cancelLogin()
+  }
+
+  protected async action(row: Record<string, unknown>): Promise<Response | undefined> {
+    switch (row.action) {
+      case 'login': await this.link.beginLogin(); return
+      case 'cancel': this.link.cancelLogin(); return
+      case 'verify':
+        if (typeof row.code !== 'string' || !/^\s*\w{1,16}\s*$/.test(row.code)) return refused('INVALID_INPUT')
+        this.link.verify(row.code)
+        return
     }
-    return Response.json(this.link.status(), { headers: { 'cache-control': 'no-store' } })
+    return refused('INVALID_INPUT')
   }
 }

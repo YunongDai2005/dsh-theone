@@ -23,7 +23,7 @@ async function bound(name: string) {
   theone.store.rememberGateway('test-gateway', app.gateway.id)
   const server = new FakeIlink().answer('getconfig', { typing_ticket: 'ticket-1' })
   theone.weixin.client.fetchImpl = server.fetch
-  theone.store.saveRemoteLink('weixin', { account, enabled: true, buf: '' })
+  theone.store.saveRemoteLink('weixin', { account, enabled: true, cursor: '' })
   theone.weixin.link.start()
   await server.until('getupdates', 1)
   let id = 100
@@ -196,7 +196,7 @@ test('without a main chat yet, WeChat is told to open it once', { timeout: 30000
   try {
     const server = new FakeIlink()
     app.ctx.theone.weixin.client.fetchImpl = server.fetch
-    app.ctx.theone.store.saveRemoteLink('weixin', { account, enabled: true, buf: '' })
+    app.ctx.theone.store.saveRemoteLink('weixin', { account, enabled: true, cursor: '' })
     app.ctx.theone.weixin.link.start()
     server.answer('getupdates', { ret: 0, get_updates_buf: 'b1', msgs: [FakeIlink.message(1, owner, '在吗')] })
     await until(() => server.sent.length > 0)

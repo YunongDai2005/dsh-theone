@@ -1,6 +1,7 @@
 import { RELAY_WORDS, RemoteRelay } from "./remote-relay.js";
-import { plainText } from "./remote-plain.js";
-import { IlinkClient, splitText } from "./weixin-ilink.js";
+import { plainText, splitText } from "./remote-plain.js";
+import { RemoteApp, refused } from "./remote-app.js";
+import { IlinkClient, TEXT_LIMIT } from "./weixin-ilink.js";
 import { WeixinLink } from "./weixin-link.js";
 /** Main chat messages from WeChat carry this prefix on their request id (`source.rpcId`). */
 export const WEIXIN_REQUEST = 'weixin:';
@@ -8,13 +9,12 @@ const EXPIRED = {
     zh: '微信登录已失效，在 TheOne 设置的「微信」里重新扫码即可恢复。',
     en: 'The WeChat login has expired. Scan again under WeChat in TheOne\'s settings to restore it.',
 };
-export class WeixinBridge {
-    ctx;
+export class WeixinBridge extends RemoteApp {
     client;
     link;
     relay;
     constructor(ctx, host) {
-        this.ctx = ctx;
+        super(ctx);
         this.client = new IlinkClient(host.version);
         this.relay = new RemoteRelay(ctx, host, {
             name: WEIXIN_REQUEST.slice(0, -1),
@@ -26,24 +26,12 @@ export class WeixinBridge {
                     await this.client.typing(account, account.userId, true, this.link.contextToken());
             },
         });
-        this.link = new WeixinLink({
-            client: this.client,
+        this.link = new WeixinLink(this.client, {
             load: host.load,
             save: host.save,
             deliver: message => this.relay.receive(message.id, message.text),
             expired: () => this.relay.note(this.relay.words() === RELAY_WORDS.en ? EXPIRED.en : EXPIRED.zh),
             log: message => console.warn(`TheOne: ${message}`),
-        });
-    }
-    /** Answer main chat's WeChat turns, and receive while TheOne runs. */
-    apply() {
-        this.relay.apply();
-        this.ctx.effect(() => {
-            this.link.start();
-            return async () => {
-                this.link.cancelLogin();
-                await this.link.stop();
-            };
         });
     }
     /** Text to the owner, plain and in parts WeChat accepts, in the conversation they last wrote in. */
@@ -52,41 +40,26 @@ export class WeixinBridge {
         if (!account)
             return;
         const token = this.link.contextToken();
-        for (const part of splitText(plainText(text)))
+        for (const part of splitText(plainText(text), TEXT_LIMIT))
             await this.client.send(account, account.userId, part, token);
     }
-    /** The settings page: status, and login, pause, resume and logout. */
-    async handle(request) {
-        if (request.method === 'POST') {
-            let row;
-            try {
-                row = await request.json();
-            }
-            catch {
-                return Response.json({ error: 'INVALID_INPUT' }, { status: 400 });
-            }
-            switch (row?.action) {
-                case 'login':
-                    await this.link.beginLogin();
-                    break;
-                case 'cancel':
-                    this.link.cancelLogin();
-                    break;
-                case 'verify':
-                    if (typeof row.code !== 'string' || !/^\s*\w{1,16}\s*$/.test(row.code))
-                        return Response.json({ error: 'INVALID_INPUT' }, { status: 400 });
-                    this.link.verify(row.code);
-                    break;
-                case 'enable':
-                case 'disable':
-                    await this.link.setEnabled(row.action === 'enable');
-                    break;
-                case 'logout':
-                    await this.link.logout();
-                    break;
-                default: return Response.json({ error: 'INVALID_INPUT' }, { status: 400 });
-            }
+    cancel() {
+        this.link.cancelLogin();
+    }
+    async action(row) {
+        switch (row.action) {
+            case 'login':
+                await this.link.beginLogin();
+                return;
+            case 'cancel':
+                this.link.cancelLogin();
+                return;
+            case 'verify':
+                if (typeof row.code !== 'string' || !/^\s*\w{1,16}\s*$/.test(row.code))
+                    return refused('INVALID_INPUT');
+                this.link.verify(row.code);
+                return;
         }
-        return Response.json(this.link.status(), { headers: { 'cache-control': 'no-store' } });
+        return refused('INVALID_INPUT');
     }
 }
