@@ -18,6 +18,8 @@ import type { Notice } from './notices.ts'
 import { EDITABLE_SETTINGS_KEYS, type EditableSettings, type SettingsSnapshot } from './settings-types.ts'
 import { GatewayNavigation } from './client-navigation.ts'
 import { zh, en, type TheOneLocaleKey } from './client-locales.ts'
+import type { WeixinStatus } from './weixin-link.ts'
+import qrcode from 'qrcode-generator'
 
 // ui-workspace retains the selected conversation with this public source label.
 declare module '@deepseek-ai/dsh-api-session-controller/client' {
@@ -659,6 +661,66 @@ export function apply(ctx: Context) {
           onClick: () => { if (status) startUpdate(status) } }, t(status?.state === 'installing' ? 'update.installing' : status?.state === 'reloading' ? 'update.reloading' : 'settings.updateInstall'))))
   }
 
+  /** Bind WeChat by scanning a code, and pause, resume or log out; applies at once, outside the form below. */
+  function WeixinSection() {
+    const t = useText()
+    const [status, setStatus] = useState<WeixinStatus>()
+    const [failed, setFailed] = useState(false)
+    const [busy, setBusy] = useState(false)
+    const [code, setCode] = useState('')
+    const call = async (body?: Record<string, unknown>) => {
+      try {
+        const response = await fetch('/api/theone/weixin', { signal: lifetime.signal, cache: 'no-store',
+          ...(body ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : {}) })
+        if (!response.ok) throw new Error('WeChat status unavailable')
+        setStatus(await response.json() as WeixinStatus); setFailed(false)
+      } catch { if (!lifetime.signal.aborted) setFailed(true) }
+    }
+    const act = async (body: Record<string, unknown>) => { setBusy(true); try { await call(body) } finally { setBusy(false) } }
+    const login = status?.login
+    const waiting = login?.step === 'qr' || login?.step === 'scanned' || login?.step === 'verify'
+    // Quick while a login is under way, so scanning shows at once; slow otherwise.
+    useEffect(() => {
+      void call()
+      const timer = setInterval(() => { void call() }, waiting ? 1500 : 15000)
+      return () => clearInterval(timer)
+    }, [waiting])
+    const image = (url: string) => {
+      const qr = qrcode(0, 'M'); qr.addData(url); qr.make()
+      return h('img', { className: 'theone-weixin-qr', src: qr.createDataURL(6, 3), alt: t('settings.weixinScan'), width: 220, height: 220 })
+    }
+    const account = status?.account ?? ''
+    const line = !status ? (failed ? t('settings.weixinError') : t('settings.loading'))
+      : status.state === 'online' ? t('settings.weixinOnline', { account })
+      : status.state === 'connecting' ? t('settings.weixinConnecting', { account })
+      : status.state === 'paused' ? t('settings.weixinPaused', { account, minutes: Math.max(1, Math.ceil(((status.pausedUntil ?? Date.now()) - Date.now()) / 60000)) })
+      : status.state === 'expired' ? t('settings.weixinExpired')
+      : account ? t('settings.weixinOff', { account }) : ''
+    const button = (label: TheOneLocaleKey, body: Record<string, unknown>, primary = false) =>
+      h('button', { type: 'button', disabled: busy, className: primary ? 'theone-settings-save' : undefined, onClick: () => { void act(body) } }, t(label))
+    return h('section', { className: 'theone-settings-group theone-settings-update theone-weixin' },
+      h('h2', null, t('settings.weixin')),
+      h('p', null, t('settings.weixinIntro')),
+      line ? h('p', { role: 'status' }, line) : null,
+      status?.lastError && status.state !== 'off' ? h('p', { className: 'theone-settings-update-version' }, t('settings.weixinLastError', { error: status.lastError })) : null,
+      login?.step === 'qr' ? h('div', { className: 'theone-weixin-login' }, image(login.url), h('p', null, t('settings.weixinScan'))) : null,
+      login?.step === 'scanned' ? h('p', { role: 'status' }, t('settings.weixinScanned')) : null,
+      login?.step === 'verify' ? h('form', { className: 'theone-settings-update-actions', onSubmit: (event: React.FormEvent<HTMLFormElement>) => {
+        event.preventDefault(); if (code.trim()) { void act({ action: 'verify', code }); setCode('') } } },
+        h('label', { htmlFor: 'theone-weixin-code' }, t('settings.weixinVerify')),
+        h('input', { id: 'theone-weixin-code', value: code, maxLength: 16, autoComplete: 'one-time-code', onChange: (event: React.ChangeEvent<HTMLInputElement>) => setCode(event.target.value) }),
+        h('button', { type: 'submit', disabled: busy || !code.trim() }, t('settings.weixinVerifySubmit'))) : null,
+      login?.step === 'failed' ? h('p', { role: 'alert' }, t('settings.weixinFailed', { reason: login.reason })) : null,
+      h('div', { className: 'theone-settings-update-actions' },
+        waiting ? button('settings.weixinCancel', { action: 'cancel' })
+          : !status || status.state === 'off' && !account ? button('settings.weixinBind', { action: 'login' }, true)
+          : status.state === 'expired' ? button('settings.weixinRescan', { action: 'login' }, true)
+          : status.state === 'off' ? button('settings.weixinResume', { action: 'enable' }, true)
+          : button('settings.weixinPause', { action: 'disable' }),
+        account && !waiting ? button('settings.weixinLogout', { action: 'logout' }) : null),
+      h('p', { className: 'theone-settings-update-version' }, t('settings.weixinNote')))
+  }
+
   function SettingsPanel() {
     const t = useText()
     const heading = useRef<HTMLHeadingElement>(null)
@@ -768,6 +830,7 @@ export function apply(ctx: Context) {
         h('button', { type: 'button', disabled: saving, onClick: () => ctx.layout.selectPanel(panelId) }, t('settings.back'))),
       h('p', { className: 'theone-settings-notice' }, t('settings.readOnly')),
       h(UpdateSection),
+      h(WeixinSection),
       !snapshot && !error ? h('p', { role: 'status' }, t('settings.loading')) : null,
       error ? h('p', { role: 'alert' }, t('settings.error'), ' ', h('button', { type: 'button', onClick: () => setAttempt(n => n + 1) }, t('retry'))) : null,
       snapshot && draft && h('form', { onSubmit: (event: React.FormEvent<HTMLFormElement>) => { event.preventDefault(); void save() } },
@@ -1374,7 +1437,7 @@ const settingsCss = `
 .theone-settings-header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.theone-settings h1{font-size:26px;margin:0 0 8px;outline:none}.theone-settings h2{font-size:17px;margin:0 0 16px}.theone-settings-header p,.theone-settings-help{color:var(--dsw-alias-label-secondary);line-height:1.6;margin:0 0 18px}
 .theone-settings button{border:1px solid var(--dsw-alias-border-l2);border-radius:9px;padding:9px 14px;background:var(--dsw-alias-interactive-bg-hover);color:inherit;font:inherit;cursor:pointer;white-space:nowrap}.theone-settings button:focus-visible{outline:2px solid var(--dsw-focus-ring-color);outline-offset:2px}
 .theone-settings-notice{padding:13px 16px;border:1px solid #ed9b412a;background:#f3940710;border-radius:12px;font-size:13px;line-height:1.7;margin:0 0 22px}
-.theone-settings-update p{margin:0 0 10px;line-height:1.7}.theone-settings-update-version{color:var(--dsw-alias-label-secondary);font-size:13px}.theone-settings-update-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:6px}
+.theone-weixin-login{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin:6px 0 12px}.theone-weixin-qr{background:#fff;border-radius:12px;padding:6px;image-rendering:pixelated}.theone-weixin input{min-width:8em}.theone-weixin .theone-settings-update-actions+p{margin-top:12px}.theone-settings-update p{margin:0 0 10px;line-height:1.7}.theone-settings-update-version{color:var(--dsw-alias-label-secondary);font-size:13px}.theone-settings-update-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:6px}
 .theone-settings-summary,.theone-settings-group{border:1px solid var(--dsw-alias-border-l2);border-radius:16px;padding:22px;margin-bottom:20px}.theone-settings-summary{background:#88804}.theone-settings-summary dl{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px}.theone-settings dl{margin:0}.theone-settings-summary dt{font-size:12px;color:var(--dsw-alias-label-secondary);margin-bottom:8px}.theone-settings dd{margin:0;overflow-wrap:anywhere;line-height:1.6}.theone-settings-summary dd{font-size:15px}.theone-settings-summary p{font-size:13px;line-height:1.7;color:var(--dsw-alias-label-secondary);margin:16px 0 0}
 .theone-settings-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(160px,42%);gap:24px;padding:16px 0;border-top:1px solid var(--dsw-alias-border-l2)}.theone-settings-row:first-child{border-top:0;padding-top:0}.theone-settings-row:last-child{padding-bottom:0}.theone-settings-row strong{font-size:14px;font-weight:500}.theone-settings-row p{font-size:13px;line-height:1.6;color:var(--dsw-alias-label-secondary);margin:6px 0}.theone-settings-row code{font-size:11px;color:var(--dsw-alias-label-secondary)}.theone-settings-row dd{font-size:13px;padding-top:1px}.theone-settings-row[data-inactive=true]{opacity:.6}
 @media(max-width:640px){.theone-settings{padding:20px 16px}.theone-settings-header{flex-wrap:wrap}.theone-settings-summary,.theone-settings-group{padding:18px}.theone-settings-summary dl{grid-template-columns:1fr}.theone-settings-row{grid-template-columns:1fr;gap:10px}}

@@ -111,6 +111,7 @@ export class ContextStore {
       );
       CREATE TABLE IF NOT EXISTS dismissed_notices (id TEXT PRIMARY KEY, dismissed_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS plugin_flags (name TEXT PRIMARY KEY, set_at INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS remote_links (channel TEXT PRIMARY KEY, state TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS stowed_sessions (session_id TEXT PRIMARY KEY, stowed_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS route_details (
         message_id TEXT PRIMARY KEY, excerpt TEXT NOT NULL, receipt TEXT, corrected_to TEXT, corrected_at INTEGER
@@ -1063,6 +1064,17 @@ export class ContextStore {
     /** True the first time `name` is marked, false ever after: for one-time repairs. */
     markOnce(name, now = Date.now()) {
         return this.db.prepare('INSERT OR IGNORE INTO plugin_flags VALUES (?, ?)').run(name, now).changes === 1;
+    }
+    /** A messaging app bound to main chat (its login, cursor and switch), or undefined when none is. */
+    remoteLink(channel) {
+        const row = this.db.prepare('SELECT state FROM remote_links WHERE channel = ?').get(channel);
+        return row ? JSON.parse(String(row.state)) : undefined;
+    }
+    saveRemoteLink(channel, state) {
+        if (state === undefined)
+            this.db.prepare('DELETE FROM remote_links WHERE channel = ?').run(channel);
+        else
+            this.db.prepare('INSERT INTO remote_links VALUES (?, ?) ON CONFLICT(channel) DO UPDATE SET state = excluded.state').run(channel, JSON.stringify(state));
     }
     dismissedNotices() {
         return new Set(this.db.prepare('SELECT id FROM dismissed_notices').all().map(row => String(row.id)));

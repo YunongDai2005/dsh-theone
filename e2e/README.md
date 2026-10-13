@@ -55,3 +55,20 @@ history catalog makes of an ordinary session, `[run] CMD` runs CMD with the bash
 | While a reply runs: an interjection about it, and a queued message for another topic | The interjection joins the reply (between its steps); the queued message's topic starts at once and is shown after |
 | While a reply runs: a queued message whose topic asks a question (`CLICK=<option>`) | The choice window opens in main chat at once, headed with that topic's name; the answer reaches it |
 | DSH's workspaces and archive afterwards | No TheOne session attached to a workspace; the archive holds only TheOne's sessions; none of the user's sessions archived |
+
+## WeChat (all passed on 2026-10-13)
+
+`node fake-ilink-server.mjs 3099` stands in for Tencent's iLink server. With DSH stopped, bind an account to it by
+writing TheOne's `remote_links` row (`channel` `weixin`, `state` `{"account":{"botId":"bot-e2e-0001","token":"e2e-token","baseUrl":"http://127.0.0.1:3099","userId":"owner@im.wechat"},"enabled":true,"buf":""}`)
+into `<DSH_HOME>/theone/contexts.db`, then start DSH with `NO_PROXY=127.0.0.1`. Send as the owner with
+`curl -X POST -d '{"text":"…"}' http://127.0.0.1:3099/control/say`; `GET /control/sent` lists what the bot sent.
+
+| Check | Expected |
+| --- | --- |
+| DSH starts with an account bound, no browser open | `notifystart`, then `getupdates`, without opening Settings |
+| A message (`[topic:NAME] …`) while main chat is not loaded | Main chat wakes, routes it to the topic, shows "typing" (`sendtyping`); the topic's reply is sent back with the message's `context_token` |
+| A message that needs approval (`[call:bash] {"command":"…","description":"…","sandbox_permissions":"danger-full-access","justification":"…"}`) | The approval text arrives in WeChat; replying `1` runs the command and the result comes back; `1` does not appear in main chat |
+| Main chat in the browser afterwards | The WeChat messages and replies as ordinary turns |
+| DSH restarted | Messages already answered are not delivered again |
+| Settings → WeChat | Connected state with pause and logout; a login in progress shows a QR code that decodes to the server's `qrcode_img_content` |
+

@@ -28,6 +28,7 @@ import { PACKAGE_NAME, Updater } from "./update.js";
 import { NOTICE_URL, NoticeBoard } from "./notices.js";
 import { exchange, FEEDBACK_EMAIL, FEEDBACK_LIMITS, FEEDBACK_URL, finalReport, replySection, routeDigest, scrub, sendReport } from "./feedback.js";
 import { createRequire } from 'node:module';
+import { WeixinBridge } from "./weixin.js";
 function redactDescriptor(text) {
     return text.replace(/\bsk-[a-zA-Z0-9_-]{16,}|\bBearer\s+\S+/gi, '[REDACTED]')
         .replace(/((?:api[_ -]?key|password|密码|密钥)\s*[:=：]\s*)\S+/gi, '$1[REDACTED]');
@@ -267,6 +268,8 @@ export default class TheOne extends Service {
     /** Update checks and one-click install through DSH's plugin manager. */
     updater;
     noticeBoard;
+    /** WeChat as a second input box for main chat (off until the user scans the code in Settings). */
+    weixin;
     /** Goal id → the topic its rounds work in (the topic in use when the goal was set). */
     goalTopics = new Map();
     /** Sessions whose current step answers through TheOne; only these refuse to run tools themselves. */
@@ -349,6 +352,14 @@ export default class TheOne extends Service {
             this.catalog = new HistoryCatalog(ctx, this.store, () => this.backingModel(), config.catalogIntervalMs);
             this.catalog.start();
         }
+        this.weixin = new WeixinBridge(ctx, {
+            gatewayId: () => this.store.latestGateway(this.config.gatewayKey),
+            locale: id => this.gatewayLocale(id),
+            load: () => this.store.remoteLink('weixin'),
+            save: saved => this.store.saveRemoteLink('weixin', saved),
+            version: readOwnVersion(),
+        });
+        this.weixin.apply();
         this.registerCatalogChannel();
         this.adapter = ctx.llm.registerAdapter(['theone'], new GatewayAdapter(this));
         ctx.on('session/event', (session, event) => {
@@ -983,6 +994,9 @@ export default class TheOne extends Service {
                         return Response.json({ error: code }, { status: ['UNREACHABLE', 'SERVER_ERROR', 'RATE_LIMITED', 'REJECTED'].includes(code) ? 502 : 400 });
                     }
                 } }));
+            // WeChat: its status, and scanning the code, pausing, resuming and logging out.
+            child.effect(() => connection.fetch.register({ path: '/api/theone/weixin', methods: ['GET', 'POST'], requestBody: 'buffered',
+                fetch: request => this.weixin.handle(request) }));
             // TheOne's own sessions, so the client can keep them out of DSH's session list.
             child.effect(() => connection.fetch.register({ path: '/api/theone/owned', methods: ['GET'], requestBody: 'buffered', fetch: async () => Response.json({ sessionIds: this.store.ownedSessionIds() }, { headers: { 'cache-control': 'no-store' } }) }));
             child.effect(() => connection.fetch.register({ path: '/api/theone/sessions', methods: ['GET'], requestBody: 'buffered', fetch: async () => Response.json({ sessions: await this.attachableSessions() }, { headers: { 'cache-control': 'no-store' } }) }));

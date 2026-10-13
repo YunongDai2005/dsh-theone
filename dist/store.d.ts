@@ -313,6 +313,9 @@ export declare class ContextStore {
     dismissNotice(id: string, now?: number): void;
     /** True the first time `name` is marked, false ever after: for one-time repairs. */
     markOnce(name: string, now?: number): boolean;
+    /** A messaging app bound to main chat (its login, cursor and switch), or undefined when none is. */
+    remoteLink<T>(channel: string): T | undefined;
+    saveRemoteLink(channel: string, state: unknown): void;
     dismissedNotices(): Set<string>;
     /**
      * Topics kept in the directory but hidden from routing and briefings: every conversation they can
