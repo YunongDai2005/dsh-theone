@@ -2,7 +2,7 @@
 
 One conversation across several synthetic projects, with explicit fact sharing and traceable corrections. FalkorDB supplies every topic, permission edge, current value, source note, revision and affected-topic path. Removing it makes memory requests fail; there is no SQLite or fixture fallback.
 
-Graph Hacks track: **Agent Memory and Coordination**. Core graph code began after October15 00:01 IST (October14 18:31 UTC), in `codex/hackathon-graph-memory`. This standalone example adapts the existing TheOne idea; the parent DSH plugin predates the event and is not claimed as new event work. Codex generated the implementation, tests and documentation. Participant technical review, public demonstration and final submission are still pending; no participant authorship or understanding is asserted on their behalf.
+Graph Hacks track: **Agent Memory and Coordination**. Core graph code began after October15 00:01 IST (October14 18:31 UTC), in `codex/hackathon-graph-memory`. This standalone example adapts the existing TheOne idea; the parent DSH plugin predates the event and is not claimed as new event work. Codex generated the implementation, tests and documentation. Participant technical review and final submission are still pending; no participant authorship or understanding is asserted on their behalf.
 
 ## Run locally
 
@@ -60,7 +60,7 @@ The planner sees a topic directory and proposes recall/remember/revise. It does 
 
 Current development evidence:13 focused tests passed against the real database; three CLI scenarios and four actual browser model requests used genuine Nemotron. Actual browser sharing, revocation, database outage and AOF/server restart were verified. Sanitized summaries are in `evidence/`. These results are assistant verification, not participant verification.
 
-The prototype has no production login, graph size quotas, multi-user collaboration or robust multi-operation transactions. Topic creation and fact confirmation are separate writes; a failed confirmation can leave an empty topic. Graph queries are time-bounded. Context and topic directories are intended for small synthetic demos. No private user history is imported. No demo video, hosted service, final Graph Hacks submission or prize is claimed yet.
+The prototype has no production login, graph size quotas, multi-user collaboration or robust multi-operation transactions. Topic creation and fact confirmation are separate writes; a failed confirmation can leave an empty topic. Graph queries are time-bounded. Context and topic directories are intended for small synthetic demos. No private user history is imported. A [98-second narrated demonstration](https://github.com/YunongDai2005/dsh-theone/releases/tag/graph-memory-prototype-20261015) shows actual recorded browser states with synthetic inputs and generated narration. It is a sequence of real UI captures, not a continuous screen recording. No hosted service, final Graph Hacks submission or prize is claimed yet.
 
 ## Participant review before entry
 
