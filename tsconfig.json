@@ -11,5 +11,5 @@
     "rewriteRelativeImportExtensions": true
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["src/client.ts"]
+  "exclude": ["src/client.ts", "src/client-css.ts", "src/client-runtime.ts", "src/client-sidebar.ts", "src/client-composer.ts", "src/client-catalog.ts", "src/client-settings.ts", "src/client-effects.ts"]
 }
