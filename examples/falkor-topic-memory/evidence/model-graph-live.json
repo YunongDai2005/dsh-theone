@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-14T21:29:26.831Z",
+  "status": "PASS",
+  "model": "nvidia/nemotron-3-super-120b-a12b",
+  "realModelRequests": 3,
+  "database": "Real local FalkorDB pinned vendor image",
+  "scope": "3 synthetic development scenarios; no held-out accuracy, score or participant-understanding claim",
+  "checks": [
+    "Real Nemotron note routes to existing topic; confirmation required before FalkorDB write",
+    "Real correction preserves provenance and reaches only the explicitly connected travel topic",
+    "Real recall uses FalkorDB shared path rather than global fact context"
+  ]
+}

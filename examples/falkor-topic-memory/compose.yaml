@@ -1,0 +1,10 @@
+services:
+  graph:
+    image: falkordb/falkordb@sha256:107455e862a824e45e8e9f5a7fbfdf5e00a08b14e13eae2577c72fd9e3f59ba6
+    ports: ["127.0.0.1:6389:6379"]
+    cpus: 2
+    mem_limit: 1g
+    command: ["redis-server", "--loadmodule", "/var/lib/falkordb/bin/falkordb.so", "--appendonly", "yes", "--dir", "/data"]
+    volumes: ["graph-data:/data"]
+volumes:
+  graph-data:

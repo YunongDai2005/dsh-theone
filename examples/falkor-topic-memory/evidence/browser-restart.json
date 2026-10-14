@@ -1,0 +1,19 @@
+{
+  "at": "2026-10-14T21:42:55.418596+00:00",
+  "database": "FalkorDB pinned digest107455e8, dedicated local AOF volume",
+  "browser": "actual Codex in-app browser",
+  "synthetic": true,
+  "real_browser_model_requests": 4,
+  "real_cli_model_requests": 3,
+  "checks": [
+    "User-confirmed synthetic venue write",
+    "Explicit sharing to only Travel logistics",
+    "Model correction to Studio East and actual two-topic graph impact",
+    "Graph-backed recall with evidence",
+    "History keeps Studio North and Studio East",
+    "Revoked recipient and never-connected Reading list return empty context",
+    "Dedicated database stop returns503 and hides stale topic/trace output",
+    "Dedicated database and app restarted; same browser retains topics, revision2, sharing edge and source history"
+  ],
+  "limits": "Assistant development verification only. Not held-out accuracy, production authentication, participant review, final submission or award."
+}

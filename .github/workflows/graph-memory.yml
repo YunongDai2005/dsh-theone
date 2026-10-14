@@ -1,0 +1,26 @@
+name: Verify Graph Memory
+on: [push, pull_request]
+jobs:
+  graph-memory:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Start dedicated real FalkorDB
+        working-directory: examples/falkor-topic-memory
+        run: |
+          docker compose up -d
+          for attempt in $(seq 1 30); do
+            docker compose exec -T graph redis-cli ping && break
+            sleep 1
+          done
+          docker compose exec -T graph redis-cli ping
+      - run: npm ci --ignore-scripts
+        working-directory: examples/falkor-topic-memory
+      - run: npm test
+        working-directory: examples/falkor-topic-memory
+      - if: always()
+        working-directory: examples/falkor-topic-memory
+        run: docker compose down
