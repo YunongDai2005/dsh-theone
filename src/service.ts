@@ -24,8 +24,7 @@ import { gatewayCheckpoint } from './gateway-compaction.ts'
 import { ContextStore } from './store.ts'
 import { resolveContext } from './router.ts'
 import { DshRouter, RouterFailure } from './llm-router.ts'
-import { continuesCurrent, newIndependentTopic, redactRoutingText, referencesHistory, similarity, spokenCorrection, textFeatures, topicTerms } from './routing-policy.ts'
-import { modelJson } from './model-json.ts'
+import { continuesCurrent, newIndependentTopic, redactRoutingText, referencesHistory, similarity, spokenCorrection, textFeatures } from './routing-policy.ts'
 import type { RecentMessage, RouterReceipt, RoutingInput, RoutingRouter } from './llm-router.ts'
 import type { ContextDescriptor, Decision, RouteView, StoredContext, SourceRange } from './types.ts'
 import type { LinkageSnapshot } from './catalog-types.ts'
@@ -34,8 +33,7 @@ import { validateSettings } from './settings.ts'
 import { RESTART_CODE, WorkerRun } from './run.ts'
 import { buildBriefing, LINK_SIGNAL, mayShare, relatedTopics, type LinkScope } from './linkage.ts'
 import { evidenceEvents, FACT_KINDS, FACT_LIMITS, findQuote, rankCandidates, retracts, safe, verify, type EvidenceEvent, type FactCandidate, type FactKind, type FactView } from './facts.ts'
-import { applyExtraction, EXTRACT_PROMPT, extractionPayload, factCandidates, factDelivery, ownFactsText } from './fact-flow.ts'
-import { activityLabel, CARD_AFTER_REPLIES, CARD_PROMPT, cardPayload, learnDormancy, parseCard, topicStatus, type TopicStatus } from './topic-memory.ts'
+import { activityLabel, CARD_AFTER_REPLIES, learnDormancy, topicStatus, type TopicStatus } from './topic-memory.ts'
 import type { FactResult } from './store.ts'
 import { PACKAGE_NAME, Updater, type PluginInstaller } from './update.ts'
 import { NOTICE_URL, NoticeBoard } from './notices.ts'
@@ -45,8 +43,9 @@ import { TelegramApp } from './telegram.ts'
 import { IMessageApp } from './imessage.ts'
 import type { AppHost } from './remote-app.ts'
 import { GatewayAdapter, GATEWAY_TITLES, goalObjective, goalRoundOf, parseVia, stepInput } from './gateway-model.ts'
-import { clarifyText, descriptorJson, GOAL_TOOLS, messageText, reasonLabel, redactDescriptor, TERMS_PROMPT, WAKING_SOURCES, welcomeText, writtenInEnglish } from './service-text.ts'
+import { clarifyText, descriptorJson, GOAL_TOOLS, messageText, reasonLabel, redactDescriptor, WAKING_SOURCES, welcomeText, writtenInEnglish } from './service-text.ts'
 import { AgentPresets, Config, OwnSessionArchive, readDescriptors, readDshVersion, readOwnVersion, reloadBundle, settingsConfig } from './service-config.ts'
+import { applyCorrection, extractFacts, pickTerms, queueCard, queueExtraction, topicFactCandidates, topicFactDelivery, topicOwnFacts, writeCard } from './service-facts.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context { theone: TheOne }
@@ -62,6 +61,9 @@ declare module '@deepseek-ai/dsh-llm' {
   }
 }
 export default class TheOne extends Service {
+  /** The DSH context this service runs in, widened from protected for the internal modules that implement parts of this service. */
+  /** @internal */
+  declare ctx: Context
   static inject = ['agents', 'llm', 'sessionQuery', 'tools', 'agentDefaultModel']
   static Config: z<Config> = z.object({
     historyCatalog: z.boolean().default(true),
@@ -87,7 +89,7 @@ export default class TheOne extends Service {
   readonly store: ContextStore
   readonly catalog?: HistoryCatalog
   private readonly workers = new Map<string, AgentHandle>()
-  private router?: RoutingRouter
+  /** @internal */ router?: RoutingRouter
   private readonly workerSelections = new Map<string, ModelSelectionRef>()
   private active = false
   private reservedGateway: string | undefined
@@ -125,7 +127,7 @@ export default class TheOne extends Service {
   /** Sessions whose current step answers through TheOne; only these refuse to run tools themselves. */
   private readonly throughTheOne = new WeakMap<Agent, boolean>()
 
-  constructor(ctx: Context, private config: Config) {
+  constructor(ctx: Context, /** @internal */ public config: Config) {
     super(ctx, 'theone')
     if (config.workerProvider === 'theone') throw new Error('Worker cannot use the gateway provider')
     const databasePath = config.databasePath || join(process.env.DSH_HOME || join(homedir(), '.dsh'), 'theone', 'contexts.db')
@@ -1017,7 +1019,7 @@ export default class TheOne extends Service {
     if (selection?.provider && selection.model) this.store.rememberModel(this.config.gatewayKey, selection)
   }
 
-  private backingModel(): ModelSelection {
+  /** @internal */ backingModel(): ModelSelection {
     if (this.config.workerProvider && this.config.workerModel)
       return { provider: this.config.workerProvider, model: this.config.workerModel }
     if (this.pickedModel) return this.pickedModel
@@ -1268,7 +1270,7 @@ export default class TheOne extends Service {
     this.store.saveDigest(contextId, full, end.seq)
   }
 
-  private get linkScope(): LinkScope { return this.config.linkScope ?? 'auto' }
+  /** @internal */ get linkScope(): LinkScope { return this.config.linkScope ?? 'auto' }
 
   linkageSnapshot(): LinkageSnapshot {
     return { scope: this.linkScope, topics: Object.fromEntries(this.store.contexts().map(context => [context.id, {
@@ -1284,17 +1286,17 @@ export default class TheOne extends Service {
    */
   /** Confirmed facts this message might use (see fact-flow). */
   private factCandidates(text: string, recent: RecentMessage[], currentId?: string): FactCandidate[] {
-    return factCandidates(this.store, this.linkScope, text, recent.map(message => message.text), currentId)
+    return topicFactCandidates(this, text, recent, currentId)
   }
 
   /** What a topic is told about facts before its Worker answers (see fact-flow). */
   private factDelivery(contextId: string, imports: string[], inputId: string) {
-    return factDelivery(this.store, this.linkScope, contextId, imports, inputId)
+    return topicFactDelivery(this, contextId, imports, inputId)
   }
 
   /** The topic's own recorded facts for its Worker's descriptor; empty unless shared facts are on. */
   private ownFacts(contextId: string): string {
-    return this.config.factLinks ? ownFactsText(this.store, contextId) : ''
+    return topicOwnFacts(this, contextId)
   }
 
   private async briefingFor(context: StoredContext, decision: Decision, gateway: Agent, inputId: string, signal?: AbortSignal) {
@@ -1983,53 +1985,27 @@ export default class TheOne extends Service {
   learning: Promise<void> = Promise.resolve()
 
   /** Fact extractions in flight, one queue per topic so they commit in turn order. */
-  private readonly extractions = new Map<string, Promise<void>>()
+  /** @internal */
+  readonly extractions = new Map<string, Promise<void>>()
   /** All extractions in flight; tests and shutdown can wait for it. */
   get extracting(): Promise<void> { return Promise.all(this.extractions.values()).then(() => undefined) }
 
   /** Queue an extraction of the turn that just ended in `worker`'s topic. */
   private queueExtraction(worker: Agent, contextId: string): void {
-    // What the topic knew when the turn ended: a later write to the same fact makes this one stale.
-    const events = evidenceEvents(worker.session.snapshotEvents())
-    const base = this.store.facts(contextId, true)
-    const previous = this.extractions.get(contextId) ?? Promise.resolve()
-    const job = previous.then(() => this.extractFacts(worker.id, contextId, events, base)).catch(error => {
-      console.warn('TheOne could not extract facts from the last turn.', error)
-    }).finally(() => { if (this.extractions.get(contextId) === job) this.extractions.delete(contextId) })
-    this.extractions.set(contextId, job)
+    queueExtraction(this, worker, contextId)
   }
 
   /** Queue a routing card for this topic, after any extraction already queued for it. */
   private queueCard(worker: Agent, contextId: string): void {
-    const events = evidenceEvents(worker.session.snapshotEvents())
-    const previous = this.extractions.get(contextId) ?? Promise.resolve()
-    const job = previous.then(() => this.writeCard(contextId, events)).catch(error => {
-      console.warn('TheOne could not update a topic card.', error)
-    }).finally(() => { if (this.extractions.get(contextId) === job) this.extractions.delete(contextId) })
-    this.extractions.set(contextId, job)
+    queueCard(this, worker, contextId)
   }
 
   private async writeCard(contextId: string, events: EvidenceEvent[]): Promise<void> {
-    const topic = this.store.contexts().find(context => context.id === contextId)
-    if (!topic) return
-    const payload = cardPayload({ ...topic, summary: redactDescriptor(topic.summary) }, events.map(event => ({ speaker: event.speaker, text: redactDescriptor(event.text) })))
-    if (!payload) return
-    const selection = this.backingModel()
-    let reasoningEffort: ModelSelection['reasoningEffort']
-    try { reasoningEffort = (await this.ctx.llm.resolveModelInfo(selection.provider, selection.model)).reasoning?.efforts.find(effort => effort.id === 'off')?.id } catch { /* Default effort. */ }
-    const card = parseCard(await modelJson(this.ctx.llm, selection, CARD_PROMPT, payload, undefined, { maxTokens: 800, timeoutMs: 30000, ...(reasoningEffort ? { reasoningEffort } : {}) }),
-      text => redactDescriptor(redactRoutingText(text)))
-    if (card) this.store.applyCard(contextId, card)
+    return writeCard(this, contextId, events)
   }
 
   private async extractFacts(sessionId: string, contextId: string, events: EvidenceEvent[], base: FactView[]): Promise<void> {
-    const payload = extractionPayload(events, base)
-    if (!payload) return
-    const selection = this.backingModel()
-    let reasoningEffort: ModelSelection['reasoningEffort']
-    try { reasoningEffort = (await this.ctx.llm.resolveModelInfo(selection.provider, selection.model)).reasoning?.efforts.find(effort => effort.id === 'off')?.id } catch { /* Default effort. */ }
-    const items = await modelJson(this.ctx.llm, selection, EXTRACT_PROMPT, payload, undefined, { maxTokens: 1024, timeoutMs: 30000, ...(reasoningEffort ? { reasoningEffort } : {}) })
-    applyExtraction(this.store, { sessionId, contextId, events, base, items })
+    return extractFacts(this, sessionId, contextId, events, base)
   }
 
   /**
@@ -2038,44 +2014,12 @@ export default class TheOne extends Service {
    * implicit signals. The model picks the terms in one small call; plain extraction is the fallback.
    */
   private applyCorrection(messageId: string, contextId: string, text?: string, weight = 1, record = true): void {
-    const route = this.store.route(messageId)
-    if (record) this.store.correctRoute(messageId, contextId)
-    // The wrong topic's work on it no longer counts as its own.
-    if (record && this.store.topicRun(messageId)?.contextId !== contextId) this.store.endTopicRun(messageId, 'moved')
-    const wrongId = route?.decision.contextId !== contextId ? route?.decision.contextId : undefined
-    const source = text ?? this.store.recentRoutes(this.config.gatewayKey, 200).find(item => item.messageId === messageId)?.excerpt ?? ''
-    if (!source.trim()) return
-    const contexts = this.store.contexts()
-    const right = contexts.find(context => context.id === contextId)
-    const wrong = contexts.find(context => context.id === wrongId)
-    // A term another topic is named by stays with it; teaching it here would only make both match.
-    const owned = new Set(contexts.filter(context => context.id !== contextId).flatMap(context => [context.title, ...context.entities]).map(term => term.toLowerCase()))
-    const usable = (terms: string[]) => terms.filter(term => !owned.has(term.toLowerCase()))
-    const learn = (terms: string[]) => {
-      if (!terms.length || !right) return
-      this.store.learnTerms(contextId, terms, weight)
-      // Only an explicit correction says the first topic was wrong; a hint only strengthens the other.
-      if (wrong && record) this.store.learnTerms(wrong.id, terms, -weight)
-    }
-    const picked = this.router && right ? this.pickTerms(source, right, wrong).catch(() => [] as string[]) : Promise.resolve([] as string[])
-    this.learning = this.learning.then(() => picked).then(terms => {
-      // Terms must appear in the message: the model chooses, it does not invent.
-      const chosen = usable(terms.filter(term => source.toLowerCase().includes(term.toLowerCase())))
-      learn(chosen.length ? chosen : usable(topicTerms(source)))
-    }).catch(() => {})
+    applyCorrection(this, messageId, contextId, text, weight, record)
   }
 
   /** Ask the selected model, thinking off, for the few terms that tie a message to its topic. */
   private async pickTerms(text: string, right: StoredContext, wrong?: StoredContext): Promise<string[]> {
-    const selection = this.backingModel()
-    let reasoningEffort: ModelSelection['reasoningEffort']
-    try { reasoningEffort = (await this.ctx.llm.resolveModelInfo(selection.provider, selection.model)).reasoning?.efforts.find(effort => effort.id === 'off')?.id } catch { /* Default effort. */ }
-    const value = await modelJson(this.ctx.llm, selection, TERMS_PROMPT,
-      { message: redactRoutingText(text).slice(0, 600), rightTopic: { title: right.title, summary: right.summary.slice(0, 300) },
-        ...(wrong ? { wrongTopic: { title: wrong.title, summary: wrong.summary.slice(0, 300) } } : {}) },
-      undefined, { maxTokens: 256, timeoutMs: 20000, ...(reasoningEffort ? { reasoningEffort } : {}) })
-    if (!Array.isArray(value)) return []
-    return value.filter((term): term is string => typeof term === 'string' && term.trim().length >= 2 && term.trim().length <= 24).map(term => term.trim()).slice(0, 4)
+    return pickTerms(this, text, right, wrong)
   }
 
   /** Work a topic's session is asking the user about (approvals, questions) counts as waiting on the user. */
