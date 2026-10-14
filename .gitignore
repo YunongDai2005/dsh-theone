@@ -27,3 +27,6 @@ eval/data/**/predictions/
 eval/test/__pycache__/
 eval/__pycache__/
 !eval/data/*/sessions.jsonl
+
+# DeepSeek Harness source cloned by promo/build.mjs for its artwork
+.dsh/
