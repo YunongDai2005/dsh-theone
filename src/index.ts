@@ -5,14 +5,14 @@ import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve, sep } from 'node:path'
-import { LlmAdapter, createUserMessage, resolveRetryPolicy } from '@deepseek-ai/dsh-llm'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, LlmModelInfo, LlmResolvedModelInfo, ReasoningEffortId, StreamChunk, UserMessage } from '@deepseek-ai/dsh-llm'
 import type { Agent, AgentHandle, ModelSelection, ModelSelectionRef } from '@deepseek-ai/dsh-agent'
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import { SessionId, SessionLogOffset, SessionSeq, buildForkSeed } from '@deepseek-ai/dsh-session'
-import type { TurnEndReason, SessionEvent } from '@deepseek-ai/dsh-session'
+import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-compaction/types'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
 import type {} from '@deepseek-ai/dsh-workspace'
@@ -40,62 +40,16 @@ import type { FactResult } from './store.ts'
 import { PACKAGE_NAME, Updater, type PluginInstaller } from './update.ts'
 import { NOTICE_URL, NoticeBoard } from './notices.ts'
 import { exchange, FEEDBACK_EMAIL, FEEDBACK_LIMITS, FEEDBACK_URL, finalReport, replySection, routeDigest, scrub, sendReport, type FeedbackDraft } from './feedback.ts'
-import { createRequire } from 'node:module'
 import { WeixinBridge } from './weixin.ts'
 import { TelegramApp } from './telegram.ts'
 import { IMessageApp } from './imessage.ts'
 import type { AppHost } from './remote-app.ts'
+import { GatewayAdapter, GATEWAY_TITLES, goalObjective, goalRoundOf, parseVia, stepInput, viaModel } from './gateway-model.ts'
+import { clarifyText, descriptorJson, GOAL_TOOLS, messageText, reasonLabel, redactDescriptor, TERMS_PROMPT, WAKING_SOURCES, welcomeText, writtenInEnglish } from './service-text.ts'
+import { AgentPresets, Config, OwnSessionArchive, readDescriptors, readDshVersion, readOwnVersion, reloadBundle, settingsConfig } from './service-config.ts'
 
-function redactDescriptor(text: string): string {
-  return text.replace(/\bsk-[a-zA-Z0-9_-]{16,}|\bBearer\s+\S+/gi, '[REDACTED]')
-    .replace(/((?:api[_ -]?key|password|密码|密钥)\s*[:=：]\s*)\S+/gi, '$1[REDACTED]')
-}
-
-/** The part of DSH's workspace registry TheOne uses to keep its own sessions out of sight while off. */
-interface OwnSessionArchive {
-  readonly archivedSessionIds: readonly string[]
-  archiveSession(sessionId: SessionId, options?: { stopActivity?: boolean }): Promise<void>
-  unarchiveSession(sessionId: SessionId): Promise<void>
-}
-
-/** The part of DSH's agent preset registry that gives a session its tools. */
-interface AgentPresets {
-  resolve(id?: string): Promise<{ id: string }>
-  mount(ctx: Context, id?: string): Promise<{ id: string }>
-  composedPreset(ctx: Context): string | undefined
-}
-
-export interface Config {
-  databasePath?: string
-  contextsPath?: string
-  gatewayKey: string
-  workerProvider?: string
-  workerModel?: string
-  maxDescriptorChars: number
-  maxResponseChars: number
-  routerMode?: 'rules' | 'llm'
-  /** @deprecated The direct DeepSeek router was removed; routing always uses DSH. Accepted and ignored. */
-  routerTransport?: 'dsh' | 'legacy'
-  historyCatalog?: boolean
-  catalogIntervalMs?: number
-  routerBaseUrl?: string
-  routerModel?: string
-  routerApiKeyEnv?: string
-  linkScope?: LinkScope
-  routeNotice?: 'hidden' | 'switch' | 'all'
-  /** Show notices the maintainer publishes (read from a static file; nothing is sent). */
-  notices?: boolean
-  /** Experimental: topics share confirmed facts (a figure, a decision) with evidence and versions. */
-  factLinks?: boolean
-  /** With factLinks: after each turn, a small model call proposes facts the Worker did not record. */
-  factExtraction?: boolean
-  /** A routing card per topic, written in the background after its first replies; on unless turned off (tests). */
-  topicCards?: boolean
-  /** Where notices are read from; for testing. */
-  noticeUrl?: string
-  /** Where problem reports are sent when the user presses Send; "off" leaves only copy and email. For testing. */
-  feedbackUrl?: string
-}
+export { viaModel, parseVia }
+export type { Config }
 
 declare module '@deepseek-ai/cordis' {
   interface Context { theone: TheOne }
@@ -110,179 +64,6 @@ declare module '@deepseek-ai/dsh-llm' {
     'theone-note': { kind: 'theone-note'; form: 'notice' }
   }
 }
-
-/**
- * Main chat's model entries besides plain "TheOne": "TheOne · <model>" still answers through TheOne,
- * with that model doing the routing and the background work.
- */
-const VIA = 'via:'
-export function viaModel(selection: ModelSelection): string { return `${VIA}${selection.provider}/${selection.model}` }
-export function parseVia(id: string | undefined): ModelSelection | undefined {
-  if (!id?.startsWith(VIA)) return undefined
-  const rest = id.slice(VIA.length)
-  const slash = rest.indexOf('/')
-  if (slash <= 0 || slash === rest.length - 1 || rest.slice(0, slash) === 'theone') return undefined
-  return { provider: rest.slice(0, slash), model: rest.slice(slash + 1) }
-}
-
-/** Gateway provider delegates each accepted input to its context's DSH worker. */
-class GatewayAdapter extends LlmAdapter {
-  constructor(private readonly service: TheOne) { super() }
-  override providerInfo(provider: string) { return { id: provider, name: 'TheOne' } }
-  override listModels(provider: string) { return this.service.gatewayModels(provider) }
-  override resolveModel(provider: string, model: string, signal?: AbortSignal): Promise<LlmResolvedModelInfo> {
-    if (model !== 'gateway' && !parseVia(model)) throw new Error('TheOne only exposes its gateway models')
-    return this.service.gatewayModelInfo(provider, signal, model)
-  }
-  override providerRetryPolicy() { return resolveRetryPolicy({ mode: 'normal', maxRetries: 0 }, 'theone.retry') }
-  override stream(options: GenerateOptions): AsyncIterable<StreamChunk> { return this.service.answer(options) }
-}
-
-/** The Worker receives every message admitted in this gateway step, e.g. several steering messages, as one input. */
-/** Main chat's names, as the client sets them per language. */
-const GATEWAY_TITLES = ['TheOne · 主聊天', 'TheOne · Main chat']
-
-/** DSH's goal tools; in a topic they act on main chat's goal. */
-const GOAL_TOOLS = new Set(['get_goal', 'create_goal', 'update_goal'])
-
-/** A round DSH's goal driver queued (source kind "goal", from a plugin TheOne does not depend on). */
-function goalRoundOf(message: { source?: unknown }): string | undefined {
-  const source = message.source as { kind?: string; goalId?: unknown } | undefined
-  return source?.kind === 'goal' && typeof source.goalId === 'string' ? source.goalId : undefined
-}
-
-/** The objective a goal round restates (DSH writes it as a JSON string after "Objective:"). */
-function goalObjective(message: { content: readonly { type: string; text?: string }[] }): string {
-  const text = message.content.filter(block => block.type === 'text').map(block => block.text ?? '').join('\n')
-  const quoted = text.match(/Objective: ("(?:[^"\\]|\\.)*")/)?.[1]
-  try { return quoted ? JSON.parse(quoted) as string : text } catch { return text }
-}
-
-function stepInput(messages: GenerateOptions['messages'], input: UserMessage): UserMessage {
-  const batch: UserMessage[] = []
-  for (const message of [...messages].reverse()) {
-    if (message.role === 'assistant') break
-    if (message.role === 'user' && 'source' in message && message.source?.kind === 'user') batch.unshift(message as UserMessage)
-  }
-  if (batch.length < 2 || batch.at(-1)!.id !== input.id) return input
-  return createUserMessage({ source: input.source, content: batch.flatMap((message, index) =>
-    index ? [{ type: 'text' as const, text: '\n\n' }, ...message.content] : [...message.content]) })
-}
-
-/** TheOne's own questions, in the language the message was written in; the classifier writes its own. */
-const CLARIFY_TEXT: Record<string, { zh: string; en: string }> = {
-  CATALOG_NOT_READY: { zh: '你指的是之前哪件事？可以补充目标或链接，我就能继续处理。', en: 'Which earlier matter do you mean? Add the goal or a link and I can carry on.' },
-  HISTORY_SEARCH_UNAVAILABLE: { zh: '历史检索暂时不可用，请稍后再试。', en: 'Searching your history is unavailable right now; please try again shortly.' },
-  CATALOG_REVIEW_LIMIT: { zh: '暂时没有找到明确相关的旧话题。你是在说一件新的事情吗？', en: 'I found no earlier topic that clearly matches. Is this something new?' },
-  ROUTER_MODEL_MISSING: { zh: '请先在 DSH 中选择一个已配置的聊天模型，再打开 TheOne。无需另配 API Key。', en: 'Choose a configured chat model in DSH first, then open TheOne. No separate API key is needed.' },
-  'correction-unclear': { zh: '应该放到哪个话题？可以说「分错了，是 某某 的」，我会把上一条交给它重新处理。', en: 'Which topic should it go to? Say "wrong topic, it is about …" and I will redo the last message there.' },
-  'multiple-contexts': { zh: '这句话涉及多个话题，请指定先处理哪个。', en: 'This touches several topics; which one first?' },
-}
-const writtenInEnglish = (text: string) => !!text.trim() && !/[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/.test(text)
-function clarifyText(decision: Decision, text: string): string {
-  const fixed = CLARIFY_TEXT[decision.reason]
-  return fixed ? fixed[writtenInEnglish(text) ? 'en' : 'zh'] : decision.question!
-}
-
-/**
- * Messages that wake a session to work on its own, as DSH shows them ("Subtask status updated" and the
- * like), plus a late answer to a question. Notes DSH adds itself (a mode switch) wake nothing.
- */
-const WAKING_SOURCES = new Set(['subagent-settled', 'agent-message', 'team-message', 'tool-jobs', 'schedule', 'webhook',
-  'cordis-host-runner', 'user-question-reply'])
-
-/** The words of a message, without its attachments. */
-function messageText(message: UserMessage): string {
-  return message.content.filter(block => block.type === 'text').map(block => block.text).join('\n')
-}
-
-/** The topic descriptor as valid JSON within `budget` characters: fields are shortened, never the JSON. */
-function descriptorJson(context: Pick<ContextDescriptor, 'title' | 'summary' | 'lastState'>, budget: number): string {
-  const clip = (text: string, max: number) => text.length > max ? text.slice(0, Math.max(0, max - 1)) + '…' : text
-  const title = clip(context.title, 120)
-  const room = Math.max(64, budget - title.length - 60)
-  const lastState = clip(context.lastState, Math.floor(room / 3))
-  return JSON.stringify({ title, summary: clip(context.summary, room - lastState.length), lastState })
-}
-
-const TERMS_PROMPT = `你在帮话题路由器从用户的更正中学习。用户确认这条 message 属于 rightTopic（而不是 wrongTopic）。
-从 message 原文中挑出最多 4 个能把它和 rightTopic 联系起来、又能和 wrongTopic 区分开的词语：项目名、术语、产品、人名、文件名等，每个 2–12 个字，必须在 message 中原样出现。
-不要选泛泛的词（如「帮我」「这个」「问题」），不要选 wrongTopic 的名字。只输出 JSON 字符串数组，例如 ["消融实验","第三章"]。`
-
-/** The first words of a new main chat, in the interface language. */
-function welcomeText(locale: string): string {
-  return locale.toLowerCase().startsWith('zh')
-    ? '你好！以后所有的事都在这里聊就行。TheOne 会判断每句话属于哪件事，交给那件事自己的后台会话去做，过程原样显示在这里。你以前在 DSH 里聊过的内容，会整理到左侧的「话题工作区」。'
-    : 'Hi! From now on, just talk here about anything. TheOne works out which topic each message belongs to, hands it to that topic\'s own background session, and shows the work right here. Your earlier DSH conversations are organized under **Topic workspaces** in the sidebar.'
-}
-
-/** Why a message went where it did, as a short phrase for the "show every decision" notice. */
-function reasonLabel(reason: string, english = false): string {
-  const fixed: Record<string, string> = english ? {
-    'steering': 'added during the reply', 'short-continuation': 'continuing', 'attachment-only': 'attachment', 'correction': 'your correction',
-    'explicit-new-topic': 'new topic', 'no-history-evidence': 'new question', 'entity-or-keyword': 'mentions this topic',
-    'keyword-only-switch': 'mentions this topic', 'current-reference': 'same topic', 'combined-contexts': 'combines topics',
-    'insufficient-evidence': 'no matching topic', 'multiple-contexts': 'several topics fit', 'weak-keyword-match': 'new question', 'no-history-match': 'new question',
-    'CATALOG_NOT_READY': 'history still being catalogued', 'CATALOG_REVIEW_LIMIT': 'no clearly related topic', 'HISTORY_SEARCH_UNAVAILABLE': 'history search unavailable',
-    'goal-round': 'goal round',
-  } : {
-    'steering': '回复中补充', 'short-continuation': '接着说', 'attachment-only': '附件', 'correction': '按你的更正',
-    'explicit-new-topic': '明确的新话题', 'no-history-evidence': '新的问题', 'entity-or-keyword': '提到了这个话题',
-    'keyword-only-switch': '提到了这个话题', 'current-reference': '接着当前话题', 'combined-contexts': '结合多个话题',
-    'insufficient-evidence': '没有匹配的旧话题', 'multiple-contexts': '多个话题都可能', 'weak-keyword-match': '新的问题', 'no-history-match': '新的问题', 'CATALOG_NOT_READY': '历史还在整理',
-    'CATALOG_REVIEW_LIMIT': '没有找到明确相关的旧话题', 'HISTORY_SEARCH_UNAVAILABLE': '历史检索暂不可用', 'goal-round': '推进目标',
-  }
-  if (fixed[reason]) return fixed[reason]
-  if (reason.startsWith('router-fallback:')) return english ? 'classifier unavailable, routed by rules' : '分类暂不可用，按规则判断'
-  const text = reason.replace(/\s+/g, ' ').trim()
-  return text.length > 60 ? text.slice(0, 59) + '…' : text
-}
-
-/** Saved settings as service configuration; an unset choice falls back to following DSH. */
-function settingsConfig(values: EditableSettings): Partial<Config> {
-  return { ...values, workerProvider: values.workerProvider ?? undefined, workerModel: values.workerModel ?? undefined, contextsPath: values.contextsPath ?? undefined }
-}
-
-/**
- * Switch an installed bundle off and on so DSH loads its new version. This disposes the running
- * TheOne, so it runs after the current request has answered and outlives this instance.
- */
-function reloadBundle(manager: { setBundleEnabled?(name: string, enabled: boolean): Promise<{ application: string }> }, bundle: string): void {
-  setTimeout(() => {
-    void (async () => {
-      const off = await manager.setBundleEnabled!(bundle, false)
-      if (off.application === 'failed' || off.application === 'cancelled') return
-      await manager.setBundleEnabled!(bundle, true)
-    })().catch(error => console.warn('TheOne could not reload itself after updating; restart DSH to apply the update.', error))
-  }, 300)
-}
-
-function readOwnVersion(): string {
-  try { return String((JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version?: unknown }).version ?? '0.0.0') }
-  catch { return '0.0.0' }
-}
-
-/** DSH's own version, as far as its packages say; undefined when it cannot be read. */
-function readDshVersion(): string | undefined {
-  try { return String((createRequire(import.meta.url)('@deepseek-ai/dsh-agent/package.json') as { version?: unknown }).version ?? '') || undefined }
-  catch { return undefined }
-}
-
-function readDescriptors(path: string): ContextDescriptor[] {
-  const value: unknown = JSON.parse(readFileSync(path, 'utf8'))
-  if (!Array.isArray(value)) throw new Error('contextsPath must contain a JSON array')
-  const ids = new Set<string>()
-  for (const item of value) {
-    if (typeof item !== 'object' || item === null ||
-      !['id', 'title', 'summary', 'lastState'].every(key => typeof item[key] === 'string' && item[key].length > 0) ||
-      !['entities', 'keywords'].every(key => Array.isArray(item[key]) && item[key].every((term: unknown) => typeof term === 'string' && term.length > 0)) || ids.has(item.id)) {
-      throw new Error('Invalid or duplicate Context descriptor')
-    }
-    ids.add(item.id)
-  }
-  return value as ContextDescriptor[]
-}
-
 export default class TheOne extends Service {
   static inject = ['agents', 'llm', 'sessionQuery', 'tools', 'agentDefaultModel']
   static Config: z<Config> = z.object({
