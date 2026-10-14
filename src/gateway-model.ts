@@ -1,7 +1,7 @@
 import { LlmAdapter, createUserMessage, resolveRetryPolicy } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, LlmResolvedModelInfo, StreamChunk, UserMessage } from '@deepseek-ai/dsh-llm'
 import type { ModelSelection } from '@deepseek-ai/dsh-agent'
-import type TheOne from './index.ts'
+import type TheOne from './service.ts'
 
 /**
  * Main chat's model entries besides plain "TheOne": "TheOne · <model>" still answers through TheOne,
