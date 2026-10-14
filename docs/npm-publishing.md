@@ -44,3 +44,7 @@ npm view dsh-theone version --registry=https://registry.npmjs.org/
 Once the package is available, use `dsh-theone` as the package name with the official npm installation source in DSH. Search indexing may take additional time.
 
 Reference: https://docs.npmjs.com/trusted-publishers/
+
+## Host and browser type checks
+
+DSH declares two different `Context.sessions` services: the Host SessionStore and the browser ISessions controller. Check these entry points in separate TypeScript programs (`tsconfig.tests.json` and `tsconfig.client.json`) so declaration merging cannot give browser code the Host service type. `npm run typecheck` checks both programs; `npm run build` emits both before bundling the browser entry. The browser entry remains type checked; no API casts or runtime changes are needed.
