@@ -1,4 +1,6 @@
 import type LlmRuntime from '@deepseek-ai/dsh-llm'
+import { randomUUID } from 'node:crypto'
+import { SessionId } from '@deepseek-ai/dsh-session'
 import type { ModelSelection } from '@deepseek-ai/dsh-agent'
 import type { ContextDescriptor, Decision } from './types.ts'
 import { newIndependentTopic, referencesHistory, redactRoutingText } from './routing-policy.ts'
@@ -155,7 +157,7 @@ export function validateRoutingDecision(value: unknown, input: RoutingInput): De
 }
 
 export interface RoutingRouter {
-  decide(input: RoutingInput, signal?: AbortSignal): Promise<RoutingResult>
+  decide(input: RoutingInput, signal?: AbortSignal, sessionId?: SessionId): Promise<RoutingResult>
 }
 
 /** Uses the host's configured adapter; credentials never enter this plugin. */
@@ -177,7 +179,7 @@ export class DshRouter implements RoutingRouter {
     private readonly selection: () => ModelSelection,
     private readonly timeoutMs = 30000, private readonly now: () => number = Date.now) {}
 
-  async decide(input: RoutingInput, signal?: AbortSignal): Promise<RoutingResult> {
+  async decide(input: RoutingInput, signal?: AbortSignal, sessionId?: SessionId): Promise<RoutingResult> {
     signal?.throwIfAborted()
     const payload = routingPayload(input)
     const retryAfterMs = this.blockedUntil - this.now()
@@ -197,7 +199,7 @@ export class DshRouter implements RoutingRouter {
         ...(offEffort ? { reasoningEffort: offEffort } : {}) }, bounded)
       bounded.throwIfAborted()
       let output = '', stopped = false
-      for await (const chunk of call.stream({ ...call.config, system: routingPrompt(payload),
+      for await (const chunk of call.stream({ ...call.config, system: routingPrompt(payload), sessionId: sessionId ?? SessionId(randomUUID()),
         messages: [{ role: 'user', content: [{ type: 'text', text: JSON.stringify(payload) }] }], signal: bounded })) {
         bounded.throwIfAborted()
         if (stopped) throw new RouterFailure('ROUTER_RESPONSE_INCOMPLETE')

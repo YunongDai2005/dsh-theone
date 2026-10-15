@@ -1,11 +1,12 @@
 import { Service } from '@deepseek-ai/cordis';
 import z from '@deepseek-ai/schemastery';
 import { randomUUID } from 'node:crypto';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve, sep } from 'node:path';
-import { LlmAdapter, createUserMessage, resolveRetryPolicy } from '@deepseek-ai/dsh-llm';
+import { LlmAdapter, createUserMessage, isAgentLoopRequest, resolveRetryPolicy } from '@deepseek-ai/dsh-llm';
 import { installModelSelection } from '@deepseek-ai/dsh-agent';
 import { defineTool } from '@deepseek-ai/dsh-tools';
 import { SessionId, SessionLogOffset, SessionSeq, buildForkSeed } from '@deepseek-ai/dsh-session';
@@ -371,6 +372,14 @@ export default class TheOne extends Service {
         this.registerCatalogChannel();
         this.adapter = ctx.llm.registerAdapter(['theone'], new GatewayAdapter(this));
         ctx.on('session/event', (session, event) => {
+            if (event.type === 'permission/preset' || event.type === 'sandbox/mode' || event.type === 'approval/policy') {
+                // The user can tighten access while a model or reviewer is still running.
+                // Apply the new policy before the next tool, including set-aside topics.
+                const runs = new Set([...this.runs.values(), ...[...this.background.values()].map(entry => entry.run)]);
+                for (const run of runs)
+                    if (run.gateway.session === session && !run.done)
+                        this.syncPermissions(run.gateway, run.worker);
+            }
             if (event.type === 'turn/end') {
                 if (session.id === this.reservedGateway)
                     this.reservedGateway = undefined;
@@ -592,13 +601,66 @@ export default class TheOne extends Service {
         // Main chat's own commands: those about the work act on the topic in use (see gatewayCommands).
         ctx.on('agent/created', ({ agent }) => { if (this.store.isGateway(agent.id))
             this.gatewayCommands(agent); return undefined; });
-        // Main-chat tool calls mirror calls the Worker already runs: skip every policy and show its result.
-        ctx.on('tools/pre-execute', async (exec, next) => {
+        // DSH rc.2's Auto reviewer omits sessionId on its auxiliary LLM call. Carry
+        // the executing topic's identity through the asynchronous gate, never a global
+        // "current topic" (parallel calls can belong to different sessions).
+        const reviewing = new AsyncLocalStorage();
+        const isWorker = (agent) => {
+            const pending = [...this.workers.values()].map(handle => handle.agent);
+            const seen = new Set();
+            const live = this.ctx.agents.list();
+            for (let i = 0; i < pending.length; i++) {
+                const owner = pending[i];
+                if (owner === agent)
+                    return true;
+                if (seen.has(owner))
+                    continue;
+                seen.add(owner);
+                // Runtime ownership is authoritative; a supplied parentSession is not.
+                for (const child of live)
+                    if (!seen.has(child) && this.ctx.agents.isOwnedBy(child.id, owner))
+                        pending.push(child);
+            }
+            return false;
+        };
+        ctx.on('llm/stream', (options, next) => {
+            const worker = reviewing.getStore();
+            if (!worker || options.sessionId !== undefined || isAgentLoopRequest(options)
+                || typeof options.system !== 'string' || !options.system.startsWith('REVIEW_POLICY\n'))
+                return next();
+            const route = worker.session.requestHeader()?.config;
+            if (route?.provider !== options.provider || route.model !== options.model)
+                return next();
+            // Re-enter with a detached request: upstream freezes its inputs. The identity
+            // also makes this branch a no-op on re-entry or after an upstream fix.
+            return ctx.llm.stream({ ...options, sessionId: worker.id });
+        });
+        // Main-chat tool calls mirror calls the Worker already runs: show its actual
+        // reviewed result. Reviewing the mirror again sees an unrelated request header.
+        const mirrorGate = async (exec, next) => {
             const run = this.mirroredRun(exec);
             if (run === 'refuse')
                 return { kind: 'deny', reason: 'TheOne main chat shows tool calls; the background task runs them.' };
-            return run ? { kind: 'allow' } : next();
-        }, { prepend: true });
+            if (run)
+                return { kind: 'allow' };
+            return exec.agent && isWorker(exec.agent) ? reviewing.run(exec.agent, next) : next();
+        };
+        let removeMirrorGate = ctx.on('tools/pre-execute', mirrorGate, { prepend: true });
+        const refreshMirrorGate = () => {
+            removeMirrorGate();
+            removeMirrorGate = ctx.on('tools/pre-execute', mirrorGate, { prepend: true });
+        };
+        // Cordis dispatches this hook before it captures the waterfall listeners.
+        // Restore ordering at the actual call boundary, even if Auto was hot-loaded
+        // after model assembly. This does not remove any gate from real executions.
+        ctx.on('internal/dispatch', (_mode, name, args) => {
+            if (name !== 'tools/pre-execute')
+                return;
+            const exec = args[0];
+            if (exec.agent && (this.mirroredRun(exec) || isWorker(exec.agent)))
+                refreshMirrorGate();
+        });
+        ctx.effect(() => () => { removeMirrorGate(); reviewing.disable(); });
         ctx.on('tools/execute', async (exec, next) => {
             const run = this.mirroredRun(exec);
             if (!run)
@@ -1593,9 +1655,32 @@ export default class TheOne extends Service {
             return;
         try {
             const chosen = presets.current(gateway.session);
-            // A hand-tuned combination has no preset to copy; the Worker keeps its own.
-            if (chosen !== 'custom' && presets.current(worker.session) !== chosen)
-                presets.set(worker.session, chosen);
+            if (chosen !== 'custom') {
+                if (presets.current(worker.session) !== chosen)
+                    presets.set(worker.session, chosen);
+                return;
+            }
+            // Custom is a derived label, not a settable preset. Copy the effective knobs
+            // instead: keeping the Worker's old mode can either deny allowed commands
+            // or retain access the user has since removed in main chat.
+            const sandbox = this.ctx.get('sandboxPolicy');
+            const approval = this.ctx.get('approval');
+            if (!sandbox || !approval)
+                return;
+            // Custom has no selectable preset of its own. Preserve the source's last
+            // real selection as well as its knobs, or a topic formerly in Auto keeps
+            // the Auto identity when the custom bundle happens to match it.
+            const selected = gateway.session.snapshotEvents().findLast(event => event.type === 'permission/preset');
+            const workerSelected = worker.session.snapshotEvents().findLast(event => event.type === 'permission/preset');
+            const preset = selected?.type === 'permission/preset' ? selected.data.preset : presets.catalog?.().defaultPreset;
+            if (preset && (workerSelected?.type !== 'permission/preset' || workerSelected.data.preset !== preset))
+                worker.session.append('permission/preset', { preset });
+            const mode = sandbox.resolve({ session: gateway.session }).mode;
+            const policy = approval.overrideOf(gateway.session) ?? approval.config.policy ?? 'ask';
+            if (sandbox.resolve({ session: worker.session }).mode !== mode)
+                worker.session.append('sandbox/mode', { mode });
+            if ((approval.overrideOf(worker.session) ?? approval.config.policy ?? 'ask') !== policy)
+                worker.session.append('approval/policy', { policy });
         }
         catch { /* An unavailable preset (e.g. Auto without its integration) leaves the Worker's setting unchanged. */ }
     }
@@ -2091,7 +2176,7 @@ export default class TheOne extends Service {
                 const corrections = this.similarCorrections(text);
                 const offered = this.config.factLinks ? this.factCandidates(text, recent, currentId) : [];
                 const facts = offered.length ? { facts: offered } : {};
-                const result = await this.router.decide({ text, contexts, currentId, recent, historyIncomplete: this.catalog?.incomplete, corrections, ...facts, running, ...folders }, signal);
+                const result = await this.router.decide({ text, contexts, currentId, recent, historyIncomplete: this.catalog?.incomplete, corrections, ...facts, running, ...folders }, signal, agent.id);
                 proposed = result.decision;
                 // A miss in a short candidate list is not proof that the whole catalog has no match.
                 if (proposed.action === 'CREATE' && this.catalog && !/^新话题[：:]/.test(text.trim())) {
@@ -2104,7 +2189,7 @@ export default class TheOne extends Service {
                         pages.push([...(current ? [current] : []), ...remaining.slice(offset, offset + pageSize)]);
                     // Review pages concurrently, then read them in order exactly as a sequential pass would.
                     const router = this.router, incomplete = this.catalog.incomplete;
-                    const reviews = await Promise.allSettled(pages.map(page => router.decide({ text, contexts: page, currentId, recent, historyIncomplete: incomplete, corrections, ...facts, running, ...folders }, signal)));
+                    const reviews = await Promise.allSettled(pages.map(page => router.decide({ text, contexts: page, currentId, recent, historyIncomplete: incomplete, corrections, ...facts, running, ...folders }, signal, agent.id)));
                     const firstElapsed = result.elapsedMs;
                     let checked = 0;
                     for (const settled of reviews) {
@@ -2383,7 +2468,8 @@ export default class TheOne extends Service {
         let byRules = !this.router;
         if (this.router) {
             try {
-                const result = await this.router.decide({ text: query, contexts, recent: [{ role: 'user', text: previous.text }] }, signal);
+                const gatewayId = this.store.route(previous.id)?.gatewayId;
+                const result = await this.router.decide({ text: query, contexts, recent: [{ role: 'user', text: previous.text }] }, signal, gatewayId ? SessionId(gatewayId) : undefined);
                 Object.assign(receipt, { model: result.model, elapsedMs: result.elapsedMs });
                 decision = result.decision;
             }
@@ -2449,7 +2535,7 @@ export default class TheOne extends Service {
             reasoningEffort = (await this.ctx.llm.resolveModelInfo(selection.provider, selection.model)).reasoning?.efforts.find(effort => effort.id === 'off')?.id;
         }
         catch { /* Default effort. */ }
-        const card = parseCard(await modelJson(this.ctx.llm, selection, CARD_PROMPT, payload, undefined, { maxTokens: 800, timeoutMs: 30000, ...(reasoningEffort ? { reasoningEffort } : {}) }), text => redactDescriptor(redactRoutingText(text)));
+        const card = parseCard(await modelJson(this.ctx.llm, selection, CARD_PROMPT, payload, undefined, { sessionId: SessionId(topic.workingSessionId), maxTokens: 800, timeoutMs: 30000, ...(reasoningEffort ? { reasoningEffort } : {}) }), text => redactDescriptor(redactRoutingText(text)));
         if (card)
             this.store.applyCard(contextId, card);
     }
@@ -2463,7 +2549,7 @@ export default class TheOne extends Service {
             reasoningEffort = (await this.ctx.llm.resolveModelInfo(selection.provider, selection.model)).reasoning?.efforts.find(effort => effort.id === 'off')?.id;
         }
         catch { /* Default effort. */ }
-        const items = await modelJson(this.ctx.llm, selection, EXTRACT_PROMPT, payload, undefined, { maxTokens: 1024, timeoutMs: 30000, ...(reasoningEffort ? { reasoningEffort } : {}) });
+        const items = await modelJson(this.ctx.llm, selection, EXTRACT_PROMPT, payload, undefined, { sessionId: SessionId(sessionId), maxTokens: 1024, timeoutMs: 30000, ...(reasoningEffort ? { reasoningEffort } : {}) });
         applyExtraction(this.store, { sessionId, contextId, events, base, items });
     }
     /**
@@ -2512,7 +2598,7 @@ export default class TheOne extends Service {
         }
         catch { /* Default effort. */ }
         const value = await modelJson(this.ctx.llm, selection, TERMS_PROMPT, { message: redactRoutingText(text).slice(0, 600), rightTopic: { title: right.title, summary: right.summary.slice(0, 300) },
-            ...(wrong ? { wrongTopic: { title: wrong.title, summary: wrong.summary.slice(0, 300) } } : {}) }, undefined, { maxTokens: 256, timeoutMs: 20000, ...(reasoningEffort ? { reasoningEffort } : {}) });
+            ...(wrong ? { wrongTopic: { title: wrong.title, summary: wrong.summary.slice(0, 300) } } : {}) }, undefined, { sessionId: SessionId(right.workingSessionId), maxTokens: 256, timeoutMs: 20000, ...(reasoningEffort ? { reasoningEffort } : {}) });
         if (!Array.isArray(value))
             return [];
         return value.filter((term) => typeof term === 'string' && term.trim().length >= 2 && term.trim().length <= 24).map(term => term.trim()).slice(0, 4);

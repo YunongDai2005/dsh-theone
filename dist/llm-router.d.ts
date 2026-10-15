@@ -1,4 +1,5 @@
 import type LlmRuntime from '@deepseek-ai/dsh-llm';
+import { SessionId } from '@deepseek-ai/dsh-session';
 import type { ModelSelection } from '@deepseek-ai/dsh-agent';
 import type { ContextDescriptor, Decision } from './types.ts';
 import { type FactCandidate } from './facts.ts';
@@ -84,7 +85,7 @@ export declare class RouterFailure extends Error {
 /** Validate semantics as well as JSON shape before touching persistent state. */
 export declare function validateRoutingDecision(value: unknown, input: RoutingInput): Decision;
 export interface RoutingRouter {
-    decide(input: RoutingInput, signal?: AbortSignal): Promise<RoutingResult>;
+    decide(input: RoutingInput, signal?: AbortSignal, sessionId?: SessionId): Promise<RoutingResult>;
 }
 /** Uses the host's configured adapter; credentials never enter this plugin. */
 /**
@@ -102,5 +103,5 @@ export declare class DshRouter implements RoutingRouter {
     private failures;
     private blockedUntil;
     constructor(llm: Pick<LlmRuntime, 'prepareCall' | 'resolveModelInfo'>, selection: () => ModelSelection, timeoutMs?: number, now?: () => number);
-    decide(input: RoutingInput, signal?: AbortSignal): Promise<RoutingResult>;
+    decide(input: RoutingInput, signal?: AbortSignal, sessionId?: SessionId): Promise<RoutingResult>;
 }

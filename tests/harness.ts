@@ -42,7 +42,7 @@ export class FixtureModel extends LlmAdapter {
   }
 }
 
-export async function harness(root: string, model = new FixtureModel(), options: { databasePath?: string | null; descriptorPath?: string; compression?: 'none' | 'zstd'; queryPath?: string; routerMode?: 'rules' | 'llm'; autoModel?: boolean; defaultProvider?: string; historyCatalog?: boolean; theoneConfig?: Partial<Config> } = {}) {
+export async function harness(root: string, model = new FixtureModel(), options: { databasePath?: string | null; descriptorPath?: string; compression?: 'none' | 'zstd'; queryPath?: string; routerMode?: 'rules' | 'llm'; autoModel?: boolean; defaultProvider?: string; historyCatalog?: boolean; cwd?: string; theoneConfig?: Partial<Config> } = {}) {
   const ctx = new Context()
   try {
     await ctx.plugin(LlmRuntime)
@@ -67,6 +67,7 @@ export async function harness(root: string, model = new FixtureModel(), options:
     })
     const gateway = (await ctx.agents.create({
       sessionId: SessionId(randomUUID()), agentOptions: { provider: 'theone', model: 'gateway' },
+      ...(options.cwd ? { meta: { cwd: options.cwd } } : {}),
     })).agent
     return { ctx, gateway, model, close: () => ctx.fiber.dispose() }
   } catch (error) { await ctx.fiber.dispose(); throw error }

@@ -99,6 +99,8 @@ test("the Worker takes main chat's permission mode before each reply", { timeout
     await ask(app.gateway, 'Qwen 那个')
     const workerId = app.ctx.theone.store.contexts().find(c => c.id === 'ctx_qwen_9070xt')!.workingSessionId
     assert.equal(modes.get(workerId), 'danger-full-access')
+    // This reduced fixture has no sandbox/approval services to resolve custom knobs.
+    // The real-service custom-permission cases live in permissions.test.ts.
     modes.set(app.gateway.id, 'custom')
     await ask(app.gateway, '继续')
     assert.equal(modes.get(workerId), 'danger-full-access')

@@ -66,6 +66,8 @@ test('after a topic’s first reply a card is written in the background, and rou
     await ask(app.gateway, 'Qwen 部署到 9070XT 怎么弄')
     await app.ctx.theone.extracting
     assert.equal(cards, 1)
+    assert.equal(model.requests.find(r => r.system === CARD_PROMPT)?.sessionId,
+      app.ctx.theone.store.contexts().find(context => context.id === 'ctx_qwen_9070xt')!.workingSessionId)
     assert.ok(app.ctx.theone.store.contexts().find(context => context.id === 'ctx_qwen_9070xt')!.keywords.includes('显卡那件事'))
     await ask(app.gateway, '显卡那件事接着说一下驱动')
     await app.ctx.theone.extracting
