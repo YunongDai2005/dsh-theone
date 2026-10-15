@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-15T03:08:49.626716+00:00",
+  "release_url": "https://github.com/YunongDai2005/dsh-theone/releases/tag/qloo-topic-taste-prototype-20261015",
+  "asset_id": 642484463,
+  "bytes": 1569297,
+  "sha256": "989f3fe2dda276917fc07146c4b5bc75aeb15c7420c10c2784b668780386efab",
+  "seconds": 85.29598,
+  "resolution": [
+    1920,
+    1080
+  ],
+  "frames": "Two actual browser states captured October13,2026",
+  "narration": "Generated speech; synthetic-use-case inputs",
+  "new_qloo_requests": 0,
+  "new_model_requests": 0,
+  "scope": "Recorded-state walkthrough, not continuous screen recording, fresh live run, hosted judging proof, final submission or award",
+  "qa": "Full decode PASS; screenshot frame visually checked",
+  "source_code_commit": "d2cc788f27b5e23c03c444d635f2a7f1f3de611a"
+}
