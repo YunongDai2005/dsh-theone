@@ -179,7 +179,7 @@ export class HistoryCatalog {
           budget--
           const value = await modelJson(this.ctx.llm, this.selection(), CATALOG_PROMPT,
             { title, ownedContextId: owned?.id ?? null, compactionSummaries: summaries,
-              turns: batch.map(({ seq, text }) => ({ seq, text })), contexts, groups }, signal)
+              turns: batch.map(({ seq, text }) => ({ seq, text })), contexts, groups }, signal, { sessionId: log.session.id })
           const topics = validateCatalog(value, batch, contexts.map(c => c.id), groups.map(g => g.id), owned?.id)
           signal.throwIfAborted()
           this.store.importTopics(sessionId, log.session.cwd, batch, topics)

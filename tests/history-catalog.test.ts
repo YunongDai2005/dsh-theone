@@ -44,7 +44,7 @@ function fixture() {
     if (options.system === CATALOG_PROMPT) {
       assert.ok((options.maxTokens ?? 0) >= 8192)
       assert.equal(options.tools, undefined)
-      assert.equal(options.sessionId, undefined)
+      assert.ok(options.sessionId)
       const payload = JSON.parse(options.messages[0].content.filter(b => b.type === 'text').map(b => b.text).join(''))
       assert.ok(!JSON.stringify(payload).includes('sk-syntheticprivate1234567890'))
       const sets = new Map<string, number[]>()
@@ -84,6 +84,7 @@ test('catalog incrementally indexes DSH histories, splits mixed sessions and gro
     const experiments = await source(app, root, '论文实验：比较视频注意力实验')
     const original = JSON.stringify(mixed.session.snapshotEvents())
     await catalog.refresh()
+    assert.deepEqual(new Set(model.requests.filter(r => r.system === CATALOG_PROMPT).map(r => r.sessionId)), new Set([mixed.id, experiments.id]))
     assert.equal(JSON.stringify(mixed.session.snapshotEvents()), original)
     let snapshot = catalog.snapshot()
     const imported = snapshot.contexts.filter(c => ['论文方法', '论文实验', '显卡部署'].includes(c.title))

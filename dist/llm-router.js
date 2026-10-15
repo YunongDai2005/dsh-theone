@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+import { SessionId } from '@deepseek-ai/dsh-session';
 import { newIndependentTopic, referencesHistory, redactRoutingText } from "./routing-policy.js";
 import { FACT_LIMITS } from "./facts.js";
 export { redactRoutingText } from "./routing-policy.js";
@@ -157,7 +159,7 @@ export class DshRouter {
         this.timeoutMs = timeoutMs;
         this.now = now;
     }
-    async decide(input, signal) {
+    async decide(input, signal, sessionId) {
         signal?.throwIfAborted();
         const payload = routingPayload(input);
         const retryAfterMs = this.blockedUntil - this.now();
@@ -180,7 +182,7 @@ export class DshRouter {
                 ...(offEffort ? { reasoningEffort: offEffort } : {}) }, bounded);
             bounded.throwIfAborted();
             let output = '', stopped = false;
-            for await (const chunk of call.stream({ ...call.config, system: routingPrompt(payload),
+            for await (const chunk of call.stream({ ...call.config, system: routingPrompt(payload), sessionId: sessionId ?? SessionId(randomUUID()),
                 messages: [{ role: 'user', content: [{ type: 'text', text: JSON.stringify(payload) }] }], signal: bounded })) {
                 bounded.throwIfAborted();
                 if (stopped)
