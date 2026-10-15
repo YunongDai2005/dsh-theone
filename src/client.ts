@@ -104,7 +104,7 @@ export function apply(ctx: Context) {
   /** Shared update status: checked when the sidebar mounts and every six hours after. */
   let update: UpdateStatus | undefined
   const updateListeners = new Set<() => void>()
-  const setUpdate = (value: UpdateStatus) => { update = value; for (const listener of updateListeners) listener() }
+  const setUpdate = (value: UpdateStatus) => { if (lifetime.signal.aborted) return; update = value; for (const listener of updateListeners) listener() }
   const subscribeUpdate = (listener: () => void) => { updateListeners.add(listener); return () => { updateListeners.delete(listener) } }
   const readUpdate = async (method: 'GET' | 'POST' = 'GET', body?: Record<string, unknown>, force = false): Promise<boolean> => {
     try {
@@ -138,16 +138,38 @@ export function apply(ctx: Context) {
       : status.installable ? t('update.hint', { current: status.current, latest: status.latest ?? '' })
       : t('update.manualHint', { current: status.current, latest: status.latest ?? '' })
   }
-  /** TheOne restarts itself with the new version; once it answers again, the page loads the new interface. */
+  let reloadPending = false
+  /**
+   * DSH's client-hmr owns interface replacement. Reloading the page as soon as
+   * the backend answers races its module graph and can fail the desktop boot
+   * audit. Only refresh status here; disposal must also stop the old poller.
+   */
   async function awaitReload(previous: string) {
-    for (const started = Date.now(); Date.now() - started < 120000;) {
-      await new Promise(resolve => setTimeout(resolve, 1500))
-      try {
-        const response = await fetch('/api/theone/update', { cache: 'no-store' })
-        if (response.ok && (await response.json() as UpdateStatus).current !== previous) { window.location.reload(); return }
-      } catch { /* Still reloading. */ }
+    if (reloadPending || lifetime.signal.aborted) return
+    reloadPending = true
+    // Bound stalled requests as well as the interval between attempts.
+    const signal = AbortSignal.any([lifetime.signal, AbortSignal.timeout(120000)])
+    try {
+      while (!signal.aborted) {
+        await new Promise<void>(resolve => {
+          const finish = () => { clearTimeout(timer); signal.removeEventListener('abort', finish); resolve() }
+          const timer = setTimeout(finish, 1500)
+          signal.addEventListener('abort', finish, { once: true })
+        })
+        if (signal.aborted) break
+        try {
+          const response = await fetch('/api/theone/update', { cache: 'no-store', signal })
+          if (response.ok) {
+            const status = await response.json() as UpdateStatus
+            if (signal.aborted) break
+            if (status.current !== previous) { setUpdate(status); return }
+          }
+        } catch { /* Still reloading. */ }
+      }
+      if (update) setUpdate({ ...update, state: 'restart' })
+    } finally {
+      reloadPending = false
     }
-    if (update) setUpdate({ ...update, state: 'restart' })
   }
   ctx.effect(() => {
     void readUpdate()
