@@ -15,6 +15,7 @@ import { type FeedbackDraft } from './feedback.ts';
 import { WeixinBridge } from './weixin.ts';
 import { TelegramApp } from './telegram.ts';
 import { IMessageApp } from './imessage.ts';
+import { PersistentWork } from './persistent-work.ts';
 export interface Config {
     databasePath?: string;
     contextsPath?: string;
@@ -80,6 +81,7 @@ declare module '@deepseek-ai/dsh-llm' {
         'theone-note': {
             kind: 'theone-note';
             form: 'notice';
+            noticeId?: string;
         };
     }
 }
@@ -90,6 +92,8 @@ export default class TheOne extends Service {
     static inject: string[];
     static Config: z<Config>;
     readonly store: ContextStore;
+    readonly work: PersistentWork;
+    private readonly projects;
     readonly catalog?: HistoryCatalog;
     private readonly workers;
     private router?;
@@ -130,6 +134,8 @@ export default class TheOne extends Service {
     /** Sessions whose current step answers through TheOne; only these refuse to run tools themselves. */
     private readonly throughTheOne;
     constructor(ctx: Context, config: Config);
+    private workTasks;
+    private deliverWorkNotice;
     /** DSH Connection protects plugin routes inside its authenticated /api fence. */
     private registerCatalogChannel;
     /** One topic-directory edit. Changes that remove a topic wait until no reply is running. */
@@ -302,16 +308,14 @@ export default class TheOne extends Service {
     private reroute;
     /** Learning from corrections in flight; tests and shutdown can wait for it. */
     learning: Promise<void>;
-    /** Fact extractions in flight, one queue per topic so they commit in turn order. */
-    private readonly extractions;
-    /** All extractions in flight; tests and shutdown can wait for it. */
+    /** Drain due memory jobs; persisted retries remain scheduled across shutdown. */
     get extracting(): Promise<void>;
     /** Queue an extraction of the turn that just ended in `worker`'s topic. */
     private queueExtraction;
     /** Queue a routing card for this topic, after any extraction already queued for it. */
     private queueCard;
-    private writeCard;
-    private extractFacts;
+    private queueMemory;
+    private runMemory;
     /**
      * The user moved a message to another topic: remember it, and teach both topics. The right topic
      * gains the message's distinctive terms and the wrong one loses them; `weight` is lower for

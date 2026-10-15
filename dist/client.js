@@ -25,7 +25,7 @@ __export(client_exports, {
   inject: () => inject
 });
 module.exports = __toCommonJS(client_exports);
-var import_react = require("react");
+var import_react2 = require("react");
 
 // src/settings-types.ts
 var EDITABLE_SETTINGS_KEYS = [
@@ -86,6 +86,39 @@ var GatewayNavigation = class {
 
 // src/client-locales.ts
 var zh = {
+  "tasks.title": "\u6301\u7EED\u4EFB\u52A1",
+  "tasks.help": "\u5728\u672C\u673A\u5B9A\u671F\u67E5\u770B\u516C\u5F00 GitHub PR \u548C CI \u6458\u8981\u3002\u6709\u65B0\u5931\u8D25\u3001\u901A\u8FC7\u6216\u5173\u95ED\u65F6\u901A\u77E5\u4E3B\u804A\u5929\u3002DSH \u5173\u95ED\u671F\u95F4\u6682\u505C\uFF0C\u542F\u52A8\u540E\u7EE7\u7EED\uFF1B\u4E0D\u4F1A\u6539\u4EE3\u7801\u3002\u5931\u8D25\u5206\u6790\u4F1A\u4F7F\u7528\u5F53\u524D\u540E\u53F0\u6A21\u578B\u3002",
+  "tasks.objective": "\u60F3\u8DDF\u8FDB\u4EC0\u4E48",
+  "tasks.url": "\u516C\u5F00 PR \u94FE\u63A5",
+  "tasks.interval": "\u68C0\u67E5\u95F4\u9694\uFF08\u5206\u949F\uFF09",
+  "tasks.budget": "\u6700\u591A\u68C0\u67E5\u6B21\u6570\uFF08\u542B\u5931\u8D25\u5C1D\u8BD5\uFF09",
+  "tasks.hours": "\u6700\u591A\u6301\u7EED\u5C0F\u65F6\u6570",
+  "tasks.completion": "\u5B8C\u6210\u6761\u4EF6",
+  "tasks.closed": "PR \u5408\u5E76\u6216\u5173\u95ED",
+  "tasks.passed": "\u5DF2\u8BFB\u53D6\u7684\u68C0\u67E5\u5168\u90E8\u901A\u8FC7\uFF0C\u6216 PR \u5173\u95ED",
+  "tasks.create": "\u5F00\u59CB\u8DDF\u8FDB",
+  "tasks.empty": "\u8FD8\u6CA1\u6709\u6301\u7EED\u4EFB\u52A1\u3002",
+  "tasks.loadError": "\u4EFB\u52A1\u5217\u8868\u6682\u65F6\u65E0\u6CD5\u8BFB\u53D6\uFF0C\u8BF7\u68C0\u67E5 DSH \u8FDE\u63A5\u3002",
+  "tasks.actionError": "\u64CD\u4F5C\u672A\u5B8C\u6210\uFF0C\u8BF7\u68C0\u67E5 PR \u94FE\u63A5\u3001\u65F6\u95F4\u548C\u6B21\u6570\u8BBE\u7F6E\uFF1B\u4EFB\u52A1\u72B6\u6001\u53EF\u80FD\u5DF2\u53D8\u5316\u3002",
+  "tasks.openMain": "\u8BF7\u5148\u6253\u5F00 TheOne \u4E3B\u804A\u5929\uFF0C\u518D\u91CD\u8BD5\u3002",
+  "tasks.used": "\u5DF2\u7528\u68C0\u67E5\u6B21\u6570",
+  "tasks.deadline": "\u6700\u665A\u7ED3\u675F",
+  "tasks.next": "\u4E0B\u6B21\u68C0\u67E5",
+  "tasks.checked": "\u6700\u8FD1\u68C0\u67E5",
+  "tasks.exhausted": "\u5DF2\u8FBE\u5230\u6B21\u6570\u6216\u65F6\u95F4\u4E0A\u9650\u3002\u9700\u8981\u7EE7\u7EED\u65F6\uFF0C\u8BF7\u65B0\u5EFA\u4EFB\u52A1\u3002",
+  "tasks.failure": "\u672C\u6B21\u8BFB\u53D6\u6216\u5206\u6790\u5931\u8D25\u3002\u7CFB\u7EDF\u6700\u591A\u81EA\u52A8\u91CD\u8BD5\u4E24\u6B21\uFF1B\u4ECD\u5931\u8D25\u65F6\u53EF\u624B\u52A8\u6062\u590D\u3002\u516C\u5F00\u63A5\u53E3\u53EF\u80FD\u6682\u65F6\u9650\u6D41\u3002",
+  "tasks.pause": "\u6682\u505C",
+  "tasks.resume": "\u6062\u590D",
+  "tasks.check": "\u73B0\u5728\u68C0\u67E5",
+  "tasks.cancel": "\u53D6\u6D88",
+  "tasks.review": "\u5230\u4E3B\u804A\u5929\u8BA8\u8BBA\u65B9\u6848",
+  "tasks.state.queued": "\u7B49\u5F85\u68C0\u67E5",
+  "tasks.state.running": "\u6B63\u5728\u68C0\u67E5",
+  "tasks.state.paused": "\u5DF2\u6682\u505C",
+  "tasks.state.waiting": "\u7B49\u5F85\u4F60\u5904\u7406",
+  "tasks.state.completed": "\u5DF2\u5B8C\u6210",
+  "tasks.state.failed": "\u68C0\u67E5\u5931\u8D25",
+  "tasks.state.cancelled": "\u5DF2\u53D6\u6D88",
   "gateway.title": "TheOne \xB7 \u4E3B\u804A\u5929",
   "gateway.label": "\u4E3B\u804A\u5929",
   "gateway.subtitle": "\u4ECE\u8FD9\u91CC\u7EE7\u7EED\u804A",
@@ -389,6 +422,39 @@ var zh = {
   "route.reason.router-fallback": "\u5206\u7C7B\u6682\u4E0D\u53EF\u7528\uFF0C\u6309\u89C4\u5219\u5224\u65AD"
 };
 var en = {
+  "tasks.title": "Ongoing tasks",
+  "tasks.help": "Check public GitHub PRs and CI summaries on this computer. New failures, passes and closure notify main chat. Checks resume when DSH reopens; no code is changed. Failure analysis uses the selected background model.",
+  "tasks.objective": "What to follow",
+  "tasks.url": "Public PR URL",
+  "tasks.interval": "Interval (minutes)",
+  "tasks.budget": "Maximum checks (including failed attempts)",
+  "tasks.hours": "Maximum hours",
+  "tasks.completion": "Completion condition",
+  "tasks.closed": "PR merged or closed",
+  "tasks.passed": "All retrieved checks pass, or PR closes",
+  "tasks.create": "Start following",
+  "tasks.empty": "No ongoing tasks yet.",
+  "tasks.loadError": "Tasks unavailable. Check your DSH connection.",
+  "tasks.actionError": "Could not complete this action. Check the PR URL and limits; the task state may have changed.",
+  "tasks.openMain": "Open TheOne main chat first, then retry.",
+  "tasks.used": "Checks used",
+  "tasks.deadline": "Deadline",
+  "tasks.next": "Next check",
+  "tasks.checked": "Last checked",
+  "tasks.exhausted": "Time or check limit reached. Create a new task to continue.",
+  "tasks.failure": "Reading or analysis failed. Up to two retries are automatic; resume manually after that. The public API may be rate limited.",
+  "tasks.pause": "Pause",
+  "tasks.resume": "Resume",
+  "tasks.check": "Check now",
+  "tasks.cancel": "Cancel",
+  "tasks.review": "Discuss in main chat",
+  "tasks.state.queued": "Waiting to check",
+  "tasks.state.running": "Checking",
+  "tasks.state.paused": "Paused",
+  "tasks.state.waiting": "Needs attention",
+  "tasks.state.completed": "Completed",
+  "tasks.state.failed": "Failed",
+  "tasks.state.cancelled": "Cancelled",
   "gateway.title": "TheOne \xB7 Main chat",
   "gateway.label": "Main chat",
   "gateway.subtitle": "Pick up the conversation",
@@ -2326,11 +2392,172 @@ var createDataURL = function(width, height, getPixel) {
 var qrcode_default = qrcode;
 var stringToBytes = qrcode.stringToBytes;
 
+// src/client-work.ts
+var import_react = require("react");
+function createWorkPanel(useText, lifetime, openMain) {
+  return function WorkPanel() {
+    const t = useText();
+    const [tasks, setTasks] = (0, import_react.useState)([]);
+    const [error, setError] = (0, import_react.useState)("");
+    const [busy, setBusy] = (0, import_react.useState)(false);
+    const [objective, setObjective] = (0, import_react.useState)("");
+    const [url, setUrl] = (0, import_react.useState)("");
+    const [interval, setIntervalValue] = (0, import_react.useState)(15);
+    const [maxChecks, setMaxChecks] = (0, import_react.useState)(96);
+    const [completion, setCompletion] = (0, import_react.useState)("closed");
+    const [hours, setHours] = (0, import_react.useState)(24);
+    const mounted = (0, import_react.useRef)(lifetime);
+    const reload = (0, import_react.useRef)(async () => {
+    });
+    const requestId = (0, import_react.useRef)();
+    const submitting = (0, import_react.useRef)(false);
+    (0, import_react.useEffect)(() => {
+      const local = new AbortController();
+      const signal = AbortSignal.any([local.signal, lifetime]);
+      mounted.current = signal;
+      let loading;
+      reload.current = () => loading ??= (async () => {
+        try {
+          const response = await fetch("/api/theone/tasks", { signal: AbortSignal.any([signal, AbortSignal.timeout(15e3)]), cache: "no-store" });
+          if (!response.ok) throw new Error("unavailable");
+          const value = await response.json();
+          if (!signal.aborted) {
+            setTasks(value);
+            setError((current) => current === t("tasks.loadError") ? "" : current);
+          }
+        } catch {
+          if (!signal.aborted) setError(t("tasks.loadError"));
+        }
+      })().finally(() => {
+        loading = void 0;
+      });
+      void reload.current();
+      const timer = setInterval(() => {
+        void reload.current();
+      }, 5e3);
+      return () => {
+        local.abort();
+        clearInterval(timer);
+      };
+    }, [t]);
+    async function act(body) {
+      if (submitting.current || mounted.current.aborted) return;
+      submitting.current = true;
+      setBusy(true);
+      setError("");
+      try {
+        const response = await fetch("/api/theone/tasks", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+          signal: AbortSignal.any([mounted.current, AbortSignal.timeout(15e3)])
+        });
+        const value = await response.json();
+        if (!response.ok) throw new Error(value.error === "OPEN_MAIN_CHAT_FIRST" ? t("tasks.openMain") : t("tasks.actionError"));
+        if (mounted.current.aborted) return;
+        if (body.action === "create") {
+          requestId.current = void 0;
+          setObjective("");
+          setUrl("");
+        }
+        if (body.action === "review") openMain();
+        await reload.current();
+        await reload.current();
+      } catch (cause) {
+        if (!mounted.current.aborted) setError(cause instanceof Error ? cause.message : t("tasks.actionError"));
+      } finally {
+        submitting.current = false;
+        if (!mounted.current.aborted) setBusy(false);
+      }
+    }
+    const label = (key, control) => (0, import_react.createElement)("label", { className: "theone-task-field" }, t(key), control);
+    const button = (title, action, id) => (0, import_react.createElement)("button", { type: "button", disabled: busy, onClick: () => void act({ action, id }) }, title);
+    return (0, import_react.createElement)(
+      "section",
+      { className: "theone-tasks" },
+      (0, import_react.createElement)("h2", null, t("tasks.title")),
+      (0, import_react.createElement)("p", null, t("tasks.help")),
+      error ? (0, import_react.createElement)("p", { role: "alert" }, error) : null,
+      (0, import_react.createElement)(
+        "form",
+        { onSubmit: (event) => {
+          event.preventDefault();
+          requestId.current ??= crypto.randomUUID();
+          void act({ action: "create", requestId: requestId.current, objective, url, intervalMinutes: interval, maxChecks, completion, deadline: Date.now() + hours * 36e5 });
+        } },
+        label("tasks.objective", (0, import_react.createElement)("input", { required: true, maxLength: 1e3, value: objective, disabled: busy, onChange: (e) => {
+          setObjective(e.target.value);
+          requestId.current = void 0;
+        } })),
+        label("tasks.url", (0, import_react.createElement)("input", {
+          type: "url",
+          required: true,
+          maxLength: 1e3,
+          placeholder: "https://github.com/owner/repo/pull/123",
+          value: url,
+          disabled: busy,
+          onChange: (e) => {
+            setUrl(e.target.value);
+            requestId.current = void 0;
+          }
+        })),
+        label("tasks.interval", (0, import_react.createElement)("input", { type: "number", required: true, min: 5, max: 1440, value: interval, disabled: busy, onChange: (e) => {
+          setIntervalValue(Number(e.target.value));
+          requestId.current = void 0;
+        } })),
+        label("tasks.budget", (0, import_react.createElement)("input", { type: "number", required: true, min: 1, max: 1e3, value: maxChecks, disabled: busy, onChange: (e) => {
+          setMaxChecks(Number(e.target.value));
+          requestId.current = void 0;
+        } })),
+        label("tasks.hours", (0, import_react.createElement)("input", { type: "number", required: true, min: 1, max: 720, value: hours, disabled: busy, onChange: (e) => {
+          setHours(Number(e.target.value));
+          requestId.current = void 0;
+        } })),
+        label("tasks.completion", (0, import_react.createElement)(
+          "select",
+          { value: completion, disabled: busy, onChange: (e) => {
+            setCompletion(e.target.value);
+            requestId.current = void 0;
+          } },
+          (0, import_react.createElement)("option", { value: "closed" }, t("tasks.closed")),
+          (0, import_react.createElement)("option", { value: "checks-passed" }, t("tasks.passed"))
+        )),
+        (0, import_react.createElement)("button", { type: "submit", disabled: busy }, t("tasks.create"))
+      ),
+      !tasks.length ? (0, import_react.createElement)("p", null, t("tasks.empty")) : null,
+      ...tasks.slice().reverse().map((job) => (0, import_react.createElement)(
+        "article",
+        { key: job.id, className: "theone-task" },
+        (0, import_react.createElement)("h3", null, job.task.objective),
+        (0, import_react.createElement)("p", null, t(`tasks.state.${job.state}`)),
+        (0, import_react.createElement)("a", { href: job.task.url, target: "_blank", rel: "noopener noreferrer" }, job.task.url),
+        (0, import_react.createElement)("p", null, `${t("tasks.used")}: ${Math.min(job.runs, job.task.maxChecks)} / ${job.task.maxChecks} \xB7 ${t("tasks.deadline")}: ${new Date(job.task.deadline).toLocaleString()}`),
+        job.state === "queued" ? (0, import_react.createElement)("p", null, `${t("tasks.next")}: ${new Date(job.due).toLocaleString()}`) : null,
+        job.result?.summary ? (0, import_react.createElement)("p", null, job.result.summary) : null,
+        job.result?.nextStep ? (0, import_react.createElement)("p", null, job.result.nextStep) : null,
+        job.result?.checkedAt ? (0, import_react.createElement)("small", null, `${t("tasks.checked")}: ${new Date(job.result.checkedAt).toLocaleString()} \xB7 ${job.result.snapshot?.sha?.slice(0, 8) ?? ""}`) : null,
+        job.error ? (0, import_react.createElement)("p", { role: "status" }, job.error === "WORK_BUDGET_REACHED" ? t("tasks.exhausted") : t("tasks.failure")) : null,
+        (0, import_react.createElement)(
+          "div",
+          { className: "theone-task-actions" },
+          ["queued", "running"].includes(job.state) ? button(t("tasks.pause"), "pause", job.id) : null,
+          ["paused", "failed"].includes(job.state) ? button(t("tasks.resume"), "resume", job.id) : null,
+          job.state === "queued" ? button(t("tasks.check"), "wake", job.id) : null,
+          !["completed", "cancelled"].includes(job.state) ? button(t("tasks.cancel"), "cancel", job.id) : null,
+          job.result ? button(t("tasks.review"), "review", job.id) : null
+        )
+      ))
+    );
+  };
+}
+var workCss = `.theone-tasks{padding:24px;max-width:900px;margin:auto;overflow:auto;height:100%;box-sizing:border-box;color:var(--dsw-alias-label-primary);font-size:14px;line-height:1.6}.theone-tasks form{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;padding:16px;border:1px solid var(--dsw-alias-border-l2,#8885);border-radius:12px}.theone-task-field{display:flex;flex-direction:column;gap:4px}.theone-tasks input,.theone-tasks select{color:inherit;background:transparent;padding:8px;border:1px solid #8887;border-radius:6px;min-width:0}.theone-tasks button{font:inherit;color:inherit;background:var(--dsw-specific-sidebar-fill,#8882);padding:6px 12px;border:1px solid #8886;border-radius:6px;cursor:pointer}.theone-tasks button:disabled{opacity:.5;cursor:default}.theone-task{padding:16px;margin-top:16px;border:1px solid #8885;border-radius:12px;overflow-wrap:anywhere}.theone-task h3{margin-top:0}.theone-task-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.theone-task p{white-space:pre-wrap}.theone-tasks a{color:var(--dsw-alias-label-link,#529bdb)}`;
+
 // src/client.ts
 var inject = ["slots", "locale", "sessions", "workspaces", "layout", "uiWorkspace", "modelDirectories", "remote.session"];
 var panelId = "theone-gateway";
 var catalogPanelId = "theone-catalog";
 var settingsPanelId = "theone-settings";
+var tasksPanelId = "theone-tasks";
 function apply(ctx) {
   const lifetime = new AbortController();
   ctx.effect(() => ctx.locale.register("theone", { zh, en }));
@@ -2338,7 +2565,7 @@ function apply(ctx) {
   const subscribeLocale = ctx.locale.subscribe.bind(ctx.locale);
   const localeSnapshot = ctx.locale.getSnapshot.bind(ctx.locale);
   function useText() {
-    (0, import_react.useSyncExternalStore)(subscribeLocale, localeSnapshot);
+    (0, import_react2.useSyncExternalStore)(subscribeLocale, localeSnapshot);
     return t;
   }
   async function createGateway(id) {
@@ -2718,7 +2945,7 @@ function apply(ctx) {
     chevron: ["M6 15l6-6 6 6"],
     grid: ["M4 4h6.5v6.5H4z", "M13.5 4H20v6.5h-6.5z", "M4 13.5h6.5V20H4z", "M13.5 13.5H20V20h-6.5z"]
   };
-  const icon = (name, size = 16) => (0, import_react.createElement)(
+  const icon = (name, size = 16) => (0, import_react2.createElement)(
     "svg",
     {
       className: "theone-icon",
@@ -2733,11 +2960,11 @@ function apply(ctx) {
       "aria-hidden": true,
       focusable: false
     },
-    ...ICONS[name].map((d) => (0, import_react.createElement)("path", { key: d, d }))
+    ...ICONS[name].map((d) => (0, import_react2.createElement)("path", { key: d, d }))
   );
   function UpdateButton() {
     const t2 = useText();
-    const status = (0, import_react.useSyncExternalStore)(subscribeUpdate, () => update);
+    const status = (0, import_react2.useSyncExternalStore)(subscribeUpdate, () => update);
     const waiting = !!status?.waiting && !status.available && !status.state;
     if (!status || !status.available && !status.state && !waiting) return null;
     const label2 = waiting ? t2("update.waiting") : status.state === "installing" ? t2("update.installing") : status.state === "reloading" ? t2("update.reloading") : status.state === "restart" ? t2("update.restart") : status.state === "failed" ? t2("update.failed") : t2("update.available");
@@ -2748,7 +2975,7 @@ function apply(ctx) {
       event.stopPropagation();
       startUpdate(status);
     };
-    return (0, import_react.createElement)(
+    return (0, import_react2.createElement)(
       "span",
       {
         className: "theone-update",
@@ -2763,24 +2990,24 @@ function apply(ctx) {
           if (event.key === "Enter" || event.key === " ") act(event);
         }
       },
-      status.state === "installing" || status.state === "reloading" ? (0, import_react.createElement)("span", { className: "theone-update-spin", "aria-hidden": true }) : icon(status.state === "restart" ? "restart" : status.state === "failed" ? "alert" : "download", 15)
+      status.state === "installing" || status.state === "reloading" ? (0, import_react2.createElement)("span", { className: "theone-update-spin", "aria-hidden": true }) : icon(status.state === "restart" ? "restart" : status.state === "failed" ? "alert" : "download", 15)
     );
   }
-  const symbol = () => (0, import_react.createElement)(
+  const symbol = () => (0, import_react2.createElement)(
     "svg",
     { className: "theone-symbol", viewBox: "0 0 20 20", width: 20, height: 20, "aria-hidden": true, focusable: false },
-    (0, import_react.createElement)("circle", { cx: 10, cy: 10, r: 8.6, fill: "none", stroke: "currentColor", strokeWidth: 1.4 }),
-    (0, import_react.createElement)("circle", { cx: 10, cy: 10, r: 2.4, fill: "currentColor" })
+    (0, import_react2.createElement)("circle", { cx: 10, cy: 10, r: 8.6, fill: "none", stroke: "currentColor", strokeWidth: 1.4 }),
+    (0, import_react2.createElement)("circle", { cx: 10, cy: 10, r: 2.4, fill: "currentColor" })
   );
   function SidebarEntry({ size }) {
     const t2 = useText();
-    const marker = (0, import_react.useRef)(null);
-    const pending = (0, import_react.useSyncExternalStore)(subscribeUpdate, () => !!update?.available && !update.state);
-    const id = (0, import_react.useSyncExternalStore)(navigation.subscribe, navigation.getSnapshot);
-    const sessions = (0, import_react.useSyncExternalStore)(ctx.sessions.list.subscribe, ctx.sessions.list.getSnapshot);
-    const panel = (0, import_react.useSyncExternalStore)(ctx.layout.panelInfo.subscribe, ctx.layout.panelInfo.getSnapshot);
+    const marker = (0, import_react2.useRef)(null);
+    const pending = (0, import_react2.useSyncExternalStore)(subscribeUpdate, () => !!update?.available && !update.state);
+    const id = (0, import_react2.useSyncExternalStore)(navigation.subscribe, navigation.getSnapshot);
+    const sessions = (0, import_react2.useSyncExternalStore)(ctx.sessions.list.subscribe, ctx.sessions.list.getSnapshot);
+    const panel = (0, import_react2.useSyncExternalStore)(ctx.layout.panelInfo.subscribe, ctx.layout.panelInfo.getSnapshot);
     const active = panel.activePanelId === panelId || panel.activePanelId === null && !!id && !!sessions.byId[id]?.retainedBy.mainView;
-    (0, import_react.useEffect)(() => {
+    (0, import_react2.useEffect)(() => {
       const button = marker.current?.closest("button");
       if (!button) return;
       let menu;
@@ -2854,7 +3081,7 @@ function apply(ctx) {
         button.removeEventListener("keydown", keyboard);
       };
     }, [size]);
-    (0, import_react.useEffect)(() => {
+    (0, import_react2.useEffect)(() => {
       const button = marker.current?.closest("button");
       if (!button || !active) return;
       const move = (event) => {
@@ -2879,27 +3106,27 @@ function apply(ctx) {
         button.style.removeProperty("--one-pointer-y");
       };
     }, [active, size]);
-    return (0, import_react.createElement)(
+    return (0, import_react2.createElement)(
       "span",
       { ref: marker, className: "theone-nav", translate: "no", "data-wide": size === 16, "data-active": active },
-      (0, import_react.createElement)("span", { className: "theone-symbol-wrap" }, symbol(), size !== 16 && pending ? (0, import_react.createElement)("span", { className: "theone-update-dot", "aria-hidden": true }) : null),
-      size === 16 && (0, import_react.createElement)(
+      (0, import_react2.createElement)("span", { className: "theone-symbol-wrap" }, symbol(), size !== 16 && pending ? (0, import_react2.createElement)("span", { className: "theone-update-dot", "aria-hidden": true }) : null),
+      size === 16 && (0, import_react2.createElement)(
         "span",
         { className: "theone-entry-copy" },
-        (0, import_react.createElement)(
+        (0, import_react2.createElement)(
           "span",
           { className: "theone-entry-title" },
-          (0, import_react.createElement)(
+          (0, import_react2.createElement)(
             "span",
             { className: "theone-wordmark", translate: "no" },
-            (0, import_react.createElement)("span", { className: "theone-word-the" }, "The"),
-            (0, import_react.createElement)("span", { className: "theone-word-one" }, "One", (0, import_react.createElement)("span", { className: "theone-word-dot" }))
+            (0, import_react2.createElement)("span", { className: "theone-word-the" }, "The"),
+            (0, import_react2.createElement)("span", { className: "theone-word-one" }, "One", (0, import_react2.createElement)("span", { className: "theone-word-dot" }))
           ),
-          (0, import_react.createElement)("span", { className: "theone-entry-label" }, t2("gateway.label"))
+          (0, import_react2.createElement)("span", { className: "theone-entry-label" }, t2("gateway.label"))
         ),
-        (0, import_react.createElement)("span", { className: "theone-entry-sub" }, t2("gateway.subtitle"))
+        (0, import_react2.createElement)("span", { className: "theone-entry-sub" }, t2("gateway.subtitle"))
       ),
-      size === 16 && (0, import_react.createElement)(UpdateButton)
+      size === 16 && (0, import_react2.createElement)(UpdateButton)
     );
   }
   const readSettings = async () => {
@@ -2924,15 +3151,15 @@ function apply(ctx) {
   };
   function BackgroundModel({ directory }) {
     const t2 = useText();
-    const state = (0, import_react.useSyncExternalStore)((listener) => directory.subscribe(listener), () => directory.getSnapshot());
+    const state = (0, import_react2.useSyncExternalStore)((listener) => directory.subscribe(listener), () => directory.getSnapshot());
     const selection = state.pending ?? state.current;
     const theone = selection?.provider === "theone";
-    const [settings, setSettings] = (0, import_react.useState)();
-    const [failed, setFailed] = (0, import_react.useState)(false);
-    const [saving, setSaving] = (0, import_react.useState)(false);
-    const button = (0, import_react.useRef)(null);
-    const closeMenu = (0, import_react.useRef)();
-    (0, import_react.useEffect)(() => {
+    const [settings, setSettings] = (0, import_react2.useState)();
+    const [failed, setFailed] = (0, import_react2.useState)(false);
+    const [saving, setSaving] = (0, import_react2.useState)(false);
+    const button = (0, import_react2.useRef)(null);
+    const closeMenu = (0, import_react2.useRef)();
+    (0, import_react2.useEffect)(() => {
       if (!theone) return;
       let alive = true;
       readSettings().then((value) => {
@@ -3074,7 +3301,7 @@ function apply(ctx) {
       (search ?? rows().find((row) => row.getAttribute("aria-checked") === "true") ?? rows()[0])?.focus();
     };
     const title = failed ? t2("bg.error") : t2(pinned ? "bg.hint" : "bg.hintFollow", { model: label2 });
-    return (0, import_react.createElement)(
+    return (0, import_react2.createElement)(
       "button",
       {
         ref: button,
@@ -3092,9 +3319,9 @@ function apply(ctx) {
           }, () => setFailed(true));
         }
       },
-      (0, import_react.createElement)("span", { className: "theone-bg-caption", "aria-hidden": true }, icon("layers", 15)),
-      (0, import_react.createElement)("span", { className: "theone-bg-text" }, label2),
-      (0, import_react.createElement)("span", { className: "theone-bg-chevron", "aria-hidden": true }, saving ? "\u2026" : icon("chevron", 12))
+      (0, import_react2.createElement)("span", { className: "theone-bg-caption", "aria-hidden": true }, icon("layers", 15)),
+      (0, import_react2.createElement)("span", { className: "theone-bg-text" }, label2),
+      (0, import_react2.createElement)("span", { className: "theone-bg-chevron", "aria-hidden": true }, saving ? "\u2026" : icon("chevron", 12))
     );
   }
   let notices = [];
@@ -3192,18 +3419,18 @@ function apply(ctx) {
   });
   function NoticeStrip({ directory }) {
     const t2 = useText();
-    const state = (0, import_react.useSyncExternalStore)((listener) => directory.subscribe(listener), () => directory.getSnapshot());
-    const list = (0, import_react.useSyncExternalStore)(subscribeNotices, () => notices);
+    const state = (0, import_react2.useSyncExternalStore)((listener) => directory.subscribe(listener), () => directory.getSnapshot());
+    const list = (0, import_react2.useSyncExternalStore)(subscribeNotices, () => notices);
     const notice = list.find((item) => item.level === "info");
     if ((state.pending ?? state.current)?.provider !== "theone" || !notice) return null;
     const title = localized(notice.title), body = localized(notice.body);
-    return (0, import_react.createElement)(
+    return (0, import_react2.createElement)(
       "div",
       { className: "theone-notice", role: "status", translate: "no" },
-      (0, import_react.createElement)("span", { className: "theone-notice-tag", title: t2("notice.label"), "aria-label": t2("notice.label"), role: "img" }, icon("notice", 14)),
-      (0, import_react.createElement)("span", { className: "theone-notice-text", title: `${title}
-${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
-      notice.link ? (0, import_react.createElement)("button", {
+      (0, import_react2.createElement)("span", { className: "theone-notice-tag", title: t2("notice.label"), "aria-label": t2("notice.label"), role: "img" }, icon("notice", 14)),
+      (0, import_react2.createElement)("span", { className: "theone-notice-text", title: `${title}
+${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
+      notice.link ? (0, import_react2.createElement)("button", {
         type: "button",
         className: "theone-notice-link",
         "aria-label": t2("notice.more"),
@@ -3212,7 +3439,7 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
           window.open(notice.link, "_blank", "noopener");
         }
       }, icon("external", 14)) : null,
-      (0, import_react.createElement)("button", { type: "button", className: "theone-notice-close", "aria-label": t2("notice.close"), title: t2("notice.close"), onClick: () => dismissNotice(notice.id) }, icon("close", 14))
+      (0, import_react2.createElement)("button", { type: "button", className: "theone-notice-close", "aria-label": t2("notice.close"), title: t2("notice.close"), onClick: () => dismissNotice(notice.id) }, icon("close", 14))
     );
   }
   ctx.inject(["slots", "modelDirectories"], (scope) => {
@@ -3232,9 +3459,9 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
   });
   function GatewayPanel() {
     const t2 = useText();
-    const [error, setError] = (0, import_react.useState)();
-    const [attempt, setAttempt] = (0, import_react.useState)(0);
-    (0, import_react.useEffect)(() => {
+    const [error, setError] = (0, import_react2.useState)();
+    const [attempt, setAttempt] = (0, import_react2.useState)(0);
+    (0, import_react2.useEffect)(() => {
       let mounted = true;
       setError(void 0);
       void navigation.open().catch((error2) => {
@@ -3245,18 +3472,18 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
         mounted = false;
       };
     }, [attempt]);
-    return (0, import_react.createElement)(
+    return (0, import_react2.createElement)(
       "section",
       { className: "theone-opening", "aria-live": "polite" },
-      (0, import_react.createElement)("p", null, t2(error ?? "gateway.opening")),
-      error && (0, import_react.createElement)("button", { type: "button", onClick: () => setAttempt((value) => value + 1) }, t2("retry"))
+      (0, import_react2.createElement)("p", null, t2(error ?? "gateway.opening")),
+      error && (0, import_react2.createElement)("button", { type: "button", onClick: () => setAttempt((value) => value + 1) }, t2("retry"))
     );
   }
   function UpdateSection() {
     const t2 = useText();
-    const status = (0, import_react.useSyncExternalStore)(subscribeUpdate, () => update);
-    const [checking, setChecking] = (0, import_react.useState)(false);
-    const [failed, setFailed] = (0, import_react.useState)(false);
+    const status = (0, import_react2.useSyncExternalStore)(subscribeUpdate, () => update);
+    const [checking, setChecking] = (0, import_react2.useState)(false);
+    const [failed, setFailed] = (0, import_react2.useState)(false);
     const check = async () => {
       setChecking(true);
       setFailed(false);
@@ -3267,19 +3494,19 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
     const busy = status?.state === "installing" || status?.state === "reloading";
     const pending = !!status && (status.available || waiting || !!status.state);
     const line = checking ? t2("settings.updateChecking") : failed ? t2("settings.updateCheckFailed") : !status ? t2("settings.updateUnknown") : pending ? updateHint(status) : t2("settings.updateLatest");
-    return (0, import_react.createElement)(
+    return (0, import_react2.createElement)(
       "section",
       { className: "theone-settings-group theone-settings-update" },
-      (0, import_react.createElement)("h2", null, t2("settings.update")),
-      status && !pending ? (0, import_react.createElement)("p", { className: "theone-settings-update-version" }, t2("settings.updateCurrent", { current: status.current })) : null,
-      (0, import_react.createElement)("p", { role: "status" }, line),
-      (0, import_react.createElement)(
+      (0, import_react2.createElement)("h2", null, t2("settings.update")),
+      status && !pending ? (0, import_react2.createElement)("p", { className: "theone-settings-update-version" }, t2("settings.updateCurrent", { current: status.current })) : null,
+      (0, import_react2.createElement)("p", { role: "status" }, line),
+      (0, import_react2.createElement)(
         "div",
         { className: "theone-settings-update-actions" },
-        (0, import_react.createElement)("button", { type: "button", disabled: checking || busy, onClick: () => {
+        (0, import_react2.createElement)("button", { type: "button", disabled: checking || busy, onClick: () => {
           void check();
         } }, t2("settings.updateCheck")),
-        (0, import_react.createElement)("button", {
+        (0, import_react2.createElement)("button", {
           type: "button",
           className: "theone-settings-save",
           disabled: checking || busy || !status || !pending || status.state === "restart",
@@ -3291,10 +3518,10 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
     );
   }
   function useRemote(name, fast) {
-    const [status, setStatus] = (0, import_react.useState)();
-    const [failed, setFailed] = (0, import_react.useState)(false);
-    const [busy, setBusy] = (0, import_react.useState)(false);
-    const [error, setError] = (0, import_react.useState)();
+    const [status, setStatus] = (0, import_react2.useState)();
+    const [failed, setFailed] = (0, import_react2.useState)(false);
+    const [busy, setBusy] = (0, import_react2.useState)(false);
+    const [error, setError] = (0, import_react2.useState)();
     const call = async (body) => {
       try {
         const response = await fetch(`/api/theone/${name}`, {
@@ -3326,7 +3553,7 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
       }
     };
     const quick = fast(status);
-    (0, import_react.useEffect)(() => {
+    (0, import_react2.useEffect)(() => {
       void call();
       const timer = setInterval(() => {
         void call();
@@ -3339,19 +3566,19 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
     const qr = qrcode_default(0, "M");
     qr.addData(url);
     qr.make();
-    return (0, import_react.createElement)("img", { className: "theone-weixin-qr", src: qr.createDataURL(6, 3), alt, width: 220, height: 220 });
+    return (0, import_react2.createElement)("img", { className: "theone-weixin-qr", src: qr.createDataURL(6, 3), alt, width: 220, height: 220 });
   }
   function remoteState(t2, remote, expiredKey, explain = (code) => code) {
     const { status, failed } = remote;
     const account = status?.account ?? "";
     const line = !status ? failed ? t2("settings.remoteError") : t2("settings.loading") : status.state === "online" ? t2("settings.remoteOnline", { account }) : status.state === "connecting" ? t2("settings.remoteConnecting", { account }) : status.state === "paused" ? t2("settings.remotePaused", { account, minutes: Math.max(1, Math.ceil(((status.pausedUntil ?? Date.now()) - Date.now()) / 6e4)) }) : status.state === "expired" ? t2(expiredKey) : account ? t2("settings.remoteOff", { account }) : "";
     return [
-      line ? (0, import_react.createElement)("p", { role: "status", key: "line" }, line) : null,
-      status?.lastError && status.state !== "off" ? (0, import_react.createElement)("p", { className: "theone-settings-update-version", key: "error" }, t2("settings.remoteLastError", { error: explain(status.lastError) })) : null
+      line ? (0, import_react2.createElement)("p", { role: "status", key: "line" }, line) : null,
+      status?.lastError && status.state !== "off" ? (0, import_react2.createElement)("p", { className: "theone-settings-update-version", key: "error" }, t2("settings.remoteLastError", { error: explain(status.lastError) })) : null
     ];
   }
   function remoteButton(t2, busy, act, label2, body, primary = false) {
-    return (0, import_react.createElement)("button", { type: "button", key: label2, disabled: busy, className: primary ? "theone-settings-save" : void 0, onClick: () => act(body) }, t2(label2));
+    return (0, import_react2.createElement)("button", { type: "button", key: label2, disabled: busy, className: primary ? "theone-settings-save" : void 0, onClick: () => act(body) }, t2(label2));
   }
   function remoteControls(t2, remote) {
     const { status, busy, act } = remote;
@@ -3368,19 +3595,19 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
     const act = (body) => {
       void remote.act(body);
     };
-    const [code, setCode] = (0, import_react.useState)("");
+    const [code, setCode] = (0, import_react2.useState)("");
     const login = status?.login;
     const waiting = !!login && login.step !== "failed";
     const button = (label2, body, primary = false) => remoteButton(t2, busy, act, label2, body, primary);
-    return (0, import_react.createElement)(
+    return (0, import_react2.createElement)(
       "section",
       { className: "theone-settings-group theone-settings-update theone-weixin" },
-      (0, import_react.createElement)("h2", null, t2("settings.weixin")),
-      (0, import_react.createElement)("p", null, t2("settings.weixinIntro")),
+      (0, import_react2.createElement)("h2", null, t2("settings.weixin")),
+      (0, import_react2.createElement)("p", null, t2("settings.weixinIntro")),
       ...remoteState(t2, remote, "settings.weixinExpired"),
-      login?.step === "qr" ? (0, import_react.createElement)("div", { className: "theone-weixin-login" }, qrImage(login.url, t2("settings.weixinScan")), (0, import_react.createElement)("p", null, t2("settings.weixinScan"))) : null,
-      login?.step === "scanned" ? (0, import_react.createElement)("p", { role: "status" }, t2("settings.weixinScanned")) : null,
-      login?.step === "verify" ? (0, import_react.createElement)(
+      login?.step === "qr" ? (0, import_react2.createElement)("div", { className: "theone-weixin-login" }, qrImage(login.url, t2("settings.weixinScan")), (0, import_react2.createElement)("p", null, t2("settings.weixinScan"))) : null,
+      login?.step === "scanned" ? (0, import_react2.createElement)("p", { role: "status" }, t2("settings.weixinScanned")) : null,
+      login?.step === "verify" ? (0, import_react2.createElement)(
         "form",
         { className: "theone-settings-update-actions", onSubmit: (event) => {
           event.preventDefault();
@@ -3389,18 +3616,18 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
             setCode("");
           }
         } },
-        (0, import_react.createElement)("label", { htmlFor: "theone-weixin-code" }, t2("settings.weixinVerify")),
-        (0, import_react.createElement)("input", { id: "theone-weixin-code", value: code, maxLength: 16, autoComplete: "one-time-code", onChange: (event) => setCode(event.target.value) }),
-        (0, import_react.createElement)("button", { type: "submit", disabled: busy || !code.trim() }, t2("settings.weixinVerifySubmit"))
+        (0, import_react2.createElement)("label", { htmlFor: "theone-weixin-code" }, t2("settings.weixinVerify")),
+        (0, import_react2.createElement)("input", { id: "theone-weixin-code", value: code, maxLength: 16, autoComplete: "one-time-code", onChange: (event) => setCode(event.target.value) }),
+        (0, import_react2.createElement)("button", { type: "submit", disabled: busy || !code.trim() }, t2("settings.weixinVerifySubmit"))
       ) : null,
-      login?.step === "failed" ? (0, import_react.createElement)("p", { role: "alert" }, t2("settings.weixinFailed", { reason: login.reason })) : null,
-      (0, import_react.createElement)(
+      login?.step === "failed" ? (0, import_react2.createElement)("p", { role: "alert" }, t2("settings.weixinFailed", { reason: login.reason })) : null,
+      (0, import_react2.createElement)(
         "div",
         { className: "theone-settings-update-actions" },
         waiting ? button("settings.weixinCancel", { action: "cancel" }) : !status?.account ? button("settings.weixinBind", { action: "login" }, true) : status.state === "expired" ? button("settings.weixinRescan", { action: "login" }, true) : null,
         ...waiting ? [] : remoteControls(t2, { ...remote, act })
       ),
-      (0, import_react.createElement)("p", { className: "theone-settings-update-version" }, t2("settings.weixinNote"))
+      (0, import_react2.createElement)("p", { className: "theone-settings-update-version" }, t2("settings.weixinNote"))
     );
   }
   function TelegramSection() {
@@ -3410,22 +3637,22 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
     const act = (body) => {
       void remote.act(body);
     };
-    const [token, setToken] = (0, import_react.useState)("");
+    const [token, setToken] = (0, import_react2.useState)("");
     const pairing = status?.pairing;
     const asking = !status?.account || status.state === "expired";
-    return (0, import_react.createElement)(
+    return (0, import_react2.createElement)(
       "section",
       { className: "theone-settings-group theone-settings-update theone-weixin" },
-      (0, import_react.createElement)("h2", null, t2("settings.telegram")),
-      (0, import_react.createElement)("p", null, t2("settings.telegramIntro")),
-      ...pairing ? [(0, import_react.createElement)("p", { role: "status", key: "line" }, t2("settings.telegramWaiting", { account: `@${pairing.bot}` }))] : remoteState(t2, remote, "settings.telegramExpired"),
-      pairing ? (0, import_react.createElement)(
+      (0, import_react2.createElement)("h2", null, t2("settings.telegram")),
+      (0, import_react2.createElement)("p", null, t2("settings.telegramIntro")),
+      ...pairing ? [(0, import_react2.createElement)("p", { role: "status", key: "line" }, t2("settings.telegramWaiting", { account: `@${pairing.bot}` }))] : remoteState(t2, remote, "settings.telegramExpired"),
+      pairing ? (0, import_react2.createElement)(
         "div",
         { className: "theone-weixin-login" },
         qrImage(`https://t.me/${pairing.bot}?start=${pairing.code}`, t2("settings.telegramPairScan")),
-        (0, import_react.createElement)("p", null, t2("settings.telegramPair", { bot: `@${pairing.bot}`, code: pairing.code }))
+        (0, import_react2.createElement)("p", null, t2("settings.telegramPair", { bot: `@${pairing.bot}`, code: pairing.code }))
       ) : null,
-      asking ? (0, import_react.createElement)(
+      asking ? (0, import_react2.createElement)(
         "form",
         { className: "theone-settings-update-actions", onSubmit: (event) => {
           event.preventDefault();
@@ -3434,8 +3661,8 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
             setToken("");
           }
         } },
-        (0, import_react.createElement)("label", { htmlFor: "theone-telegram-token" }, t2("settings.telegramToken")),
-        (0, import_react.createElement)("input", {
+        (0, import_react2.createElement)("label", { htmlFor: "theone-telegram-token" }, t2("settings.telegramToken")),
+        (0, import_react2.createElement)("input", {
           id: "theone-telegram-token",
           type: "password",
           value: token,
@@ -3445,11 +3672,11 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
           placeholder: "123456789:AA\u2026",
           onChange: (event) => setToken(event.target.value)
         }),
-        (0, import_react.createElement)("button", { type: "submit", className: "theone-settings-save", disabled: busy || !token.trim() }, t2("settings.remoteConnect"))
+        (0, import_react2.createElement)("button", { type: "submit", className: "theone-settings-save", disabled: busy || !token.trim() }, t2("settings.remoteConnect"))
       ) : null,
-      error ? (0, import_react.createElement)("p", { role: "alert" }, t2(error === "TELEGRAM_TOKEN_INVALID" ? "settings.telegramTokenInvalid" : "settings.telegramUnreachable")) : null,
-      (0, import_react.createElement)("div", { className: "theone-settings-update-actions" }, ...remoteControls(t2, { ...remote, act })),
-      (0, import_react.createElement)("p", { className: "theone-settings-update-version" }, t2("settings.telegramNote"))
+      error ? (0, import_react2.createElement)("p", { role: "alert" }, t2(error === "TELEGRAM_TOKEN_INVALID" ? "settings.telegramTokenInvalid" : "settings.telegramUnreachable")) : null,
+      (0, import_react2.createElement)("div", { className: "theone-settings-update-actions" }, ...remoteControls(t2, { ...remote, act })),
+      (0, import_react2.createElement)("p", { className: "theone-settings-update-version" }, t2("settings.telegramNote"))
     );
   }
   function IMessageSection() {
@@ -3459,24 +3686,24 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
     const act = (body) => {
       void remote.act(body);
     };
-    const [handle, setHandle] = (0, import_react.useState)("");
+    const [handle, setHandle] = (0, import_react2.useState)("");
     const explain = (code) => code === "IMESSAGE_NO_ACCESS" ? t2("settings.imessageNoAccess") : code;
     const asking = status?.supported && !status.account;
-    return (0, import_react.createElement)(
+    return (0, import_react2.createElement)(
       "section",
       { className: "theone-settings-group theone-settings-update theone-weixin" },
-      (0, import_react.createElement)("h2", null, t2("settings.imessage")),
-      (0, import_react.createElement)("p", null, t2("settings.imessageIntro")),
-      status && !status.supported && !status.account ? (0, import_react.createElement)("p", { role: "status" }, t2("settings.imessageUnsupported")) : null,
+      (0, import_react2.createElement)("h2", null, t2("settings.imessage")),
+      (0, import_react2.createElement)("p", null, t2("settings.imessageIntro")),
+      status && !status.supported && !status.account ? (0, import_react2.createElement)("p", { role: "status" }, t2("settings.imessageUnsupported")) : null,
       ...remoteState(t2, remote, "settings.imessageNoAccess", explain),
-      asking ? (0, import_react.createElement)(
+      asking ? (0, import_react2.createElement)(
         "form",
         { className: "theone-settings-update-actions", onSubmit: (event) => {
           event.preventDefault();
           if (handle.trim()) act({ action: "connect", handle });
         } },
-        (0, import_react.createElement)("label", { htmlFor: "theone-imessage-handle" }, t2("settings.imessageHandle")),
-        (0, import_react.createElement)("input", {
+        (0, import_react2.createElement)("label", { htmlFor: "theone-imessage-handle" }, t2("settings.imessageHandle")),
+        (0, import_react2.createElement)("input", {
           id: "theone-imessage-handle",
           value: handle,
           maxLength: 200,
@@ -3484,25 +3711,25 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
           placeholder: "+86 138 0000 0000",
           onChange: (event) => setHandle(event.target.value)
         }),
-        (0, import_react.createElement)("button", { type: "submit", className: "theone-settings-save", disabled: busy || !handle.trim() }, t2("settings.remoteConnect"))
+        (0, import_react2.createElement)("button", { type: "submit", className: "theone-settings-save", disabled: busy || !handle.trim() }, t2("settings.remoteConnect"))
       ) : null,
-      error ? (0, import_react.createElement)("p", { role: "alert" }, error === "IMESSAGE_NO_ACCESS" ? t2("settings.imessageNoAccess") : t2(error === "IMESSAGE_HANDLE_INVALID" ? "settings.imessageHandleInvalid" : "settings.imessageUnsupported")) : null,
-      (0, import_react.createElement)("div", { className: "theone-settings-update-actions" }, ...remoteControls(t2, { ...remote, act })),
-      status?.supported ? (0, import_react.createElement)("p", { className: "theone-settings-update-version" }, t2("settings.imessageNote")) : null
+      error ? (0, import_react2.createElement)("p", { role: "alert" }, error === "IMESSAGE_NO_ACCESS" ? t2("settings.imessageNoAccess") : t2(error === "IMESSAGE_HANDLE_INVALID" ? "settings.imessageHandleInvalid" : "settings.imessageUnsupported")) : null,
+      (0, import_react2.createElement)("div", { className: "theone-settings-update-actions" }, ...remoteControls(t2, { ...remote, act })),
+      status?.supported ? (0, import_react2.createElement)("p", { className: "theone-settings-update-version" }, t2("settings.imessageNote")) : null
     );
   }
   function SettingsPanel() {
     const t2 = useText();
-    const heading = (0, import_react.useRef)(null);
-    const [snapshot, setSnapshot] = (0, import_react.useState)();
-    const [draft, setDraft] = (0, import_react.useState)();
-    const [saving, setSaving] = (0, import_react.useState)(false);
-    const [message, setMessage] = (0, import_react.useState)();
-    const saveRequest = (0, import_react.useRef)();
-    (0, import_react.useEffect)(() => () => saveRequest.current?.abort(), []);
-    const [error, setError] = (0, import_react.useState)(false);
-    const [attempt, setAttempt] = (0, import_react.useState)(0);
-    (0, import_react.useEffect)(() => {
+    const heading = (0, import_react2.useRef)(null);
+    const [snapshot, setSnapshot] = (0, import_react2.useState)();
+    const [draft, setDraft] = (0, import_react2.useState)();
+    const [saving, setSaving] = (0, import_react2.useState)(false);
+    const [message, setMessage] = (0, import_react2.useState)();
+    const saveRequest = (0, import_react2.useRef)();
+    (0, import_react2.useEffect)(() => () => saveRequest.current?.abort(), []);
+    const [error, setError] = (0, import_react2.useState)(false);
+    const [attempt, setAttempt] = (0, import_react2.useState)(0);
+    (0, import_react2.useEffect)(() => {
       heading.current?.focus();
       const controller = new AbortController();
       const signal = AbortSignal.any([controller.signal, lifetime.signal]);
@@ -3581,10 +3808,10 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
       if (!draft || !snapshot || !EDITABLE_SETTINGS_KEYS.includes(key)) return display(key);
       const field = key;
       const props = { "aria-label": t2(`settings.${key}`), disabled: saving, id: `theone-setting-${key}` };
-      const select = (value, choices, selectValue) => (0, import_react.createElement)(
+      const select = (value, choices, selectValue) => (0, import_react2.createElement)(
         "select",
         { ...props, value, required: field === "workerModel" && !!draft.workerProvider, onChange: (event) => selectValue(event.target.value) },
-        ...choices.map((choice) => (0, import_react.createElement)("option", { key: choice.value, value: choice.value }, choice.label))
+        ...choices.map((choice) => (0, import_react2.createElement)("option", { key: choice.value, value: choice.value }, choice.label))
       );
       if (field === "historyCatalog" || field === "notices" || field === "factLinks" || field === "factExtraction") return select(String(draft[field]), [{ value: "true", label: t2("settings.on") }, { value: "false", label: t2("settings.off") }], (v) => change(field, v === "true"));
       if (field === "linkScope" || field === "routeNotice") {
@@ -3609,7 +3836,7 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
       }
       if (field === "catalogIntervalMs" || field === "maxDescriptorChars" || field === "maxResponseChars") {
         const interval = field === "catalogIntervalMs";
-        return (0, import_react.createElement)("input", {
+        return (0, import_react2.createElement)("input", {
           ...props,
           type: "number",
           required: true,
@@ -3620,7 +3847,7 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
           onChange: (event) => change(field, event.target.valueAsNumber * (interval ? 1e3 : 1))
         });
       }
-      return (0, import_react.createElement)("input", {
+      return (0, import_react2.createElement)("input", {
         ...props,
         type: "text",
         value: draft.contextsPath ?? "",
@@ -3629,67 +3856,67 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
         onChange: (event) => change("contextsPath", event.target.value.trim() ? event.target.value : null)
       });
     };
-    return (0, import_react.createElement)(
+    return (0, import_react2.createElement)(
       "section",
       { className: "theone-settings", translate: "no" },
-      (0, import_react.createElement)(
+      (0, import_react2.createElement)(
         "header",
         { className: "theone-settings-header" },
-        (0, import_react.createElement)("div", null, (0, import_react.createElement)("h1", { ref: heading, tabIndex: -1 }, t2("settings.title")), (0, import_react.createElement)("p", null, t2("settings.subtitle"))),
-        (0, import_react.createElement)("button", { type: "button", disabled: saving, onClick: () => ctx.layout.selectPanel(panelId) }, t2("settings.back"))
+        (0, import_react2.createElement)("div", null, (0, import_react2.createElement)("h1", { ref: heading, tabIndex: -1 }, t2("settings.title")), (0, import_react2.createElement)("p", null, t2("settings.subtitle"))),
+        (0, import_react2.createElement)("button", { type: "button", disabled: saving, onClick: () => ctx.layout.selectPanel(panelId) }, t2("settings.back"))
       ),
-      (0, import_react.createElement)("p", { className: "theone-settings-notice" }, t2("settings.readOnly")),
-      (0, import_react.createElement)(UpdateSection),
-      (0, import_react.createElement)(WeixinSection),
-      (0, import_react.createElement)(TelegramSection),
-      (0, import_react.createElement)(IMessageSection),
-      !snapshot && !error ? (0, import_react.createElement)("p", { role: "status" }, t2("settings.loading")) : null,
-      error ? (0, import_react.createElement)("p", { role: "alert" }, t2("settings.error"), " ", (0, import_react.createElement)("button", { type: "button", onClick: () => setAttempt((n) => n + 1) }, t2("retry"))) : null,
-      snapshot && draft && (0, import_react.createElement)(
+      (0, import_react2.createElement)("p", { className: "theone-settings-notice" }, t2("settings.readOnly")),
+      (0, import_react2.createElement)(UpdateSection),
+      (0, import_react2.createElement)(WeixinSection),
+      (0, import_react2.createElement)(TelegramSection),
+      (0, import_react2.createElement)(IMessageSection),
+      !snapshot && !error ? (0, import_react2.createElement)("p", { role: "status" }, t2("settings.loading")) : null,
+      error ? (0, import_react2.createElement)("p", { role: "alert" }, t2("settings.error"), " ", (0, import_react2.createElement)("button", { type: "button", onClick: () => setAttempt((n) => n + 1) }, t2("retry"))) : null,
+      snapshot && draft && (0, import_react2.createElement)(
         "form",
         { onSubmit: (event) => {
           event.preventDefault();
           void save();
         } },
-        (0, import_react.createElement)(
+        (0, import_react2.createElement)(
           "section",
           { className: "theone-settings-summary" },
-          (0, import_react.createElement)(
+          (0, import_react2.createElement)(
             "dl",
             null,
-            (0, import_react.createElement)("div", null, (0, import_react.createElement)("dt", null, t2("settings.model")), (0, import_react.createElement)("dd", null, snapshot.model ? `${snapshot.model.provider} / ${snapshot.model.model}` : t2("settings.none"))),
-            (0, import_react.createElement)("div", null, (0, import_react.createElement)("dt", null, t2("settings.capacity")), (0, import_react.createElement)("dd", null, snapshot.model?.contextWindow?.toLocaleString(localeSnapshot().active) ?? t2("settings.none"))),
-            (0, import_react.createElement)("div", null, (0, import_react.createElement)("dt", null, t2("settings.output")), (0, import_react.createElement)("dd", null, snapshot.model?.defaultMaxTokens?.toLocaleString(localeSnapshot().active) ?? t2("settings.none")))
+            (0, import_react2.createElement)("div", null, (0, import_react2.createElement)("dt", null, t2("settings.model")), (0, import_react2.createElement)("dd", null, snapshot.model ? `${snapshot.model.provider} / ${snapshot.model.model}` : t2("settings.none"))),
+            (0, import_react2.createElement)("div", null, (0, import_react2.createElement)("dt", null, t2("settings.capacity")), (0, import_react2.createElement)("dd", null, snapshot.model?.contextWindow?.toLocaleString(localeSnapshot().active) ?? t2("settings.none"))),
+            (0, import_react2.createElement)("div", null, (0, import_react2.createElement)("dt", null, t2("settings.output")), (0, import_react2.createElement)("dd", null, snapshot.model?.defaultMaxTokens?.toLocaleString(localeSnapshot().active) ?? t2("settings.none")))
           ),
-          snapshot.modelUnavailable ? (0, import_react.createElement)("p", { role: "status" }, t2("settings.modelUnavailable")) : null,
-          (0, import_react.createElement)("p", null, t2("settings.inherited")),
-          (0, import_react.createElement)("p", null, t2("settings.compression"))
+          snapshot.modelUnavailable ? (0, import_react2.createElement)("p", { role: "status" }, t2("settings.modelUnavailable")) : null,
+          (0, import_react2.createElement)("p", null, t2("settings.inherited")),
+          (0, import_react2.createElement)("p", null, t2("settings.compression"))
         ),
-        ...groups.map(([group, keys]) => (0, import_react.createElement)(
+        ...groups.map(([group, keys]) => (0, import_react2.createElement)(
           "section",
           { className: "theone-settings-group", key: group },
-          (0, import_react.createElement)("h2", null, t2(`settings.${group}`)),
-          (0, import_react.createElement)("dl", null, ...keys.map((key) => (0, import_react.createElement)(
+          (0, import_react2.createElement)("h2", null, t2(`settings.${group}`)),
+          (0, import_react2.createElement)("dl", null, ...keys.map((key) => (0, import_react2.createElement)(
             "div",
             { className: "theone-settings-row", key },
-            (0, import_react.createElement)("dt", null, (0, import_react.createElement)("strong", null, t2(`settings.${key}`)), (0, import_react.createElement)("p", null, t2(`settings.help.${key}`)), (0, import_react.createElement)("code", null, key)),
-            (0, import_react.createElement)("dd", null, control(key), key === "catalogIntervalMs" && Number.isFinite(draft.catalogIntervalMs) ? (0, import_react.createElement)("small", null, t2("settings.seconds", { count: draft.catalogIntervalMs / 1e3 })) : null)
+            (0, import_react2.createElement)("dt", null, (0, import_react2.createElement)("strong", null, t2(`settings.${key}`)), (0, import_react2.createElement)("p", null, t2(`settings.help.${key}`)), (0, import_react2.createElement)("code", null, key)),
+            (0, import_react2.createElement)("dd", null, control(key), key === "catalogIntervalMs" && Number.isFinite(draft.catalogIntervalMs) ? (0, import_react2.createElement)("small", null, t2("settings.seconds", { count: draft.catalogIntervalMs / 1e3 })) : null)
           )))
         )),
-        (0, import_react.createElement)(
+        (0, import_react2.createElement)(
           "footer",
           { className: "theone-settings-footer" },
-          (0, import_react.createElement)(
+          (0, import_react2.createElement)(
             "p",
             { role: message === "settings.saveError" || message === "settings.conflict" || message === "settings.contextsUnreadable" ? "alert" : "status" },
             message ? t2(message) : dirty ? t2("settings.unsaved") : snapshot.restartRequired ? t2("settings.restart") : ""
           ),
-          message === "settings.conflict" ? (0, import_react.createElement)("button", { type: "button", onClick: () => setAttempt((n) => n + 1) }, t2("settings.reload")) : null,
-          (0, import_react.createElement)("button", { type: "button", disabled: saving || !dirty, onClick: () => {
+          message === "settings.conflict" ? (0, import_react2.createElement)("button", { type: "button", onClick: () => setAttempt((n) => n + 1) }, t2("settings.reload")) : null,
+          (0, import_react2.createElement)("button", { type: "button", disabled: saving || !dirty, onClick: () => {
             setDraft(snapshot.savedValues);
             setMessage(void 0);
           } }, t2("settings.reset")),
-          (0, import_react.createElement)("button", { type: "submit", disabled: saving || !dirty, className: "theone-settings-save" }, t2(saving ? "settings.saving" : "settings.save"))
+          (0, import_react2.createElement)("button", { type: "submit", disabled: saving || !dirty, className: "theone-settings-save" }, t2(saving ? "settings.saving" : "settings.save"))
         )
       )
     );
@@ -3717,17 +3944,17 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
   const routeReason = (reason) => ROUTE_REASONS.has(reason) ? t(`route.reason.${reason}`) : reason.startsWith("router-fallback:") ? t("route.reason.router-fallback") : reason;
   function TopicManager({ topic, constraints, groups, contexts, post, busy }) {
     const t2 = useText();
-    const [title, setTitle] = (0, import_react.useState)(topic.title);
-    const [summary, setSummary] = (0, import_react.useState)(topic.summary);
-    const [rules, setRules] = (0, import_react.useState)(constraints);
+    const [title, setTitle] = (0, import_react2.useState)(topic.title);
+    const [summary, setSummary] = (0, import_react2.useState)(topic.summary);
+    const [rules, setRules] = (0, import_react2.useState)(constraints);
     const groupOf = groups.find((group2) => group2.contextIds.includes(topic.id))?.id ?? "";
-    const [group, setGroup] = (0, import_react.useState)(groupOf);
-    const [groupTitle, setGroupTitle] = (0, import_react.useState)("");
-    const [into, setInto] = (0, import_react.useState)("");
-    const [confirm, setConfirm] = (0, import_react.useState)();
-    const [sessions, setSessions] = (0, import_react.useState)();
-    const [session, setSession] = (0, import_react.useState)("");
-    (0, import_react.useEffect)(() => {
+    const [group, setGroup] = (0, import_react2.useState)(groupOf);
+    const [groupTitle, setGroupTitle] = (0, import_react2.useState)("");
+    const [into, setInto] = (0, import_react2.useState)("");
+    const [confirm, setConfirm] = (0, import_react2.useState)();
+    const [sessions, setSessions] = (0, import_react2.useState)();
+    const [session, setSession] = (0, import_react2.useState)("");
+    (0, import_react2.useEffect)(() => {
       const controller = new AbortController();
       fetch("/api/theone/sessions", { signal: AbortSignal.any([controller.signal, lifetime.signal]), cache: "no-store" }).then((response) => response.ok ? response.json() : { sessions: [] }).then((value) => setSessions(value.sessions)).catch(() => {
         if (!controller.signal.aborted) setSessions([]);
@@ -3736,17 +3963,17 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
     }, []);
     const own = new Set(topic.sourceSessionIds);
     const edited = title.trim() !== topic.title || summary.trim() !== topic.summary || rules.trim() !== constraints;
-    const field = (label2, control) => (0, import_react.createElement)("label", { className: "theone-manage-field" }, (0, import_react.createElement)("span", null, t2(label2)), control);
-    return (0, import_react.createElement)(
+    const field = (label2, control) => (0, import_react2.createElement)("label", { className: "theone-manage-field" }, (0, import_react2.createElement)("span", null, t2(label2)), control);
+    return (0, import_react2.createElement)(
       "div",
       { className: "theone-manage" },
-      field("manage.title", (0, import_react.createElement)("input", { value: title, maxLength: 80, disabled: busy, onChange: (event) => setTitle(event.target.value) })),
-      field("manage.summary", (0, import_react.createElement)("textarea", { value: summary, rows: 3, maxLength: 2e3, disabled: busy, onChange: (event) => setSummary(event.target.value) })),
-      field("manage.constraintsLabel", (0, import_react.createElement)("textarea", { value: rules, rows: 2, maxLength: 400, disabled: busy, placeholder: t2("manage.constraintsPlaceholder"), onChange: (event) => setRules(event.target.value) })),
-      (0, import_react.createElement)(
+      field("manage.title", (0, import_react2.createElement)("input", { value: title, maxLength: 80, disabled: busy, onChange: (event) => setTitle(event.target.value) })),
+      field("manage.summary", (0, import_react2.createElement)("textarea", { value: summary, rows: 3, maxLength: 2e3, disabled: busy, onChange: (event) => setSummary(event.target.value) })),
+      field("manage.constraintsLabel", (0, import_react2.createElement)("textarea", { value: rules, rows: 2, maxLength: 400, disabled: busy, placeholder: t2("manage.constraintsPlaceholder"), onChange: (event) => setRules(event.target.value) })),
+      (0, import_react2.createElement)(
         "div",
         { className: "theone-manage-row" },
-        (0, import_react.createElement)("button", {
+        (0, import_react2.createElement)("button", {
           type: "button",
           disabled: busy || !edited || !title.trim() || !summary.trim(),
           onClick: () => {
@@ -3754,18 +3981,18 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
           }
         }, t2("manage.save"))
       ),
-      field("manage.workspace", (0, import_react.createElement)(
+      field("manage.workspace", (0, import_react2.createElement)(
         "div",
         { className: "theone-manage-row" },
-        (0, import_react.createElement)(
+        (0, import_react2.createElement)(
           "select",
           { value: group, disabled: busy, onChange: (event) => setGroup(event.target.value) },
-          (0, import_react.createElement)("option", { value: "" }, t2("manage.unassigned")),
-          ...groups.map((item) => (0, import_react.createElement)("option", { key: item.id, value: item.id }, item.title)),
-          (0, import_react.createElement)("option", { value: "__new" }, t2("manage.newWorkspace"))
+          (0, import_react2.createElement)("option", { value: "" }, t2("manage.unassigned")),
+          ...groups.map((item) => (0, import_react2.createElement)("option", { key: item.id, value: item.id }, item.title)),
+          (0, import_react2.createElement)("option", { value: "__new" }, t2("manage.newWorkspace"))
         ),
-        group === "__new" ? (0, import_react.createElement)("input", { value: groupTitle, maxLength: 80, placeholder: t2("manage.newWorkspaceName"), disabled: busy, onChange: (event) => setGroupTitle(event.target.value) }) : null,
-        (0, import_react.createElement)("button", {
+        group === "__new" ? (0, import_react2.createElement)("input", { value: groupTitle, maxLength: 80, placeholder: t2("manage.newWorkspaceName"), disabled: busy, onChange: (event) => setGroupTitle(event.target.value) }) : null,
+        (0, import_react2.createElement)("button", {
           type: "button",
           disabled: busy || group === groupOf || group === "__new" && !groupTitle.trim(),
           onClick: () => {
@@ -3773,35 +4000,35 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
           }
         }, t2("manage.move"))
       )),
-      field("manage.attach", (0, import_react.createElement)(
+      field("manage.attach", (0, import_react2.createElement)(
         "div",
         { className: "theone-manage-row" },
-        (0, import_react.createElement)(
+        (0, import_react2.createElement)(
           "select",
           { value: session, disabled: busy || !sessions, onChange: (event) => setSession(event.target.value) },
-          (0, import_react.createElement)("option", { value: "" }, sessions ? t2("manage.attachPick") : t2("manage.loadingSessions")),
-          ...(sessions ?? []).filter((item) => !own.has(item.id)).map((item) => (0, import_react.createElement)("option", { key: item.id, value: item.id }, item.title))
+          (0, import_react2.createElement)("option", { value: "" }, sessions ? t2("manage.attachPick") : t2("manage.loadingSessions")),
+          ...(sessions ?? []).filter((item) => !own.has(item.id)).map((item) => (0, import_react2.createElement)("option", { key: item.id, value: item.id }, item.title))
         ),
-        (0, import_react.createElement)("button", { type: "button", disabled: busy || !session, onClick: () => {
+        (0, import_react2.createElement)("button", { type: "button", disabled: busy || !session, onClick: () => {
           void post("/api/theone/topics", { action: "attach", id: topic.id, sessionId: session }).then((ok) => {
             if (ok) setSession("");
           });
         } }, t2("manage.attachButton"))
       )),
-      (0, import_react.createElement)("p", { className: "theone-manage-hint" }, t2("manage.attachHint")),
-      field("manage.merge", (0, import_react.createElement)(
+      (0, import_react2.createElement)("p", { className: "theone-manage-hint" }, t2("manage.attachHint")),
+      field("manage.merge", (0, import_react2.createElement)(
         "div",
         { className: "theone-manage-row" },
-        (0, import_react.createElement)(
+        (0, import_react2.createElement)(
           "select",
           { value: into, disabled: busy, onChange: (event) => {
             setInto(event.target.value);
             setConfirm(void 0);
           } },
-          (0, import_react.createElement)("option", { value: "" }, t2("manage.mergePick")),
-          ...contexts.filter((item) => item.id !== topic.id).map((item) => (0, import_react.createElement)("option", { key: item.id, value: item.id }, item.title))
+          (0, import_react2.createElement)("option", { value: "" }, t2("manage.mergePick")),
+          ...contexts.filter((item) => item.id !== topic.id).map((item) => (0, import_react2.createElement)("option", { key: item.id, value: item.id }, item.title))
         ),
-        (0, import_react.createElement)(
+        (0, import_react2.createElement)(
           "button",
           {
             type: "button",
@@ -3815,11 +4042,11 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
           t2(confirm === "merge" ? "manage.confirm" : "manage.mergeButton")
         )
       )),
-      (0, import_react.createElement)("p", { className: "theone-manage-hint" }, t2("manage.mergeHint")),
-      (0, import_react.createElement)(
+      (0, import_react2.createElement)("p", { className: "theone-manage-hint" }, t2("manage.mergeHint")),
+      (0, import_react2.createElement)(
         "div",
         { className: "theone-manage-row" },
-        (0, import_react.createElement)(
+        (0, import_react2.createElement)(
           "button",
           {
             type: "button",
@@ -3832,7 +4059,7 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
           },
           t2(confirm === "delete" ? "manage.deleteConfirm" : "manage.delete")
         ),
-        confirm === "delete" ? (0, import_react.createElement)("span", { className: "theone-manage-hint" }, t2("manage.deleteHint")) : null
+        confirm === "delete" ? (0, import_react2.createElement)("span", { className: "theone-manage-hint" }, t2("manage.deleteHint")) : null
       )
     );
   }
@@ -3840,23 +4067,23 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
   function RouteList({ routes, stats, contexts, post, busy }) {
     const t2 = useText();
     const titleOf = (id) => contexts.find((context) => context.id === id)?.title ?? t2("routes.removed");
-    return (0, import_react.createElement)(
+    return (0, import_react2.createElement)(
       "details",
       { className: "theone-routes" },
-      (0, import_react.createElement)(
+      (0, import_react2.createElement)(
         "summary",
         null,
         t2("routes.title"),
-        (0, import_react.createElement)("span", null, ` ${routes.length}`),
-        stats?.total ? (0, import_react.createElement)("small", { className: "theone-route-stats" }, t2("routes.stats", {
+        (0, import_react2.createElement)("span", null, ` ${routes.length}`),
+        stats?.total ? (0, import_react2.createElement)("small", { className: "theone-route-stats" }, t2("routes.stats", {
           total: stats.total,
           corrected: stats.corrected,
           rate: Math.round(100 * (stats.total - stats.corrected) / stats.total),
           clarified: stats.clarified
         })) : null
       ),
-      (0, import_react.createElement)("p", { className: "theone-manage-hint" }, t2("routes.hint")),
-      routes.length ? (0, import_react.createElement)("ol", null, ...routes.map((route) => {
+      (0, import_react2.createElement)("p", { className: "theone-manage-hint" }, t2("routes.hint")),
+      routes.length ? (0, import_react2.createElement)("ol", null, ...routes.map((route) => {
         const target = route.decision.contextId;
         const receipt = route.receipt;
         const details = [
@@ -3865,22 +4092,22 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
           receipt?.elapsedMs !== void 0 ? `${(receipt.elapsedMs / 1e3).toFixed(1)} s` : void 0,
           receipt?.errorCode ? t2("routes.error", { code: receipt.errorCode }) : void 0
         ].filter(Boolean).join(" \xB7 ");
-        return (0, import_react.createElement)(
+        return (0, import_react2.createElement)(
           "li",
           { key: route.messageId },
-          (0, import_react.createElement)("time", null, new Date(route.at).toLocaleTimeString(localeSnapshot().active, { hour: "2-digit", minute: "2-digit" })),
-          (0, import_react.createElement)("q", null, route.excerpt || "\u2026"),
-          (0, import_react.createElement)(
+          (0, import_react2.createElement)("time", null, new Date(route.at).toLocaleTimeString(localeSnapshot().active, { hour: "2-digit", minute: "2-digit" })),
+          (0, import_react2.createElement)("q", null, route.excerpt || "\u2026"),
+          (0, import_react2.createElement)(
             "div",
             { className: "theone-route-target" },
-            (0, import_react.createElement)("strong", null, route.decision.action === "CLARIFY" ? t2("routes.clarify") : `\u2192 ${titleOf(target)}`),
-            (0, import_react.createElement)("small", null, details)
+            (0, import_react2.createElement)("strong", null, route.decision.action === "CLARIFY" ? t2("routes.clarify") : `\u2192 ${titleOf(target)}`),
+            (0, import_react2.createElement)("small", null, details)
           ),
-          (0, import_react.createElement)(
+          (0, import_react2.createElement)(
             "div",
             { className: "theone-route-actions" },
-            (0, import_react.createElement)("button", { type: "button", className: "theone-quiet", onClick: () => openFeedbackDialog(route.messageId) }, t2("routes.report")),
-            route.correctedTo ? (0, import_react.createElement)("span", { className: "theone-route-fixed" }, t2("routes.corrected", { title: titleOf(route.correctedTo) })) : (0, import_react.createElement)(
+            (0, import_react2.createElement)("button", { type: "button", className: "theone-quiet", onClick: () => openFeedbackDialog(route.messageId) }, t2("routes.report")),
+            route.correctedTo ? (0, import_react2.createElement)("span", { className: "theone-route-fixed" }, t2("routes.corrected", { title: titleOf(route.correctedTo) })) : (0, import_react2.createElement)(
               "select",
               {
                 value: "",
@@ -3890,27 +4117,27 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
                   if (event.target.value) void post("/api/theone/routes", { messageId: route.messageId, contextId: event.target.value });
                 }
               },
-              (0, import_react.createElement)("option", { value: "" }, t2("routes.move")),
-              ...contexts.filter((context) => context.id !== target).map((context) => (0, import_react.createElement)("option", { key: context.id, value: context.id }, context.title))
+              (0, import_react2.createElement)("option", { value: "" }, t2("routes.move")),
+              ...contexts.filter((context) => context.id !== target).map((context) => (0, import_react2.createElement)("option", { key: context.id, value: context.id }, context.title))
             )
           )
         );
-      })) : (0, import_react.createElement)("p", { className: "theone-links-empty" }, t2("routes.empty"))
+      })) : (0, import_react2.createElement)("p", { className: "theone-links-empty" }, t2("routes.empty"))
     );
   }
   function CatalogPanel() {
     const t2 = useText();
-    const [snapshot, setSnapshot] = (0, import_react.useState)();
-    const [error, setError] = (0, import_react.useState)();
-    const [busy, setBusy] = (0, import_react.useState)();
-    const [routes, setRoutes] = (0, import_react.useState)([]);
-    const [routeStats, setRouteStats] = (0, import_react.useState)();
-    const [managing, setManaging] = (0, import_react.useState)();
-    const [creating, setCreating] = (0, import_react.useState)(false);
-    const [newTitle, setNewTitle] = (0, import_react.useState)("");
-    const reload = (0, import_react.useRef)(async () => {
+    const [snapshot, setSnapshot] = (0, import_react2.useState)();
+    const [error, setError] = (0, import_react2.useState)();
+    const [busy, setBusy] = (0, import_react2.useState)();
+    const [routes, setRoutes] = (0, import_react2.useState)([]);
+    const [routeStats, setRouteStats] = (0, import_react2.useState)();
+    const [managing, setManaging] = (0, import_react2.useState)();
+    const [creating, setCreating] = (0, import_react2.useState)(false);
+    const [newTitle, setNewTitle] = (0, import_react2.useState)("");
+    const reload = (0, import_react2.useRef)(async () => {
     });
-    (0, import_react.useEffect)(() => {
+    (0, import_react2.useEffect)(() => {
       const controller = new AbortController();
       const signal = AbortSignal.any([controller.signal, lifetime.signal]);
       let reading = false;
@@ -4025,21 +4252,21 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
       const own = linkage.topics[id];
       if (!own) return null;
       if (managing !== id) return own.related.length || own.private ? [
-        (0, import_react.createElement)("dt", { key: "dt" }, label(t2("link.label"))),
-        (0, import_react.createElement)("dd", { key: "dd" }, own.related.map((topic) => topic.title).join(" \xB7 "), own.private ? (0, import_react.createElement)("span", { className: "theone-tag" }, t2("link.private")) : null)
+        (0, import_react2.createElement)("dt", { key: "dt" }, label(t2("link.label"))),
+        (0, import_react2.createElement)("dd", { key: "dd" }, own.related.map((topic) => topic.title).join(" \xB7 "), own.private ? (0, import_react2.createElement)("span", { className: "theone-tag" }, t2("link.private")) : null)
       ] : null;
       const related = new Set(own.related.map((topic) => topic.id));
       const others = snapshot.contexts.filter((context) => context.id !== id && !related.has(context.id));
-      return (0, import_react.createElement)(
+      return (0, import_react2.createElement)(
         "div",
         { className: "theone-topic-links" },
-        (0, import_react.createElement)("span", { className: "theone-links-label" }, t2("link.label")),
-        own.related.length ? null : (0, import_react.createElement)("span", { className: "theone-links-empty" }, t2("link.none")),
-        ...own.related.map((topic) => (0, import_react.createElement)(
+        (0, import_react2.createElement)("span", { className: "theone-links-label" }, t2("link.label")),
+        own.related.length ? null : (0, import_react2.createElement)("span", { className: "theone-links-empty" }, t2("link.none")),
+        ...own.related.map((topic) => (0, import_react2.createElement)(
           "span",
           { key: topic.id, className: "theone-link-chip", title: topic.reasons.map((reason) => t2(`link.reason.${reason}`)).join(" \xB7 ") },
           topic.title,
-          (0, import_react.createElement)("button", {
+          (0, import_react2.createElement)("button", {
             type: "button",
             "aria-label": t2("link.remove"),
             title: t2("link.remove"),
@@ -4049,7 +4276,7 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
             }
           }, "\xD7")
         )),
-        others.length ? (0, import_react.createElement)(
+        others.length ? (0, import_react2.createElement)(
           "select",
           {
             "aria-label": t2("link.add"),
@@ -4059,13 +4286,13 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
               if (event.target.value) void editLinks({ action: "link", a: id, b: event.target.value });
             }
           },
-          (0, import_react.createElement)("option", { value: "" }, t2("link.add")),
-          ...others.map((context) => (0, import_react.createElement)("option", { key: context.id, value: context.id }, context.title))
+          (0, import_react2.createElement)("option", { value: "" }, t2("link.add")),
+          ...others.map((context) => (0, import_react2.createElement)("option", { key: context.id, value: context.id }, context.title))
         ) : null,
-        (0, import_react.createElement)(
+        (0, import_react2.createElement)(
           "label",
           { className: "theone-link-private", title: t2("link.privateHint") },
-          (0, import_react.createElement)("input", {
+          (0, import_react2.createElement)("input", {
             type: "checkbox",
             checked: own.private,
             disabled: !!busy,
@@ -4093,21 +4320,21 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
     const groups = [...snapshot?.groups ?? [], ...snapshot?.contexts.some((c) => !assigned.has(c.id)) ? [{ id: "pending", title: t2("catalog.unassigned"), summary: t2("catalog.unassignedSummary"), contextIds: snapshot.contexts.filter((c) => !assigned.has(c.id)).map((c) => c.id) }] : []];
     const status = snapshot?.status;
     const kept = routeStats?.total ? Math.round(100 * (routeStats.total - routeStats.corrected) / routeStats.total) : void 0;
-    const figure = (value, name) => (0, import_react.createElement)("div", { key: name }, (0, import_react.createElement)("dd", null, value), (0, import_react.createElement)("dt", null, name));
-    return (0, import_react.createElement)(
+    const figure = (value, name) => (0, import_react2.createElement)("div", { key: name }, (0, import_react2.createElement)("dd", null, value), (0, import_react2.createElement)("dt", null, name));
+    return (0, import_react2.createElement)(
       "section",
       { className: "theone-catalog", translate: "no" },
-      (0, import_react.createElement)(
+      (0, import_react2.createElement)(
         "header",
         { className: "theone-catalog-header" },
-        (0, import_react.createElement)(
+        (0, import_react2.createElement)(
           "div",
           { className: "theone-catalog-heading" },
-          (0, import_react.createElement)("p", { className: "theone-overline" }, "TheOne"),
-          (0, import_react.createElement)("h1", null, t2("catalog.title")),
-          (0, import_react.createElement)("p", { className: "theone-catalog-lede" }, t2("catalog.subtitle"))
+          (0, import_react2.createElement)("p", { className: "theone-overline" }, "TheOne"),
+          (0, import_react2.createElement)("h1", null, t2("catalog.title")),
+          (0, import_react2.createElement)("p", { className: "theone-catalog-lede" }, t2("catalog.subtitle"))
         ),
-        snapshot ? (0, import_react.createElement)(
+        snapshot ? (0, import_react2.createElement)(
           "dl",
           { className: "theone-figures" },
           figure(snapshot.contexts.length, t2("catalog.figTopics")),
@@ -4115,16 +4342,16 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
           kept !== void 0 ? figure(`${kept}%`, t2("catalog.figKept")) : null
         ) : null
       ),
-      (0, import_react.createElement)(
+      (0, import_react2.createElement)(
         "div",
         { className: "theone-toolbar" },
-        (0, import_react.createElement)("p", { className: "theone-catalog-status", role: "status" }, snapshot ? status?.running ? t2("catalog.indexing") : status?.pending ? t2("catalog.pending", { count: status.pending, sessionSuffix: status.pending === 1 ? "" : "s" }) : t2("catalog.updated") : t2("catalog.reading")),
-        (0, import_react.createElement)(
+        (0, import_react2.createElement)("p", { className: "theone-catalog-status", role: "status" }, snapshot ? status?.running ? t2("catalog.indexing") : status?.pending ? t2("catalog.pending", { count: status.pending, sessionSuffix: status.pending === 1 ? "" : "s" }) : t2("catalog.updated") : t2("catalog.reading")),
+        (0, import_react2.createElement)(
           "div",
           { className: "theone-catalog-tools" },
-          (0, import_react.createElement)("button", { type: "button", className: "theone-primary", disabled: !!busy, onClick: () => setCreating((open) => !open) }, t2("manage.create")),
-          (0, import_react.createElement)("button", { type: "button", onClick: refresh, disabled: !!busy || status?.running }, t2("catalog.refresh")),
-          snapshot?.linkage && snapshot.linkage.scope !== "off" ? (0, import_react.createElement)("button", {
+          (0, import_react2.createElement)("button", { type: "button", className: "theone-primary", disabled: !!busy, onClick: () => setCreating((open) => !open) }, t2("manage.create")),
+          (0, import_react2.createElement)("button", { type: "button", onClick: refresh, disabled: !!busy || status?.running }, t2("catalog.refresh")),
+          snapshot?.linkage && snapshot.linkage.scope !== "off" ? (0, import_react2.createElement)("button", {
             type: "button",
             className: "theone-quiet",
             disabled: !!busy,
@@ -4133,67 +4360,67 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
               void editLinks({ action: "clearLearned" });
             }
           }, t2("link.clearLearned")) : null,
-          (0, import_react.createElement)("button", { type: "button", className: "theone-quiet", onClick: () => openFeedbackDialog() }, t2("feedback.open"))
+          (0, import_react2.createElement)("button", { type: "button", className: "theone-quiet", onClick: () => openFeedbackDialog() }, t2("feedback.open"))
         )
       ),
-      creating ? (0, import_react.createElement)(
+      creating ? (0, import_react2.createElement)(
         "form",
         { className: "theone-manage theone-create", onSubmit: (event) => {
           event.preventDefault();
           void post("/api/theone/topics", { action: "create", title: newTitle });
         } },
-        (0, import_react.createElement)("input", { value: newTitle, maxLength: 80, autoFocus: true, placeholder: t2("manage.title"), disabled: !!busy, onChange: (event) => setNewTitle(event.target.value) }),
-        (0, import_react.createElement)("button", { type: "submit", className: "theone-primary", disabled: !!busy || !newTitle.trim() }, t2("manage.createButton")),
-        (0, import_react.createElement)("button", { type: "button", className: "theone-quiet", onClick: () => {
+        (0, import_react2.createElement)("input", { value: newTitle, maxLength: 80, autoFocus: true, placeholder: t2("manage.title"), disabled: !!busy, onChange: (event) => setNewTitle(event.target.value) }),
+        (0, import_react2.createElement)("button", { type: "submit", className: "theone-primary", disabled: !!busy || !newTitle.trim() }, t2("manage.createButton")),
+        (0, import_react2.createElement)("button", { type: "button", className: "theone-quiet", onClick: () => {
           setCreating(false);
           setNewTitle("");
         } }, t2("manage.cancel"))
       ) : null,
-      snapshot?.linkage?.scope === "off" ? (0, import_react.createElement)("p", { className: "theone-catalog-note" }, t2("link.off")) : null,
-      status?.failed ? (0, import_react.createElement)("p", { className: "theone-catalog-warning" }, t2("catalog.failed", { count: status.failed, sessionSuffix: status.failed === 1 ? "" : "s" })) : null,
-      status?.searchUnavailable ? (0, import_react.createElement)("p", { className: "theone-catalog-warning" }, t2("catalog.searchUnavailable")) : null,
-      error ? (0, import_react.createElement)("p", { role: "alert", className: "theone-catalog-warning" }, t2(error)) : null,
-      snapshot ? (0, import_react.createElement)(RouteList, { routes, stats: routeStats, contexts: snapshot.contexts, post, busy: !!busy }) : null,
-      snapshot && !snapshot.contexts.length ? (0, import_react.createElement)("p", { className: "theone-catalog-empty" }, t2(status?.running ? "catalog.emptyIndexing" : "catalog.empty")) : null,
-      (0, import_react.createElement)("div", { className: "theone-catalog-groups" }, ...groups.map((group, index) => (0, import_react.createElement)(
+      snapshot?.linkage?.scope === "off" ? (0, import_react2.createElement)("p", { className: "theone-catalog-note" }, t2("link.off")) : null,
+      status?.failed ? (0, import_react2.createElement)("p", { className: "theone-catalog-warning" }, t2("catalog.failed", { count: status.failed, sessionSuffix: status.failed === 1 ? "" : "s" })) : null,
+      status?.searchUnavailable ? (0, import_react2.createElement)("p", { className: "theone-catalog-warning" }, t2("catalog.searchUnavailable")) : null,
+      error ? (0, import_react2.createElement)("p", { role: "alert", className: "theone-catalog-warning" }, t2(error)) : null,
+      snapshot ? (0, import_react2.createElement)(RouteList, { routes, stats: routeStats, contexts: snapshot.contexts, post, busy: !!busy }) : null,
+      snapshot && !snapshot.contexts.length ? (0, import_react2.createElement)("p", { className: "theone-catalog-empty" }, t2(status?.running ? "catalog.emptyIndexing" : "catalog.empty")) : null,
+      (0, import_react2.createElement)("div", { className: "theone-catalog-groups" }, ...groups.map((group, index) => (0, import_react2.createElement)(
         "section",
         { key: group.id, className: "theone-topic-group" },
-        (0, import_react.createElement)(
+        (0, import_react2.createElement)(
           "header",
           { className: "theone-group-head" },
-          (0, import_react.createElement)("span", { className: "theone-group-index" }, String(index + 1).padStart(2, "0")),
-          (0, import_react.createElement)("h2", null, group.title, (0, import_react.createElement)("span", null, group.contextIds.length)),
-          group.summary ? (0, import_react.createElement)("p", { className: "theone-group-summary" }, group.summary) : null
+          (0, import_react2.createElement)("span", { className: "theone-group-index" }, String(index + 1).padStart(2, "0")),
+          (0, import_react2.createElement)("h2", null, group.title, (0, import_react2.createElement)("span", null, group.contextIds.length)),
+          group.summary ? (0, import_react2.createElement)("p", { className: "theone-group-summary" }, group.summary) : null
         ),
-        (0, import_react.createElement)("ol", { className: "theone-topic-list" }, ...group.contextIds.flatMap((id) => {
+        (0, import_react2.createElement)("ol", { className: "theone-topic-list" }, ...group.contextIds.flatMap((id) => {
           const topic = snapshot?.contexts.find((c) => c.id === id);
           if (!topic) return [];
           const constraints = snapshot?.linkage?.topics[id]?.constraints ?? "";
           const open = managing === id;
           const links = linkRow(id);
-          return [(0, import_react.createElement)(
+          return [(0, import_react2.createElement)(
             "li",
             { key: id, className: `theone-topic-card${open ? " theone-open" : ""}${topic.hidden ? " theone-hidden" : ""}` },
-            (0, import_react.createElement)(
+            (0, import_react2.createElement)(
               "div",
               { className: "theone-topic-main" },
-              (0, import_react.createElement)("h3", null, topic.title, topic.topicStatus && topic.topicStatus !== "active" ? (0, import_react.createElement)("span", { className: `theone-tag theone-status-${topic.topicStatus}` }, t2(`topic.status.${topic.topicStatus}`)) : null),
-              topic.summary && topic.summary.trim() !== topic.title.trim() ? (0, import_react.createElement)("p", { className: "theone-topic-summary" }, topic.summary) : null,
-              topic.hidden ? (0, import_react.createElement)("p", { className: "theone-topic-warning" }, t2(topic.hidden === "archived" ? "topic.hiddenArchived" : "topic.hiddenOrphaned")) : null,
-              topic.lastState || constraints || topic.projectInfo || links && !open ? (0, import_react.createElement)(
+              (0, import_react2.createElement)("h3", null, topic.title, topic.topicStatus && topic.topicStatus !== "active" ? (0, import_react2.createElement)("span", { className: `theone-tag theone-status-${topic.topicStatus}` }, t2(`topic.status.${topic.topicStatus}`)) : null),
+              topic.summary && topic.summary.trim() !== topic.title.trim() ? (0, import_react2.createElement)("p", { className: "theone-topic-summary" }, topic.summary) : null,
+              topic.hidden ? (0, import_react2.createElement)("p", { className: "theone-topic-warning" }, t2(topic.hidden === "archived" ? "topic.hiddenArchived" : "topic.hiddenOrphaned")) : null,
+              topic.lastState || constraints || topic.projectInfo || links && !open ? (0, import_react2.createElement)(
                 "dl",
                 { className: "theone-topic-meta" },
-                topic.projectInfo ? [(0, import_react.createElement)("dt", { key: "p" }, label(t2("topic.project"))), (0, import_react.createElement)("dd", { key: "pv", title: topic.projectInfo.path }, topic.projectInfo.name)] : null,
-                topic.lastState ? [(0, import_react.createElement)("dt", { key: "s" }, label(t2("topic.state"))), (0, import_react.createElement)("dd", { key: "sv" }, topic.lastState)] : null,
-                constraints ? [(0, import_react.createElement)("dt", { key: "c" }, label(t2("topic.constraints"))), (0, import_react.createElement)("dd", { key: "cv" }, constraints)] : null,
+                topic.projectInfo ? [(0, import_react2.createElement)("dt", { key: "p" }, label(t2("topic.project"))), (0, import_react2.createElement)("dd", { key: "pv", title: topic.projectInfo.path }, topic.projectInfo.name)] : null,
+                topic.lastState ? [(0, import_react2.createElement)("dt", { key: "s" }, label(t2("topic.state"))), (0, import_react2.createElement)("dd", { key: "sv" }, topic.lastState)] : null,
+                constraints ? [(0, import_react2.createElement)("dt", { key: "c" }, label(t2("topic.constraints"))), (0, import_react2.createElement)("dd", { key: "cv" }, constraints)] : null,
                 open ? null : links
               ) : null
             ),
-            (0, import_react.createElement)(
+            (0, import_react2.createElement)(
               "div",
               { className: "theone-topic-actions" },
               // A hidden topic has nothing left to continue: its conversations are gone or archived.
-              (0, import_react.createElement)("button", {
+              (0, import_react2.createElement)("button", {
                 type: "button",
                 className: "theone-continue",
                 disabled: !!busy || !!topic.hidden,
@@ -4201,9 +4428,9 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
                 onClick: () => {
                   void continueTopic(id);
                 }
-              }, t2(busy === id ? "topic.opening" : "topic.continue"), (0, import_react.createElement)("span", { "aria-hidden": true }, " \u2192")),
-              (0, import_react.createElement)("button", { type: "button", className: "theone-quiet", "aria-expanded": open, onClick: () => setManaging((current) => current === id ? void 0 : id) }, t2(open ? "manage.close" : "manage.open")),
-              topic.hidden ? null : (0, import_react.createElement)(
+              }, t2(busy === id ? "topic.opening" : "topic.continue"), (0, import_react2.createElement)("span", { "aria-hidden": true }, " \u2192")),
+              (0, import_react2.createElement)("button", { type: "button", className: "theone-quiet", "aria-expanded": open, onClick: () => setManaging((current) => current === id ? void 0 : id) }, t2(open ? "manage.close" : "manage.open")),
+              topic.hidden ? null : (0, import_react2.createElement)(
                 "button",
                 {
                   type: "button",
@@ -4215,7 +4442,7 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
                 },
                 t2(topic.topicStatus === "done" ? "topic.reopen" : "topic.markDone")
               ),
-              ...(topic.hidden === "orphaned" ? [] : topic.sourceSessionIds).slice(0, 3).map((sessionId, i) => (0, import_react.createElement)("button", {
+              ...(topic.hidden === "orphaned" ? [] : topic.sourceSessionIds).slice(0, 3).map((sessionId, i) => (0, import_react2.createElement)("button", {
                 key: sessionId,
                 type: "button",
                 className: "theone-quiet",
@@ -4225,11 +4452,11 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
                 }
               }, t2("topic.source") + (topic.sourceSessionIds.length > 1 ? " " + (i + 1) : "")))
             ),
-            open ? (0, import_react.createElement)(
+            open ? (0, import_react2.createElement)(
               "div",
               { className: "theone-topic-edit" },
               links,
-              (0, import_react.createElement)(TopicManager, { key: `${id}:${topic.title}:${topic.summary}:${constraints}`, topic, constraints, groups: snapshot.groups, contexts: snapshot.contexts, post, busy: !!busy })
+              (0, import_react2.createElement)(TopicManager, { key: `${id}:${topic.title}:${topic.summary}:${constraints}`, topic, constraints, groups: snapshot.groups, contexts: snapshot.contexts, post, busy: !!busy })
             ) : null
           )];
         }))
@@ -4342,20 +4569,26 @@ ${body}` }, (0, import_react.createElement)("strong", null, title), " ", body),
       list.getSnapshot = original;
     };
   });
+  const WorkPanel = createWorkPanel(useText, lifetime.signal, () => ctx.layout.selectPanel(panelId));
   ctx.slots.inject("main", () => [
+    ctx.slots.register({ name: "main", key: tasksPanelId }, WorkPanel),
     ctx.slots.register({ name: "main", key: panelId }, GatewayPanel),
     ctx.slots.register({ name: "main", key: catalogPanelId }, CatalogPanel),
     ctx.slots.register({ name: "main", key: settingsPanelId }, SettingsPanel)
   ]);
   ctx.slots.inject("sidebar.panellist", () => [
+    ctx.slots.register({ name: "sidebar.panellist", id: tasksPanelId, order: -998, label: () => t("tasks.title") }, ({ size }) => {
+      const t2 = useText();
+      return (0, import_react2.createElement)("span", { className: "theone-catalog-entry", translate: "no" }, icon("grid", 16), size === 16 ? (0, import_react2.createElement)("span", null, t2("tasks.title")) : null);
+    }),
     ctx.slots.register({ name: "sidebar.panellist", id: panelId, order: -1e3, label: () => t("gateway.title") }, SidebarEntry),
     ctx.slots.register({ name: "sidebar.panellist", id: catalogPanelId, order: -999, label: () => t("catalog.title") }, ({ size }) => {
       const t2 = useText();
-      return (0, import_react.createElement)("span", { className: "theone-catalog-entry", translate: "no" }, icon("grid", 16), size === 16 ? (0, import_react.createElement)("span", null, t2("catalog.title")) : null);
+      return (0, import_react2.createElement)("span", { className: "theone-catalog-entry", translate: "no" }, icon("grid", 16), size === 16 ? (0, import_react2.createElement)("span", null, t2("catalog.title")) : null);
     })
   ]);
 }
-var sidebarCss = `
+var sidebarCss = workCss + `
 button:has(.theone-nav){--one-accent:#a75b1e;--one-tint:#fff5ec;--one-line:#eed3bb;--one-heat:#ff78002b;--one-glow:0 0 22px 4px #ff6b0024,0 4px 32px 6px #ff76000d;border:1px solid var(--one-line);background:var(--one-tint);box-shadow:var(--one-glow);overflow:visible;border-radius:12px;color:var(--dsw-alias-label-primary);flex:none;position:relative;isolation:isolate}
 [data-ds-dark-theme] button:has(.theone-nav){--one-accent:#93c8f3;--one-tint:#1d2a37;--one-line:#344d64;--one-heat:#80caff30;--one-glow:0 0 22px 4px #80bae924}
 button:has(.theone-nav)::after{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;background:radial-gradient(85px circle at var(--one-pointer-x,50%) var(--one-pointer-y,50%),var(--one-heat),transparent 100%);opacity:0;transition:opacity 180ms ease;z-index:0}
