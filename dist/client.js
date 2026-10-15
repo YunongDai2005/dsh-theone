@@ -2411,6 +2411,7 @@ function apply(ctx) {
   let update;
   const updateListeners = /* @__PURE__ */ new Set();
   const setUpdate = (value) => {
+    if (lifetime.signal.aborted) return;
     update = value;
     for (const listener of updateListeners) listener();
   };
@@ -2453,19 +2454,40 @@ function apply(ctx) {
     const waiting = !!status.waiting && !status.available && !status.state;
     return waiting ? t("update.waitingHint", { latest: status.waiting.version }) : status.error === "GATEWAY_BUSY" ? t("update.busy") : status.state === "reloading" ? t("update.reloadingHint") : status.state === "restart" ? t("update.restartHint") : status.state === "failed" ? status.error === "OTHER_RELEASE_AGE" ? t("update.otherAge", { names: status.detail ?? "" }) : status.error === "MINIMUM_RELEASE_AGE" ? status.exempt ? t("update.ageStill", { detail: status.detail ?? "" }) : t("update.tooNew") : status.error === "NETWORK" ? t("update.network") : t("update.failedHint", { error: status.detail ?? status.error ?? "" }) : status.installable ? t("update.hint", { current: status.current, latest: status.latest ?? "" }) : t("update.manualHint", { current: status.current, latest: status.latest ?? "" });
   }
+  let reloadPending = false;
   async function awaitReload(previous) {
-    for (const started = Date.now(); Date.now() - started < 12e4; ) {
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      try {
-        const response = await fetch("/api/theone/update", { cache: "no-store" });
-        if (response.ok && (await response.json()).current !== previous) {
-          window.location.reload();
-          return;
+    if (reloadPending || lifetime.signal.aborted) return;
+    reloadPending = true;
+    const signal = AbortSignal.any([lifetime.signal, AbortSignal.timeout(12e4)]);
+    try {
+      while (!signal.aborted) {
+        await new Promise((resolve) => {
+          const finish = () => {
+            clearTimeout(timer);
+            signal.removeEventListener("abort", finish);
+            resolve();
+          };
+          const timer = setTimeout(finish, 1500);
+          signal.addEventListener("abort", finish, { once: true });
+        });
+        if (signal.aborted) break;
+        try {
+          const response = await fetch("/api/theone/update", { cache: "no-store", signal });
+          if (response.ok) {
+            const status = await response.json();
+            if (signal.aborted) break;
+            if (status.current !== previous) {
+              setUpdate(status);
+              return;
+            }
+          }
+        } catch {
         }
-      } catch {
       }
+      if (update) setUpdate({ ...update, state: "restart" });
+    } finally {
+      reloadPending = false;
     }
-    if (update) setUpdate({ ...update, state: "restart" });
   }
   ctx.effect(() => {
     void readUpdate();
