@@ -1,0 +1,7 @@
+import type { TheOneLocaleKey } from './client-locales.ts';
+type Text = (key: TheOneLocaleKey, params?: Record<string, string | number>) => string;
+export declare function createWorkPanel(useText: () => Text, lifetime: AbortSignal, openMain: () => void): () => import("react").DetailedReactHTMLElement<{
+    className: string;
+}, HTMLElement>;
+export declare const workCss = ".theone-tasks{padding:24px;max-width:900px;margin:auto;overflow:auto;height:100%;box-sizing:border-box;color:var(--dsw-alias-label-primary);font-size:14px;line-height:1.6}.theone-tasks form{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;padding:16px;border:1px solid var(--dsw-alias-border-l2,#8885);border-radius:12px}.theone-task-field{display:flex;flex-direction:column;gap:4px}.theone-tasks input,.theone-tasks select{color:inherit;background:transparent;padding:8px;border:1px solid #8887;border-radius:6px;min-width:0}.theone-tasks button{font:inherit;color:inherit;background:var(--dsw-specific-sidebar-fill,#8882);padding:6px 12px;border:1px solid #8886;border-radius:6px;cursor:pointer}.theone-tasks button:disabled{opacity:.5;cursor:default}.theone-task{padding:16px;margin-top:16px;border:1px solid #8885;border-radius:12px;overflow-wrap:anywhere}.theone-task h3{margin-top:0}.theone-task-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.theone-task p{white-space:pre-wrap}.theone-tasks a{color:var(--dsw-alias-label-link,#529bdb)}";
+export {};

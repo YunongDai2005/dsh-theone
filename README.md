@@ -35,6 +35,8 @@ Each project reasons, runs tools and compacts in its own session. What you see i
 
 ## Why try it
 
+Version 0.3.36 adds **Ongoing tasks**: follow a public GitHub PR and CI on this computer, notify main chat about changes, pause or cancel, and recover after restart. Memory proposals are queued and checked against their evidence before merging. See the [implementation and limitations](./docs/persistent-work.md) (Chinese).
+
 | | Usual workflow | With TheOne |
 | --- | --- | --- |
 | Start something new | Create a session, name it | Just say it |

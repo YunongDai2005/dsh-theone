@@ -23,6 +23,7 @@ import type { TelegramStatus } from './telegram-bot.ts'
 import type { IMessageStatus } from './imessage-db.ts'
 import type { LinkStatus } from './remote-link.ts'
 import qrcode from 'qrcode-generator'
+import { createWorkPanel, workCss } from './client-work.ts'
 
 // ui-workspace retains the selected conversation with this public source label.
 declare module '@deepseek-ai/dsh-api-session-controller/client' {
@@ -33,6 +34,7 @@ export const inject = ['slots', 'locale', 'sessions', 'workspaces', 'layout', 'u
 const panelId = 'theone-gateway' as MainPanelId
 const catalogPanelId = 'theone-catalog' as MainPanelId
 const settingsPanelId = 'theone-settings' as MainPanelId
+const tasksPanelId = 'theone-tasks' as MainPanelId
 
 export function apply(ctx: Context) {
   const lifetime = new AbortController()
@@ -1340,12 +1342,18 @@ export function apply(ctx: Context) {
   })
 
   // Wait for the owning plugins' declarations; retain their normal browser and chat.
+  const WorkPanel = createWorkPanel(useText, lifetime.signal, () => ctx.layout.selectPanel(panelId))
   ctx.slots.inject('main', () => [
+    ctx.slots.register({name:'main',key:tasksPanelId},WorkPanel),
     ctx.slots.register({name:'main',key:panelId},GatewayPanel),
     ctx.slots.register({name:'main',key:catalogPanelId},CatalogPanel),
     ctx.slots.register({name:'main',key:settingsPanelId},SettingsPanel),
   ])
   ctx.slots.inject('sidebar.panellist', () => [
+    ctx.slots.register({name:'sidebar.panellist',id:tasksPanelId,order:-998,label:()=>t('tasks.title')}, ({size}: PropsRuntime<'sidebar.panellist'>) => {
+      const t = useText()
+      return h('span',{className:'theone-catalog-entry',translate:'no'},icon('grid',16),size === 16 ? h('span',null,t('tasks.title')) : null)
+    }),
     ctx.slots.register({name:'sidebar.panellist',id:panelId,order:-1000,label:()=>t('gateway.title')},SidebarEntry),
     ctx.slots.register({name:'sidebar.panellist',id:catalogPanelId,order:-999,label:()=>t('catalog.title')}, ({size}: PropsRuntime<'sidebar.panellist'>) => {
       const t = useText()
@@ -1355,7 +1363,7 @@ export function apply(ctx: Context) {
 }
 
 /** Target only the row containing our own slot marker; no generated DSH class names. */
-const sidebarCss = `
+const sidebarCss = workCss + `
 button:has(.theone-nav){--one-accent:#a75b1e;--one-tint:#fff5ec;--one-line:#eed3bb;--one-heat:#ff78002b;--one-glow:0 0 22px 4px #ff6b0024,0 4px 32px 6px #ff76000d;border:1px solid var(--one-line);background:var(--one-tint);box-shadow:var(--one-glow);overflow:visible;border-radius:12px;color:var(--dsw-alias-label-primary);flex:none;position:relative;isolation:isolate}
 [data-ds-dark-theme] button:has(.theone-nav){--one-accent:#93c8f3;--one-tint:#1d2a37;--one-line:#344d64;--one-heat:#80caff30;--one-glow:0 0 22px 4px #80bae924}
 button:has(.theone-nav)::after{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;background:radial-gradient(85px circle at var(--one-pointer-x,50%) var(--one-pointer-y,50%),var(--one-heat),transparent 100%);opacity:0;transition:opacity 180ms ease;z-index:0}
