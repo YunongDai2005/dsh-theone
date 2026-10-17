@@ -58,7 +58,9 @@ async function setup(name: string) {
   db.path = messages.path
   const sent: string[][] = []
   db.run = async (file, args) => { sent.push([file, ...args]) }
-  return { root, messages, db, sent, close: () => rm(root, { recursive: true, force: true }) }
+  // Windows cannot delete a database file that is still open: close it first.
+  const close = async () => { messages.db.close(); await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }) }
+  return { root, messages, db, sent, close }
 }
 
 test('handles match across spelling, and text stored only in attributedBody is read', () => {
