@@ -316,8 +316,6 @@ export declare class ContextStore {
     /** A messaging app bound to main chat (its login, cursor and switch), or undefined when none is. */
     remoteLink<T>(channel: string): T | undefined;
     saveRemoteLink(channel: string, state: unknown): void;
-    /** `name` was marked with `markOnce`. */
-    hasFlag(name: string): boolean;
     dismissedNotices(): Set<string>;
     /**
      * Topics kept in the directory but hidden from routing and briefings: every conversation they can

@@ -10,7 +10,6 @@ import { randomUUID } from 'node:crypto'
 import { ROUTING_PROMPT } from '../src/llm-router.ts'
 import type { ProjectQueue } from '../src/project-queue.ts'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import { FakeIlink } from './fake-ilink.ts'
 
 test('task API persists user requests, deduplicates retries and rejects cross-origin writes', async () => {
   const root = await mkdtemp(join(tmpdir(), 'theone-work-api-'))
@@ -217,39 +216,4 @@ test('two topics routed to the same project never run their workers concurrently
     assert.equal(workerCalls, 2)
     assert.equal(peak, 1)
   } finally { release.resolve(); await app.close(); await rm(root, { recursive: true, force: true }) }
-})
-
-test('an ongoing-task notice also reaches the bound phone, once however often main chat is retried, and not for paused work', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'theone-work-phone-'))
-  const app = await harness(root)
-  const flush = app.ctx.sessions.flush.bind(app.ctx.sessions)
-  try {
-    const theone = app.ctx.theone
-    theone.store.rememberGateway('test-gateway', app.gateway.id)
-    const server = new FakeIlink()
-    theone.weixin.client.fetchImpl = server.fetch
-    theone.store.saveRemoteLink('weixin', { account: { botId: 'bot-1', token: 'secret', baseUrl: 'https://bot.example', userId: 'owner@im.wechat' },
-      enabled: true, cursor: '', contextToken: 'ctx-9' })
-    const store = theone.work.store
-    store.enqueue({ key: 'phone', kind: 'research', resource: 'github:x/y', payload: { gatewayId: app.gateway.id } })
-    const claim = store.claim()!
-    store.finish(claim, { summary: 'CI failed' }, Date.now() + 3600000, { fingerprint: 'failure-1', text: '持续任务：盯 CI\nCI 检查失败。' })
-    // Main chat cannot store the notice yet: it is retried, the phone gets it once.
-    app.ctx.sessions.flush = async () => { throw new Error('disk unavailable') }
-    await theone.work.tick()
-    await theone.work.tick()
-    assert.equal(store.pendingNotices().length, 1)
-    app.ctx.sessions.flush = flush
-    await app.gateway.whenIdle()
-    await theone.work.tick()
-    assert.equal(store.pendingNotices().length, 0)
-    assert.deepEqual(server.sent, [{ to: 'owner@im.wechat', text: '持续任务：盯 CI\nCI 检查失败。', contextToken: 'ctx-9' }])
-    // Paused work stays quiet everywhere.
-    const paused = store.enqueue({ key: 'paused', kind: 'research', resource: 'github:x/z', payload: { gatewayId: app.gateway.id } })
-    const second = store.claim()!
-    store.finish(second, {}, Date.now() + 3600000, { fingerprint: 'failure-2', text: 'should not be sent' })
-    store.control(paused.id, 'pause')
-    await theone.work.tick()
-    assert.equal(server.sent.length, 1)
-  } finally { app.ctx.sessions.flush = flush; await app.close(); await rm(root, { recursive: true, force: true }) }
 })

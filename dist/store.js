@@ -1076,10 +1076,6 @@ export class ContextStore {
         else
             this.db.prepare('INSERT INTO remote_links VALUES (?, ?) ON CONFLICT(channel) DO UPDATE SET state = excluded.state').run(channel, JSON.stringify(state));
     }
-    /** `name` was marked with `markOnce`. */
-    hasFlag(name) {
-        return !!this.db.prepare('SELECT 1 FROM plugin_flags WHERE name = ?').get(name);
-    }
     dismissedNotices() {
         return new Set(this.db.prepare('SELECT id FROM dismissed_notices').all().map(row => String(row.id)));
     }

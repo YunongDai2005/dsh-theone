@@ -89,18 +89,6 @@ export class RemoteRelay {
         }
         void this.channel.typing?.().catch(() => { });
     }
-    /** Send a notice to the owner if the app is bound; false when it is not, or sending failed. */
-    async notify(text) {
-        if (!this.channel.available())
-            return false;
-        try {
-            await this.channel.send(text);
-            return true;
-        }
-        catch {
-            return false;
-        }
-    }
     /** A note in main chat, where the user looks (for example, that the app's login expired). */
     note(text) {
         const gatewayId = this.host.gatewayId();
