@@ -289,11 +289,19 @@ export default class TheOne extends Service {
      * restart (its work is gone then, so main chat just shows what it says).
      */
     private isRelay;
+    /** The topic's turn for a message, read from its session (live, or as DSH saved it). */
+    private turnOf;
     /**
-     * Main chat's answer to a message a topic began on before a restart cut it off. It may have changed
-     * things already, so it is not redone on its own: the user sees where it went and can say "continue".
+     * Main chat's answer to a message a topic began on before a restart cut it off. A topic that
+     * finished has its reply shown as it gave it; one cut off mid-way is described, with what it had
+     * already done, and is not redone on its own: the user sees where it went and can say "continue".
      */
-    private interruptedNotice;
+    private realign;
+    /**
+     * The topic's last run was cut off by a restart (in the background or in front): tell it once, the
+     * next time it works, what it had done, so it checks before carrying on instead of repeating.
+     */
+    private resumeFor;
     /** Move an interjection to the queue, after what is already queued: it is answered as its own turn. */
     private requeue;
     /** Stop background work on a message main chat will not show (deleted, or answered with other input). */

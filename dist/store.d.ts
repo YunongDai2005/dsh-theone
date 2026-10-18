@@ -283,6 +283,8 @@ export declare class ContextStore {
     startTopicRun(messageId: string, contextId: string, sessionId: string, now?: number): void;
     /** How the topic's work on a message ended. A record already settled keeps its outcome, except a move. */
     endTopicRun(messageId: string, outcome: Exclude<TopicRun['outcome'], 'running'>, now?: number): void;
+    /** A run marked interrupted at startup turned out to have finished before the restart. */
+    recoverTopicRun(messageId: string, now?: number): void;
     /** Work never shown (the message was deleted from main chat's queue) leaves no record. */
     dropTopicRun(messageId: string): void;
     /** Work that was running when TheOne stopped (a restart) did not finish: it is interrupted. */
@@ -316,6 +318,8 @@ export declare class ContextStore {
     /** A messaging app bound to main chat (its login, cursor and switch), or undefined when none is. */
     remoteLink<T>(channel: string): T | undefined;
     saveRemoteLink(channel: string, state: unknown): void;
+    /** `name` was marked with `markOnce`. */
+    hasFlag(name: string): boolean;
     dismissedNotices(): Set<string>;
     /**
      * Topics kept in the directory but hidden from routing and briefings: every conversation they can

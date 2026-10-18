@@ -1014,6 +1014,10 @@ export class ContextStore {
         this.db.prepare(`UPDATE topic_runs SET outcome = ?, ended_at = ? WHERE message_id = ? AND (outcome = 'running' OR ? = 'moved')`)
             .run(outcome, now, messageId, outcome);
     }
+    /** A run marked interrupted at startup turned out to have finished before the restart. */
+    recoverTopicRun(messageId, now = Date.now()) {
+        this.db.prepare("UPDATE topic_runs SET outcome = 'completed', ended_at = ? WHERE message_id = ? AND outcome = 'interrupted'").run(now, messageId);
+    }
     /** Work never shown (the message was deleted from main chat's queue) leaves no record. */
     dropTopicRun(messageId) {
         this.db.prepare('DELETE FROM topic_runs WHERE message_id = ?').run(messageId);
@@ -1075,6 +1079,10 @@ export class ContextStore {
             this.db.prepare('DELETE FROM remote_links WHERE channel = ?').run(channel);
         else
             this.db.prepare('INSERT INTO remote_links VALUES (?, ?) ON CONFLICT(channel) DO UPDATE SET state = excluded.state').run(channel, JSON.stringify(state));
+    }
+    /** `name` was marked with `markOnce`. */
+    hasFlag(name) {
+        return !!this.db.prepare('SELECT 1 FROM plugin_flags WHERE name = ?').get(name);
     }
     dismissedNotices() {
         return new Set(this.db.prepare('SELECT id FROM dismissed_notices').all().map(row => String(row.id)));
