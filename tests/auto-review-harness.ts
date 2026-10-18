@@ -17,6 +17,8 @@ export async function setupAutoReview() {
   await app.ctx.plugin(SandboxPolicy, { mode: 'workspace-write', workspaceRoot: root })
   await app.ctx.plugin(Approval, { policy: 'ask' })
   app.ctx.provide('shell', { sandboxMode: 'workspace-write' } as never)
+  // DSH 0.2.1's Auto review reads each session's working directory; every session here works in root.
+  app.ctx.provide('workingDirectory', { ensure: async () => root } as never)
   await app.ctx.plugin(Object.assign((ctx: typeof app.ctx) => { new PermissionPresets(ctx, {
     presets: {
       'workspace-write': { sandbox: 'workspace-write', approval: 'ask' },

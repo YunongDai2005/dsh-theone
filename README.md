@@ -3,7 +3,7 @@
 <p align="center"><b>One chat for everything you're working on.</b><br>It knows which project each message belongs to, and keeps every project's context separate.</p>
 
 <p align="center">
-  <img alt="DSH 0.2.0-rc.2" src="https://img.shields.io/badge/DSH-0.2.0--rc.2-a75b1e">
+  <img alt="DSH 0.2.0-rc.2 / 0.2.1-rc.2" src="https://img.shields.io/badge/DSH-0.2.0--rc.2%20%7C%200.2.1--rc.2-a75b1e">
   <img alt="Node.js 24" src="https://img.shields.io/badge/Node.js-24-3c873a">
   <img alt="English / 中文" src="https://img.shields.io/badge/UI-English%20%2F%20中文-4a7fb5">
 </p>
@@ -61,7 +61,7 @@ For a local demo using NVIDIA Nemotron 3 Super through Nebius Token Factory, see
 2. Open **Plugins → Add plugin**, enter `dsh-theone` under *Package name or address*, and install.
 3. Click **TheOne · Main chat** in the sidebar and start talking.
 
-That's it. Works with DSH `0.2.0-rc.2` and Node.js 24; the interface follows DSH's language (English / Simplified Chinese).
+That's it. Works with DSH `0.2.0-rc.2` and `0.2.1-rc.2`, and Node.js 24; the interface follows DSH's language (English / Simplified Chinese).
 
 <details>
 <summary><b>New to DSH? A step-by-step walkthrough (about 3 minutes)</b></summary>

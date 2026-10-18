@@ -10,14 +10,14 @@ import { HostConnectionService } from '@deepseek-ai/dsh-client-connection'
 import { ContextStore } from '../src/store.ts'
 import { HistoryCatalog, CATALOG_PROMPT, historyParts, validateCatalog } from '../src/history-catalog.ts'
 import { ROUTING_PROMPT, RouterFailure } from '../src/llm-router.ts'
-import { harness, ask, FixtureModel, textResponse } from './harness.ts'
+import { harness, ask, FixtureModel, textResponse, peered } from './harness.ts'
 
 test('native catalog routes use buffered HTTP reads, validate mounts and withdraw on disposal', async () => {
   const root = await mkdtemp(join(tmpdir(), 'theone-catalog-http-'))
   const app = await harness(root)
   // Already-authenticated dispatch: the test covers the native registry and body bridge contract.
   const connection = new HostConnectionService(app.ctx, [], undefined as never)
-  const handler = connection.createSharedFetchHandler('/api')
+  const handler = peered(connection)
   try {
     await new Promise<void>(resolve => setImmediate(resolve))
     const url = new URL('http://dsh.internal/api/theone/catalog')

@@ -9,7 +9,7 @@ import { ContextStore } from '../src/store.ts'
 import { relatedTopics } from '../src/linkage.ts'
 import { validateRoutingDecision } from '../src/llm-router.ts'
 import { validateSettings } from '../src/settings.ts'
-import { harness, ask, textResponse } from './harness.ts'
+import { harness, ask, textResponse, peered } from './harness.ts'
 
 const QWEN = 'ctx_qwen_9070xt', THESIS = 'ctx_thesis'
 let calls = 0
@@ -229,7 +229,7 @@ test('the topic directory shows links with reasons and saves the user’s correc
   const root = await mkdtemp(join(tmpdir(), 'theone-link-api-'))
   const app = await harness(root)
   try {
-    const handler = new HostConnectionService(app.ctx, [], undefined as never).createSharedFetchHandler('/api')
+    const handler = peered(new HostConnectionService(app.ctx, [], undefined as never))
     await new Promise(resolve => setTimeout(resolve, 10))
     const call = async (path: string, body?: object) => (await handler.fetch(new Request(`http://dsh.internal/api/theone/${path}`,
       body ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : {}))).json()
