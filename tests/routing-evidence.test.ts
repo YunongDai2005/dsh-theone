@@ -1,7 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { EVIDENCE_PROMPT, evidenceConflict, evidenceTerms, routingEvidence, secondLook } from '../src/routing-evidence.ts'
-import { routingPayload, routingPrompt } from '../src/llm-router.ts'
+import { evidenceConflict, evidenceTerms, routingEvidence, secondLook } from '../src/routing-evidence.ts'
 
 const topics = [
   { id: 'budget', texts: ['家庭月度记账', '这个月目标是把开销控制在1500以内', '外卖花太多了'] },
@@ -10,36 +9,30 @@ const topics = [
 ]
 
 test('a number, code or name only one topic has mentioned is evidence for it; shared details and ordinary words are not', () => {
-  assert.deepEqual(routingEvidence('那个1500的目标，你觉得实际能做到吗', topics), [{ contextId: 'budget', terms: ['1500'], strong: true }])
+  assert.deepEqual(routingEvidence('那个1500的目标，你觉得实际能做到吗', topics), [{ contextId: 'budget', terms: ['1500'] }])
   // "外卖" appears in two topics, and "鼓浪屿" is an ordinary word here: neither points anywhere.
   assert.deepEqual(routingEvidence('外卖怎么办', topics), [])
   assert.deepEqual(routingEvidence('鼓浪屿那边怎么样', topics), [])
-  assert.deepEqual(routingEvidence('P-2023-1012交上去之后，我回头去弄那个销售报告', topics)[0], { contextId: 'claim', terms: ['p-2023-1012'], strong: true })
+  assert.deepEqual(routingEvidence('P-2023-1012交上去之后，我回头去弄那个销售报告', topics)[0], { contextId: 'claim', terms: ['p-2023-1012'] })
   // Thousands separators and case do not hide a match.
   assert.equal(routingEvidence('Is 8,000 enough?', topics)[0].contextId, 'trip')
   assert.deepEqual(routingEvidence('anything', [topics[0]]), [], 'one topic needs no evidence')
 })
 
-test('numbers, codes and names inside a sentence are strong; ordinary words are not', () => {
-  const terms = Object.fromEntries(evidenceTerms('Mr. Johnson still owes the $1,200 deposit, see PR-42 and the lease').map(item => [item.term, item.strong]))
-  assert.equal(terms.johnson, true)
-  assert.equal(terms['1200'], true)
-  assert.equal(terms['pr-42'], true)
-  assert.equal(terms.lease, false)
-  assert.equal(terms.still, undefined, 'common words are skipped')
-  assert.equal(Object.fromEntries(evidenceTerms('Lease terms look fine').map(item => [item.term, item.strong])).lease, false, 'a capital at the start is not a name')
+test('numbers of three or more digits, codes and names inside a sentence are looked up; ordinary words are not', () => {
+  assert.deepEqual(evidenceTerms('Mr. Johnson still owes the $1,200 deposit, see PR-42 and the lease, 12 days left').sort(), ['1200', 'johnson', 'pr-42'])
+  assert.deepEqual(evidenceTerms('Lease terms look fine'), [], 'a capital at the start is not a name')
 })
 
-test('a decision against the one topic holding strong evidence is a conflict; agreeing or split evidence is not', () => {
+test('a decision against the one topic holding clues is a conflict; agreeing or split clues are not', () => {
   const evidence = routingEvidence('那个1500的目标，你觉得实际能做到吗', topics)
   assert.equal(evidenceConflict({ action: 'SWAP', contextId: 'trip', reason: 'x' }, evidence), 'budget')
   assert.equal(evidenceConflict({ action: 'CREATE', title: 'x', reason: 'x' }, evidence), 'budget')
   assert.equal(evidenceConflict({ action: 'KEEP', contextId: 'budget', reason: 'x' }, evidence), undefined)
-  assert.equal(evidenceConflict({ action: 'KEEP', contextId: 'trip', reason: 'x' }, [...evidence, { contextId: 'claim', terms: ['p-1'], strong: true }]), undefined)
-  assert.equal(evidenceConflict({ action: 'KEEP', contextId: 'trip', reason: 'x' }, [{ contextId: 'budget', terms: ['目标'], strong: false }]), undefined)
+  assert.equal(evidenceConflict({ action: 'KEEP', contextId: 'trip', reason: 'x' }, [...evidence, { contextId: 'claim', terms: ['p-1'] }]), undefined)
 })
 
-test('a new topic, a question, or a decision against a strong clue gets a second look; an agreeing pick does not', () => {
+test('a new topic, a question, or a decision against a clue gets a second look; an agreeing pick does not', () => {
   const evidence = routingEvidence('那个1500的目标，你觉得实际能做到吗', topics)
   assert.deepEqual(secondLook({ action: 'SWAP', contextId: 'trip', reason: 'x' }, evidence), { previous: 'trip', contextId: 'budget', terms: ['1500'] })
   assert.deepEqual(secondLook({ action: 'CREATE', title: 'x', reason: 'x' }, []), { previous: 'CREATE' })
@@ -48,15 +41,7 @@ test('a new topic, a question, or a decision against a strong clue gets a second
   assert.equal(secondLook({ action: 'SWAP', contextId: 'trip', reason: 'x' }, []), undefined)
 })
 
-test('evidence reaches the classifier only for offered topics, with its instructions', () => {
-  const contexts = topics.map(topic => ({ id: topic.id, title: topic.texts[0], summary: '', entities: [], keywords: [], lastState: '' }))
-  const payload = routingPayload({ text: '1500 够吗', contexts: contexts.slice(0, 2), evidence: [{ contextId: 'budget', terms: ['1500'], strong: true }, { contextId: 'claim', terms: ['x'], strong: true }] })
-  assert.deepEqual((payload as { evidence?: unknown }).evidence, [{ contextId: 'budget', terms: ['1500'], strong: true }])
-  assert.ok(routingPrompt(payload).endsWith(EVIDENCE_PROMPT))
-  assert.ok(!routingPrompt(routingPayload({ text: '1500 够吗', contexts })).includes('evidence'))
-})
-
-test('a decision against a strong clue is asked once more with thinking on, and the second answer is used', { timeout: 60000 }, async () => {
+test('a decision against a clue is asked once more with thinking on, and the second answer is used', { timeout: 60000 }, async () => {
   const { mkdtemp, rm } = await import('node:fs/promises')
   const { tmpdir } = await import('node:os')
   const { join } = await import('node:path')
@@ -64,7 +49,7 @@ test('a decision against a strong clue is asked once more with thinking on, and 
   const { ROUTING_PROMPT } = await import('../src/llm-router.ts')
   const root = await mkdtemp(join(tmpdir(), 'theone-evidence-'))
   const model = new FixtureModel()
-  const routed: { payload: { evidence?: unknown; recheck?: unknown }; maxTokens?: number }[] = []
+  const routed: { payload: { recheck?: unknown }; maxTokens?: number }[] = []
   model.behavior = async function* (options) {
     if (options.system?.startsWith(ROUTING_PROMPT)) {
       const payload = JSON.parse((options.messages[0] as unknown as { content: { text: string }[] }).content[0].text)
@@ -80,7 +65,7 @@ test('a decision against a strong clue is asked once more with thinking on, and 
   try {
     const { input } = await ask(app.gateway, 'FP8 那个跑起来了吗')
     assert.equal(routed.length, 2)
-    assert.deepEqual(routed[0].payload.evidence, [{ contextId: 'ctx_qwen_9070xt', terms: ['fp8'], strong: true }])
+    assert.equal('evidence' in routed[0].payload, false, 'the quick decision is not handed the clues')
     assert.deepEqual(routed[1].payload.recheck, { previous: 'ctx_thesis', contextId: 'ctx_qwen_9070xt', terms: ['fp8'] })
     assert.ok((routed[1].maxTokens ?? 0) > (routed[0].maxTokens ?? 0), 'the second call leaves room to think')
     assert.equal(app.ctx.theone.store.route(input.id)?.decision.contextId, 'ctx_qwen_9070xt')

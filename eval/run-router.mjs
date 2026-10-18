@@ -12,7 +12,6 @@
 //   --decide joint|each    a burst gets one decision for all its messages (joint), or is sent in one call
 //                          that decides each message separately (each); a malformed answer falls back
 //                          to routing its messages one by one
-//   --evidence        offer TheOne's routing evidence (details of the message only one topic has mentioned)
 //   --recheck         ask again with thinking on when TheOne would: a new topic, a question, or a decision
 //                     against a strong clue
 //   --cards           open mode: write topic cards when TheOne would (its prompt, checks, schedule and
@@ -29,8 +28,8 @@ import { createClient } from './lib/llm.mjs'
 import { groupUnits, planArrivals } from './lib/bursts.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
-// Routing evidence exists from 0.3.38 on; older builds run without it.
-const evidence = await import('../dist/routing-evidence.js').catch(() => undefined)
+// The second look (and the clues it uses) exists from 0.3.38 on; older builds run without it.
+const looks = await import('../dist/routing-evidence.js').catch(() => undefined)
 // Builds before the card schedule and summary were shared fall back to what those builds did.
 const cardDue = memory.cardDue ?? (replies => memory.CARD_AFTER_REPLIES.includes(replies))
 const cardSummary = memory.cardSummary ?? (card => [card.summary, card.open.length ? `待定：${card.open.join('；')}` : ''].filter(Boolean).join(' ').slice(0, 600))
@@ -63,7 +62,7 @@ export function batchDecisions(value, texts, contexts, currentId) {
 export const readSessions = file => readFileSync(file, 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line))
 
 /** Route every message of one session in order; returns one prediction per message. */
-export async function routeSession(session, { mode, policy, client, merge = 'none', decide = 'joint', bursts = {}, cards = false, evidence: withEvidence = false, recheck: withRecheck = false }) {
+export async function routeSession(session, { mode, policy, client, merge = 'none', decide = 'joint', bursts = {}, cards = false, recheck: withRecheck = false }) {
   // Topics the router can choose from. Closed: the session's threads, described as a catalog would.
   // Open: only what the router itself created, described by the messages it put there.
   const topics = mode === 'closed'
@@ -117,10 +116,10 @@ export async function routeSession(session, { mode, policy, client, merge = 'non
     // A burst is one request: its messages, in order, as the user sent them.
     const text = members.map(turn => turn.text).join('\n')
     const contexts = topics.map(describe)
-    // Evidence is looked up in everything a topic holds, as TheOne looks in its routed messages and catalog entry.
-    const clues = (withEvidence || withRecheck) && evidence ? evidence.routingEvidence(text, topics.map(topic => ({ id: topic.id,
+    // Clues are looked up in everything a topic holds, as TheOne looks in its routed messages and catalog entry.
+    const clues = withRecheck && looks ? looks.routingEvidence(text, topics.map(topic => ({ id: topic.id,
       texts: [topic.title, topic.summary, ...topic.entities, ...topic.keywords, ...topic.texts] }))) : []
-    const input = { text, contexts, currentId: current, recent: recent.slice(-12), ...(withEvidence && clues.length ? { evidence: clues } : {}) }
+    const input = { text, contexts, currentId: current, recent: recent.slice(-12) }
     let decision, usage, error, via = 'llm', rechecked
     if (policy === 'theone' && current && continuesCurrent(text)) { decision = { action: 'KEEP', contextId: current, reason: 'fast path' }; via = 'fast' }
     else {
@@ -131,7 +130,7 @@ export async function routeSession(session, { mode, policy, client, merge = 'non
         usage = usageOf(answer)
         if (answer.cached) via = 'cache'
         decision = validateRoutingDecision(answer.value, input)
-        const look = withRecheck && evidence ? evidence.secondLook(decision, clues) : undefined
+        const look = withRecheck && looks ? looks.secondLook(decision, clues) : undefined
         if (look) {
           const again = { ...input, recheck: look }
           const repeat = routingPayload(again)
@@ -212,7 +211,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     data: { type: 'string', default: join(here, 'data', 'interleave-v0', 'sessions.jsonl') },
     mode: { type: 'string', default: 'closed' }, policy: { type: 'string', default: 'llm' }, split: { type: 'string', default: 'dev' },
     model: { type: 'string' }, out: { type: 'string' }, 'dry-run': { type: 'boolean', default: false }, limit: { type: 'string' },
-    merge: { type: 'string', default: 'none' }, decide: { type: 'string', default: 'joint' }, same: { type: 'string', default: '0.35' }, cross: { type: 'string', default: '0.05' }, 'burst-seed': { type: 'string', default: '1' }, cards: { type: 'boolean', default: false }, evidence: { type: 'boolean', default: false }, recheck: { type: 'boolean', default: false } } })
+    merge: { type: 'string', default: 'none' }, decide: { type: 'string', default: 'joint' }, same: { type: 'string', default: '0.35' }, cross: { type: 'string', default: '0.05' }, 'burst-seed': { type: 'string', default: '1' }, cards: { type: 'boolean', default: false }, recheck: { type: 'boolean', default: false } } })
   if (!['closed', 'open'].includes(values.mode) || !['llm', 'theone'].includes(values.policy)) throw new Error('--mode closed|open, --policy llm|theone')
   if (!['none', 'all', 'adaptive'].includes(values.merge)) throw new Error('--merge none|all|adaptive')
   if (!['joint', 'each'].includes(values.decide)) throw new Error('--decide joint|each')
@@ -221,12 +220,12 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const client = await createClient({ model: values.model, cacheDir: join(here, '.cache', dry ? 'fake' : 'llm'), fake: dry ? join(here, 'test', 'fake-model.mjs') : undefined })
   let sessions = readSessions(values.data).filter(session => values.split === 'all' || session.split === values.split)
   if (values.limit) sessions = sessions.slice(0, Number(values.limit))
-  if ((values.evidence || values.recheck) && !evidence) throw new Error('--evidence/--recheck need a build with dist/routing-evidence.js (npm run build)')
-  const name = `${values.mode}-${values.policy}${values.cards ? '-cards' : ''}${values.evidence ? '-evidence' : ''}${values.recheck ? '-recheck' : ''}${values.merge === 'none' ? '' : `-${values.merge}${values.decide === 'each' ? '-each' : ''}-s${values.same}-c${values.cross}`}-${client.model.replace(/[^\w.-]+/g, '_')}`
+  if (values.recheck && !looks) throw new Error('--recheck needs a build with dist/routing-evidence.js (npm run build)')
+  const name = `${values.mode}-${values.policy}${values.cards ? '-cards' : ''}${values.recheck ? '-recheck' : ''}${values.merge === 'none' ? '' : `-${values.merge}${values.decide === 'each' ? '-each' : ''}-s${values.same}-c${values.cross}`}-${client.model.replace(/[^\w.-]+/g, '_')}`
   const out = values.out ?? join(dirname(values.data), 'predictions', `${name}.jsonl`)
   const timer = setInterval(() => console.error(`… ${client.usage}`), 15000)
   try {
-    const rows = (await Promise.all(sessions.map(session => routeSession(session, { mode: values.mode, policy: values.policy, client, merge: values.merge, decide: values.decide, bursts, cards: values.cards, evidence: values.evidence, recheck: values.recheck })))).flat()
+    const rows = (await Promise.all(sessions.map(session => routeSession(session, { mode: values.mode, policy: values.policy, client, merge: values.merge, decide: values.decide, bursts, cards: values.cards, recheck: values.recheck })))).flat()
     mkdirSync(dirname(out), { recursive: true })
     writeFileSync(out, rows.map(row => JSON.stringify(row)).join('\n') + '\n')
     console.log(`Routed ${rows.length} messages from ${sessions.length} sessions → ${out}`)

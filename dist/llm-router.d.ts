@@ -3,7 +3,7 @@ import { SessionId } from '@deepseek-ai/dsh-session';
 import type { ModelSelection } from '@deepseek-ai/dsh-agent';
 import type { ContextDescriptor, Decision } from './types.ts';
 import { type FactCandidate } from './facts.ts';
-import { type Evidence, type Recheck } from './routing-evidence.ts';
+import { type Recheck } from './routing-evidence.ts';
 export { redactRoutingText } from './routing-policy.ts';
 export interface RecentMessage {
     role: 'user' | 'assistant';
@@ -34,8 +34,6 @@ export interface RoutingInput {
         id: string;
         name: string;
     }[];
-    /** Details of the message that only one topic has mentioned (see routing-evidence.ts). */
-    evidence?: Evidence[];
     /** Asked again, with thinking on: what the quick decision was and the clue it went against, if any. */
     recheck?: Recheck;
 }

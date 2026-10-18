@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { SessionId } from '@deepseek-ai/dsh-session';
 import { newIndependentTopic, referencesHistory, redactRoutingText } from "./routing-policy.js";
 import { FACT_LIMITS } from "./facts.js";
-import { EVIDENCE_LIMITS, EVIDENCE_PROMPT, RECHECK_PROMPT } from "./routing-evidence.js";
+import { EVIDENCE_LIMITS, RECHECK_PROMPT } from "./routing-evidence.js";
 export { redactRoutingText } from "./routing-policy.js";
 export const ROUTING_PROMPT = `你是会话话题路由器，只输出 JSON，不回答问题，不执行任何任务或工具。
 输入是 JSON 数据，包含话题目录 contexts、当前话题 currentId、近期真实消息 recent、本轮输入 text，以及历史索引是否未完成 historyIncomplete。
@@ -33,9 +33,8 @@ projects（可能没有）是用户电脑上的项目文件夹（只有名字）
 export const routingPrompt = (payload) => {
     const facts = 'symbols' in payload && Array.isArray(payload.symbols) && payload.symbols.length ? FACTS_PROMPT : '';
     const projects = 'projects' in payload && Array.isArray(payload.projects) && payload.projects.length ? PROJECTS_PROMPT : '';
-    const evidence = 'evidence' in payload && Array.isArray(payload.evidence) && payload.evidence.length ? EVIDENCE_PROMPT : '';
     const recheck = 'recheck' in payload && payload.recheck ? RECHECK_PROMPT : '';
-    return ROUTING_PROMPT + facts + projects + ('running' in payload && payload.running ? RUNNING_PROMPT : '') + evidence + recheck;
+    return ROUTING_PROMPT + facts + projects + ('running' in payload && payload.running ? RUNNING_PROMPT : '') + recheck;
 };
 export function routingPayload(input) {
     const text = redactRoutingText(input.text).slice(0, 2000);
@@ -59,12 +58,10 @@ export function routingPayload(input) {
     const running = input.running && offered.has(input.running.topicId) ? { running: { topicId: input.running.topicId,
             request: redactRoutingText(input.running.request).slice(0, 600), progress: redactRoutingText(input.running.progress).slice(-600) } } : {};
     const projects = (input.projects ?? []).slice(0, 40).map(project => ({ id: project.id, name: redactRoutingText(project.name).slice(0, 80) }));
-    const evidence = (input.evidence ?? []).filter(item => offered.has(item.contextId)).slice(0, EVIDENCE_LIMITS.topics)
-        .map(item => ({ contextId: item.contextId, terms: item.terms.slice(0, EVIDENCE_LIMITS.terms).map(term => redactRoutingText(term).slice(0, 40)), strong: item.strong }));
     const clue = input.recheck?.contextId && offered.has(input.recheck.contextId) ? { contextId: input.recheck.contextId,
         terms: (input.recheck.terms ?? []).slice(0, EVIDENCE_LIMITS.terms).map(term => redactRoutingText(term).slice(0, 40)) } : {};
     const recheck = input.recheck ? { recheck: { previous: input.recheck.previous.slice(0, 80), ...clue } } : {};
-    const payload = { text, contexts, currentId: mounted(input, contexts), recent, historyIncomplete: input.historyIncomplete ?? false, ...(corrections.length ? { corrections } : {}), ...(symbols.length ? { symbols } : {}), ...running, ...(projects.length ? { projects } : {}), ...(evidence.length ? { evidence } : {}), ...recheck };
+    const payload = { text, contexts, currentId: mounted(input, contexts), recent, historyIncomplete: input.historyIncomplete ?? false, ...(corrections.length ? { corrections } : {}), ...(symbols.length ? { symbols } : {}), ...running, ...(projects.length ? { projects } : {}), ...recheck };
     if (!text.trim() || JSON.stringify(payload).length > 24000)
         throw new RouterFailure('ROUTER_INPUT_INVALID');
     return payload;

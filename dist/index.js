@@ -2324,15 +2324,15 @@ export default class TheOne extends Service {
                 const corrections = this.similarCorrections(text);
                 const offered = this.config.factLinks ? this.factCandidates(text, recent, currentId) : [];
                 const facts = offered.length ? { facts: offered } : {};
-                // Details of the message that only one topic has mentioned, from what each topic was sent and knows.
-                const evidence = this.routingEvidence(text, allContexts);
-                const result = await this.router.decide({ text, contexts, currentId, recent, historyIncomplete: this.catalog?.incomplete, corrections, ...facts, running, ...folders, evidence }, signal, agent.id);
+                const result = await this.router.decide({ text, contexts, currentId, recent, historyIncomplete: this.catalog?.incomplete, corrections, ...facts, running, ...folders }, signal, agent.id);
                 proposed = result.decision;
                 // A new topic, a question, or a decision against a strong clue is asked once more with thinking on; if that fails, the first stands.
-                const recheck = secondLook(proposed, evidence.filter(item => contexts.some(context => context.id === item.contextId)));
+                // Clues: numbers, codes and names of the message that only one topic was sent or knows.
+                const evidence = this.routingEvidence(text, allContexts).filter(item => contexts.some(context => context.id === item.contextId));
+                const recheck = secondLook(proposed, evidence);
                 if (recheck) {
                     try {
-                        const second = await this.router.decide({ text, contexts, currentId, recent, historyIncomplete: this.catalog?.incomplete, corrections, ...facts, running, ...folders, evidence, recheck }, signal, agent.id, { think: true });
+                        const second = await this.router.decide({ text, contexts, currentId, recent, historyIncomplete: this.catalog?.incomplete, corrections, ...facts, running, ...folders, recheck }, signal, agent.id, { think: true });
                         proposed = second.decision;
                         result.elapsedMs += second.elapsedMs;
                         if (second.usage)
