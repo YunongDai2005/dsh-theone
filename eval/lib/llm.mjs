@@ -117,11 +117,12 @@ export async function createClient({ model = process.env.EVAL_MODEL ?? 'deepseek
         status = response.status
         if (response.ok) return await response.json()
         const detail = (await response.text()).slice(0, 300)
-        if (![408, 429, 500, 502, 503, 504].includes(status) || attempt >= 4) throw Object.assign(new Error(`${base} answered ${status}: ${detail}`), { fatal: true })
+        // A rate limit is waited out longer than other failures: aggregators often allow only so many calls a minute.
+        if (![408, 429, 500, 502, 503, 504].includes(status) || attempt >= (status === 429 ? 10 : 4)) throw Object.assign(new Error(`${base} answered ${status}: ${detail}`), { fatal: true })
       } catch (error) {
-        if (error.fatal || attempt >= 4) throw error
+        if (error.fatal || (attempt >= 4 && status !== 429)) throw error
       }
-      await new Promise(resolve => setTimeout(resolve, 2000 * 2 ** attempt))
+      await new Promise(resolve => setTimeout(resolve, Math.min(30000, 2000 * 2 ** attempt) * (0.75 + Math.random() / 2)))
     }
   }
 
