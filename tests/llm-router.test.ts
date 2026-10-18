@@ -23,7 +23,7 @@ const finished=(kind:string,status?:number):Chunk=>({type:'finish',reason:kind==
 /** The model's own text worker reply; routing requests answer through `route`. */
 function routed(route:(payload:ReturnType<typeof routingPayload>,signal?:AbortSignal)=>Promise<unknown>){
  return async function*(options:import('@deepseek-ai/dsh-llm').GenerateOptions):AsyncIterable<Chunk>{
-  if(options.system===ROUTING_PROMPT){
+  if(options.system?.startsWith(ROUTING_PROMPT)){
    const text=(options.messages[0] as unknown as {content:{text:string}[]}).content[0].text
    yield* textResponse(JSON.stringify(await route(JSON.parse(text),options.signal)));return
   }

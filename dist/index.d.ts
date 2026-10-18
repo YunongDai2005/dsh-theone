@@ -263,6 +263,8 @@ export default class TheOne extends Service {
      * still being written when the message was sent.
      */
     private classify;
+    /** Routing evidence for `text` from each topic's routed messages and what its catalog entry and card know. */
+    private routingEvidence;
     /** The user's project folders: DSH workspaces that exist, other than DSH's default one and TheOne's own. */
     private projectFolders;
     /**

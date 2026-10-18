@@ -58,7 +58,7 @@ test('corrections teach terms the model picks from the message, examples are cho
   const payloads: ReturnType<typeof routingPayload>[] = []
   const model = new FixtureModel()
   model.behavior = async function* (options) {
-    if (options.system === ROUTING_PROMPT) {
+    if (options.system?.startsWith(ROUTING_PROMPT)) {
       payloads.push(JSON.parse((options.messages[0] as unknown as { content: { text: string }[] }).content[0].text))
       yield* textResponse(JSON.stringify({ action: 'EXISTING', contextId: 'ctx_qwen_9070xt', title: null, question: null, reason: '提到 Qwen' }))
       return

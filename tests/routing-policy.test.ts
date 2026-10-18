@@ -67,7 +67,7 @@ test('native gateway dispatches unsupported clarification as CREATE during parti
     app.ctx.theone.store.seed(Array.from({length:70},(_,i)=>({...contexts[0],id:`unrelated-${i}`,title:`无关项目 ${i}`})))
     app.ctx.theone.catalog!.candidates = async () => app.ctx.theone.store.contexts().slice(0,16)
     app.model.behavior = async function* (options) {
-      yield* textResponse(options.system === ROUTING_PROMPT ? JSON.stringify(clarify) : '由聊天模型正常处理新问题')
+      yield* textResponse(options.system?.startsWith(ROUTING_PROMPT) ? JSON.stringify(clarify) : '由聊天模型正常处理新问题')
     }
     const first = await ask(app.gateway,'余俊豪是安徽人吗？')
     assert.equal(first.output,'由聊天模型正常处理新问题')

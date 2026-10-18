@@ -30,7 +30,7 @@ function fixture() {
       }] }))
       return
     }
-    if (options.system === ROUTING_PROMPT) {
+    if (options.system?.startsWith(ROUTING_PROMPT)) {
       yield* textResponse(JSON.stringify({ action: 'CREATE', contextId: null, title: '新的任务', question: null,
         reason: '没有相关旧话题', historyIndependent: true, candidateIds: [], relatedIds: [] }))
       return
@@ -76,7 +76,7 @@ test('a topic whose conversations are gone stops reaching the router, and return
     assert.ok(!offered.some(context => context.id === topic.id))
     app.ctx.theone.store.mount('test-gateway', topic.id)
     await ask(app.gateway, '论文方法那边还缺一段论证')
-    const routed = model.requests.filter(request => request.system === ROUTING_PROMPT).at(-1)!
+    const routed = model.requests.filter(request => request.system?.startsWith(ROUTING_PROMPT)).at(-1)!
     assert.ok(!(bodyOf(routed).contexts ?? []).some(context => context.id === topic.id))
 
     // Restoring the conversation clears the mark: hiding is recomputed, never a one-way delete.

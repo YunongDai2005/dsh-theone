@@ -3,6 +3,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
 import { FACT_KINDS, FACT_LIMITS, factKey, safe } from "./facts.js";
+import { cardSummary } from "./topic-memory.js";
 /** Terms learned from corrections fade by half every 30 days unless they are confirmed again. */
 export const TERM_HALF_LIFE_MS = 30 * 86400000;
 /** A whole session attached by hand counts as reviewed from its first event to its last. */
@@ -243,7 +244,7 @@ export class ContextStore {
                 return [...first, ...then].filter(term => { const key = term.toLowerCase(); return term && !seen.has(key) && seen.add(key); }).slice(0, 24);
             };
             const compacted = this.summaryUpdates(contextId).length > 0;
-            const summary = compacted ? descriptor.summary : [card.summary, card.open.length ? `待定：${card.open.join('；')}` : ''].filter(Boolean).join(' ').slice(0, 600);
+            const summary = compacted ? descriptor.summary : cardSummary(card);
             this.db.prepare('UPDATE contexts SET descriptor = ? WHERE id = ?').run(JSON.stringify({ ...descriptor, summary,
                 keywords: merge(descriptor.keywords, card.aliases), entities: merge(card.entities, descriptor.entities) }), contextId);
             this.db.exec('COMMIT');
@@ -613,6 +614,23 @@ export class ContextStore {
     /** What a route was decided from: a short redacted excerpt and the classifier's receipt. */
     recordRouteDetail(messageId, excerpt, receipt) {
         this.db.prepare('INSERT OR IGNORE INTO route_details(message_id, excerpt, receipt) VALUES (?, ?, ?)').run(messageId, excerpt, JSON.stringify(receipt));
+    }
+    /** What each topic has been sent in this entry: the newest excerpts of the messages routed to it (after corrections). */
+    routedExcerpts(gatewayKey, perTopic = 200) {
+        const rows = this.db.prepare(`SELECT COALESCE(d.corrected_to, json_extract(r.decision, '$.contextId')) AS context_id, d.excerpt
+      FROM routing_events r JOIN gateway_sessions gs ON gs.gateway_id = r.gateway_id
+      JOIN route_details d ON d.message_id = r.message_id
+      WHERE gs.gateway_key = ? AND r.status = 'completed' AND json_extract(r.decision, '$.action') != 'CLARIFY' AND d.excerpt != ''
+      ORDER BY r.rowid DESC`).all(gatewayKey);
+        const out = new Map();
+        for (const row of rows) {
+            if (row.context_id == null)
+                continue;
+            const list = out.get(String(row.context_id)) ?? [];
+            if (list.length < perTopic)
+                out.set(String(row.context_id), [...list, String(row.excerpt)]);
+        }
+        return out;
     }
     /** This entry's latest routes, newest first. */
     recentRoutes(gatewayKey, limit = 20) {

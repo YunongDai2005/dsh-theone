@@ -3,6 +3,7 @@ import { SessionId } from '@deepseek-ai/dsh-session';
 import type { ModelSelection } from '@deepseek-ai/dsh-agent';
 import type { ContextDescriptor, Decision } from './types.ts';
 import { type FactCandidate } from './facts.ts';
+import { type Evidence } from './routing-evidence.ts';
 export { redactRoutingText } from './routing-policy.ts';
 export interface RecentMessage {
     role: 'user' | 'assistant';
@@ -33,6 +34,14 @@ export interface RoutingInput {
         id: string;
         name: string;
     }[];
+    /** Details of the message that only one topic has mentioned (see routing-evidence.ts). */
+    evidence?: Evidence[];
+    /** Asked again: the previous decision went against a strong clue. */
+    recheck?: {
+        previous: string;
+        contextId: string;
+        terms: string[];
+    };
 }
 export interface RouterUsage {
     prompt_tokens: number;
@@ -85,7 +94,9 @@ export declare class RouterFailure extends Error {
 /** Validate semantics as well as JSON shape before touching persistent state. */
 export declare function validateRoutingDecision(value: unknown, input: RoutingInput): Decision;
 export interface RoutingRouter {
-    decide(input: RoutingInput, signal?: AbortSignal, sessionId?: SessionId): Promise<RoutingResult>;
+    decide(input: RoutingInput, signal?: AbortSignal, sessionId?: SessionId, options?: {
+        think?: boolean;
+    }): Promise<RoutingResult>;
 }
 /** Uses the host's configured adapter; credentials never enter this plugin. */
 /**
@@ -103,5 +114,8 @@ export declare class DshRouter implements RoutingRouter {
     private failures;
     private blockedUntil;
     constructor(llm: Pick<LlmRuntime, 'prepareCall' | 'resolveModelInfo'>, selection: () => ModelSelection, timeoutMs?: number, now?: () => number);
-    decide(input: RoutingInput, signal?: AbortSignal, sessionId?: SessionId): Promise<RoutingResult>;
+    /** With `think`, the model's own default reasoning is kept, for a decision asked again. */
+    decide(input: RoutingInput, signal?: AbortSignal, sessionId?: SessionId, options?: {
+        think?: boolean;
+    }): Promise<RoutingResult>;
 }

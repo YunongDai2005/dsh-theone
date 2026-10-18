@@ -5,6 +5,7 @@ import type { ModelSelection } from '@deepseek-ai/dsh-agent'
 import type { ContextDescriptor, Decision } from './types.ts'
 import { newIndependentTopic, referencesHistory, redactRoutingText } from './routing-policy.ts'
 import { FACT_LIMITS, type FactCandidate } from './facts.ts'
+import { EVIDENCE_LIMITS, EVIDENCE_PROMPT, RECHECK_PROMPT, type Evidence } from './routing-evidence.ts'
 export { redactRoutingText } from './routing-policy.ts'
 
 export interface RecentMessage { role: 'user' | 'assistant'; text: string }
@@ -22,6 +23,10 @@ export interface RoutingInput {
   running?: { topicId: string; request: string; progress: string }
   /** The user's project folders (DSH workspaces) a new topic may work in; only names are sent. */
   projects?: { id: string; name: string }[]
+  /** Details of the message that only one topic has mentioned (see routing-evidence.ts). */
+  evidence?: Evidence[]
+  /** Asked again: the previous decision went against a strong clue. */
+  recheck?: { previous: string; contextId: string; terms: string[] }
 }
 export interface RouterUsage { prompt_tokens: number; completion_tokens: number; total_tokens: number; prompt_cache_hit_tokens?: number; prompt_cache_miss_tokens?: number }
 export interface RoutingResult { decision: Decision; model: string; elapsedMs: number; usage?: RouterUsage }
@@ -67,7 +72,9 @@ projects（可能没有）是用户电脑上的项目文件夹（只有名字）
 export const routingPrompt = (payload: object) => {
   const facts = 'symbols' in payload && Array.isArray(payload.symbols) && payload.symbols.length ? FACTS_PROMPT : ''
   const projects = 'projects' in payload && Array.isArray(payload.projects) && payload.projects.length ? PROJECTS_PROMPT : ''
-  return ROUTING_PROMPT + facts + projects + ('running' in payload && payload.running ? RUNNING_PROMPT : '')
+  const evidence = 'evidence' in payload && Array.isArray(payload.evidence) && payload.evidence.length ? EVIDENCE_PROMPT : ''
+  const recheck = 'recheck' in payload && payload.recheck ? RECHECK_PROMPT : ''
+  return ROUTING_PROMPT + facts + projects + ('running' in payload && payload.running ? RUNNING_PROMPT : '') + evidence + recheck
 }
 
 export function routingPayload(input: RoutingInput): Omit<RoutingInput, 'currentId'> & {currentId:string|null} {
@@ -92,7 +99,11 @@ export function routingPayload(input: RoutingInput): Omit<RoutingInput, 'current
   const running = input.running && offered.has(input.running.topicId) ? { running: { topicId: input.running.topicId,
     request: redactRoutingText(input.running.request).slice(0, 600), progress: redactRoutingText(input.running.progress).slice(-600) } } : {}
   const projects = (input.projects ?? []).slice(0, 40).map(project => ({ id: project.id, name: redactRoutingText(project.name).slice(0, 80) }))
-  const payload = {text, contexts, currentId: mounted(input, contexts), recent, historyIncomplete: input.historyIncomplete ?? false, ...(corrections.length ? { corrections } : {}), ...(symbols.length ? { symbols } : {}), ...running, ...(projects.length ? { projects } : {})}
+  const evidence = (input.evidence ?? []).filter(item => offered.has(item.contextId)).slice(0, EVIDENCE_LIMITS.topics)
+    .map(item => ({ contextId: item.contextId, terms: item.terms.slice(0, EVIDENCE_LIMITS.terms).map(term => redactRoutingText(term).slice(0, 40)), strong: item.strong }))
+  const recheck = input.recheck && offered.has(input.recheck.contextId) ? { recheck: { previous: input.recheck.previous.slice(0, 80), contextId: input.recheck.contextId,
+    terms: input.recheck.terms.slice(0, EVIDENCE_LIMITS.terms).map(term => redactRoutingText(term).slice(0, 40)) } } : {}
+  const payload = {text, contexts, currentId: mounted(input, contexts), recent, historyIncomplete: input.historyIncomplete ?? false, ...(corrections.length ? { corrections } : {}), ...(symbols.length ? { symbols } : {}), ...running, ...(projects.length ? { projects } : {}), ...(evidence.length ? { evidence } : {}), ...recheck}
   if (!text.trim() || JSON.stringify(payload).length > 24000) throw new RouterFailure('ROUTER_INPUT_INVALID')
   return payload
 }
@@ -157,7 +168,7 @@ export function validateRoutingDecision(value: unknown, input: RoutingInput): De
 }
 
 export interface RoutingRouter {
-  decide(input: RoutingInput, signal?: AbortSignal, sessionId?: SessionId): Promise<RoutingResult>
+  decide(input: RoutingInput, signal?: AbortSignal, sessionId?: SessionId, options?: { think?: boolean }): Promise<RoutingResult>
 }
 
 /** Uses the host's configured adapter; credentials never enter this plugin. */
@@ -179,7 +190,8 @@ export class DshRouter implements RoutingRouter {
     private readonly selection: () => ModelSelection,
     private readonly timeoutMs = 30000, private readonly now: () => number = Date.now) {}
 
-  async decide(input: RoutingInput, signal?: AbortSignal, sessionId?: SessionId): Promise<RoutingResult> {
+  /** With `think`, the model's own default reasoning is kept, for a decision asked again. */
+  async decide(input: RoutingInput, signal?: AbortSignal, sessionId?: SessionId, options: { think?: boolean } = {}): Promise<RoutingResult> {
     signal?.throwIfAborted()
     const payload = routingPayload(input)
     const retryAfterMs = this.blockedUntil - this.now()
@@ -195,8 +207,8 @@ export class DshRouter implements RoutingRouter {
       const offEffort = info.reasoning?.efforts.find(effort => effort.id === 'off')?.id
       // Classification doesn't need the host chat's default deep thinking, which
       // can consume the entire small output budget before emitting routing JSON.
-      const call = await this.llm.prepareCall({ ...selection, maxTokens: 2048,
-        ...(offEffort ? { reasoningEffort: offEffort } : {}) }, bounded)
+      const call = await this.llm.prepareCall({ ...selection, maxTokens: options.think ? 8192 : 2048,
+        ...(offEffort && !options.think ? { reasoningEffort: offEffort } : {}) }, bounded)
       bounded.throwIfAborted()
       let output = '', stopped = false
       for await (const chunk of call.stream({ ...call.config, system: routingPrompt(payload), sessionId: sessionId ?? SessionId(randomUUID()),

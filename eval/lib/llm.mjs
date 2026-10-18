@@ -58,12 +58,14 @@ export async function createClient({ model = process.env.EVAL_MODEL ?? 'deepseek
    * One completion. Returns the text; JSON is parsed when json is true (a fenced block is accepted).
    * @param request - { system, user, maxTokens, temperature, json, tag }
    */
-  async function complete({ system, user, maxTokens = 2048, temperature, json = false, tag = '', details = false }) {
+  /** @param request.override - fields merged over EVAL_EXTRA_BODY for this call; null removes one (e.g. to keep thinking on). */
+  async function complete({ system, user, maxTokens = 2048, temperature, json = false, tag = '', details = false, override }) {
     // No temperature means the provider's default, as TheOne's own calls do.
     const sampling = { model, max_tokens: maxTokens, ...(temperature === undefined ? {} : { temperature }) }
+    const fields = Object.fromEntries(Object.entries({ ...extra, ...override }).filter(([, value]) => value !== null))
     const body = openai
-      ? { ...sampling, messages: [{ role: 'system', content: system }, { role: 'user', content: user }], ...extra }
-      : { ...sampling, system, messages: [{ role: 'user', content: user }], thinking: { type: 'disabled' }, ...extra }
+      ? { ...sampling, messages: [{ role: 'system', content: system }, { role: 'user', content: user }], ...fields }
+      : { ...sampling, system, messages: [{ role: 'user', content: user }], ...(override?.thinking === null ? {} : { thinking: { type: 'disabled' } }), ...fields }
     // Reasoning some models write before the answer (<think>…</think>, or only its end) is set aside, as TheOne does.
     const answer = text => text.includes('</think>') ? text.slice(text.lastIndexOf('</think>') + '</think>'.length) : text
     const parse = text => JSON.parse(answer(text).trim().replace(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/, '$1').trim())

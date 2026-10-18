@@ -45,7 +45,7 @@ test('routing disables supported deep thinking without changing Worker or provid
   const root = await mkdtemp(join(tmpdir(),'theone-router-thinking-'))
   const model = new ReasoningModel()
   model.behavior = async function* (options) {
-    if (options.system === ROUTING_PROMPT) {
+    if (options.system?.startsWith(ROUTING_PROMPT)) {
       assert.equal(options.reasoningEffort,'off')
       assert.equal(options.maxTokens,2048)
       yield* textResponse(JSON.stringify(decision))
@@ -65,7 +65,7 @@ test('native routing and Worker share DSH model; gateway selection persists thro
   const root = await mkdtemp(join(tmpdir(), 'theone-dsh-selection-'))
   const model = new FixtureModel()
   model.behavior = async function* (options) {
-    yield* textResponse(options.system === ROUTING_PROMPT ? JSON.stringify(decision) : '工作继续')
+    yield* textResponse(options.system?.startsWith(ROUTING_PROMPT) ? JSON.stringify(decision) : '工作继续')
   }
   let app = await harness(root, model, { routerMode: 'llm', autoModel: true })
   const setDefault = (value: ReturnType<typeof app.ctx.agentDefaultModel.currentSelection>) => {

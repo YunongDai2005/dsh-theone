@@ -667,6 +667,22 @@ export class ContextStore {
     this.db.prepare('INSERT OR IGNORE INTO route_details(message_id, excerpt, receipt) VALUES (?, ?, ?)').run(messageId, excerpt, JSON.stringify(receipt))
   }
 
+  /** What each topic has been sent in this entry: the newest excerpts of the messages routed to it (after corrections). */
+  routedExcerpts(gatewayKey: string, perTopic = 200): Map<string, string[]> {
+    const rows = this.db.prepare(`SELECT COALESCE(d.corrected_to, json_extract(r.decision, '$.contextId')) AS context_id, d.excerpt
+      FROM routing_events r JOIN gateway_sessions gs ON gs.gateway_id = r.gateway_id
+      JOIN route_details d ON d.message_id = r.message_id
+      WHERE gs.gateway_key = ? AND r.status = 'completed' AND json_extract(r.decision, '$.action') != 'CLARIFY' AND d.excerpt != ''
+      ORDER BY r.rowid DESC`).all(gatewayKey)
+    const out = new Map<string, string[]>()
+    for (const row of rows) {
+      if (row.context_id == null) continue
+      const list = out.get(String(row.context_id)) ?? []
+      if (list.length < perTopic) out.set(String(row.context_id), [...list, String(row.excerpt)])
+    }
+    return out
+  }
+
   /** This entry's latest routes, newest first. */
   recentRoutes(gatewayKey: string, limit = 20): RouteView[] {
     return this.db.prepare(`SELECT r.message_id, r.decision, r.status, r.created_at, d.excerpt, d.receipt, d.corrected_to

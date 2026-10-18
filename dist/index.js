@@ -24,7 +24,8 @@ import { RESTART_CODE, WorkerRun } from "./run.js";
 import { buildBriefing, LINK_SIGNAL, mayShare, relatedTopics } from "./linkage.js";
 import { evidenceEvents, FACT_KINDS, FACT_LIMITS, findQuote, rankCandidates, retracts, safe, verify } from "./facts.js";
 import { applyExtraction, EXTRACT_PROMPT, extractionPayload, factCandidates, factDelivery, ownFactsText } from "./fact-flow.js";
-import { activityLabel, CARD_AFTER_REPLIES, CARD_PROMPT, cardPayload, learnDormancy, parseCard, topicStatus } from "./topic-memory.js";
+import { evidenceConflict, routingEvidence } from "./routing-evidence.js";
+import { activityLabel, CARD_PROMPT, cardDue, cardPayload, learnDormancy, parseCard, topicStatus } from "./topic-memory.js";
 import { PACKAGE_NAME, Updater } from "./update.js";
 import { NOTICE_URL, NoticeBoard } from "./notices.js";
 import { exchange, FEEDBACK_EMAIL, FEEDBACK_LIMITS, FEEDBACK_URL, finalReport, replySection, routeDigest, scrub, sendReport } from "./feedback.js";
@@ -2323,8 +2324,29 @@ export default class TheOne extends Service {
                 const corrections = this.similarCorrections(text);
                 const offered = this.config.factLinks ? this.factCandidates(text, recent, currentId) : [];
                 const facts = offered.length ? { facts: offered } : {};
-                const result = await this.router.decide({ text, contexts, currentId, recent, historyIncomplete: this.catalog?.incomplete, corrections, ...facts, running, ...folders }, signal, agent.id);
+                // Details of the message that only one topic has mentioned, from what each topic was sent and knows.
+                const evidence = this.routingEvidence(text, allContexts);
+                const result = await this.router.decide({ text, contexts, currentId, recent, historyIncomplete: this.catalog?.incomplete, corrections, ...facts, running, ...folders, evidence }, signal, agent.id);
                 proposed = result.decision;
+                // A decision against a strong clue is asked once more, with thinking on; if that fails, the first stands.
+                const conflict = evidenceConflict(proposed, evidence.filter(item => contexts.some(context => context.id === item.contextId)));
+                if (conflict) {
+                    const recheck = { previous: proposed.contextId ?? proposed.action, contextId: conflict, terms: evidence.find(item => item.contextId === conflict).terms };
+                    try {
+                        const second = await this.router.decide({ text, contexts, currentId, recent, historyIncomplete: this.catalog?.incomplete, corrections, ...facts, running, ...folders, evidence, recheck }, signal, agent.id, { think: true });
+                        proposed = second.decision;
+                        result.elapsedMs += second.elapsedMs;
+                        if (second.usage)
+                            result.usage = { prompt_tokens: (result.usage?.prompt_tokens ?? 0) + second.usage.prompt_tokens,
+                                completion_tokens: (result.usage?.completion_tokens ?? 0) + second.usage.completion_tokens,
+                                total_tokens: (result.usage?.total_tokens ?? 0) + second.usage.total_tokens };
+                    }
+                    catch (error) {
+                        signal.throwIfAborted();
+                        if (!(error instanceof RouterFailure))
+                            throw error;
+                    }
+                }
                 // A miss in a short candidate list is not proof that the whole catalog has no match.
                 if (proposed.action === 'CREATE' && this.catalog && !/^新话题[：:]/.test(text.trim())) {
                     const seen = new Set(contexts.map(context => context.id));
@@ -2391,6 +2413,12 @@ export default class TheOne extends Service {
         const folder = projects.find(project => project.id === projectId)?.path
             ?? (proposed.relatedIds ?? []).map(id => this.store.origin(id)?.cwd).find(cwd => cwd && projects.some(project => project.path === cwd));
         return folder ? { ...decided, folder } : decided;
+    }
+    /** Routing evidence for `text` from each topic's routed messages and what its catalog entry and card know. */
+    routingEvidence(text, contexts) {
+        const routed = this.store.routedExcerpts(this.config.gatewayKey);
+        return routingEvidence(text, contexts.map(context => ({ id: context.id,
+            texts: [context.title, context.summary, ...context.entities, ...context.keywords, context.lastState, ...(routed.get(context.id) ?? [])] })));
     }
     /** The user's project folders: DSH workspaces that exist, other than DSH's default one and TheOne's own. */
     projectFolders() {
@@ -3171,9 +3199,9 @@ export default class TheOne extends Service {
             // Off by default: a small model call after the turn, only when the Worker recorded nothing itself.
             if (contextId && !abandon && this.config.factLinks && this.config.factExtraction && this.router && !run.recordedFacts && !run.failure && run.outcome?.kind === 'completed')
                 this.queueExtraction(run.worker, contextId);
-            // A routing card after the topic's first reply and again once it is clearer; in the background, never shown.
+            // A routing card after the topic's first reply, once it is clearer, then every few replies; in the background, never shown.
             if (contextId && !abandon && this.router && this.config.topicCards !== false && !run.failure && run.outcome?.kind === 'completed' &&
-                CARD_AFTER_REPLIES.includes(this.store.routeTimeline(this.config.gatewayKey).filter(route => route.contextId === contextId).length))
+                cardDue(this.store.routeTimeline(this.config.gatewayKey).filter(route => route.contextId === contextId).length))
                 this.queueCard(run.worker, contextId);
             this.active = false;
             this.closing.delete(gatewayId);

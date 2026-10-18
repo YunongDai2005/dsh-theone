@@ -2,6 +2,7 @@ import type { ModelSelection } from '@deepseek-ai/dsh-agent';
 import type { ExtractedTopic, HiddenReason, HistoryPart, TopicGroup } from './catalog-types.ts';
 import type { ContextDescriptor, ContextUsage, Decision, Progress, RouteRecord, RouteView, StoredContext, SourceRange, TopicLink } from './types.ts';
 import { type FactEvidence, type FactKind, type FactView } from './facts.ts';
+import { type TopicCard } from './topic-memory.ts';
 /** A write to a topic's facts, after its evidence was checked against the session. */
 export interface FactWrite {
     factId?: string;
@@ -72,12 +73,7 @@ export declare class ContextStore {
      * A topic's routing card: other names and entities join its keywords, and its summary is replaced
      * unless a compaction summary (written from the whole session) already took its place.
      */
-    applyCard(contextId: string, card: {
-        summary: string;
-        aliases: string[];
-        entities: string[];
-        open: string[];
-    }): void;
+    applyCard(contextId: string, card: TopicCard): void;
     groups(): TopicGroup[];
     isGateway(sessionId: string): boolean;
     /** Record the fixed "TheOne · Main chat" entry; other sessions may also use TheOne and switch away. */
@@ -175,6 +171,8 @@ export declare class ContextStore {
     sources(contextId: string): string[];
     /** What a route was decided from: a short redacted excerpt and the classifier's receipt. */
     recordRouteDetail(messageId: string, excerpt: string, receipt: unknown): void;
+    /** What each topic has been sent in this entry: the newest excerpts of the messages routed to it (after corrections). */
+    routedExcerpts(gatewayKey: string, perTopic?: number): Map<string, string[]>;
     /** This entry's latest routes, newest first. */
     recentRoutes(gatewayKey: string, limit?: number): RouteView[];
     /** Record that a message belonged to another topic; later routing learns from it. */

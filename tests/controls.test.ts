@@ -147,7 +147,7 @@ test('the TheOne menu has one entry; older "TheOne · <model>" selections still 
   const root = await mkdtemp(join(tmpdir(), 'theone-controls-via-'))
   const model = new ListedModel()
   model.behavior = async function* (options) {
-    yield* textResponse(options.system === ROUTING_PROMPT
+    yield* textResponse(options.system?.startsWith(ROUTING_PROMPT)
       ? JSON.stringify({ action: 'EXISTING', contextId: 'ctx_qwen_9070xt', title: null, question: null, reason: '测试' }) : '好')
   }
   const app = await harness(root, model, { routerMode: 'llm', autoModel: true })

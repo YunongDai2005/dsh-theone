@@ -59,7 +59,7 @@ function fixture() {
         return { contextId: context?.id ?? null, title, summary: title + '的历史资料', entities: [title], keywords: [title], lastState: '正在处理', turns,
           groupId: group?.id ?? null, groupTitle: group ? null : groupTitle, groupSummary: groupTitle + '相关事项' }
       }) }))
-    } else if (options.system === ROUTING_PROMPT) {
+    } else if (options.system?.startsWith(ROUTING_PROMPT)) {
       const payload = JSON.parse(options.messages[0].content.filter(b => b.type === 'text').map(b => b.text).join(''))
       const found = payload.contexts.find((c: { title: string }) => c.title === '论文方法')
       yield* textResponse(JSON.stringify({ action: 'EXISTING', contextId: found.id, title: null, question: null, reason: '继续论文方法' }))
@@ -221,7 +221,7 @@ test('unresolved history stays blocked until repaired, while a standalone downlo
     await app.ctx.theone.catalog!.refresh()
     const originalBehavior = model.behavior!
     model.behavior = async function* (options) {
-      if (options.system === ROUTING_PROMPT) {
+      if (options.system?.startsWith(ROUTING_PROMPT)) {
         const payload = JSON.parse(options.messages[0].content.filter(b => b.type === 'text').map(b => b.text).join(''))
         const standalone = payload.text.includes('https://www.bilibili.com/video/BV1mSffBFE4A/')
         assert.equal(payload.historyIncomplete, app.ctx.theone.catalog!.incomplete)
@@ -267,7 +267,7 @@ test('candidate miss is reviewed against remaining catalog before an implicit ne
     app.ctx.theone.store.seed([{ id: 'z-target', title: '旧论文方法', summary: '论文方法设计', entities: [], keywords: [], lastState: '待续' }])
     app.ctx.theone.catalog!.candidates = async () => app.ctx.theone.store.contexts().slice(0, 16)
     model.behavior = async function* (options) {
-      if (options.system === ROUTING_PROMPT) {
+      if (options.system?.startsWith(ROUTING_PROMPT)) {
         const payload = JSON.parse(options.messages[0].content.filter(b => b.type === 'text').map(b => b.text).join(''))
         yield* textResponse(JSON.stringify(payload.contexts.some((c: { id: string }) => c.id === 'z-target')
           ? { action: 'EXISTING', contextId: 'z-target', title: null, question: null, reason: '找到原来的论文' }
@@ -279,7 +279,7 @@ test('candidate miss is reviewed against remaining catalog before an implicit ne
     assert.equal(result.output, '继续旧论文')
     assert.equal(app.ctx.theone.store.route(result.input.id)?.decision.contextId, 'z-target')
     assert.equal(app.ctx.theone.store.contexts().length, count)
-    assert.equal(model.requests.filter(r => r.system === ROUTING_PROMPT).length, 2)
+    assert.equal(model.requests.filter(r => r.system?.startsWith(ROUTING_PROMPT)).length, 2)
   } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
 })
 
@@ -302,7 +302,7 @@ test('broken native FTS still routes known topics and admits independent CREATE'
   const base = model.behavior!
   model.behavior = async function* (options) {
     const text = options.messages[0].content.filter(b => b.type === 'text').map(b => b.text).join('')
-    if (options.system === ROUTING_PROMPT && JSON.parse(text).text.startsWith('我想开始一件全新的事项'))
+    if (options.system?.startsWith(ROUTING_PROMPT) && JSON.parse(text).text.startsWith('我想开始一件全新的事项'))
       yield* textResponse(JSON.stringify({ action: 'CREATE', contextId: null, title: JSON.parse(text).text, question: null, reason: '无匹配目录' }))
     else yield* base(options)
   }
@@ -340,7 +340,7 @@ test('large-catalog review limits do not stop standalone tasks or bypass unresol
     app.ctx.theone.store.seed(Array.from({length:70},(_,i)=>({id:`large-${i}`,title:`历史项目 ${i}`,summary:'一个不同的项目',entities:[],keywords:[],lastState:'待续'})))
     app.ctx.theone.catalog!.candidates = async () => app.ctx.theone.store.contexts().slice(0,16)
     model.behavior = async function* (options) {
-      if (options.system === ROUTING_PROMPT) {
+      if (options.system?.startsWith(ROUTING_PROMPT)) {
         const payload = JSON.parse(options.messages[0].content.filter(b=>b.type==='text').map(b=>b.text).join(''))
         yield* textResponse(JSON.stringify({action:'CREATE',contextId:null,title:'独立资料下载',question:null,reason:'首批未匹配',historyIndependent:payload.text.includes('https://example.com/guide.pdf')}))
       } else yield* textResponse('Worker 已收到完整请求')
