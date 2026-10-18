@@ -865,6 +865,8 @@ export default class TheOne extends Service {
 
   private async deliverWorkNotice(notice: WorkNotice, job: WorkJob): Promise<boolean> {
     if (job.kind !== 'research' || job.state === 'cancelled' || job.state === 'paused') return false
+    // Also to the phone, where the user is when away from main chat; once per app, however often main chat is retried.
+    await this.notifyApps(notice.id, notice.text)
     const gatewayId = (job.payload as ResearchTask).gatewayId
     // Only the fixed main chat guarantees a tool-free notice turn, even after a model switch.
     if (!this.store.isPinnedGateway(gatewayId)) return false
@@ -877,6 +879,14 @@ export default class TheOne extends Service {
     if (!already) gateway.followup(createUserMessage({ source: { kind: 'theone-note', form: 'notice', noticeId: notice.id },
       content: [{ type: 'text', text: notice.text }] }))
     return this.ctx.sessions.flush(gateway.session)
+  }
+
+  /** A notice to every messaging app the user bound, each at most once. */
+  private async notifyApps(id: string, text: string): Promise<void> {
+    for (const [name, app] of [['weixin', this.weixin], ['telegram', this.telegram], ['imessage', this.imessage]] as const) {
+      const flag = `notice:${id}:${name}`
+      if (!this.store.hasFlag(flag) && await app.relay.notify(text)) this.store.markOnce(flag)
+    }
   }
 
   /** DSH Connection protects plugin routes inside its authenticated /api fence. */

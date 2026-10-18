@@ -68,6 +68,8 @@ export declare class RemoteRelay {
     words(): typeof RELAY_WORDS.zh;
     /** A message from the owner: the answer to a pending question, or a message for main chat. */
     receive(id: string, text: string): Promise<void>;
+    /** Send a notice to the owner if the app is bound; false when it is not, or sending failed. */
+    notify(text: string): Promise<boolean>;
     /** A note in main chat, where the user looks (for example, that the app's login expired). */
     note(text: string): void;
     /** Into main chat's queue, as the browser sends it; DSH's session controller wakes main chat if it is not loaded. */

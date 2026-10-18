@@ -136,6 +136,8 @@ export default class TheOne extends Service {
     constructor(ctx: Context, config: Config);
     private workTasks;
     private deliverWorkNotice;
+    /** A notice to every messaging app the user bound, each at most once. */
+    private notifyApps;
     /** DSH Connection protects plugin routes inside its authenticated /api fence. */
     private registerCatalogChannel;
     /** One topic-directory edit. Changes that remove a topic wait until no reply is running. */
