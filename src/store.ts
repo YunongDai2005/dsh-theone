@@ -6,6 +6,7 @@ import { randomUUID, createHash } from 'node:crypto'
 import type { ExtractedTopic, HiddenReason, HistoryPart, TopicGroup } from './catalog-types.ts'
 import type { ContextDescriptor, ContextUsage, Decision, Progress, RouteRecord, RouteView, StoredContext, SourceRange, TopicLink } from './types.ts'
 import { FACT_KINDS, FACT_LIMITS, factKey, safe, type FactEvidence, type FactKind, type FactStatus, type FactView } from './facts.ts'
+import { cardSummary, type TopicCard } from './topic-memory.ts'
 
 /** A write to a topic's facts, after its evidence was checked against the session. */
 export interface FactWrite {
@@ -277,7 +278,7 @@ export class ContextStore {
    * A topic's routing card: other names and entities join its keywords, and its summary is replaced
    * unless a compaction summary (written from the whole session) already took its place.
    */
-  applyCard(contextId: string, card: { summary: string; aliases: string[]; entities: string[]; open: string[] }): void {
+  applyCard(contextId: string, card: TopicCard): void {
     this.db.exec('BEGIN IMMEDIATE')
     try {
       const context = this.contexts().find(item => item.id === contextId)
@@ -288,7 +289,7 @@ export class ContextStore {
         return [...first, ...then].filter(term => { const key = term.toLowerCase(); return term && !seen.has(key) && seen.add(key) }).slice(0, 24)
       }
       const compacted = this.summaryUpdates(contextId).length > 0
-      const summary = compacted ? descriptor.summary : [card.summary, card.open.length ? `待定：${card.open.join('；')}` : ''].filter(Boolean).join(' ').slice(0, 600)
+      const summary = compacted ? descriptor.summary : cardSummary(card)
       this.db.prepare('UPDATE contexts SET descriptor = ? WHERE id = ?').run(JSON.stringify({ ...descriptor, summary,
         keywords: merge(descriptor.keywords, card.aliases), entities: merge(card.entities, descriptor.entities) }), contextId)
       this.db.exec('COMMIT')

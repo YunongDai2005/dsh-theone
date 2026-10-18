@@ -12,8 +12,8 @@
 //   --decide joint|each    a burst gets one decision for all its messages (joint), or is sent in one call
 //                          that decides each message separately (each); a malformed answer falls back
 //                          to routing its messages one by one
-//   --cards           open mode: write a topic card after a topic's 1st and 4th message, as TheOne does
-//                     since 0.3.21 (its prompt and checks from dist/; the card sees the user's side only)
+//   --cards           open mode: write topic cards when TheOne would (its prompt, checks, schedule and
+//                     summary from dist/; the card sees the user's side only)
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -21,11 +21,14 @@ import { parseArgs } from 'node:util'
 import { ROUTING_PROMPT, routingPayload, validateRoutingDecision, redactRoutingText } from '../dist/llm-router.js'
 import { continuesCurrent, topicTerms } from '../dist/routing-policy.js'
 import { resolveContext } from '../dist/router.js'
-import { CARD_AFTER_REPLIES, CARD_PROMPT, cardPayload, parseCard } from '../dist/topic-memory.js'
+import * as memory from '../dist/topic-memory.js'
 import { createClient } from './lib/llm.mjs'
 import { groupUnits, planArrivals } from './lib/bursts.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
+// Builds before the card schedule and summary were shared fall back to what those builds did.
+const cardDue = memory.cardDue ?? (replies => memory.CARD_AFTER_REPLIES.includes(replies))
+const cardSummary = memory.cardSummary ?? (card => [card.summary, card.open.length ? `待定：${card.open.join('；')}` : ''].filter(Boolean).join(' ').slice(0, 600))
 
 /** Added to the routing prompt when a burst's messages are decided one by one in a single call. */
 export const BATCH_PROMPT = `
@@ -65,17 +68,17 @@ export async function routeSession(session, { mode, policy, client, merge = 'non
   const describe = topic => ({ id: topic.id, title: topic.title, summary: topic.summary, entities: topic.entities,
     keywords: [...new Set([...topic.keywords, ...[...new Set(topic.texts.flatMap(text => topicTerms(text)))].slice(-24)])].slice(0, 24),
     lastState: topic.texts.at(-1)?.slice(0, 400) ?? topic.lastState })
-  /** A topic card, applied as TheOne's store applies one: summary (with what is open), other names, entities. */
+  /** A topic card, applied as TheOne's store applies one: summary (with what is settled and open), other names, entities. */
   const writeCard = async topic => {
-    const payload = cardPayload(topic, topic.texts.map(text => ({ speaker: 'user', text: redactRoutingText(text) })))
+    const payload = memory.cardPayload(topic, topic.texts.map(text => ({ speaker: 'user', text: redactRoutingText(text) })))
     if (!payload) return
     try {
-      const value = await client.complete({ system: CARD_PROMPT, user: JSON.stringify(payload), maxTokens: 1024, json: true,
+      const value = await client.complete({ system: memory.CARD_PROMPT, user: JSON.stringify(payload), maxTokens: 1024, json: true,
         tag: `card:${session.session_id}:${topic.id}:${topic.texts.length}:${policy}` })
-      const card = parseCard(value, redactRoutingText)
+      const card = memory.parseCard(value, redactRoutingText)
       if (!card) return
       const merge = (first, then) => [...new Set([...first, ...then])].filter(Boolean).slice(0, 24)
-      topic.summary = [card.summary, card.open.length ? `待定：${card.open.join('；')}` : ''].filter(Boolean).join(' ').slice(0, 600)
+      topic.summary = cardSummary(card)
       topic.keywords = merge(topic.keywords, card.aliases)
       topic.entities = merge(card.entities, topic.entities)
     } catch { /* no card: the topic keeps what it had, as in TheOne */ }
@@ -96,7 +99,7 @@ export async function routeSession(session, { mode, policy, client, merge = 'non
     const topic = topics.find(item => item.id === pred)
     if (topic) {
       topic.texts.push(...members.map(turn => turn.text)); current = topic.id
-      if (cards && mode === 'open' && CARD_AFTER_REPLIES.includes(++topic.replies)) carding.push(writeCard(topic))
+      if (cards && mode === 'open' && cardDue(++topic.replies)) carding.push(writeCard(topic))
     }
     recent.push(...members.map(turn => ({ role: 'user', text: turn.text })))
     return pred

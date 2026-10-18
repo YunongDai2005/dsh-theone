@@ -6,7 +6,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ROUTING_PROMPT } from '../src/llm-router.ts'
-import { activityLabel, CARD_PROMPT, learnDormancy, parseCard } from '../src/topic-memory.ts'
+import { activityLabel, CARD_PROMPT, cardDue, learnDormancy, parseCard } from '../src/topic-memory.ts'
 import { FixtureModel, harness, ask, textResponse } from './harness.ts'
 
 const DAY = 86400000
@@ -39,6 +39,18 @@ test('a card adds names and entities, replaces only a placeholder summary, and r
   const payload = routingPayload({ text: '上新日期得改', contexts: [{ ...topic, activity: '3 小时前' }] })
   assert.equal(payload.contexts[0].activity, '3 小时前')
   assert.ok(!('activity' in routingPayload({ text: 'x', contexts: [topic] }).contexts[0]))
+})
+
+test('a card keeps the values the topic settled on, newest card wins, and is rewritten as the topic goes on', () => {
+  const store = new ContextStore(':memory:')
+  store.seed([{ id: 'budget', title: '家庭月度记账', summary: '新话题，尚无历史摘要。', entities: [], keywords: [], lastState: '' }])
+  store.applyCard('budget', parseCard({ summary: '每月记账，控制开销', aliases: [], entities: [], settled: ['月度目标：1500元', 7], open: [] }, text => text)!)
+  assert.equal(store.contexts()[0].summary, '每月记账，控制开销 已定：月度目标：1500元')
+  // A later card replaces the old value instead of keeping both.
+  store.applyCard('budget', parseCard({ summary: '每月记账，控制开销', aliases: [], entities: [], settled: ['月度目标：1600元'], open: ['要不要记现金'] }, text => text)!)
+  assert.equal(store.contexts()[0].summary, '每月记账，控制开销 已定：月度目标：1600元 待定：要不要记现金')
+  assert.deepEqual(parseCard({ summary: 'x', settled: Array.from({ length: 9 }, (_, i) => `项${i}：${'值'.repeat(80)}`) }, text => text)!.settled.map(item => item.length), Array(6).fill(60))
+  assert.deepEqual([...Array(30).keys()].filter(cardDue), [1, 4, 12, 20, 28])
 })
 
 test('after a topic’s first reply a card is written in the background, and routing sees it with the topic’s activity', { timeout: 60000 }, async () => {

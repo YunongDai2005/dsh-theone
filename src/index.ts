@@ -39,7 +39,7 @@ import { RESTART_CODE, WorkerRun } from './run.ts'
 import { buildBriefing, LINK_SIGNAL, mayShare, relatedTopics, type LinkScope } from './linkage.ts'
 import { evidenceEvents, FACT_KINDS, FACT_LIMITS, findQuote, rankCandidates, retracts, safe, verify, type EvidenceEvent, type FactCandidate, type FactKind, type FactView } from './facts.ts'
 import { applyExtraction, EXTRACT_PROMPT, extractionPayload, factCandidates, factDelivery, ownFactsText } from './fact-flow.ts'
-import { activityLabel, CARD_AFTER_REPLIES, CARD_PROMPT, cardPayload, learnDormancy, parseCard, topicStatus, type TopicStatus } from './topic-memory.ts'
+import { activityLabel, CARD_PROMPT, cardDue, cardPayload, learnDormancy, parseCard, topicStatus, type TopicStatus } from './topic-memory.ts'
 import type { FactResult } from './store.ts'
 import { PACKAGE_NAME, Updater, type PluginInstaller } from './update.ts'
 import { NOTICE_URL, NoticeBoard } from './notices.ts'
@@ -2890,9 +2890,9 @@ export default class TheOne extends Service {
       // Off by default: a small model call after the turn, only when the Worker recorded nothing itself.
       if (contextId && !abandon && this.config.factLinks && this.config.factExtraction && this.router && !run.recordedFacts && !run.failure && run.outcome?.kind === 'completed')
         this.queueExtraction(run.worker, contextId)
-      // A routing card after the topic's first reply and again once it is clearer; in the background, never shown.
+      // A routing card after the topic's first reply, once it is clearer, then every few replies; in the background, never shown.
       if (contextId && !abandon && this.router && this.config.topicCards !== false && !run.failure && run.outcome?.kind === 'completed' &&
-        CARD_AFTER_REPLIES.includes(this.store.routeTimeline(this.config.gatewayKey).filter(route => route.contextId === contextId).length))
+        cardDue(this.store.routeTimeline(this.config.gatewayKey).filter(route => route.contextId === contextId).length))
         this.queueCard(run.worker, contextId)
       this.active = false
       this.closing.delete(gatewayId)
