@@ -3,6 +3,7 @@
 //   DeepSeek's Anthropic-compatible API, the one DSH itself uses:  DEEPSEEK_API_KEY (+ DEEPSEEK_BASE_URL)
 //   any OpenAI-compatible API (/chat/completions):                OPENAI_API_KEY + OPENAI_BASE_URL + --model
 // EVAL_EXTRA_BODY='{"…": …}' adds provider-specific fields to every request.
+// EVAL_RPM=28 spaces requests evenly to stay under a provider's calls-per-minute limit.
 import { createHash } from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
@@ -106,9 +107,20 @@ export async function createClient({ model = process.env.EVAL_MODEL ?? 'deepseek
     }
   }
 
+  // Each request (retries included) takes the next free start time, so a per-minute limit is never hit.
+  const spacing = Number(process.env.EVAL_RPM) > 0 ? 60000 / Number(process.env.EVAL_RPM) : 0
+  let nextStart = 0
+  const paced = async () => {
+    if (!spacing) return
+    const at = Math.max(Date.now(), nextStart)
+    nextStart = at + spacing
+    if (at > Date.now()) await new Promise(resolve => setTimeout(resolve, at - Date.now()))
+  }
+
   async function send(body) {
     for (let attempt = 0; ; attempt++) {
       let status = 0
+      await paced()
       try {
         const response = await fetch(openai ? `${base}/chat/completions` : `${base}/v1/messages`, { method: 'POST', signal: AbortSignal.timeout(120000),
           headers: openai ? { 'content-type': 'application/json', authorization: `Bearer ${key}` }

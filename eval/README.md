@@ -64,6 +64,9 @@ node eval/run-router.mjs --mode closed --policy llm --model their-model-name
 `EVAL_EXTRA_BODY='{"…": …}'` adds provider-specific fields to every request, for example to turn off
 a model's thinking.
 
+`EVAL_RPM=28` spaces requests evenly for a provider that allows only so many calls a minute; raise
+`EVAL_CONCURRENCY` (default 4) along with it so the calls' own latency does not become the limit.
+
 Try everything first with `--dry-run`: a fake model stands in, nothing is spent, and the output goes
 to `eval/data/interleave-v0-dry` (or `-v1-dry`). Every model answer is cached in `eval/.cache`, so a rerun or a crash
 halfway costs nothing twice. `--model deepseek-v4-pro` switches model; `EVAL_PRICES="in,cached,out"`
