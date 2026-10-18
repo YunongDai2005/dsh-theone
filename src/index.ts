@@ -39,7 +39,7 @@ import { RESTART_CODE, WorkerRun } from './run.ts'
 import { buildBriefing, LINK_SIGNAL, mayShare, relatedTopics, type LinkScope } from './linkage.ts'
 import { evidenceEvents, FACT_KINDS, FACT_LIMITS, findQuote, rankCandidates, retracts, safe, verify, type EvidenceEvent, type FactCandidate, type FactKind, type FactView } from './facts.ts'
 import { applyExtraction, EXTRACT_PROMPT, extractionPayload, factCandidates, factDelivery, ownFactsText } from './fact-flow.ts'
-import { evidenceConflict, routingEvidence, type Evidence } from './routing-evidence.ts'
+import { routingEvidence, secondLook, type Evidence } from './routing-evidence.ts'
 import { activityLabel, CARD_PROMPT, cardDue, cardPayload, learnDormancy, parseCard, topicStatus, type TopicStatus } from './topic-memory.ts'
 import type { FactResult } from './store.ts'
 import { PACKAGE_NAME, Updater, type PluginInstaller } from './update.ts'
@@ -2120,10 +2120,9 @@ export default class TheOne extends Service {
         const evidence = this.routingEvidence(text, allContexts)
         const result = await this.router.decide({text,contexts,currentId,recent,historyIncomplete: this.catalog?.incomplete,corrections,...facts,running,...folders,evidence},signal,agent.id)
         proposed = result.decision
-        // A decision against a strong clue is asked once more, with thinking on; if that fails, the first stands.
-        const conflict = evidenceConflict(proposed, evidence.filter(item => contexts.some(context => context.id === item.contextId)))
-        if (conflict) {
-          const recheck = { previous: proposed.contextId ?? proposed.action, contextId: conflict, terms: evidence.find(item => item.contextId === conflict)!.terms }
+        // A new topic, a question, or a decision against a strong clue is asked once more with thinking on; if that fails, the first stands.
+        const recheck = secondLook(proposed, evidence.filter(item => contexts.some(context => context.id === item.contextId)))
+        if (recheck) {
           try {
             const second = await this.router.decide({text,contexts,currentId,recent,historyIncomplete: this.catalog?.incomplete,corrections,...facts,running,...folders,evidence,recheck},signal,agent.id,{think:true})
             proposed = second.decision

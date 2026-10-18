@@ -3,7 +3,7 @@ import { SessionId } from '@deepseek-ai/dsh-session';
 import type { ModelSelection } from '@deepseek-ai/dsh-agent';
 import type { ContextDescriptor, Decision } from './types.ts';
 import { type FactCandidate } from './facts.ts';
-import { type Evidence } from './routing-evidence.ts';
+import { type Evidence, type Recheck } from './routing-evidence.ts';
 export { redactRoutingText } from './routing-policy.ts';
 export interface RecentMessage {
     role: 'user' | 'assistant';
@@ -36,12 +36,8 @@ export interface RoutingInput {
     }[];
     /** Details of the message that only one topic has mentioned (see routing-evidence.ts). */
     evidence?: Evidence[];
-    /** Asked again: the previous decision went against a strong clue. */
-    recheck?: {
-        previous: string;
-        contextId: string;
-        terms: string[];
-    };
+    /** Asked again, with thinking on: what the quick decision was and the clue it went against, if any. */
+    recheck?: Recheck;
 }
 export interface RouterUsage {
     prompt_tokens: number;

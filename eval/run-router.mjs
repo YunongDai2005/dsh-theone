@@ -13,7 +13,8 @@
 //                          that decides each message separately (each); a malformed answer falls back
 //                          to routing its messages one by one
 //   --evidence        offer TheOne's routing evidence (details of the message only one topic has mentioned)
-//   --recheck         ask again with thinking on when a decision goes against a strong clue, as TheOne does
+//   --recheck         ask again with thinking on when TheOne would: a new topic, a question, or a decision
+//                     against a strong clue
 //   --cards           open mode: write topic cards when TheOne would (its prompt, checks, schedule and
 //                     summary from dist/; the card sees the user's side only)
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -129,9 +130,9 @@ export async function routeSession(session, { mode, policy, client, merge = 'non
         usage = usageOf(answer)
         if (answer.cached) via = 'cache'
         decision = validateRoutingDecision(answer.value, input)
-        const conflict = withRecheck && evidence ? evidence.evidenceConflict(decision, clues) : undefined
-        if (conflict) {
-          const again = { ...input, recheck: { previous: decision.contextId ?? decision.action, contextId: conflict, terms: clues.find(item => item.contextId === conflict).terms } }
+        const look = withRecheck && evidence ? evidence.secondLook(decision, clues) : undefined
+        if (look) {
+          const again = { ...input, recheck: look }
           const repeat = routingPayload(again)
           try {
             const second = await client.complete({ system: routingPrompt(repeat), user: JSON.stringify(repeat), maxTokens: 8192, json: true, details: true,

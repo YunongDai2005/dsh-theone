@@ -61,8 +61,9 @@ export function routingPayload(input) {
     const projects = (input.projects ?? []).slice(0, 40).map(project => ({ id: project.id, name: redactRoutingText(project.name).slice(0, 80) }));
     const evidence = (input.evidence ?? []).filter(item => offered.has(item.contextId)).slice(0, EVIDENCE_LIMITS.topics)
         .map(item => ({ contextId: item.contextId, terms: item.terms.slice(0, EVIDENCE_LIMITS.terms).map(term => redactRoutingText(term).slice(0, 40)), strong: item.strong }));
-    const recheck = input.recheck && offered.has(input.recheck.contextId) ? { recheck: { previous: input.recheck.previous.slice(0, 80), contextId: input.recheck.contextId,
-            terms: input.recheck.terms.slice(0, EVIDENCE_LIMITS.terms).map(term => redactRoutingText(term).slice(0, 40)) } } : {};
+    const clue = input.recheck?.contextId && offered.has(input.recheck.contextId) ? { contextId: input.recheck.contextId,
+        terms: (input.recheck.terms ?? []).slice(0, EVIDENCE_LIMITS.terms).map(term => redactRoutingText(term).slice(0, 40)) } : {};
+    const recheck = input.recheck ? { recheck: { previous: input.recheck.previous.slice(0, 80), ...clue } } : {};
     const payload = { text, contexts, currentId: mounted(input, contexts), recent, historyIncomplete: input.historyIncomplete ?? false, ...(corrections.length ? { corrections } : {}), ...(symbols.length ? { symbols } : {}), ...running, ...(projects.length ? { projects } : {}), ...(evidence.length ? { evidence } : {}), ...recheck };
     if (!text.trim() || JSON.stringify(payload).length > 24000)
         throw new RouterFailure('ROUTER_INPUT_INVALID');

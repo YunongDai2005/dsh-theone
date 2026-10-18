@@ -5,7 +5,7 @@ import type { ModelSelection } from '@deepseek-ai/dsh-agent'
 import type { ContextDescriptor, Decision } from './types.ts'
 import { newIndependentTopic, referencesHistory, redactRoutingText } from './routing-policy.ts'
 import { FACT_LIMITS, type FactCandidate } from './facts.ts'
-import { EVIDENCE_LIMITS, EVIDENCE_PROMPT, RECHECK_PROMPT, type Evidence } from './routing-evidence.ts'
+import { EVIDENCE_LIMITS, EVIDENCE_PROMPT, RECHECK_PROMPT, type Evidence, type Recheck } from './routing-evidence.ts'
 export { redactRoutingText } from './routing-policy.ts'
 
 export interface RecentMessage { role: 'user' | 'assistant'; text: string }
@@ -25,8 +25,8 @@ export interface RoutingInput {
   projects?: { id: string; name: string }[]
   /** Details of the message that only one topic has mentioned (see routing-evidence.ts). */
   evidence?: Evidence[]
-  /** Asked again: the previous decision went against a strong clue. */
-  recheck?: { previous: string; contextId: string; terms: string[] }
+  /** Asked again, with thinking on: what the quick decision was and the clue it went against, if any. */
+  recheck?: Recheck
 }
 export interface RouterUsage { prompt_tokens: number; completion_tokens: number; total_tokens: number; prompt_cache_hit_tokens?: number; prompt_cache_miss_tokens?: number }
 export interface RoutingResult { decision: Decision; model: string; elapsedMs: number; usage?: RouterUsage }
@@ -101,8 +101,9 @@ export function routingPayload(input: RoutingInput): Omit<RoutingInput, 'current
   const projects = (input.projects ?? []).slice(0, 40).map(project => ({ id: project.id, name: redactRoutingText(project.name).slice(0, 80) }))
   const evidence = (input.evidence ?? []).filter(item => offered.has(item.contextId)).slice(0, EVIDENCE_LIMITS.topics)
     .map(item => ({ contextId: item.contextId, terms: item.terms.slice(0, EVIDENCE_LIMITS.terms).map(term => redactRoutingText(term).slice(0, 40)), strong: item.strong }))
-  const recheck = input.recheck && offered.has(input.recheck.contextId) ? { recheck: { previous: input.recheck.previous.slice(0, 80), contextId: input.recheck.contextId,
-    terms: input.recheck.terms.slice(0, EVIDENCE_LIMITS.terms).map(term => redactRoutingText(term).slice(0, 40)) } } : {}
+  const clue = input.recheck?.contextId && offered.has(input.recheck.contextId) ? { contextId: input.recheck.contextId,
+    terms: (input.recheck.terms ?? []).slice(0, EVIDENCE_LIMITS.terms).map(term => redactRoutingText(term).slice(0, 40)) } : {}
+  const recheck = input.recheck ? { recheck: { previous: input.recheck.previous.slice(0, 80), ...clue } } : {}
   const payload = {text, contexts, currentId: mounted(input, contexts), recent, historyIncomplete: input.historyIncomplete ?? false, ...(corrections.length ? { corrections } : {}), ...(symbols.length ? { symbols } : {}), ...running, ...(projects.length ? { projects } : {}), ...(evidence.length ? { evidence } : {}), ...recheck}
   if (!text.trim() || JSON.stringify(payload).length > 24000) throw new RouterFailure('ROUTER_INPUT_INVALID')
   return payload

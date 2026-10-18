@@ -73,9 +73,22 @@ export function evidenceConflict(decision, evidence) {
         return undefined;
     return decision.contextId === strong[0].contextId ? undefined : strong[0].contextId;
 }
+/**
+ * Whether a quick decision deserves a second, thinking look: it goes against a strong clue, or it
+ * opens a new topic or asks the user, the decisions a quick look gets wrong most and that cost the
+ * most when wrong (a split topic, a needless question). Picking an existing topic in line with the
+ * clues stands.
+ */
+export function secondLook(decision, evidence) {
+    const previous = decision.contextId ?? decision.action;
+    const conflict = evidenceConflict(decision, evidence);
+    if (conflict)
+        return { previous, contextId: conflict, terms: evidence.find(item => item.contextId === conflict).terms };
+    return decision.action === 'CREATE' || decision.action === 'CLARIFY' ? { previous } : undefined;
+}
 /** Added to the routing prompt only when evidence is offered. */
 export const EVIDENCE_PROMPT = `
 evidence（可能没有）是程序在各话题已有的消息和卡片里查到的：本轮 text 提到的细节（数字、编号、名字、少见的词）中，只有这个话题出现过的那些。strong 为 true 表示其中有数字、编号或名字。它是线索，不是结论：细节可能只是碰巧相同，也可能是新事情第一次提到；结合整句意思判断。`;
-/** Added when a decision went against a strong clue and the classifier is asked again. */
+/** Added when a quick decision is asked again, with thinking on. */
 export const RECHECK_PROMPT = `
-recheck 表示你上一次的判断和程序找到的线索不一致：上次选了 recheck.previous，但 text 里的 recheck.terms 只在话题 recheck.contextId 里出现过。重新判断一次：如果这句话确实在说那个话题的事，就选它；如果只是碰巧提到相同的细节，保持原判断。`;
+recheck 表示这是第二次判断：上一次快速判断的结论是 recheck.previous（已有话题的 ID，或 CREATE / CLARIFY）。如果有 recheck.contextId，是因为 text 里的 recheck.terms 只在话题 recheck.contextId 里出现过，和上次的结论不一致。这次逐个比较目录里的话题再下结论：同一件事的后续步骤、子任务和细节问题属于原来的话题；确实是另一件事才新建；只有规则允许时才澄清。结论可以和上次相同。`;

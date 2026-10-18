@@ -24,7 +24,7 @@ import { RESTART_CODE, WorkerRun } from "./run.js";
 import { buildBriefing, LINK_SIGNAL, mayShare, relatedTopics } from "./linkage.js";
 import { evidenceEvents, FACT_KINDS, FACT_LIMITS, findQuote, rankCandidates, retracts, safe, verify } from "./facts.js";
 import { applyExtraction, EXTRACT_PROMPT, extractionPayload, factCandidates, factDelivery, ownFactsText } from "./fact-flow.js";
-import { evidenceConflict, routingEvidence } from "./routing-evidence.js";
+import { routingEvidence, secondLook } from "./routing-evidence.js";
 import { activityLabel, CARD_PROMPT, cardDue, cardPayload, learnDormancy, parseCard, topicStatus } from "./topic-memory.js";
 import { PACKAGE_NAME, Updater } from "./update.js";
 import { NOTICE_URL, NoticeBoard } from "./notices.js";
@@ -2328,10 +2328,9 @@ export default class TheOne extends Service {
                 const evidence = this.routingEvidence(text, allContexts);
                 const result = await this.router.decide({ text, contexts, currentId, recent, historyIncomplete: this.catalog?.incomplete, corrections, ...facts, running, ...folders, evidence }, signal, agent.id);
                 proposed = result.decision;
-                // A decision against a strong clue is asked once more, with thinking on; if that fails, the first stands.
-                const conflict = evidenceConflict(proposed, evidence.filter(item => contexts.some(context => context.id === item.contextId)));
-                if (conflict) {
-                    const recheck = { previous: proposed.contextId ?? proposed.action, contextId: conflict, terms: evidence.find(item => item.contextId === conflict).terms };
+                // A new topic, a question, or a decision against a strong clue is asked once more with thinking on; if that fails, the first stands.
+                const recheck = secondLook(proposed, evidence.filter(item => contexts.some(context => context.id === item.contextId)));
+                if (recheck) {
                     try {
                         const second = await this.router.decide({ text, contexts, currentId, recent, historyIncomplete: this.catalog?.incomplete, corrections, ...facts, running, ...folders, evidence, recheck }, signal, agent.id, { think: true });
                         proposed = second.decision;

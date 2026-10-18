@@ -279,7 +279,8 @@ test('candidate miss is reviewed against remaining catalog before an implicit ne
     assert.equal(result.output, '继续旧论文')
     assert.equal(app.ctx.theone.store.route(result.input.id)?.decision.contextId, 'z-target')
     assert.equal(app.ctx.theone.store.contexts().length, count)
-    assert.equal(model.requests.filter(r => r.system?.startsWith(ROUTING_PROMPT)).length, 2)
+    // The first page's new topic, its second look, then the rest of the catalog.
+    assert.equal(model.requests.filter(r => r.system?.startsWith(ROUTING_PROMPT)).length, 3)
   } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
 })
 

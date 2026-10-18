@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { EVIDENCE_PROMPT, evidenceConflict, evidenceTerms, routingEvidence } from '../src/routing-evidence.ts'
+import { EVIDENCE_PROMPT, evidenceConflict, evidenceTerms, routingEvidence, secondLook } from '../src/routing-evidence.ts'
 import { routingPayload, routingPrompt } from '../src/llm-router.ts'
 
 const topics = [
@@ -36,6 +36,15 @@ test('a decision against the one topic holding strong evidence is a conflict; ag
   assert.equal(evidenceConflict({ action: 'KEEP', contextId: 'budget', reason: 'x' }, evidence), undefined)
   assert.equal(evidenceConflict({ action: 'KEEP', contextId: 'trip', reason: 'x' }, [...evidence, { contextId: 'claim', terms: ['p-1'], strong: true }]), undefined)
   assert.equal(evidenceConflict({ action: 'KEEP', contextId: 'trip', reason: 'x' }, [{ contextId: 'budget', terms: ['目标'], strong: false }]), undefined)
+})
+
+test('a new topic, a question, or a decision against a strong clue gets a second look; an agreeing pick does not', () => {
+  const evidence = routingEvidence('那个1500的目标，你觉得实际能做到吗', topics)
+  assert.deepEqual(secondLook({ action: 'SWAP', contextId: 'trip', reason: 'x' }, evidence), { previous: 'trip', contextId: 'budget', terms: ['1500', '目标'] })
+  assert.deepEqual(secondLook({ action: 'CREATE', title: 'x', reason: 'x' }, []), { previous: 'CREATE' })
+  assert.deepEqual(secondLook({ action: 'CLARIFY', question: '哪个？', reason: 'x' }, []), { previous: 'CLARIFY' })
+  assert.equal(secondLook({ action: 'KEEP', contextId: 'budget', reason: 'x' }, evidence), undefined)
+  assert.equal(secondLook({ action: 'SWAP', contextId: 'trip', reason: 'x' }, []), undefined)
 })
 
 test('evidence reaches the classifier only for offered topics, with its instructions', () => {
