@@ -10,11 +10,11 @@ import { ContextStore, WHOLE_SESSION } from '../src/store.ts'
 import { ROUTING_PROMPT, routingPayload } from '../src/llm-router.ts'
 import { spokenCorrection, topicTerms } from '../src/routing-policy.ts'
 import type { RouteView } from '../src/types.ts'
-import { harness, ask, FixtureModel, textResponse } from './harness.ts'
+import { harness, ask, FixtureModel, textResponse, peered } from './harness.ts'
 
 async function api(app: Awaited<ReturnType<typeof harness>>) {
   const connection = new HostConnectionService(app.ctx, [], undefined as never)
-  const handler = connection.createSharedFetchHandler('/api')
+  const handler = peered(connection)
   await new Promise<void>(resolve => setImmediate(resolve))
   return {
     get: async (path: string) => (await handler.fetch(new Request(`http://dsh.internal/api/theone/${path}`))).json(),

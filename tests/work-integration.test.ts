@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { HostConnectionService } from '@deepseek-ai/dsh-client-connection'
-import { harness, ask, FixtureModel, textResponse } from './harness.ts'
+import { harness, ask, FixtureModel, textResponse, peered } from './harness.ts'
 import { ToolCallId, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { randomUUID } from 'node:crypto'
 import { ROUTING_PROMPT } from '../src/llm-router.ts'
@@ -16,7 +16,7 @@ test('task API persists user requests, deduplicates retries and rejects cross-or
   let app = await harness(root)
   try {
     app.ctx.theone.store.rememberGateway('test-gateway', app.gateway.id)
-    const handler = new HostConnectionService(app.ctx, [], undefined as never).createSharedFetchHandler('/api')
+    const handler = peered(new HostConnectionService(app.ctx, [], undefined as never))
     await new Promise(resolve => setImmediate(resolve))
     const send = (body: unknown, origin = 'http://dsh.internal') => handler.fetch(new Request('http://dsh.internal/api/theone/tasks', {
       method: 'POST', headers: { 'content-type': 'application/json', origin }, body: JSON.stringify(body),

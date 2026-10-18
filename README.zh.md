@@ -3,7 +3,7 @@
 <p align="center"><b>只开一个对话框，聊你所有的事。</b><br>它自己分清每句话属于哪件事，每件事的上下文互不干扰。</p>
 
 <p align="center">
-  <img alt="DSH 0.2.0-rc.2" src="https://img.shields.io/badge/DSH-0.2.0--rc.2-a75b1e">
+  <img alt="DSH 0.2.0-rc.2 / 0.2.1-rc.2" src="https://img.shields.io/badge/DSH-0.2.0--rc.2%20%7C%200.2.1--rc.2-a75b1e">
   <img alt="Node.js 24" src="https://img.shields.io/badge/Node.js-24-3c873a">
   <img alt="中文 / English" src="https://img.shields.io/badge/界面-中文%20%2F%20English-4a7fb5">
 </p>
@@ -61,7 +61,7 @@
 2. 打开 **插件 → 添加插件**，在「包名或地址」里填 `dsh-theone`，点击安装。
 3. 点击左侧 **TheOne · 主聊天**，开始说话。
 
-就这三步。兼容 DSH `0.2.0-rc.2` 与 Node.js 24；界面跟随 DSH 的语言（简体中文 / English）。
+就这三步。兼容 DSH `0.2.0-rc.2`、`0.2.1-rc.2` 与 Node.js 24；界面跟随 DSH 的语言（简体中文 / English）。
 
 <details>
 <summary><b>第一次用 DSH？手把手来一遍（约 3 分钟）</b></summary>

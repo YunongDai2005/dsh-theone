@@ -9,13 +9,20 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import Tools from '@deepseek-ai/dsh-tools'
-import Persistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+import * as Persistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import SessionQuery from '@deepseek-ai/dsh-session-query-sqlite'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { randomUUID } from 'node:crypto'
+import type { HostConnectionService } from '@deepseek-ai/dsh-client-connection'
 import TheOne from '../src/index.ts'
 import type { Config } from '../src/index.ts'
+
+/** The shared /api handler, called as the owner (the browser Peer), as DSH's own UI calls it. */
+export function peered(connection: HostConnectionService) {
+  const handler = connection.createSharedFetchHandler('/api')
+  return { requestBodyMode: handler.requestBodyMode.bind(handler), fetch: (request: Request) => handler.fetch(request, connection.browserPeer) }
+}
 
 export const contextsPath = fileURLToPath(new URL('../fixtures/contexts.json', import.meta.url))
 

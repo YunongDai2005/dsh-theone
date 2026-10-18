@@ -8,7 +8,7 @@ import { ContextStore, TERM_HALF_LIFE_MS } from '../src/store.ts'
 import { HistoryCatalog } from '../src/history-catalog.ts'
 import { ROUTING_PROMPT, routingPayload } from '../src/llm-router.ts'
 import { similarity, textFeatures } from '../src/routing-policy.ts'
-import { harness, ask, FixtureModel, textResponse } from './harness.ts'
+import { harness, ask, FixtureModel, textResponse, peered } from './harness.ts'
 
 const topic = (id: string, title: string, keywords: string[] = []) => ({ id, title, summary: title, entities: [], keywords, lastState: '进行中' })
 
@@ -74,7 +74,7 @@ test('corrections teach terms the model picks from the message, examples are cho
   const app = await harness(root, model, { routerMode: 'llm' })
   try {
     const connection = new HostConnectionService(app.ctx, [], undefined as never)
-    const handler = connection.createSharedFetchHandler('/api')
+    const handler = peered(connection)
     await new Promise<void>(resolve => setImmediate(resolve))
     const post = (path: string, body: unknown) => handler.fetch(new Request(`http://dsh.internal/api/theone/${path}`, {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }))
@@ -102,7 +102,7 @@ test('opening another topic right after a message went elsewhere is a weak hint,
   const app = await harness(root)
   try {
     const connection = new HostConnectionService(app.ctx, [], undefined as never)
-    const handler = connection.createSharedFetchHandler('/api')
+    const handler = peered(connection)
     await new Promise<void>(resolve => setImmediate(resolve))
     const routed = await ask(app.gateway, 'Qwen 的显存设置')
     const response = await handler.fetch(new Request('http://dsh.internal/api/theone/context/mount', {

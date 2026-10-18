@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { HostConnectionService } from '@deepseek-ai/dsh-client-connection'
 import { applicableNotices, NoticeBoard, versionMatches } from '../src/notices.ts'
-import { harness } from './harness.ts'
+import { harness, peered } from './harness.ts'
 
 const file = {
   notices: [
@@ -57,7 +57,7 @@ test('closed notices stay closed, and the setting turns notices off', { timeout:
   try {
     Object.defineProperty(app.ctx.theone, 'noticeBoard', { value: new NoticeBoard('0.3.13', 'https://example.test/n.json', (async () => new Response(JSON.stringify(file))) as typeof fetch) })
     const connection = new HostConnectionService(app.ctx, [], undefined as never)
-    const handler = connection.createSharedFetchHandler('/api')
+    const handler = peered(connection)
     await new Promise<void>(resolve => setImmediate(resolve))
     const read = async (init?: RequestInit) => (await (await handler.fetch(new Request('http://dsh.internal/api/theone/notices', init))).json()) as { notices: { id: string }[] }
     assert.deepEqual((await read()).notices.map(notice => notice.id), ['update', 'launch'])
