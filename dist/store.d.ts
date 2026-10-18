@@ -1,6 +1,6 @@
 import type { ModelSelection } from '@deepseek-ai/dsh-agent';
 import type { ExtractedTopic, HiddenReason, HistoryPart, TopicGroup } from './catalog-types.ts';
-import type { ContextDescriptor, ContextUsage, Decision, RouteRecord, RouteView, StoredContext, SourceRange, TopicLink } from './types.ts';
+import type { ContextDescriptor, ContextUsage, Decision, Progress, RouteRecord, RouteView, StoredContext, SourceRange, TopicLink } from './types.ts';
 import { type FactEvidence, type FactKind, type FactView } from './facts.ts';
 /** A write to a topic's facts, after its evidence was checked against the session. */
 export interface FactWrite {
@@ -31,6 +31,8 @@ export declare const WHOLE_SESSION: {
     startSeq: number;
     endSeq: number;
 };
+/** A topic's progress as one note: the three parts with labels in the language they were written in. */
+export declare function progressText(progress: Progress): string;
 /** Stores descriptors and routing metadata. Original conversation stays in DSH. */
 /** Run records a topic keeps; older ones are dropped as new ones start. */
 export declare const RUNS_KEPT = 20;
@@ -108,8 +110,11 @@ export declare class ContextStore {
     importTopics(sessionId: string, cwd: string | undefined, parts: HistoryPart[], topics: ExtractedTopic[]): void;
     mount(gatewayKey: string, contextId: string): void;
     contextsForSessions(sessionIds: string[]): string[];
-    /** Model-maintained progress is bounded and auditable; stable project identity remains unchanged. */
-    updateState(contextId: string, state: string, sessionId: string, throughSeq: number): void;
+    /**
+     * Model-maintained progress is bounded and auditable; stable project identity remains unchanged.
+     * Given in three parts, it is kept as such and `lastState` is written from it; a free note replaces both.
+     */
+    updateState(contextId: string, state: string | Progress, sessionId: string, throughSeq: number): void;
     stateUpdates(contextId: string): Record<string, import("node:sqlite").SQLOutputValue>[];
     /** Reuse a completed DSH compaction checkpoint once, without another model call. */
     updateSummary(contextId: string, summary: string, sessionId: string, summarySeq: number, endSeq: number): void;

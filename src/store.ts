@@ -4,7 +4,7 @@ import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { randomUUID, createHash } from 'node:crypto'
 import type { ExtractedTopic, HiddenReason, HistoryPart, TopicGroup } from './catalog-types.ts'
-import type { ContextDescriptor, ContextUsage, Decision, RouteRecord, RouteView, StoredContext, SourceRange, TopicLink } from './types.ts'
+import type { ContextDescriptor, ContextUsage, Decision, Progress, RouteRecord, RouteView, StoredContext, SourceRange, TopicLink } from './types.ts'
 import { FACT_KINDS, FACT_LIMITS, factKey, safe, type FactEvidence, type FactKind, type FactStatus, type FactView } from './facts.ts'
 
 /** A write to a topic's facts, after its evidence was checked against the session. */
@@ -36,6 +36,13 @@ export const TERM_HALF_LIFE_MS = 30 * 86400000
 
 /** A whole session attached by hand counts as reviewed from its first event to its last. */
 export const WHOLE_SESSION = { startSeq: 0, endSeq: Number.MAX_SAFE_INTEGER }
+
+/** A topic's progress as one note: the three parts with labels in the language they were written in. */
+export function progressText(progress: Progress): string {
+  const english = !/[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/.test(progress.goal + progress.done + progress.next)
+  const labels = english ? ['Goal', 'Done', 'Next'] : ['目标', '进度', '下一步']
+  return [progress.goal, progress.done, progress.next].flatMap((part, index) => part ? [`${labels[index]}${english ? ': ' : '：'}${part}`] : []).join('\n')
+}
 
 /** Stores descriptors and routing metadata. Original conversation stays in DSH. */
 /** Run records a topic keeps; older ones are dropped as new ones start. */
@@ -360,7 +367,7 @@ export class ContextStore {
         const summarized = existing && this.db.prepare('SELECT 1 FROM context_summary_updates WHERE context_id = ? LIMIT 1').get(id)
         const descriptor: ContextDescriptor = { id, title: existing?.title ?? topic.title,
           summary: summarized ? existing.summary : topic.summary, entities: topic.entities, keywords: topic.keywords,
-          lastState: stated ? existing.lastState : topic.lastState }
+          lastState: stated ? existing.lastState : topic.lastState, ...(stated && existing.progress ? { progress: existing.progress } : {}) }
         if (existing) this.db.prepare('UPDATE contexts SET descriptor = ? WHERE id = ?').run(JSON.stringify(descriptor), id)
         else {
           this.seed([descriptor])
@@ -397,18 +404,27 @@ export class ContextStore {
     return this.contexts().filter(context => wanted.has(context.workingSessionId) || this.sources(context.id).some(id => wanted.has(id))).map(context => context.id)
   }
 
-  /** Model-maintained progress is bounded and auditable; stable project identity remains unchanged. */
-  updateState(contextId: string, state: string, sessionId: string, throughSeq: number): void {
+  /**
+   * Model-maintained progress is bounded and auditable; stable project identity remains unchanged.
+   * Given in three parts, it is kept as such and `lastState` is written from it; a free note replaces both.
+   */
+  updateState(contextId: string, state: string | Progress, sessionId: string, throughSeq: number): void {
     const context = this.contexts().find(item => item.id === contextId)
     if (!context || context.workingSessionId !== sessionId) throw new Error('State requires the owned Worker')
-    if (!state.trim() || state.length > 800 || !Number.isSafeInteger(throughSeq) || throughSeq < 0) throw new Error('Invalid project state')
-    if (/\bsk-[a-zA-Z0-9_-]{16,}|\bBearer\s+\S+|(?:api[_ -]?key|password|密码|密钥)\s*[:=：]\s*\S+/i.test(state)) throw new Error('Project state must not contain credentials')
-    const { workingSessionId: _, ...descriptor } = context
+    let progress: Progress | undefined
+    if (typeof state !== 'string') {
+      progress = { goal: state.goal.trim(), done: state.done.trim(), next: state.next.trim() }
+      if (!progress.goal && !progress.done && !progress.next || [progress.goal, progress.done, progress.next].some(part => part.length > 300)) throw new Error('Invalid project state')
+    }
+    const text = progress ? progressText(progress) : (state as string).trim()
+    if (!text || (!progress && text.length > 800) || !Number.isSafeInteger(throughSeq) || throughSeq < 0) throw new Error('Invalid project state')
+    if (/\bsk-[a-zA-Z0-9_-]{16,}|\bBearer\s+\S+|(?:api[_ -]?key|password|密码|密钥)\s*[:=：]\s*\S+/i.test(text)) throw new Error('Project state must not contain credentials')
+    const { workingSessionId: _, progress: __, ...descriptor } = context
     this.db.exec('BEGIN IMMEDIATE')
     try {
-      this.db.prepare('UPDATE contexts SET descriptor = ? WHERE id = ?').run(JSON.stringify({ ...descriptor, lastState: state.trim() }), contextId)
+      this.db.prepare('UPDATE contexts SET descriptor = ? WHERE id = ?').run(JSON.stringify({ ...descriptor, lastState: text, ...(progress ? { progress } : {}) }), contextId)
       this.db.prepare('INSERT INTO context_state_updates(context_id, session_id, through_seq, state) VALUES (?, ?, ?, ?)')
-        .run(contextId, sessionId, throughSeq, state.trim())
+        .run(contextId, sessionId, throughSeq, text)
       this.db.exec('COMMIT')
     } catch (error) { this.db.exec('ROLLBACK'); throw error }
   }

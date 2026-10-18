@@ -1,10 +1,19 @@
+/** A topic's goal, what is done so far, and the next step. */
+export interface Progress {
+    goal: string;
+    done: string;
+    next: string;
+}
 export interface ContextDescriptor {
     id: string;
     title: string;
     summary: string;
     entities: string[];
     keywords: string[];
+    /** Where the topic stands, in words; written from `progress` when the topic keeps one. */
     lastState: string;
+    /** Where the topic stands in three parts, kept by the topic itself (theone_update_state). */
+    progress?: Progress;
     /** Routing only, never stored: when the topic was last active ("3 小时前", "已搁置（12 天未动）"). */
     activity?: string;
     /** Routing only, never stored: the name of the project (DSH workspace) the topic works in. */
