@@ -78,14 +78,15 @@ export async function routeSession(session, { mode, policy, client, merge = 'non
     const payload = memory.cardPayload(topic, topic.texts.map(text => ({ speaker: 'user', text: redactRoutingText(text) })))
     if (!payload) return
     try {
-      const value = await client.complete({ system: memory.CARD_PROMPT, user: JSON.stringify(payload), maxTokens: 1024, json: true,
+      const answer = await client.complete({ system: memory.CARD_PROMPT, user: JSON.stringify(payload), maxTokens: 1024, json: true, details: true,
         tag: `card:${session.session_id}:${topic.id}:${topic.texts.length}:${policy}` })
-      const card = memory.parseCard(value, redactRoutingText)
-      if (!card) return
+      const card = memory.parseCard(answer.value, redactRoutingText)
+      if (!card) return usageOf(answer)
       const merge = (first, then) => [...new Set([...first, ...then])].filter(Boolean).slice(0, 24)
       topic.summary = cardSummary(card)
       topic.keywords = merge(topic.keywords, card.aliases)
       topic.entities = merge(card.entities, topic.entities)
+      return usageOf(answer)
     } catch { /* no card: the topic keeps what it had, as in TheOne */ }
   }
   const recent = []
@@ -189,7 +190,8 @@ export async function routeSession(session, { mode, policy, client, merge = 'non
     const tag = `route:${session.session_id}:${members.length > 1 ? unit.turns.join('+') : members[0].i}:${mode}:${policy}`
     const results = members.length > 1 && decide === 'each' ? await routeEach(members, tag) : await routeJoint(members, tag)
     const elapsed = Math.round(performance.now() - started)
-    await Promise.all(carding.splice(0))
+    // A card's tokens are counted on the message whose reply it follows.
+    const cardUsage = (await Promise.all(carding.splice(0))).filter(Boolean)
     // The call's tokens are counted once, on the first message.
     // `mixed` (gold labels, for reporting only) marks a burst that spanned more than one thread.
     const mixed = new Set(members.map(turn => turn.gold.thread ?? 'none')).size > 1
@@ -198,6 +200,7 @@ export async function routeSession(session, { mode, policy, client, merge = 'non
       out.push({ session_id: session.session_id, i: turn.i, mode, policy, pred, action: decision?.action ?? null, refs: decision?.relatedIds ?? [],
         ...(decision?.action === 'CREATE' ? { title: decision.title, reason: decision.reason } : {}), ...(rechecked ? { rechecked } : {}),
         via, ...(usage && (k === 0 || decide === 'each') ? { usage } : {}), elapsed_ms: elapsed, ...(error ? { error } : {}),
+        ...(k === members.length - 1 && cardUsage.length ? { card_usage: cardUsage } : {}),
         ...(merge !== 'none' ? { merge, decide, burst: members.length, waited: unit.waited, ...(mixed ? { mixed } : {}) } : {}) })
     })
   }
