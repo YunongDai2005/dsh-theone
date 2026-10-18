@@ -298,6 +298,14 @@ export default class TheOne extends Service {
      */
     private realign;
     /**
+     * A message went to the wrong topic and was moved: record that topic's turn for it, so its history,
+     * card and facts leave the turn out and the topic is told once; and say in main chat what that turn
+     * already changed, since nothing is undone on its own.
+     */
+    private noteMisroute;
+    /** Messages that reached this topic by mistake, told to it once, the next time it works. */
+    private misrouteFor;
+    /**
      * The topic's last run was cut off by a restart (in the background or in front): tell it once, the
      * next time it works, what it had done, so it checks before carrying on instead of repeating.
      */

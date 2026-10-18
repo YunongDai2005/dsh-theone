@@ -21,9 +21,9 @@ test('a topic turn is read back from its session: finished or not, its reply, an
     user('m2', '再写一个 CHANGELOG', 8), call('write', { file_path: 'CHANGELOG.md', content: 'x' }, 9),
   ]
   assert.deepEqual(topicTurn(events, 'm1'), { found: true, request: '改一下 readme', completed: true, reply: '改好了，测试通过',
-    changes: ['修改 README.md', '运行 npm test'], endSeq: 7 })
+    changes: ['修改 README.md', '运行 npm test'], startSeq: 1, endSeq: 7 })
   // Cut off mid-way: no end, the change it had made is still listed.
-  assert.deepEqual(topicTurn(events, 'm2'), { found: true, request: '再写一个 CHANGELOG', completed: false, reply: '', changes: ['写入 CHANGELOG.md'], endSeq: 9 })
+  assert.deepEqual(topicTurn(events, 'm2'), { found: true, request: '再写一个 CHANGELOG', completed: false, reply: '', changes: ['写入 CHANGELOG.md'], startSeq: 8, endSeq: 9 })
   // Batched under another id: found by its words.
   assert.equal(topicTurn(events, 'other', '再写一个 CHANGELOG').found, true)
   assert.equal(topicTurn(events, 'missing').found, false)
@@ -118,4 +118,49 @@ test('work cut off mid-way lists what it had done; "continue" tells the topic on
     const text = latestBriefing && 'content' in latestBriefing && Array.isArray(latestBriefing.content) ? latestBriefing.content.map(block => block.type === 'text' ? block.text : '').join('') : ''
     assert.equal(text.includes('重启打断了你'), false)
   } finally { await t.close() }
+})
+
+test('after "wrong topic", the wrong topic leaves that turn out of its history, is told once, and what it changed is listed', { timeout: 30000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'theone-misroute-'))
+  const model = new FixtureModel()
+  let calls = 0
+  model.behavior = async function* () {
+    if (calls++ === 0) {
+      const id = ToolCallId('edit-wrong')
+      yield { type: 'block-start', index: 0, blockType: 'tool-call' }
+      yield { type: 'block-end', index: 0, block: { type: 'tool-call', id, name: 'edit', arguments: '{"file_path":"config/qwen.yaml"}' } }
+      yield { type: 'finish', reason: { kind: 'tool-calls' } }
+    } else yield* textResponse('好的')
+  }
+  const app = await harness(root, model)
+  try {
+    app.ctx.theone.store.rememberGateway('test-gateway', app.gateway.id)
+    app.ctx.tools.register(defineTool({ name: 'edit', description: 'Edit a file', parameters: { file_path: { type: 'string', required: true } },
+      output: { schema: { type: 'string' }, render: (_args, value: string) => [{ type: 'text', text: value }] }, execute: async () => 'edited' }))
+    const store = app.ctx.theone.store
+    const first = await ask(app.gateway, 'Qwen 的显存设置调低')
+    assert.ok((await app.ctx.theone.searchHistory('ctx_qwen_9070xt', '显存设置调低')).length > 0, 'found before the correction')
+    await ask(app.gateway, '分错了，是论文的')
+    const deadline = Date.now() + 5000
+    while (!store.misroutes('ctx_qwen_9070xt').length && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 10))
+    const thesis = store.contexts().find(item => item.id === 'ctx_thesis')!
+    assert.deepEqual(store.misroutes('ctx_qwen_9070xt'), [{ messageId: first.input.id, movedTo: thesis.title, request: 'Qwen 的显存设置调低' }])
+    // Main chat says what that turn already changed; nothing is undone.
+    await app.gateway.whenIdle()
+    const notes = app.gateway.session.snapshotEvents().filter(event => event.type === 'user/message' && event.data.source.kind === 'theone-note')
+    const note = notes.at(-1)
+    assert.ok(note?.type === 'user/message')
+    assert.match(note.data.content.map(block => block.type === 'text' ? block.text : '').join(''), /已经做过：\n- 修改 config\/qwen\.yaml\n\n这些改动没有自动撤销/)
+    // Its history no longer offers that turn.
+    assert.equal((await app.ctx.theone.searchHistory('ctx_qwen_9070xt', '显存设置调低')).length, 0)
+    // The next time it works it is told, once.
+    const textOf = (request: (typeof model.requests)[number]) => {
+      const briefing = request.messages.filter(item => 'source' in item && item.source?.kind === 'theone-context').at(-1)
+      return briefing && 'content' in briefing && Array.isArray(briefing.content) ? briefing.content.map(block => block.type === 'text' ? block.text : '').join('') : ''
+    }
+    await ask(app.gateway, 'Qwen 换个问题，驱动版本多少')
+    assert.match(textOf(model.requests.at(-1)!), new RegExp(`之前交给你的这条消息分错了，已经转给「${thesis.title}」处理：「Qwen 的显存设置调低」`))
+    await ask(app.gateway, 'Qwen 还有一个问题')
+    assert.equal(textOf(model.requests.at(-1)!).includes('分错了'), false)
+  } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
 })

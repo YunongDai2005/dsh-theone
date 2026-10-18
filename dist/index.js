@@ -29,7 +29,7 @@ import { PACKAGE_NAME, Updater } from "./update.js";
 import { NOTICE_URL, NoticeBoard } from "./notices.js";
 import { exchange, FEEDBACK_EMAIL, FEEDBACK_LIMITS, FEEDBACK_URL, finalReport, replySection, routeDigest, scrub, sendReport } from "./feedback.js";
 import { createRequire } from 'node:module';
-import { resumeNote, topicTurn } from "./lifecycle.js";
+import { misrouteNote, resumeNote, topicTurn } from "./lifecycle.js";
 import { WeixinBridge } from "./weixin.js";
 import { TelegramApp } from "./telegram.js";
 import { IMessageApp } from "./imessage.js";
@@ -1634,6 +1634,7 @@ export default class TheOne extends Service {
                 // Reuse DSH's semantic projection and literal Unicode matching, bypassing FTS.
                 const log = await this.ctx.sessionQuery.readSession(SessionId(sessionId));
                 signal?.throwIfAborted();
+                const excluded = this.store.excludedRanges(sessionId);
                 const projected = buildSessionEventSearchDocuments(SessionId(sessionId), log.events);
                 const hits = filterSessionEventDocuments(projected, [
                     { kind: 'text', text: query.trim() },
@@ -1641,6 +1642,9 @@ export default class TheOne extends Service {
                 for (const hit of hits) {
                     if (windows.length >= limit)
                         break;
+                    // A turn for a message that was not this topic's (corrected since) is not its history either.
+                    if (excluded.some(range => hit.seq >= range.startSeq && hit.seq <= range.endSeq))
+                        continue;
                     // Another topic's news delivered as reference is not this topic's own history.
                     const hitEvent = log.events.find(event => event.seq === hit.seq);
                     if (hitEvent?.type === 'user/message' && hitEvent.data.source.kind === 'theone-links')
@@ -1651,7 +1655,8 @@ export default class TheOne extends Service {
                         continue;
                     const index = log.events.findIndex(event => event.seq === hit.seq);
                     const target = log.events[index];
-                    const events = log.events.slice(Math.max(0, index - 1), index + 2).filter(event => scope.kind === 'worker' || (scope.kind === 'bounded' && event.seq >= scope.startSeq && event.seq <= scope.endSeq));
+                    const events = log.events.slice(Math.max(0, index - 1), index + 2).filter(event => (scope.kind === 'worker' || (scope.kind === 'bounded' && event.seq >= scope.startSeq && event.seq <= scope.endSeq))
+                        && !excluded.some(range => event.seq >= range.startSeq && event.seq <= range.endSeq));
                     // Never expose neighbors outside the reviewed range, including at its edges.
                     windows.push({ session: log.session, inheritedEventCount: log.inheritedEventCount,
                         target, events, startSeq: events[0].seq, endSeq: events.at(-1).seq });
@@ -2550,6 +2555,43 @@ export default class TheOne extends Service {
         yield { type: 'finish', reason: { kind: 'stop' } };
     }
     /**
+     * A message went to the wrong topic and was moved: record that topic's turn for it, so its history,
+     * card and facts leave the turn out and the topic is told once; and say in main chat what that turn
+     * already changed, since nothing is undone on its own.
+     */
+    async noteMisroute(messageId, wrongId, rightId) {
+        const contexts = this.store.contexts();
+        const wrong = contexts.find(context => context.id === wrongId);
+        const right = contexts.find(context => context.id === rightId);
+        if (!wrong || !right)
+            return;
+        const live = this.ctx.agents.get(SessionId(wrong.workingSessionId));
+        const events = live ? live.session.snapshotEvents() : (await this.ctx.sessionQuery.readSession(SessionId(wrong.workingSessionId))).events;
+        const turn = topicTurn(events, messageId);
+        if (!turn.found || turn.startSeq === undefined || turn.endSeq === undefined)
+            return;
+        this.store.recordMisroute({ messageId, contextId: wrong.id, sessionId: wrong.workingSessionId, startSeq: turn.startSeq, endSeq: turn.endSeq,
+            movedTo: right.title, request: turn.request });
+        if (!turn.changes.length)
+            return;
+        const gatewayId = this.store.latestGateway(this.config.gatewayKey);
+        const gateway = gatewayId ? this.ctx.agents.get(SessionId(gatewayId)) : undefined;
+        if (!gateway)
+            return;
+        const english = writtenInEnglish(turn.request);
+        const list = turn.changes.slice(0, 8).map(step => `- ${step}`).join('\n') + (turn.changes.length > 8 ? (english ? `\n- and ${turn.changes.length - 8} more` : `\n- 等共 ${turn.changes.length} 步`) : '');
+        gateway.followup(createUserMessage({ source: { kind: 'theone-note', form: 'notice' }, content: [{ type: 'text', text: english
+                        ? `Before it was moved, "${wrong.title}" had already worked on that message:\n${list}\n\nNothing was undone automatically; open "${wrong.title}" if any of it should be reverted.`
+                        : `这条消息转走之前，「${wrong.title}」已经做过：\n${list}\n\n这些改动没有自动撤销；需要的话打开「${wrong.title}」处理。` }] }));
+    }
+    /** Messages that reached this topic by mistake, told to it once, the next time it works. */
+    misrouteFor(contextId) {
+        const notes = this.store.misroutes(contextId).filter(item => !this.store.hasFlag(`misroute:${item.messageId}`));
+        for (const item of notes)
+            this.store.markOnce(`misroute:${item.messageId}`);
+        return notes.map(item => `\n\n${misrouteNote(item.request, item.movedTo)}`).join('');
+    }
+    /**
      * The topic's last run was cut off by a restart (in the background or in front): tell it once, the
      * next time it works, what it had done, so it checks before carrying on instead of repeating.
      */
@@ -2612,7 +2654,7 @@ export default class TheOne extends Service {
             const run = new WorkerRun(this.ctx, worker, gateway, input.id, this.config.maxResponseChars, names => this.showWorkerTools(gateway, worker, names));
             run.request = messageText(input);
             register(run);
-            const resume = this.resumeFor(context.id, worker, input.id);
+            const resume = this.resumeFor(context.id, worker, input.id) + this.misrouteFor(context.id);
             this.store.startTopicRun(input.id, context.id, worker.id);
             // Linking only adds reference; a failure in it must never stop the reply.
             const links = await this.briefingFor(refreshed, route.decision, gateway, input.id, signal).catch(() => undefined);
@@ -2721,7 +2763,8 @@ export default class TheOne extends Service {
             return { result: { skipped: 'SOURCE_OR_SETTING_CHANGED' } };
         const live = this.ctx.agents.get(SessionId(sessionId));
         const history = live ? live.session.snapshotEvents() : (await this.ctx.sessionQuery.readSession(SessionId(sessionId))).events;
-        const events = evidenceEvents(history.filter(event => event.seq <= throughSeq));
+        const excluded = this.store.excludedRanges(sessionId);
+        const events = evidenceEvents(history.filter(event => event.seq <= throughSeq && !excluded.some(range => event.seq >= range.startSeq && event.seq <= range.endSeq)));
         if (!events.length)
             return { result: { skipped: 'NO_EVIDENCE' } };
         let candidate = job.candidate;
@@ -2772,6 +2815,8 @@ export default class TheOne extends Service {
         if (record && this.store.topicRun(messageId)?.contextId !== contextId)
             this.store.endTopicRun(messageId, 'moved');
         const wrongId = route?.decision.contextId !== contextId ? route?.decision.contextId : undefined;
+        if (record && wrongId)
+            void this.noteMisroute(messageId, wrongId, contextId).catch(() => { });
         const source = text ?? this.store.recentRoutes(this.config.gatewayKey, 200).find(item => item.messageId === messageId)?.excerpt ?? '';
         if (!source.trim())
             return;

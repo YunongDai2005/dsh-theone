@@ -19,7 +19,8 @@ export interface TopicTurn {
     reply: string;
     /** Steps that may have changed something, in plain words ("修改 src/a.ts", "运行 npm test"). */
     changes: string[];
-    /** The topic session's last event of that turn. */
+    /** The topic session's first and last event of that turn. */
+    startSeq?: number;
     endSeq?: number;
 }
 /** One step in a few words, from the tool's name and the arguments the model gave it. */
@@ -31,4 +32,6 @@ export declare function describeStep(name: string, args: string): string;
 export declare function topicTurn(events: readonly Event[], messageId: string, text?: string): TopicTurn;
 /** What the topic is told the next time it works, about the message a restart cut off. */
 export declare function resumeNote(turn: TopicTurn): string;
+/** What a topic is told the next time it works, about a message that reached it by mistake. */
+export declare function misrouteNote(request: string, movedTo: string): string;
 export {};

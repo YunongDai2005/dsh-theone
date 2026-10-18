@@ -323,6 +323,27 @@ export declare class ContextStore {
     /** A messaging app bound to main chat (its login, cursor and switch), or undefined when none is. */
     remoteLink<T>(channel: string): T | undefined;
     saveRemoteLink(channel: string, state: unknown): void;
+    /** A topic's turn for a message that was not its own: later reads of its history leave it out. */
+    recordMisroute(turn: {
+        messageId: string;
+        contextId: string;
+        sessionId: string;
+        startSeq: number;
+        endSeq: number;
+        movedTo: string;
+        request: string;
+    }, now?: number): void;
+    /** Event ranges of a session that belong to other topics' messages. */
+    excludedRanges(sessionId: string): {
+        startSeq: number;
+        endSeq: number;
+    }[];
+    /** Messages that reached a topic by mistake, oldest first. */
+    misroutes(contextId: string): {
+        messageId: string;
+        movedTo: string;
+        request: string;
+    }[];
     /** `name` was marked with `markOnce`. */
     hasFlag(name: string): boolean;
     dismissedNotices(): Set<string>;

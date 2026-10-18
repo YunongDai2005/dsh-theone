@@ -161,6 +161,10 @@ export class ContextStore {
       CREATE TABLE IF NOT EXISTS dismissed_notices (id TEXT PRIMARY KEY, dismissed_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS plugin_flags (name TEXT PRIMARY KEY, set_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS remote_links (channel TEXT PRIMARY KEY, state TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS misrouted_turns (
+        message_id TEXT PRIMARY KEY, context_id TEXT NOT NULL, session_id TEXT NOT NULL, start_seq INTEGER NOT NULL, end_seq INTEGER NOT NULL,
+        moved_to TEXT NOT NULL, request TEXT NOT NULL, at INTEGER NOT NULL
+      );
       CREATE TABLE IF NOT EXISTS stowed_sessions (session_id TEXT PRIMARY KEY, stowed_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS route_details (
         message_id TEXT PRIMARY KEY, excerpt TEXT NOT NULL, receipt TEXT, corrected_to TEXT, corrected_at INTEGER
@@ -1140,6 +1144,24 @@ export class ContextStore {
   saveRemoteLink(channel: string, state: unknown): void {
     if (state === undefined) this.db.prepare('DELETE FROM remote_links WHERE channel = ?').run(channel)
     else this.db.prepare('INSERT INTO remote_links VALUES (?, ?) ON CONFLICT(channel) DO UPDATE SET state = excluded.state').run(channel, JSON.stringify(state))
+  }
+
+  /** A topic's turn for a message that was not its own: later reads of its history leave it out. */
+  recordMisroute(turn: { messageId: string; contextId: string; sessionId: string; startSeq: number; endSeq: number; movedTo: string; request: string }, now = Date.now()): void {
+    this.db.prepare('INSERT OR REPLACE INTO misrouted_turns VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(turn.messageId, turn.contextId, turn.sessionId, turn.startSeq, turn.endSeq, turn.movedTo, turn.request.slice(0, 600), now)
+  }
+
+  /** Event ranges of a session that belong to other topics' messages. */
+  excludedRanges(sessionId: string): { startSeq: number; endSeq: number }[] {
+    return this.db.prepare('SELECT start_seq, end_seq FROM misrouted_turns WHERE session_id = ?').all(sessionId)
+      .map(row => ({ startSeq: Number(row.start_seq), endSeq: Number(row.end_seq) }))
+  }
+
+  /** Messages that reached a topic by mistake, oldest first. */
+  misroutes(contextId: string): { messageId: string; movedTo: string; request: string }[] {
+    return this.db.prepare('SELECT message_id, moved_to, request FROM misrouted_turns WHERE context_id = ? ORDER BY at, rowid').all(contextId)
+      .map(row => ({ messageId: String(row.message_id), movedTo: String(row.moved_to), request: String(row.request) }))
   }
 
   /** `name` was marked with `markOnce`. */

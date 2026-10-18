@@ -55,7 +55,7 @@ export function topicTurn(events, messageId, text) {
         const call = event.data;
         return READ_ONLY.has(call.name) ? [] : [describeStep(call.name, call.arguments)];
     });
-    return { found: true, request, completed, reply, changes: [...new Set(changes)], ...(turn.length ? { endSeq: turn.at(-1).seq } : {}) };
+    return { found: true, request, completed, reply, changes: [...new Set(changes)], startSeq: events[start].seq, ...(turn.length ? { endSeq: turn.at(-1).seq } : {}) };
 }
 /** What the topic is told the next time it works, about the message a restart cut off. */
 export function resumeNote(turn) {
@@ -63,4 +63,9 @@ export function resumeNote(turn) {
     return [`上次的这条消息做到一半时，DSH 重启打断了你：「${asked}」。`,
         turn.changes.length ? `那时已经做过：${turn.changes.slice(0, 12).join('；')}${turn.changes.length > 12 ? ` 等 ${turn.changes.length} 步` : ''}。` : '那时还没有做过会改动东西的步骤。',
         '如果用户要你接着做，先检查现状（文件、命令结果），不要重复已经做过的改动。'].join('\n');
+}
+/** What a topic is told the next time it works, about a message that reached it by mistake. */
+export function misrouteNote(request, movedTo) {
+    const asked = request.length > 200 ? `${request.slice(0, 197)}…` : request;
+    return `之前交给你的这条消息分错了，已经转给「${movedTo}」处理：「${asked}」。那一轮的内容和结论不属于这个话题，不要沿用。`;
 }
