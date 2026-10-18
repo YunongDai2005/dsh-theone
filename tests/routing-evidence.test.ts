@@ -9,10 +9,11 @@ const topics = [
   { id: 'claim', texts: ['处理交通事故理赔', '理赔单号 P-2023-1012 已经提交'] },
 ]
 
-test('a detail only one topic has mentioned is evidence for it; details several topics share are not', () => {
-  assert.deepEqual(routingEvidence('那个1500的目标，你觉得实际能做到吗', topics), [{ contextId: 'budget', terms: ['1500', '目标'], strong: true }])
-  // "外卖" appears in two topics, so it points nowhere.
+test('a number, code or name only one topic has mentioned is evidence for it; shared details and ordinary words are not', () => {
+  assert.deepEqual(routingEvidence('那个1500的目标，你觉得实际能做到吗', topics), [{ contextId: 'budget', terms: ['1500'], strong: true }])
+  // "外卖" appears in two topics, and "鼓浪屿" is an ordinary word here: neither points anywhere.
   assert.deepEqual(routingEvidence('外卖怎么办', topics), [])
+  assert.deepEqual(routingEvidence('鼓浪屿那边怎么样', topics), [])
   assert.deepEqual(routingEvidence('P-2023-1012交上去之后，我回头去弄那个销售报告', topics)[0], { contextId: 'claim', terms: ['p-2023-1012'], strong: true })
   // Thousands separators and case do not hide a match.
   assert.equal(routingEvidence('Is 8,000 enough?', topics)[0].contextId, 'trip')
@@ -40,7 +41,7 @@ test('a decision against the one topic holding strong evidence is a conflict; ag
 
 test('a new topic, a question, or a decision against a strong clue gets a second look; an agreeing pick does not', () => {
   const evidence = routingEvidence('那个1500的目标，你觉得实际能做到吗', topics)
-  assert.deepEqual(secondLook({ action: 'SWAP', contextId: 'trip', reason: 'x' }, evidence), { previous: 'trip', contextId: 'budget', terms: ['1500', '目标'] })
+  assert.deepEqual(secondLook({ action: 'SWAP', contextId: 'trip', reason: 'x' }, evidence), { previous: 'trip', contextId: 'budget', terms: ['1500'] })
   assert.deepEqual(secondLook({ action: 'CREATE', title: 'x', reason: 'x' }, []), { previous: 'CREATE' })
   assert.deepEqual(secondLook({ action: 'CLARIFY', question: '哪个？', reason: 'x' }, []), { previous: 'CLARIFY' })
   assert.equal(secondLook({ action: 'KEEP', contextId: 'budget', reason: 'x' }, evidence), undefined)

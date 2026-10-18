@@ -1,6 +1,6 @@
-// Routing evidence from what each topic has already said. Before the classifier runs, the details a
-// message names (numbers, codes, names, uncommon words) are looked up in every topic's own messages
-// and card; a detail only one topic has ever mentioned is a clue to where the message belongs.
+// Routing evidence from what each topic has already said. Before the classifier runs, the numbers,
+// codes and names a message mentions are looked up in every topic's own messages and card; a detail
+// only one topic has ever mentioned is a clue to where the message belongs.
 // After the classifier, a decision that goes against a strong clue is asked again, with thinking on.
 import { redactRoutingText } from "./routing-policy.js";
 export const EVIDENCE_LIMITS = { topics: 3, terms: 4 };
@@ -42,13 +42,17 @@ export function evidenceTerms(text) {
             }
     return [...found].map(([term, strong]) => ({ term, strong }));
 }
-/** Topics holding details of `text` that no other topic holds, the most telling first. */
+/**
+ * Topics holding details of `text` that no other topic holds, the most telling first. Only strong
+ * details count: in the benchmark, ordinary words one topic happened to use ("目标", "构图") led
+ * messages into the wrong topic more often than they helped.
+ */
 export function routingEvidence(text, topics) {
     if (topics.length < 2)
         return [];
     const memory = topics.map(topic => ({ id: topic.id, text: normalize(topic.texts.join('\n')) }));
     const byTopic = new Map();
-    for (const candidate of evidenceTerms(text)) {
+    for (const candidate of evidenceTerms(text).filter(item => item.strong)) {
         const holders = memory.filter(topic => topic.text.includes(candidate.term));
         if (holders.length !== 1)
             continue;
@@ -88,7 +92,7 @@ export function secondLook(decision, evidence) {
 }
 /** Added to the routing prompt only when evidence is offered. */
 export const EVIDENCE_PROMPT = `
-evidence（可能没有）是程序在各话题已有的消息和卡片里查到的：本轮 text 提到的细节（数字、编号、名字、少见的词）中，只有这个话题出现过的那些。strong 为 true 表示其中有数字、编号或名字。它是线索，不是结论：细节可能只是碰巧相同，也可能是新事情第一次提到；结合整句意思判断。`;
+evidence（可能没有）是程序在各话题已有的消息和卡片里查到的：本轮 text 提到的数字、编号、名字中，只有这个话题出现过的那些。它是线索，不是结论：细节可能只是碰巧相同，也可能是新事情第一次提到；结合整句意思判断。`;
 /** Added when a quick decision is asked again, with thinking on. */
 export const RECHECK_PROMPT = `
 recheck 表示这是第二次判断：上一次快速判断的结论是 recheck.previous（已有话题的 ID，或 CREATE / CLARIFY）。如果有 recheck.contextId，是因为 text 里的 recheck.terms 只在话题 recheck.contextId 里出现过，和上次的结论不一致。这次逐个比较目录里的话题再下结论：同一件事的后续步骤、子任务和细节问题属于原来的话题；确实是另一件事才新建；只有规则允许时才澄清。结论可以和上次相同。`;

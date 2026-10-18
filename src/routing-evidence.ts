@@ -1,6 +1,6 @@
-// Routing evidence from what each topic has already said. Before the classifier runs, the details a
-// message names (numbers, codes, names, uncommon words) are looked up in every topic's own messages
-// and card; a detail only one topic has ever mentioned is a clue to where the message belongs.
+// Routing evidence from what each topic has already said. Before the classifier runs, the numbers,
+// codes and names a message mentions are looked up in every topic's own messages and card; a detail
+// only one topic has ever mentioned is a clue to where the message belongs.
 // After the classifier, a decision that goes against a strong clue is asked again, with thinking on.
 
 import type { Decision } from './types.ts'
@@ -51,12 +51,16 @@ export function evidenceTerms(text: string): { term: string; strong: boolean }[]
   return [...found].map(([term, strong]) => ({ term, strong }))
 }
 
-/** Topics holding details of `text` that no other topic holds, the most telling first. */
+/**
+ * Topics holding details of `text` that no other topic holds, the most telling first. Only strong
+ * details count: in the benchmark, ordinary words one topic happened to use ("目标", "构图") led
+ * messages into the wrong topic more often than they helped.
+ */
 export function routingEvidence(text: string, topics: readonly TopicMemory[]): Evidence[] {
   if (topics.length < 2) return []
   const memory = topics.map(topic => ({ id: topic.id, text: normalize(topic.texts.join('\n')) }))
   const byTopic = new Map<string, { term: string; strong: boolean }[]>()
-  for (const candidate of evidenceTerms(text)) {
+  for (const candidate of evidenceTerms(text).filter(item => item.strong)) {
     const holders = memory.filter(topic => topic.text.includes(candidate.term))
     if (holders.length !== 1) continue
     const list = byTopic.get(holders[0].id) ?? []
@@ -99,7 +103,7 @@ export function secondLook(decision: Decision, evidence: readonly Evidence[]): R
 
 /** Added to the routing prompt only when evidence is offered. */
 export const EVIDENCE_PROMPT = `
-evidence（可能没有）是程序在各话题已有的消息和卡片里查到的：本轮 text 提到的细节（数字、编号、名字、少见的词）中，只有这个话题出现过的那些。strong 为 true 表示其中有数字、编号或名字。它是线索，不是结论：细节可能只是碰巧相同，也可能是新事情第一次提到；结合整句意思判断。`
+evidence（可能没有）是程序在各话题已有的消息和卡片里查到的：本轮 text 提到的数字、编号、名字中，只有这个话题出现过的那些。它是线索，不是结论：细节可能只是碰巧相同，也可能是新事情第一次提到；结合整句意思判断。`
 
 /** Added when a quick decision is asked again, with thinking on. */
 export const RECHECK_PROMPT = `
