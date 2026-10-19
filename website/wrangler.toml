@@ -1,0 +1,5 @@
+# Optional Workers Static Assets deployment, separate from the existing sirusan Worker.
+# No routes/custom domains: bind the requested domain only after explicit review.
+name = "theone-website"
+compatibility_date = "2026-10-19"
+assets = { directory = "./out" }
