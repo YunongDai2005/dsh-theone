@@ -321,6 +321,8 @@ export declare const zh: {
     readonly 'route.reason.correction-unclear': "更正时没说清目标";
     readonly 'route.reason.explicit-new-topic': "明确的新话题";
     readonly 'route.reason.no-history-evidence': "新的问题";
+    readonly 'route.reason.unclear-settled': "最接近的话题";
+    readonly 'route.reason.unclear-new': "新的问题";
     readonly 'route.reason.entity-or-keyword': "提到了这个话题";
     readonly 'route.reason.keyword-only-switch': "提到了这个话题";
     readonly 'route.reason.current-reference': "接着当前话题";

@@ -16,7 +16,7 @@ import { gatewayCheckpoint } from "./gateway-compaction.js";
 import { ContextStore } from "./store.js";
 import { resolveContext } from "./router.js";
 import { DshRouter, RouterFailure } from "./llm-router.js";
-import { continuesCurrent, newIndependentTopic, redactRoutingText, referencesHistory, similarity, spokenCorrection, textFeatures, topicTerms } from "./routing-policy.js";
+import { continuesCurrent, newIndependentTopic, redactRoutingText, settleUnclear, similarity, spokenCorrection, textFeatures, topicTerms } from "./routing-policy.js";
 import { modelJson } from "./model-json.js";
 import { EDITABLE_SETTINGS_KEYS, RESTART_SETTINGS_KEYS } from "./settings-types.js";
 import { validateSettings } from "./settings.js";
@@ -107,12 +107,8 @@ function stepInput(messages, input) {
 }
 /** TheOne's own questions, in the language the message was written in; the classifier writes its own. */
 const CLARIFY_TEXT = {
-    CATALOG_NOT_READY: { zh: '你指的是之前哪件事？可以补充目标或链接，我就能继续处理。', en: 'Which earlier matter do you mean? Add the goal or a link and I can carry on.' },
-    HISTORY_SEARCH_UNAVAILABLE: { zh: '历史检索暂时不可用，请稍后再试。', en: 'Searching your history is unavailable right now; please try again shortly.' },
-    CATALOG_REVIEW_LIMIT: { zh: '暂时没有找到明确相关的旧话题。你是在说一件新的事情吗？', en: 'I found no earlier topic that clearly matches. Is this something new?' },
     ROUTER_MODEL_MISSING: { zh: '请先在 DSH 中选择一个已配置的聊天模型，再打开 TheOne。无需另配 API Key。', en: 'Choose a configured chat model in DSH first, then open TheOne. No separate API key is needed.' },
     'correction-unclear': { zh: '应该放到哪个话题？可以说「分错了，是 某某 的」，我会把上一条交给它重新处理。', en: 'Which topic should it go to? Say "wrong topic, it is about …" and I will redo the last message there.' },
-    'multiple-contexts': { zh: '这句话涉及多个话题，请指定先处理哪个。', en: 'This touches several topics; which one first?' },
 };
 const writtenInEnglish = (text) => !!text.trim() && !/[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/.test(text);
 function clarifyText(decision, text) {
@@ -161,13 +157,13 @@ function reasonLabel(reason, english = false) {
         'keyword-only-switch': 'mentions this topic', 'current-reference': 'same topic', 'combined-contexts': 'combines topics',
         'insufficient-evidence': 'no matching topic', 'multiple-contexts': 'several topics fit', 'weak-keyword-match': 'new question', 'no-history-match': 'new question',
         'CATALOG_NOT_READY': 'history still being catalogued', 'CATALOG_REVIEW_LIMIT': 'no clearly related topic', 'HISTORY_SEARCH_UNAVAILABLE': 'history search unavailable',
-        'goal-round': 'goal round',
+        'goal-round': 'goal round', 'unclear-settled': 'closest topic', 'unclear-new': 'new question',
     } : {
         'steering': '回复中补充', 'short-continuation': '接着说', 'attachment-only': '附件', 'correction': '按你的更正',
         'explicit-new-topic': '明确的新话题', 'no-history-evidence': '新的问题', 'entity-or-keyword': '提到了这个话题',
         'keyword-only-switch': '提到了这个话题', 'current-reference': '接着当前话题', 'combined-contexts': '结合多个话题',
         'insufficient-evidence': '没有匹配的旧话题', 'multiple-contexts': '多个话题都可能', 'weak-keyword-match': '新的问题', 'no-history-match': '新的问题', 'CATALOG_NOT_READY': '历史还在整理',
-        'CATALOG_REVIEW_LIMIT': '没有找到明确相关的旧话题', 'HISTORY_SEARCH_UNAVAILABLE': '历史检索暂不可用', 'goal-round': '推进目标',
+        'CATALOG_REVIEW_LIMIT': '没有找到明确相关的旧话题', 'HISTORY_SEARCH_UNAVAILABLE': '历史检索暂不可用', 'goal-round': '推进目标', 'unclear-settled': '最接近的话题', 'unclear-new': '新的问题',
     };
     if (fixed[reason])
         return fixed[reason];
@@ -843,8 +839,9 @@ export default class TheOne extends Service {
                     }
                     else
                         proposed = await this.classify(agent, input.id, text, currentId, allContexts, signal, receipt);
-                    if (proposed.action === 'CREATE' && this.catalog?.incomplete && !proposed.historyIndependent && !/^新话题[：:]/.test(text.trim()))
-                        proposed = { action: 'CLARIFY', reason: 'CATALOG_NOT_READY', question: '你指的是之前哪件事？可以补充目标或链接，我就能继续处理。' };
+                    // Nothing asks the user where a message belongs; an unclear decision settles on the closest topic or a new one.
+                    if (!previous)
+                        proposed = settleUnclear(proposed, text, allContexts, currentId);
                     signal.throwIfAborted();
                     route = this.store.plan(input.id, agent.id, config.gatewayKey, proposed);
                     if (goalId !== undefined && route.decision.contextId)
@@ -2314,12 +2311,10 @@ export default class TheOne extends Service {
             }
         }
         let proposed;
+        // Without the search the classifier sees the whole catalog (cut to fit, best-ranked first).
         if (searchFailed)
             receipt.errorCode = 'HISTORY_SEARCH_UNAVAILABLE';
-        if (searchFailed && referencesHistory(text)) {
-            proposed = { action: 'CLARIFY', reason: 'HISTORY_SEARCH_UNAVAILABLE', question: '历史检索暂时不可用，请稍后再试。' };
-        }
-        else if (this.router) {
+        if (this.router) {
             const recent = await this.recentMessages(agent, inputId, signal);
             try {
                 const corrections = this.similarCorrections(text);
@@ -2360,9 +2355,7 @@ export default class TheOne extends Service {
                     const router = this.router, incomplete = this.catalog.incomplete;
                     const reviews = await Promise.allSettled(pages.map(page => router.decide({ text, contexts: page, currentId, recent, historyIncomplete: incomplete, corrections, ...facts, running, ...folders }, signal, agent.id)));
                     const firstElapsed = result.elapsedMs;
-                    let checked = 0;
                     for (const settled of reviews) {
-                        checked++;
                         if (settled.status === 'rejected')
                             throw settled.reason;
                         const review = settled.value;
@@ -2379,8 +2372,6 @@ export default class TheOne extends Service {
                         if (proposed.historyIndependent && review.decision.historyIndependent !== true)
                             proposed = { ...proposed, historyIndependent: false };
                     }
-                    if (proposed.action === 'CREATE' && !proposed.historyIndependent && remaining.length > checked * pageSize)
-                        proposed = { action: 'CLARIFY', reason: 'CATALOG_REVIEW_LIMIT', question: '暂时没有找到明确相关的旧话题。你是在说一件新的事情吗？' };
                 }
                 Object.assign(receipt, { model: result.model, elapsedMs: result.elapsedMs,
                     promptTokens: result.usage?.prompt_tokens, completionTokens: result.usage?.completion_tokens });

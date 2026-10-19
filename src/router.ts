@@ -30,7 +30,7 @@ export function resolveContext(text: string, contexts: ContextDescriptor[], curr
     return { action: primary.id === current?.id ? 'KEEP' : current ? 'SWAP' : 'MOUNT', contextId: primary.id, reason: 'combined-contexts', relatedIds }
   }
   if (candidates.length > 1) {
-    return { action: 'CLARIFY', reason: 'multiple-contexts', question: '这句话涉及多个话题，请指定先处理哪个。' }
+    return { action: 'CLARIFY', reason: 'multiple-contexts', question: '这句话涉及多个话题，请指定先处理哪个。', relatedIds: candidates.map(context => context.id) }
   }
   // Corrections to details inside the selected topic are ordinary continuations.
   if (candidates.length === 1) {
@@ -38,7 +38,7 @@ export function resolveContext(text: string, contexts: ContextDescriptor[], curr
     const explicitEntity = [...context.entities, context.title].some(term => normalize(term).length >= 2 && positive.includes(normalize(term)))
     if (current && context.id !== current.id && !explicitEntity && !/回到|切换|换到|先.*(?:处理|修|聊)|谈谈|聊聊/.test(input)) {
       if (!referencesHistory(input)) return newIndependentTopic(input, contexts, 'weak-keyword-match')
-      return { action: 'CLARIFY', reason: 'keyword-only-switch', question: `你是在继续“${current.title}”，还是切换到“${context.title}”？` }
+      return { action: 'CLARIFY', reason: 'keyword-only-switch', question: `你是在继续“${current.title}”，还是切换到“${context.title}”？`, relatedIds: [current.id, context.id] }
     }
     return { action: current?.id === context.id ? 'KEEP' : current ? 'SWAP' : 'MOUNT', contextId: context.id, reason: 'entity-or-keyword' }
   }

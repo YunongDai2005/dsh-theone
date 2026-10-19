@@ -970,7 +970,7 @@ export function apply(ctx: Context) {
 
   type Post = (path: string, body: Record<string, unknown>) => Promise<boolean>
   const ROUTE_REASONS = new Set(['steering', 'short-continuation', 'attachment-only', 'correction', 'correction-unclear', 'explicit-new-topic',
-    'no-history-evidence', 'entity-or-keyword', 'keyword-only-switch', 'current-reference', 'combined-contexts', 'insufficient-evidence',
+    'no-history-evidence', 'unclear-settled', 'unclear-new', 'entity-or-keyword', 'keyword-only-switch', 'current-reference', 'combined-contexts', 'insufficient-evidence',
     'multiple-contexts', 'weak-keyword-match', 'no-history-match', 'CATALOG_NOT_READY', 'CATALOG_REVIEW_LIMIT', 'HISTORY_SEARCH_UNAVAILABLE'])
   const routeReason = (reason: string) => ROUTE_REASONS.has(reason) ? t(`route.reason.${reason}` as TheOneLocaleKey)
     : reason.startsWith('router-fallback:') ? t('route.reason.router-fallback') : reason

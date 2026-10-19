@@ -24,6 +24,22 @@ export function referencesHistory(text: string): boolean {
     || /^(?:continue|resume|go on|do that|that one|it)\s*[.!?]*$/i.test(input)
 }
 
+/**
+ * TheOne does not ask the user where a message belongs. An unclear decision settles on the topic the
+ * classifier leaned to (the current one when it is among the candidates), with the other candidates
+ * along as reference; with no candidate it stays in the current topic, or starts a new one. Only a
+ * missing model and an unclear "wrong topic" (a correction the user started) still ask.
+ */
+export function settleUnclear(decision: Decision, text: string, contexts: readonly ContextDescriptor[], currentId?: string): Decision {
+  if (decision.action !== 'CLARIFY' || decision.reason === 'ROUTER_MODEL_MISSING' || decision.reason === 'correction-unclear') return decision
+  const known = (id?: string): id is string => !!id && contexts.some(context => context.id === id)
+  const candidates = [...new Set(decision.relatedIds ?? [])].filter(known)
+  const chosen = currentId && candidates.includes(currentId) ? currentId : candidates[0] ?? (known(currentId) ? currentId : undefined)
+  if (!chosen) return newIndependentTopic(text, [...contexts], 'unclear-new')
+  const relatedIds = candidates.filter(id => id !== chosen).slice(0, 3)
+  return { action: chosen === currentId ? 'KEEP' : currentId ? 'SWAP' : 'MOUNT', contextId: chosen, reason: 'unclear-settled', ...(relatedIds.length ? { relatedIds } : {}) }
+}
+
 export function newIndependentTopic(text: string, contexts: ContextDescriptor[], reason: string): Decision {
   const base = redactRoutingText(text).trim().replace(/\s+/g, ' ').slice(0, 80) || 'New topic'
   let title = base

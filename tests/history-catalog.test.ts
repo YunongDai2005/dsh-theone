@@ -210,7 +210,7 @@ test('related groups remain separate from per-topic working sessions', () => {
   } finally { store.close() }
 })
 
-test('unresolved history stays blocked until repaired, while a standalone download can run during indexing', { timeout: 30000 }, async () => {
+test('while history is still being catalogued, a message about an old chat that cannot be found starts a topic instead of asking', { timeout: 30000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'theone-catalog-admission-'))
   const model = fixture()
   const app = await harness(root, model, { routerMode: 'llm', historyCatalog: true })
@@ -229,31 +229,26 @@ test('unresolved history stays blocked until repaired, while a standalone downlo
       }
       else yield* originalBehavior(options)
     }
-    const blocked = await ask(app.gateway, '继续昨天那个摄影计划')
-    assert.match(blocked.output, /之前哪件事/)
-    assert.equal(app.ctx.theone.store.route(blocked.input.id)?.decision.action, 'CLARIFY')
-    assert.ok(!app.ctx.theone.store.contexts().some(c => c.title === '摄影学习'))
     const before = app.ctx.theone.store.contexts().length
+    // The topic can still search its history itself; nothing stops the user to ask which chat they meant.
+    const unresolved = await ask(app.gateway, '继续昨天那个摄影计划')
+    assert.equal(unresolved.end?.data.reason.kind, 'completed')
+    assert.equal(app.ctx.theone.store.route(unresolved.input.id)?.decision.action, 'CREATE')
+    assert.equal(app.ctx.theone.store.route(unresolved.input.id)?.decision.historyIndependent, false)
+    assert.ok(app.ctx.theone.store.contexts().some(c => c.title === '摄影学习'))
     const download = await ask(app.gateway, '帮我下载 https://www.bilibili.com/video/BV1mSffBFE4A/ 这个音频到桌面最高码率')
     assert.equal(download.end?.data.reason.kind, 'completed')
     assert.equal(download.output, '测试回答')
     const route = app.ctx.theone.store.route(download.input.id)!
     assert.equal(route.decision.action, 'CREATE')
     assert.equal(route.decision.historyIndependent, true)
-    assert.equal(app.ctx.theone.store.contexts().length, before + 1)
+    assert.equal(app.ctx.theone.store.contexts().length, before + 2)
     assert.equal(app.ctx.theone.catalog!.incomplete, true)
     const context = app.ctx.theone.store.contexts().find(c => c.id === route.decision.contextId)!
     assert.ok(app.ctx.agents.get(SessionId(context.workingSessionId)))
-    // A subsequent message with a missing old reference must not inherit that permission.
-    const stillUnresolved = await ask(app.gateway, '继续之前那个摄影计划')
-    assert.equal(app.ctx.theone.store.route(stillUnresolved.input.id)?.decision.action, 'CLARIFY')
-    assert.equal(app.ctx.theone.store.contexts().length, before + 1)
     app.ctx.sessionQuery.readSession = originalRead
     await app.ctx.theone.catalog!.refresh()
     assert.equal(app.ctx.theone.catalog!.incomplete, false)
-    const created = await ask(app.gateway, '我想学习摄影，请给我一个计划')
-    assert.equal(created.end?.data.reason.kind, 'completed')
-    assert.equal(app.ctx.theone.store.route(created.input.id)?.decision.action, 'CREATE')
   } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
 })
 
@@ -284,16 +279,27 @@ test('candidate miss is reviewed against remaining catalog before an implicit ne
   } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
 })
 
-test('history search failure yields clarification and does not dispatch a new Worker', { timeout: 30000 }, async () => {
+test('when history search fails the classifier sees the whole catalog instead of the user being asked to retry', { timeout: 30000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'theone-catalog-search-failure-'))
-  const app = await harness(root, fixture(), { routerMode: 'llm', historyCatalog: true })
+  const model = fixture()
+  const offered: string[][] = []
+  model.behavior = async function* (options) {
+    if (options.system?.startsWith(ROUTING_PROMPT)) {
+      const payload = JSON.parse(options.messages[0].content.filter(b => b.type === 'text').map(b => b.text).join(''))
+      offered.push(payload.contexts.map((c: { id: string }) => c.id))
+      yield* textResponse(JSON.stringify({ action: 'EXISTING', contextId: 'ctx_thesis', title: null, question: null, reason: '论文' }))
+    } else yield* textResponse('测试回答')
+  }
+  const app = await harness(root, model, { routerMode: 'llm', historyCatalog: true })
   try {
     await app.ctx.theone.catalog!.refresh()
     app.ctx.theone.catalog!.candidates = async () => { throw new Error('private backend details') }
-    const result = await ask(app.gateway, '继续上次的摄影计划')
-    assert.match(result.output, /历史检索暂时不可用/)
-    assert.equal(app.ctx.theone.store.route(result.input.id)?.decision.action, 'CLARIFY')
-    assert.equal(app.model.requests.length, 0)
+    const result = await ask(app.gateway, '继续上次的论文')
+    assert.equal(result.output, '测试回答')
+    assert.equal(app.ctx.theone.store.route(result.input.id)?.decision.contextId, 'ctx_thesis')
+    assert.deepEqual(offered[0].sort(), app.ctx.theone.store.contexts().map(c => c.id).sort())
+    const receipt = app.ctx.theone.store.recentRoutes('test-gateway', 1)[0].receipt as { errorCode?: string }
+    assert.equal(receipt.errorCode, 'HISTORY_SEARCH_UNAVAILABLE')
   } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
 })
 
@@ -332,7 +338,7 @@ test('broken native FTS still routes known topics and admits independent CREATE'
 })
 
 
-test('large-catalog review limits do not stop standalone tasks or bypass unresolved-history clarification', { timeout: 30000 }, async () => {
+test('with a large catalog, a message about an old chat that the review cannot find starts a topic instead of asking', { timeout: 30000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'theone-catalog-review-limit-'))
   const model = fixture()
   const app = await harness(root, model, { routerMode:'llm', historyCatalog:true })
@@ -343,17 +349,18 @@ test('large-catalog review limits do not stop standalone tasks or bypass unresol
     model.behavior = async function* (options) {
       if (options.system?.startsWith(ROUTING_PROMPT)) {
         const payload = JSON.parse(options.messages[0].content.filter(b=>b.type==='text').map(b=>b.text).join(''))
-        yield* textResponse(JSON.stringify({action:'CREATE',contextId:null,title:'独立资料下载',question:null,reason:'首批未匹配',historyIndependent:payload.text.includes('https://example.com/guide.pdf')}))
+        yield* textResponse(JSON.stringify({action:'CREATE',contextId:null,title:payload.text.slice(0,12),question:null,reason:'首批未匹配',historyIndependent:payload.text.includes('https://example.com/guide.pdf')}))
       } else yield* textResponse('Worker 已收到完整请求')
     }
     const count = app.ctx.theone.store.contexts().length
-    const ambiguous = await ask(app.gateway,'继续上次的资料下载')
-    assert.equal(app.ctx.theone.store.route(ambiguous.input.id)?.decision.reason,'CATALOG_REVIEW_LIMIT')
-    assert.equal(app.ctx.theone.store.contexts().length,count)
+    const unresolved = await ask(app.gateway,'继续上次的资料下载')
+    assert.equal(unresolved.output,'Worker 已收到完整请求')
+    assert.equal(app.ctx.theone.store.route(unresolved.input.id)?.decision.action,'CREATE')
+    assert.equal(app.ctx.theone.store.contexts().length,count+1)
     const standalone = await ask(app.gateway,'把 https://example.com/guide.pdf 保存到桌面')
     assert.equal(standalone.output,'Worker 已收到完整请求')
     assert.equal(app.ctx.theone.store.route(standalone.input.id)?.decision.action,'CREATE')
-    assert.equal(app.ctx.theone.store.contexts().length,count+1)
+    assert.equal(app.ctx.theone.store.contexts().length,count+2)
   } finally { await app.close(); await rm(root,{recursive:true,force:true}) }
 })
 

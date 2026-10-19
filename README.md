@@ -160,7 +160,7 @@ Which comes first depends on what people need more. If you have a view, say so i
 **Choosing a topic.** Each message is matched to the current topic, an earlier one, or a new one. By default the model you selected makes one short classification (thinking off, at most 2,048 tokens), with candidates recalled through DSH full-text search.
 
 - When the quick decision would start a new topic, ask you, or goes against a number, code or name only one topic has mentioned, the same model looks again with thinking on (about one message in six). If that call fails, the first decision stands.
-- With no credible match it starts a new topic instead of asking whether it is new. It only asks when you refer to an earlier chat it cannot find, or it truly cannot tell which one you mean.
+- It never asks you where a message belongs. With no credible match it starts a new topic; when it cannot tell which of a few topics you mean, the closest one does the work and the others come along as reference; an earlier chat it cannot find continues the current topic, which can search your history itself.
 - When one message draws on several topics, the one doing the work gets it and the others come along as reference.
 - "ok" or "go on" continues the current topic without waiting for a decision, and so does a picture or file sent without words.
 - If the classification call fails, rules decide, staying in the current topic when unsure. Rule-based routing (`THEONE_ROUTER_MODE=rules`) makes no model calls at all.

@@ -165,7 +165,7 @@ export function validateRoutingDecision(value, input) {
         // No history evidence: don't let answer uncertainty block an ordinary new question.
         if (!referencesHistory(input.text) && candidates.size < 2)
             return newIndependentTopic(input.text, input.contexts, 'no-history-evidence');
-        return { action: 'CLARIFY', question: row.question, reason };
+        return { action: 'CLARIFY', question: row.question, reason, ...(candidates.size ? { relatedIds: [...candidates] } : {}) };
     }
     return fail();
 }
