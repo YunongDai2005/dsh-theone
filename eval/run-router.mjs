@@ -32,7 +32,10 @@ const here = dirname(fileURLToPath(import.meta.url))
 const looks = await import('../dist/routing-evidence.js').catch(() => undefined)
 // Builds before the card schedule and summary were shared fall back to what those builds did.
 const cardDue = memory.cardDue ?? (replies => memory.CARD_AFTER_REPLIES.includes(replies))
-const cardSummary = memory.cardSummary ?? (card => [card.summary, card.open.length ? `待定：${card.open.join('；')}` : ''].filter(Boolean).join(' ').slice(0, 600))
+// Builds before settled values were kept apart fold the card into the summary as they did.
+const settleCard = memory.mergeSettled && memory.routingSummary
+  ? (topic, card) => { topic.settled = memory.mergeSettled(topic.settled ?? [], card.settled, topic.texts.length); topic.summary = memory.routingSummary(topic.base ?? card.summary, topic.settled, card.open) }
+  : (topic, card) => { topic.summary = (memory.cardSummary ?? (c => [c.summary, c.open.length ? `待定：${c.open.join('；')}` : ''].filter(Boolean).join(' ').slice(0, 600)))(card) }
 
 /** Added to the routing prompt when a burst's messages are decided one by one in a single call. */
 export const BATCH_PROMPT = `
@@ -81,10 +84,13 @@ export async function routeSession(session, { mode, policy, client, merge = 'non
         tag: `card:${session.session_id}:${topic.id}:${topic.texts.length}:${policy}` })
       const card = memory.parseCard(answer.value, redactRoutingText)
       if (!card) return usageOf(answer)
-      const merge = (first, then) => [...new Set([...first, ...then])].filter(Boolean).slice(0, 24)
-      topic.summary = cardSummary(card)
-      topic.keywords = merge(topic.keywords, card.aliases)
-      topic.entities = merge(card.entities, topic.entities)
+      const merge = (first, then, max) => [...new Set([...first, ...then])].filter(Boolean).slice(0, max)
+      // As TheOne keeps them: the card's summary as the topic's base, its settled values beside it,
+      // other names added with the newest first, entities newest first.
+      topic.base = card.summary
+      settleCard(topic, card)
+      topic.keywords = merge(card.aliases, topic.keywords, 80)
+      topic.entities = merge(card.entities, topic.entities, 48)
       return usageOf(answer)
     } catch { /* no card: the topic keeps what it had, as in TheOne */ }
   }

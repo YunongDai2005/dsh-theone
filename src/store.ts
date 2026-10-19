@@ -6,7 +6,7 @@ import { randomUUID, createHash } from 'node:crypto'
 import type { ExtractedTopic, HiddenReason, HistoryPart, TopicGroup } from './catalog-types.ts'
 import type { ContextDescriptor, ContextUsage, Decision, Progress, RouteRecord, RouteView, StoredContext, SourceRange, TopicLink } from './types.ts'
 import { FACT_KINDS, FACT_LIMITS, factKey, safe, type FactEvidence, type FactKind, type FactStatus, type FactView } from './facts.ts'
-import { cardSummary, type TopicCard } from './topic-memory.ts'
+import { mergeSettled, type Settled, type TopicCard } from './topic-memory.ts'
 
 /** A write to a topic's facts, after its evidence was checked against the session. */
 export interface FactWrite {
@@ -167,6 +167,15 @@ export class ContextStore {
         moved_to TEXT NOT NULL, request TEXT NOT NULL, at INTEGER NOT NULL
       );
       CREATE TABLE IF NOT EXISTS stowed_sessions (session_id TEXT PRIMARY KEY, stowed_at INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS topic_names (
+        context_id TEXT NOT NULL, name_key TEXT NOT NULL, name TEXT NOT NULL, first_at INTEGER NOT NULL, last_at INTEGER NOT NULL,
+        PRIMARY KEY (context_id, name_key)
+      );
+      CREATE TABLE IF NOT EXISTS topic_settled (
+        context_id TEXT NOT NULL, label_key TEXT NOT NULL, label TEXT NOT NULL, value TEXT NOT NULL, since INTEGER NOT NULL,
+        previous TEXT, previous_since INTEGER, PRIMARY KEY (context_id, label_key)
+      );
+      CREATE TABLE IF NOT EXISTS topic_open (context_id TEXT PRIMARY KEY, items TEXT NOT NULL, at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS route_details (
         message_id TEXT PRIMARY KEY, excerpt TEXT NOT NULL, receipt TEXT, corrected_to TEXT, corrected_at INTEGER
       );
@@ -275,25 +284,51 @@ export class ContextStore {
   }
 
   /**
-   * A topic's routing card: other names and entities join its keywords, and its summary is replaced
-   * unless a compaction summary (written from the whole session) already took its place.
+   * A topic's routing card. Other names are added, never pushed out by newer ones; settled values
+   * keep the value they replaced and when; what is open is replaced. The card's summary replaces a
+   * placeholder summary, not a compaction summary (written from the whole session); either way
+   * routing reads the current settled values and open items beside it (see routingSummary).
    */
-  applyCard(contextId: string, card: TopicCard): void {
+  applyCard(contextId: string, card: TopicCard, now = Date.now()): void {
     this.db.exec('BEGIN IMMEDIATE')
     try {
       const context = this.contexts().find(item => item.id === contextId)
       if (!context) { this.db.exec('COMMIT'); return }
       const { workingSessionId: _, ...descriptor } = context
-      const merge = (first: string[], then: string[]) => {
-        const seen = new Set<string>()
-        return [...first, ...then].filter(term => { const key = term.toLowerCase(); return term && !seen.has(key) && seen.add(key) }).slice(0, 24)
-      }
+      for (const name of card.aliases) this.db.prepare(`INSERT INTO topic_names VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(context_id, name_key) DO UPDATE SET last_at = excluded.last_at`).run(contextId, name.toLowerCase(), name, now, now)
+      for (const item of mergeSettled(this.settled(contextId), card.settled, now))
+        this.db.prepare(`INSERT OR REPLACE INTO topic_settled VALUES (?, ?, ?, ?, ?, ?, ?)`)
+          .run(contextId, item.label.toLowerCase(), item.label, item.value, item.since, item.previous ?? null, item.previousSince ?? null)
+      this.db.prepare('INSERT OR REPLACE INTO topic_open VALUES (?, ?, ?)').run(contextId, JSON.stringify(card.open), now)
+      const seen = new Set<string>()
+      const entities = [...card.entities, ...descriptor.entities].filter(term => { const key = term.toLowerCase(); return term && !seen.has(key) && seen.add(key) }).slice(0, 48)
       const compacted = this.summaryUpdates(contextId).length > 0
-      const summary = compacted ? descriptor.summary : cardSummary(card)
-      this.db.prepare('UPDATE contexts SET descriptor = ? WHERE id = ?').run(JSON.stringify({ ...descriptor, summary,
-        keywords: merge(descriptor.keywords, card.aliases), entities: merge(card.entities, descriptor.entities) }), contextId)
+      this.db.prepare('UPDATE contexts SET descriptor = ? WHERE id = ?').run(JSON.stringify({ ...descriptor, summary: compacted ? descriptor.summary : card.summary, entities }), contextId)
       this.db.exec('COMMIT')
     } catch (error) { this.db.exec('ROLLBACK'); throw error }
+  }
+
+  /** Other names cards gave a topic (or every topic), most recently confirmed first. */
+  names(contextId?: string): Map<string, string[]> {
+    const rows = (contextId === undefined ? this.db.prepare('SELECT context_id, name FROM topic_names ORDER BY last_at DESC, rowid ASC').all()
+      : this.db.prepare('SELECT context_id, name FROM topic_names WHERE context_id = ? ORDER BY last_at DESC, rowid ASC').all(contextId))
+    const out = new Map<string, string[]>()
+    for (const row of rows) out.set(String(row.context_id), [...out.get(String(row.context_id)) ?? [], String(row.name)])
+    return out
+  }
+
+  /** Values a topic settled on, most recently recorded first, each with the value it replaced. */
+  settled(contextId: string): Settled[] {
+    return this.db.prepare('SELECT * FROM topic_settled WHERE context_id = ? ORDER BY since DESC, rowid ASC').all(contextId).map(row => ({
+      label: String(row.label), value: String(row.value), since: Number(row.since),
+      ...(row.previous == null ? {} : { previous: String(row.previous), previousSince: Number(row.previous_since) }) }))
+  }
+
+  /** What the topic's latest card says is still open. */
+  openItems(contextId: string): string[] {
+    const row = this.db.prepare('SELECT items FROM topic_open WHERE context_id = ?').get(contextId)
+    return row ? JSON.parse(String(row.items)) as string[] : []
   }
 
   groups(): TopicGroup[] {
@@ -879,6 +914,9 @@ export class ContextStore {
       this.db.prepare('UPDATE gateway_state SET context_id = ? WHERE context_id = ?').run(targetId, sourceId)
       this.db.prepare('UPDATE route_details SET corrected_to = ? WHERE corrected_to = ?').run(targetId, sourceId)
       this.db.prepare('INSERT OR IGNORE INTO learned_terms SELECT ?, term, weight, updated_at FROM learned_terms WHERE context_id = ?').run(targetId, sourceId)
+      // The merged topic keeps both topics' names; its own settled values win over the source's.
+      this.db.prepare('INSERT OR IGNORE INTO topic_names SELECT ?, name_key, name, first_at, last_at FROM topic_names WHERE context_id = ?').run(targetId, sourceId)
+      this.db.prepare('INSERT OR IGNORE INTO topic_settled SELECT ?, label_key, label, value, since, previous, previous_since FROM topic_settled WHERE context_id = ?').run(targetId, sourceId)
       const rules = [this.constraints(targetId)?.text, this.constraints(sourceId)?.text].filter(Boolean)
       if (rules.length) this.setConstraints(targetId, rules.join('\n').slice(0, 400))
       for (const link of this.links(sourceId)) {
@@ -909,7 +947,7 @@ export class ContextStore {
   private purge(contextId: string): void {
     for (const table of ['topic_group_members', 'history_turns', 'context_origins', 'context_sources', 'context_source_ranges',
       'gateway_state', 'context_state_updates', 'context_summary_updates', 'topic_flags', 'compaction_digests', 'learned_terms',
-      'topic_runs', 'topic_status'])
+      'topic_runs', 'topic_status', 'topic_names', 'topic_settled', 'topic_open'])
       this.db.prepare(`DELETE FROM ${table} WHERE context_id = ?`).run(contextId)
     this.db.prepare('DELETE FROM topic_links WHERE a = ? OR b = ?').run(contextId, contextId)
     this.db.prepare('DELETE FROM hidden_contexts WHERE context_id = ?').run(contextId)

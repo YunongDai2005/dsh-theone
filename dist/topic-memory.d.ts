@@ -21,8 +21,26 @@ export interface TopicCard {
     settled: string[];
     open: string[];
 }
-/** What routing reads as the topic's summary: what it is, what it has settled on, and what is still open. */
-export declare function cardSummary(card: TopicCard): string;
+/** A value a topic settled on, when it was recorded, and the value it replaced. */
+export interface Settled {
+    label: string;
+    value: string;
+    since: number;
+    previous?: string;
+    previousSince?: number;
+}
+/** "月度预算：1600元" or "budget: 1600" as label and value; an item without a label is its own label. */
+export declare function settledItem(text: string): {
+    label: string;
+    value: string;
+};
+/**
+ * Fold a card's settled items into what the topic had settled. A changed value keeps the one it
+ * replaced and when; an item the card left out stays (cards list only a few), newest first.
+ */
+export declare function mergeSettled(existing: readonly Settled[], items: readonly string[], now: number): Settled[];
+/** What routing reads as a topic's summary: what it is, its current settled values (newest first), and what is still open. */
+export declare function routingSummary(summary: string, settled: readonly Settled[], open: readonly string[]): string;
 /** The request for one card: the topic as it stands and its latest exchanges, newest kept. */
 export declare function cardPayload(topic: {
     title: string;

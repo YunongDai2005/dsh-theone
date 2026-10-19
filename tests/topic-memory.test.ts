@@ -6,7 +6,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ROUTING_PROMPT } from '../src/llm-router.ts'
-import { activityLabel, CARD_PROMPT, cardDue, learnDormancy, parseCard } from '../src/topic-memory.ts'
+import { activityLabel, CARD_PROMPT, cardDue, learnDormancy, parseCard, routingSummary } from '../src/topic-memory.ts'
 import { FixtureModel, harness, ask, textResponse } from './harness.ts'
 
 const DAY = 86400000
@@ -33,22 +33,45 @@ test('a card adds names and entities, replaces only a placeholder summary, and r
   const card = parseCard({ summary: '咖啡店秋季新品上线：定价、上新日期、宣传', aliases: ['上新日期', '南瓜拿铁', 42], entities: ['桂花冷萃'], open: ['上新日期'] }, text => text)!
   store.applyCard('cafe', card)
   const topic = store.contexts()[0]
-  assert.equal(topic.summary, '咖啡店秋季新品上线：定价、上新日期、宣传 待定：上新日期')
-  assert.deepEqual(topic.keywords, ['咖啡店秋季上新', '上新日期', '南瓜拿铁'])
+  assert.equal(topic.summary, '咖啡店秋季新品上线：定价、上新日期、宣传')
+  assert.deepEqual(store.names('cafe').get('cafe'), ['上新日期', '南瓜拿铁'])
+  assert.deepEqual(store.openItems('cafe'), ['上新日期'])
+  assert.equal(routingSummary(topic.summary, store.settled('cafe'), store.openItems('cafe')), '咖啡店秋季新品上线：定价、上新日期、宣传 待定：上新日期')
   assert.deepEqual(topic.entities, ['桂花冷萃'])
   const payload = routingPayload({ text: '上新日期得改', contexts: [{ ...topic, activity: '3 小时前' }] })
   assert.equal(payload.contexts[0].activity, '3 小时前')
   assert.ok(!('activity' in routingPayload({ text: 'x', contexts: [topic] }).contexts[0]))
 })
 
-test('a card keeps the values the topic settled on, newest card wins, and is rewritten as the topic goes on', () => {
+test('new names are added, not pushed out: an old name stays searchable while the newest come first, and compaction does not freeze settled values', () => {
+  const store = new ContextStore(':memory:')
+  store.seed([{ id: 'flat', title: '租房', summary: '新话题，尚无历史摘要。', entities: [], keywords: [], lastState: '' }])
+  for (let round = 0; round < 6; round++)
+    store.applyCard('flat', parseCard({ summary: '找房、签约、押金', aliases: Array.from({ length: 8 }, (_, i) => `叫法${round}-${i}`), settled: [`押金：${1000 + round}`], open: [] }, text => text)!, round + 1)
+  const names = store.names('flat').get('flat')!
+  assert.equal(names.length, 48, 'nothing pushed out')
+  assert.ok(names[0].startsWith('叫法5-') && names.includes('叫法0-0'))
+  // Compaction replaces the summary text; settled values still reach routing, current ones.
+  store.updateSummary('flat', '压缩后的摘要：已经签约，在谈押金', store.contexts()[0].workingSessionId, 10, 20)
+  store.applyCard('flat', parseCard({ summary: '卡片摘要', aliases: [], settled: ['押金：1800'], open: ['退不退中介费'] }, text => text)!, 99)
+  const topic = store.contexts()[0]
+  assert.equal(routingSummary(topic.summary, store.settled('flat'), store.openItems('flat')), '压缩后的摘要：已经签约，在谈押金 已定：押金：1800 待定：退不退中介费')
+})
+
+test('settled values keep when they were recorded and what they replaced; routing reads only the current value', () => {
   const store = new ContextStore(':memory:')
   store.seed([{ id: 'budget', title: '家庭月度记账', summary: '新话题，尚无历史摘要。', entities: [], keywords: [], lastState: '' }])
-  store.applyCard('budget', parseCard({ summary: '每月记账，控制开销', aliases: [], entities: [], settled: ['月度目标：1500元', 7], open: [] }, text => text)!)
-  assert.equal(store.contexts()[0].summary, '每月记账，控制开销 已定：月度目标：1500元')
-  // A later card replaces the old value instead of keeping both.
-  store.applyCard('budget', parseCard({ summary: '每月记账，控制开销', aliases: [], entities: [], settled: ['月度目标：1600元'], open: ['要不要记现金'] }, text => text)!)
-  assert.equal(store.contexts()[0].summary, '每月记账，控制开销 已定：月度目标：1600元 待定：要不要记现金')
+  const view = () => routingSummary(store.contexts()[0].summary, store.settled('budget'), store.openItems('budget'))
+  store.applyCard('budget', parseCard({ summary: '每月记账，控制开销', aliases: [], entities: [], settled: ['月度目标：1500元', 7], open: [] }, text => text)!, 1000)
+  assert.equal(view(), '每月记账，控制开销 已定：月度目标：1500元')
+  store.applyCard('budget', parseCard({ summary: '每月记账，控制开销', aliases: [], entities: [], settled: ['月度目标：1600元', '记账工具：表格'], open: ['要不要记现金'] }, text => text)!, 2000)
+  assert.deepEqual(store.settled('budget').find(item => item.label === '月度目标'), { label: '月度目标', value: '1600元', since: 2000, previous: '1500元', previousSince: 1000 })
+  assert.equal(view(), '每月记账，控制开销 已定：月度目标：1600元；记账工具：表格 待定：要不要记现金')
+  // A card that leaves a value out does not erase it; an unchanged value keeps its time.
+  store.applyCard('budget', parseCard({ summary: '每月记账，控制开销', aliases: [], entities: [], settled: ['记账工具：表格'], open: [] }, text => text)!, 3000)
+  assert.equal(store.settled('budget').find(item => item.label === '记账工具')?.since, 2000)
+  assert.equal(store.settled('budget').find(item => item.label === '月度目标')?.value, '1600元')
+  assert.deepEqual(store.openItems('budget'), [])
   assert.deepEqual(parseCard({ summary: 'x', settled: Array.from({ length: 9 }, (_, i) => `项${i}：${'值'.repeat(80)}`) }, text => text)!.settled.map(item => item.length), Array(6).fill(60))
   assert.deepEqual([...Array(30).keys()].filter(cardDue), [1, 4, 12, 20, 28])
 })
@@ -80,7 +103,7 @@ test('after a topic’s first reply a card is written in the background, and rou
     assert.equal(cards, 1)
     assert.equal(model.requests.find(r => r.system === CARD_PROMPT)?.sessionId,
       app.ctx.theone.store.contexts().find(context => context.id === 'ctx_qwen_9070xt')!.workingSessionId)
-    assert.ok(app.ctx.theone.store.contexts().find(context => context.id === 'ctx_qwen_9070xt')!.keywords.includes('显卡那件事'))
+    assert.ok(app.ctx.theone.store.names('ctx_qwen_9070xt').get('ctx_qwen_9070xt')?.includes('显卡那件事'))
     await ask(app.gateway, '显卡那件事接着说一下驱动')
     await app.ctx.theone.extracting
     const qwen = routed.at(-1)!.contexts.find(context => context.id === 'ctx_qwen_9070xt')!

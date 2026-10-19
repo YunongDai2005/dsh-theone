@@ -20,10 +20,35 @@ export const CARD_PROMPT = `你在为一个话题写一张路由卡片：以后�
 
 export interface TopicCard { summary: string; aliases: string[]; entities: string[]; settled: string[]; open: string[] }
 
-/** What routing reads as the topic's summary: what it is, what it has settled on, and what is still open. */
-export function cardSummary(card: TopicCard): string {
-  return [card.summary, card.settled.length ? `已定：${card.settled.join('；')}` : '', card.open.length ? `待定：${card.open.join('；')}` : '']
-    .filter(Boolean).join(' ').slice(0, 600)
+/** A value a topic settled on, when it was recorded, and the value it replaced. */
+export interface Settled { label: string; value: string; since: number; previous?: string; previousSince?: number }
+
+/** "月度预算：1600元" or "budget: 1600" as label and value; an item without a label is its own label. */
+export function settledItem(text: string): { label: string; value: string } {
+  const at = text.search(/[：:]/)
+  return at > 0 ? { label: text.slice(0, at).trim(), value: text.slice(at + 1).trim() } : { label: text.trim(), value: text.trim() }
+}
+
+/**
+ * Fold a card's settled items into what the topic had settled. A changed value keeps the one it
+ * replaced and when; an item the card left out stays (cards list only a few), newest first.
+ */
+export function mergeSettled(existing: readonly Settled[], items: readonly string[], now: number): Settled[] {
+  const byLabel = new Map(existing.map(item => [item.label.toLowerCase(), { ...item }]))
+  for (const text of items) {
+    const { label, value } = settledItem(text)
+    if (!label) continue
+    const known = byLabel.get(label.toLowerCase())
+    if (!known) byLabel.set(label.toLowerCase(), { label, value, since: now })
+    else if (known.value !== value) byLabel.set(label.toLowerCase(), { label, value, since: now, previous: known.value, previousSince: known.since })
+  }
+  return [...byLabel.values()].sort((a, b) => b.since - a.since)
+}
+
+/** What routing reads as a topic's summary: what it is, its current settled values (newest first), and what is still open. */
+export function routingSummary(summary: string, settled: readonly Settled[], open: readonly string[]): string {
+  const values = settled.slice(0, CARD_LIMITS.settled).map(item => item.value === item.label ? item.label : `${item.label}：${item.value}`)
+  return [summary, values.length ? `已定：${values.join('；')}` : '', open.length ? `待定：${open.join('；')}` : ''].filter(Boolean).join(' ').slice(0, 600)
 }
 
 /** The request for one card: the topic as it stands and its latest exchanges, newest kept. */

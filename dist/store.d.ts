@@ -2,7 +2,7 @@ import type { ModelSelection } from '@deepseek-ai/dsh-agent';
 import type { ExtractedTopic, HiddenReason, HistoryPart, TopicGroup } from './catalog-types.ts';
 import type { ContextDescriptor, ContextUsage, Decision, Progress, RouteRecord, RouteView, StoredContext, SourceRange, TopicLink } from './types.ts';
 import { type FactEvidence, type FactKind, type FactView } from './facts.ts';
-import { type TopicCard } from './topic-memory.ts';
+import { type Settled, type TopicCard } from './topic-memory.ts';
 /** A write to a topic's facts, after its evidence was checked against the session. */
 export interface FactWrite {
     factId?: string;
@@ -70,10 +70,18 @@ export declare class ContextStore {
         at: number;
     }[];
     /**
-     * A topic's routing card: other names and entities join its keywords, and its summary is replaced
-     * unless a compaction summary (written from the whole session) already took its place.
+     * A topic's routing card. Other names are added, never pushed out by newer ones; settled values
+     * keep the value they replaced and when; what is open is replaced. The card's summary replaces a
+     * placeholder summary, not a compaction summary (written from the whole session); either way
+     * routing reads the current settled values and open items beside it (see routingSummary).
      */
-    applyCard(contextId: string, card: TopicCard): void;
+    applyCard(contextId: string, card: TopicCard, now?: number): void;
+    /** Other names cards gave a topic (or every topic), most recently confirmed first. */
+    names(contextId?: string): Map<string, string[]>;
+    /** Values a topic settled on, most recently recorded first, each with the value it replaced. */
+    settled(contextId: string): Settled[];
+    /** What the topic's latest card says is still open. */
+    openItems(contextId: string): string[];
     groups(): TopicGroup[];
     isGateway(sessionId: string): boolean;
     /** Record the fixed "TheOne · Main chat" entry; other sessions may also use TheOne and switch away. */

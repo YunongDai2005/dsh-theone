@@ -98,6 +98,9 @@ export function topicDigest(store: ContextStore, context: StoredContext, summary
     .filter(state => !digest || sqlTime(state.createdAt) > digest.at).slice(-updates)
   if (digest) lines.push(`压缩摘要（截至 ${stamp(digest.at)}）：${clip(digest.summary, summaryChars)}`)
   else lines.push(`摘要：${clip(context.summary, Math.min(summaryChars, 400))}`)
+  // Each value with when it was recorded, and what it replaced, so an old value is never read as today's.
+  const settled = store.settled(context.id).slice(0, 6)
+  if (settled.length) lines.push(`已定（记录时间）：${settled.map(item => `${item.value === item.label ? item.label : `${item.label} ${item.value}`}（${stamp(item.since)}${item.previous ? `；之前是 ${item.previous}` : ''}）`).join('；')}`)
   for (const state of states) lines.push(`进展（${stamp(sqlTime(state.createdAt))}）：${clip(state.state, 300)}`)
   if (!states.length && !digest && context.lastState) lines.push(`最新状态：${clip(context.lastState, 300)}`)
   return lines
