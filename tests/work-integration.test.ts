@@ -72,7 +72,7 @@ test('chat monitoring requires a quote and URL from this user turn and remains t
   } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
 })
 
-test('memory proposals cannot merge after their source is archived, even when already checkpointed', async () => {
+test('memory proposals cannot merge after their source is gone, even when already checkpointed', async () => {
   const root = await mkdtemp(join(tmpdir(), 'theone-work-hidden-'))
   const app = await harness(root, undefined, { theoneConfig: { factLinks: true, factExtraction: true } })
   try {
@@ -83,7 +83,7 @@ test('memory proposals cannot merge after their source is archived, even when al
     const claim = app.ctx.theone.work.store.claim()!
     app.ctx.theone.work.store.checkpoint(claim, [{ op: 'set', label: '预算', kind: 'fact', value: '800', evidenceQuote: '预算定为 800 元' }])
     app.ctx.theone.work.store.release(claim)
-    app.ctx.theone.store.replaceHidden([{ id: topic.id, reason: 'archived' }])
+    app.ctx.theone.store.replaceHidden([{ id: topic.id, reason: 'orphaned' }])
     await app.ctx.theone.work.tick()
     assert.equal(app.ctx.theone.work.store.get(job.id)?.state, 'completed')
     assert.equal(app.ctx.theone.store.facts(topic.id).length, 0)

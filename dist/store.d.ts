@@ -374,6 +374,11 @@ export declare class ContextStore {
      * recomputes this set, so restoring a conversation or unarchiving it brings the topic back.
      */
     hiddenReasons(): Map<string, HiddenReason>;
+    /**
+     * Topics with nothing left to read (every conversation gone from disk). An archived topic is only
+     * put away: it still answers when the user comes back to it.
+     */
+    unreachable(): Set<string>;
     /** Replace the hidden set in one write, so a scan never leaves a stale entry behind. */
     replaceHidden(entries: readonly {
         id: string;

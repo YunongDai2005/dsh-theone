@@ -88,7 +88,7 @@ test('a topic whose conversations are gone stops reaching the router, and return
   } finally { await catalog.close(); await app.close(); await rm(root, { recursive: true, force: true }) }
 })
 
-test('a topic whose conversations are all archived is hidden while archived and visible again after', { timeout: 60000 }, async () => {
+test('a topic whose conversations are all archived is marked put away, still found when talked about, and unmarked after', { timeout: 60000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'theone-archived-'))
   const model = fixture()
   const app = await harness(root, model, { routerMode: 'llm' })
@@ -106,7 +106,11 @@ test('a topic whose conversations are all archived is hidden while archived and 
     await catalog.refresh()
     assert.equal(catalog.snapshot().contexts.find(context => context.id === topic.id)!.hidden, 'archived')
     assert.equal(catalog.snapshot().status.hidden, 1)
-    assert.ok(!(await catalog.candidates('继续论文方法', undefined, undefined, {})).some(context => context.id === topic.id))
+    // Archived is put away, not gone: the topic is still found when the message is about it, offered last.
+    assert.ok((await catalog.candidates('继续论文方法', undefined, undefined, {})).some(context => context.id === topic.id))
+    const routing = (app.ctx.theone as unknown as { routingContexts(): { id: string; activity?: string }[] }).routingContexts()
+    assert.match(routing.find(context => context.id === topic.id)!.activity ?? '', /^已归档/)
+    assert.equal(routing.at(-1)!.id, topic.id)
 
     // Unarchiving brings the topic straight back, and its history is still indexed.
     archived = []

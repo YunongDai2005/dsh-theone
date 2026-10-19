@@ -233,7 +233,7 @@ export declare const zh: {
     readonly 'catalog.unassignedSummary': "这些话题还在等待自动归类。";
     readonly 'topic.opening': "正在打开…";
     readonly 'topic.continue': "继续聊天";
-    readonly 'topic.continueHidden': "这个话题的原会话已不在（已删除或已归档），没有可以接着聊的内容。取消归档后即可继续。";
+    readonly 'topic.continueHidden': "这个话题的原会话已从磁盘上消失，没有可以接着聊的内容。";
     readonly 'topic.source': "查看原会话";
     readonly 'topic.state': "进展：";
     readonly 'topic.constraints': "约束：";
@@ -244,7 +244,7 @@ export declare const zh: {
     readonly 'topic.markDone': "标为完成";
     readonly 'topic.reopen': "重新打开";
     readonly 'topic.hiddenOrphaned': "来源会话已从磁盘上消失：本话题不再参与路由，删除即可从目录移除。";
-    readonly 'topic.hiddenArchived': "来源会话已归档：本话题不再参与路由，取消归档或删除它即可。";
+    readonly 'topic.hiddenArchived': "来源会话已归档：话题只是收起来了，提到它时仍会照常接上。";
     readonly 'manage.open': "管理";
     readonly 'manage.close': "收起";
     readonly 'manage.title': "标题";

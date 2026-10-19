@@ -1290,6 +1290,14 @@ export class ContextStore {
       .map(row => [String(row.context_id), String(row.reason) as HiddenReason] as const))
   }
 
+  /**
+   * Topics with nothing left to read (every conversation gone from disk). An archived topic is only
+   * put away: it still answers when the user comes back to it.
+   */
+  unreachable(): Set<string> {
+    return new Set([...this.hiddenReasons()].filter(([, reason]) => reason === 'orphaned').map(([id]) => id))
+  }
+
   /** Replace the hidden set in one write, so a scan never leaves a stale entry behind. */
   replaceHidden(entries: readonly { id: string; reason: string }[], now = Date.now()): void {
     this.db.exec('BEGIN IMMEDIATE')

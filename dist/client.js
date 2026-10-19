@@ -320,7 +320,7 @@ var zh = {
   "catalog.unassignedSummary": "\u8FD9\u4E9B\u8BDD\u9898\u8FD8\u5728\u7B49\u5F85\u81EA\u52A8\u5F52\u7C7B\u3002",
   "topic.opening": "\u6B63\u5728\u6253\u5F00\u2026",
   "topic.continue": "\u7EE7\u7EED\u804A\u5929",
-  "topic.continueHidden": "\u8FD9\u4E2A\u8BDD\u9898\u7684\u539F\u4F1A\u8BDD\u5DF2\u4E0D\u5728\uFF08\u5DF2\u5220\u9664\u6216\u5DF2\u5F52\u6863\uFF09\uFF0C\u6CA1\u6709\u53EF\u4EE5\u63A5\u7740\u804A\u7684\u5185\u5BB9\u3002\u53D6\u6D88\u5F52\u6863\u540E\u5373\u53EF\u7EE7\u7EED\u3002",
+  "topic.continueHidden": "\u8FD9\u4E2A\u8BDD\u9898\u7684\u539F\u4F1A\u8BDD\u5DF2\u4ECE\u78C1\u76D8\u4E0A\u6D88\u5931\uFF0C\u6CA1\u6709\u53EF\u4EE5\u63A5\u7740\u804A\u7684\u5185\u5BB9\u3002",
   "topic.source": "\u67E5\u770B\u539F\u4F1A\u8BDD",
   "topic.state": "\u8FDB\u5C55\uFF1A",
   "topic.constraints": "\u7EA6\u675F\uFF1A",
@@ -331,7 +331,7 @@ var zh = {
   "topic.markDone": "\u6807\u4E3A\u5B8C\u6210",
   "topic.reopen": "\u91CD\u65B0\u6253\u5F00",
   "topic.hiddenOrphaned": "\u6765\u6E90\u4F1A\u8BDD\u5DF2\u4ECE\u78C1\u76D8\u4E0A\u6D88\u5931\uFF1A\u672C\u8BDD\u9898\u4E0D\u518D\u53C2\u4E0E\u8DEF\u7531\uFF0C\u5220\u9664\u5373\u53EF\u4ECE\u76EE\u5F55\u79FB\u9664\u3002",
-  "topic.hiddenArchived": "\u6765\u6E90\u4F1A\u8BDD\u5DF2\u5F52\u6863\uFF1A\u672C\u8BDD\u9898\u4E0D\u518D\u53C2\u4E0E\u8DEF\u7531\uFF0C\u53D6\u6D88\u5F52\u6863\u6216\u5220\u9664\u5B83\u5373\u53EF\u3002",
+  "topic.hiddenArchived": "\u6765\u6E90\u4F1A\u8BDD\u5DF2\u5F52\u6863\uFF1A\u8BDD\u9898\u53EA\u662F\u6536\u8D77\u6765\u4E86\uFF0C\u63D0\u5230\u5B83\u65F6\u4ECD\u4F1A\u7167\u5E38\u63A5\u4E0A\u3002",
   "manage.open": "\u7BA1\u7406",
   "manage.close": "\u6536\u8D77",
   "manage.title": "\u6807\u9898",
@@ -661,7 +661,7 @@ var en = {
   "catalog.unassignedSummary": "These topics are waiting to be grouped.",
   "topic.opening": "Opening\u2026",
   "topic.continue": "Continue chatting",
-  "topic.continueHidden": "This topic\u2019s conversations are gone (deleted or archived), so there is nothing to continue. Unarchive them to pick it up again.",
+  "topic.continueHidden": "This topic\u2019s conversations are gone from disk, so there is nothing to continue.",
   "topic.source": "View original chat",
   "topic.state": "Progress:",
   "topic.constraints": "Constraints:",
@@ -672,7 +672,7 @@ var en = {
   "topic.markDone": "Mark done",
   "topic.reopen": "Reopen",
   "topic.hiddenOrphaned": "Its conversations are gone from disk: this topic no longer takes part in routing. Delete it to remove it from the directory.",
-  "topic.hiddenArchived": "Its conversations are archived: this topic no longer takes part in routing. Unarchive or delete it.",
+  "topic.hiddenArchived": "Its conversations are archived: the topic is only put away, and picks up again when you mention it.",
   "manage.open": "Manage",
   "manage.close": "Close",
   "manage.title": "Title",
@@ -4423,7 +4423,7 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
           const links = linkRow(id);
           return [(0, import_react2.createElement)(
             "li",
-            { key: id, className: `theone-topic-card${open ? " theone-open" : ""}${topic.hidden ? " theone-hidden" : ""}` },
+            { key: id, className: `theone-topic-card${open ? " theone-open" : ""}${topic.hidden === "orphaned" ? " theone-hidden" : ""}` },
             (0, import_react2.createElement)(
               "div",
               { className: "theone-topic-main" },
@@ -4442,12 +4442,12 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
             (0, import_react2.createElement)(
               "div",
               { className: "theone-topic-actions" },
-              // A hidden topic has nothing left to continue: its conversations are gone or archived.
+              // A topic whose conversations are gone has nothing left to continue; an archived one does.
               (0, import_react2.createElement)("button", {
                 type: "button",
                 className: "theone-continue",
-                disabled: !!busy || !!topic.hidden,
-                title: topic.hidden ? t2("topic.continueHidden") : void 0,
+                disabled: !!busy || topic.hidden === "orphaned",
+                title: topic.hidden === "orphaned" ? t2("topic.continueHidden") : void 0,
                 onClick: () => {
                   void continueTopic(id);
                 }

@@ -1226,7 +1226,7 @@ export function apply(ctx: Context) {
             const constraints = snapshot?.linkage?.topics[id]?.constraints ?? ''
             const open = managing === id
             const links = linkRow(id)
-            return [h('li', { key: id, className: `theone-topic-card${open ? ' theone-open' : ''}${topic.hidden ? ' theone-hidden' : ''}` },
+            return [h('li', { key: id, className: `theone-topic-card${open ? ' theone-open' : ''}${topic.hidden === 'orphaned' ? ' theone-hidden' : ''}` },
               h('div', { className: 'theone-topic-main' },
                 h('h3', null, topic.title, topic.topicStatus && topic.topicStatus !== 'active'
                   ? h('span', { className: `theone-tag theone-status-${topic.topicStatus}` }, t(`topic.status.${topic.topicStatus}` as TheOneLocaleKey)) : null),
@@ -1238,8 +1238,8 @@ export function apply(ctx: Context) {
                   constraints ? [h('dt', { key: 'c' }, label(t('topic.constraints'))), h('dd', { key: 'cv' }, constraints)] : null,
                   open ? null : links) : null),
               h('div', { className: 'theone-topic-actions' },
-                // A hidden topic has nothing left to continue: its conversations are gone or archived.
-                h('button', { type: 'button', className: 'theone-continue', disabled: !!busy || !!topic.hidden, title: topic.hidden ? t('topic.continueHidden') : undefined,
+                // A topic whose conversations are gone has nothing left to continue; an archived one does.
+                h('button', { type: 'button', className: 'theone-continue', disabled: !!busy || topic.hidden === 'orphaned', title: topic.hidden === 'orphaned' ? t('topic.continueHidden') : undefined,
                   onClick: () => { void continueTopic(id) } }, t(busy === id ? 'topic.opening' : 'topic.continue'), h('span', { 'aria-hidden': true }, ' →')),
                 h('button', { type: 'button', className: 'theone-quiet', 'aria-expanded': open, onClick: () => setManaging(current => current === id ? undefined : id) }, t(open ? 'manage.close' : 'manage.open')),
                 topic.hidden ? null : h('button', { type: 'button', className: 'theone-quiet', disabled: !!busy,

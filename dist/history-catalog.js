@@ -285,7 +285,7 @@ export class HistoryCatalog {
      */
     async candidates(text, currentId, signal, hints = {}) {
         this.status.searchUnavailable = false;
-        const hidden = this.store.hiddenReasons();
+        const hidden = this.store.unreachable();
         const all = (hints.contexts ?? this.store.contexts()).filter(context => !hidden.has(context.id));
         if (all.length <= 16)
             return all;
