@@ -59,20 +59,31 @@ export function spokenCorrection(text) {
     return match ? text.slice(match[0].length).trim() : undefined;
 }
 const FILLER = new Set(['这个', '那个', '一下', '帮我', '可以', '什么', '怎么', '我们', '你们', '现在', '然后', '还有', '这是', '那是', '是不是', 'the', 'and', 'for', 'with', 'this', 'that']);
+/** Scripts written without spaces between words (Chinese, Japanese): split into runs and pairs, not words. */
+const DENSE = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]+/gu;
+/** Words of the other scripts (Latin with accents, Cyrillic, Korean, …), and digits. */
+const WORD = /[\p{L}\p{N}][\p{L}\p{M}\p{N}_.+#-]+/gu; // applied after dense runs are blanked out
+/** Runs of dense-script text and the words of every other script. */
+function scriptTerms(text) {
+    return { dense: text.match(DENSE) ?? [], words: text.replace(DENSE, ' ').match(WORD) ?? [] };
+}
+/** Search terms in the order they appear: dense-script runs of 2–8 characters, and words starting with a letter. */
+export const SEARCH_TERM = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]{2,8}|(?![\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}])\p{L}(?:(?![\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}])[\p{L}\p{M}\p{N}_.+#-]){1,40}/gu;
 /** A few distinctive terms of a message, used to teach a topic what belongs to it. */
 export function topicTerms(text, limit = 6) {
     // Common particles split Chinese runs into the words around them.
     const words = redactRoutingText(text).replace(/[的了和与及把在是吗呢吧也就都还要给让被]/g, ' ');
-    const terms = words.match(/[A-Za-z][A-Za-z0-9_.+#-]{2,}|[\u4e00-\u9fff]{2,8}/g) ?? [];
+    // Short ASCII words are mostly noise ("to", "an"); two letters of another script often make a word.
+    const terms = (words.match(SEARCH_TERM) ?? []).filter(term => term.length >= 3 || /[^\x00-\x7f]/.test(term));
     return [...new Set(terms.filter(term => !FILLER.has(term.toLowerCase()) && !term.startsWith('REDACTED')))].slice(0, limit);
 }
 /** Word and character-pair features of a short message, for cheap similarity without a model call. */
 export function textFeatures(text) {
-    const lower = redactRoutingText(text).toLowerCase();
+    const { dense, words } = scriptTerms(redactRoutingText(text).toLowerCase());
     const features = new Set();
-    for (const word of lower.match(/[a-z0-9][a-z0-9_.+#-]+/g) ?? [])
+    for (const word of words)
         features.add(word);
-    for (const run of lower.match(/[\u4e00-\u9fff]+/g) ?? []) {
+    for (const run of dense) {
         if (run.length === 1)
             features.add(run);
         for (let index = 0; index + 1 < run.length; index++)

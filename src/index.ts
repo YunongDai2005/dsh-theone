@@ -1128,7 +1128,7 @@ export default class TheOne extends Service {
         const last = this.store.recentRoutes(this.config.gatewayKey, 1)[0]
         if (last && Date.now() - last.at < 10 * 60000 && !last.correctedTo && last.decision.action !== 'CLARIFY'
           && last.decision.contextId && last.decision.contextId !== value.contextId)
-          this.applyCorrection(last.messageId, value.contextId, undefined, 0.5, false)
+          this.applyCorrection(last.messageId, value.contextId, undefined, 0.75, false)
         return Response.json({ mounted: true })
       } }))
     })
@@ -2180,7 +2180,7 @@ export default class TheOne extends Service {
           } catch (error) { signal.throwIfAborted(); if (!(error instanceof RouterFailure)) throw error }
         }
         // A miss in a short candidate list is not proof that the whole catalog has no match.
-        if (proposed.action === 'CREATE' && this.catalog && !/^新话题[：:]/.test(text.trim())) {
+        if (proposed.action === 'CREATE' && this.catalog && !/^(?:新话题|new topic\s*)[：:]/i.test(text.trim())) {
           const seen = new Set(contexts.map(context => context.id))
           const remaining = allContexts.filter(context => !seen.has(context.id))
           const current = allContexts.find(context => context.id === currentId)

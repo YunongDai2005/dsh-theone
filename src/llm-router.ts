@@ -52,7 +52,7 @@ CREATE 时还要判断 historyIndependent：本轮输入给足目标和必要信
 CLARIFY 仅限：用户明确引用缺失旧聊天（如“继续上次那个”“用之前的链接”）；或者用户只指一个话题，但有两个以上确实相关的旧话题都可能是它，选错会改变后续处理且近期消息无法判断。第二种必须在 candidateIds 列出至少两个相关目录 ID。弱相关候选不构成澄清理由。多件独立任务可在一个新会话交给 Worker 处理，不因任务多而追问。
 只判断语义选择：EXISTING 选择一个已有话题；CREATE 创建新话题；CLARIFY 请求澄清。已有话题的KEEP、MOUNT、SWAP由程序根据挂载状态计算，你不要输出这三个机械动作。currentId为null表示尚未挂载话题，近期对话不代表已经挂载。
 输出 JSON：{"action":"EXISTING|CREATE|CLARIFY","contextId":"已有目录ID或null","title":"CREATE时的新话题标题，否则null","question":"CLARIFY时的简短澄清问题，否则null","reason":"不超过120字的判断依据","historyIndependent":"CREATE时为boolean，其他为null","candidateIds":"CLARIFY时真正难以选择的多个目录ID数组，否则空数组","relatedIds":"EXISTING或CREATE时本轮同时用到的其他目录ID数组，否则空数组"}。
-不得编造目录ID。CREATE和CLARIFY的contextId必须为null。`
+不得编造目录ID。CREATE和CLARIFY的contextId必须为null。title、question、reason 用本轮 text 的语言书写。`
 
 /** Added to the routing prompt only when facts are offered, so routing is unchanged otherwise. */
 export const FACTS_PROMPT = `
@@ -210,6 +210,7 @@ export function answerJson(output: string): string {
 
 export class DshRouter implements RoutingRouter {
   private failures = 0
+  private lastFailureAt = -Infinity
   private blockedUntil = 0
   constructor(private readonly llm: Pick<LlmRuntime, 'prepareCall' | 'resolveModelInfo'>,
     private readonly selection: () => ModelSelection,
@@ -264,8 +265,14 @@ export class DshRouter implements RoutingRouter {
     } catch (error) {
       signal?.throwIfAborted()
       const failure = error instanceof RouterFailure ? error : new RouterFailure('ROUTER_REQUEST_FAILED')
-      this.failures++
-      if ([401, 403, 429].includes(failure.meta?.httpStatus ?? 0) || this.failures >= 3) this.blockedUntil = this.now() + 60000
+      // Calls made together (catalog review pages) that fail together count as one failure.
+      const now = this.now()
+      if (now - this.lastFailureAt > 2000) this.failures++
+      this.lastFailureAt = now
+      // A key the provider refuses waits a minute; a rate limit or repeated failures only briefly.
+      const status = failure.meta?.httpStatus ?? 0
+      const wait = [401, 403].includes(status) ? 60000 : status === 429 ? 15000 : this.failures >= 3 ? 30000 : 0
+      if (wait) this.blockedUntil = Math.max(this.blockedUntil, now + wait)
       throw new RouterFailure(failure.code, { elapsedMs: Math.round(performance.now() - start), usage, ...failure.meta,
         ...(this.blockedUntil > this.now() ? { retryAfterMs: this.blockedUntil - this.now() } : {}) })
     }

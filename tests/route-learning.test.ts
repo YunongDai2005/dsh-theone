@@ -97,7 +97,7 @@ test('corrections teach terms the model picks from the message, examples are cho
   } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
 })
 
-test('opening another topic right after a message went elsewhere is a weak hint, not a correction', { timeout: 30000 }, async () => {
+test('opening another topic right after a message went elsewhere teaches that topic the terms, without counting as a correction', { timeout: 30000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'theone-route-hint-'))
   const app = await harness(root)
   try {
@@ -109,11 +109,10 @@ test('opening another topic right after a message went elsewhere is a weak hint,
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ contextId: 'ctx_thesis' }) }))
     assert.equal(response.status, 200)
     await app.ctx.theone.learning
-    // Half a confirmation: recorded, but below the threshold until it happens again.
-    assert.equal(app.ctx.theone.store.learnedTerms().get('ctx_thesis'), undefined)
-    assert.equal(app.ctx.theone.store.recentRoutes('test-gateway').find(route => route.messageId === routed.input.id)?.correctedTo, undefined)
-    app.ctx.theone.store.learnTerms('ctx_thesis', ['显存设置'], 0.5)
+    // A weaker signal than "wrong topic": the terms count (until they fade, unless it happens again), the route stays as it was.
     assert.deepEqual(app.ctx.theone.store.learnedTerms().get('ctx_thesis'), ['显存设置'])
+    assert.equal(app.ctx.theone.store.recentRoutes('test-gateway').find(route => route.messageId === routed.input.id)?.correctedTo, undefined)
+    assert.equal(app.ctx.theone.store.learnedTerms().get('ctx_qwen_9070xt'), undefined, 'the first topic is not taught against them')
   } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
 })
 

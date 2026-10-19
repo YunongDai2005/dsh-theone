@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto'
 import type {} from '@deepseek-ai/dsh-compaction/types'
 import { redactRoutingText, RouterFailure } from './llm-router.ts'
 import { modelJson } from './model-json.ts'
-import { textFeatures } from './routing-policy.ts'
+import { SEARCH_TERM, textFeatures } from './routing-policy.ts'
 import type { StoredContext } from './types.ts'
 import { ContextStore } from './store.ts'
 import type { CatalogSnapshot, CatalogStatus, ExtractedTopic, HiddenReason, HistoryPart } from './catalog-types.ts'
@@ -264,7 +264,7 @@ export class HistoryCatalog {
         scores.set(id, (scores.get(id) ?? 0) + Math.min(shared, 30) * 3)
       }
     }
-    const terms = [...new Set(text.match(/[a-zA-Z][\w.-]{1,40}|[\u4e00-\u9fff]{2,8}/g) ?? [])].slice(0, 4)
+    const terms = [...new Set(text.match(SEARCH_TERM) ?? [])].slice(0, 4)
     for (const term of terms) {
       signal?.throwIfAborted()
       let page

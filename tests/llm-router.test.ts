@@ -71,9 +71,18 @@ test('unavailable routes cool down, probe again, and reset after success',async(
  time+=60000;status=200
  assert.equal((await client.decide(input)).decision.action,'KEEP')
  status=500
+ // Failures together (within two seconds) count once; three in a row pause the router briefly.
  for(let i=0;i<3;i++)await assert.rejects(client.decide(input),RouterFailure)
- await assert.rejects(client.decide(input),error=>error instanceof RouterFailure && error.code==='ROUTER_CIRCUIT_OPEN')
  assert.equal(model.state.calls,5)
+ for(let i=0;i<2;i++){time+=3000;await assert.rejects(client.decide(input),RouterFailure)}
+ await assert.rejects(client.decide(input),error=>error instanceof RouterFailure && error.code==='ROUTER_CIRCUIT_OPEN' && error.meta?.retryAfterMs===30000)
+ assert.equal(model.state.calls,7)
+ // A rate limit pauses only briefly.
+ time+=30000;status=200
+ await client.decide(input)
+ status=429
+ await assert.rejects(client.decide(input),RouterFailure)
+ await assert.rejects(client.decide(input),error=>error instanceof RouterFailure && error.code==='ROUTER_CIRCUIT_OPEN' && error.meta?.retryAfterMs===15000)
 })
 test('caller cancellation does not mark the model unavailable',async()=>{
  const controller=new AbortController()

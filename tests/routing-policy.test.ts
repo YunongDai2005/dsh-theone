@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { referencesHistory, settleUnclear } from '../src/routing-policy.ts'
+import { referencesHistory, settleUnclear, textFeatures, topicTerms } from '../src/routing-policy.ts'
 import { resolveContext } from '../src/router.ts'
 import { validateRoutingDecision, ROUTING_PROMPT, RouterFailure } from '../src/llm-router.ts'
 import { harness, textResponse, ask } from './harness.ts'
@@ -98,4 +98,12 @@ test('an unclear decision settles without asking: the current topic among the ca
   assert.equal(settleUnclear({ action: 'CLARIFY', reason: 'ROUTER_MODEL_MISSING', question: 'x' }, 'hi', topics).action, 'CLARIFY')
   assert.equal(settleUnclear({ action: 'CLARIFY', reason: 'correction-unclear', question: 'x' }, '分错了', topics).action, 'CLARIFY')
   assert.deepEqual(settleUnclear({ action: 'KEEP', contextId: 'a', reason: 'y' }, 'x', topics, 'a'), { action: 'KEEP', contextId: 'a', reason: 'y' })
+})
+
+test('terms come from every script, and "new topic:" works in English too', () => {
+  assert.deepEqual(topicTerms('继续 Qwen 配置的FP8测试'), ['继续', 'Qwen', '配置', 'FP8', '测试'])
+  assert.deepEqual(topicTerms('café recipe für München'), ['café', 'recipe', 'für', 'München'])
+  assert.deepEqual(topicTerms('서울 여행 계획'), ['서울', '여행', '계획'])
+  assert.ok(textFeatures('東京の旅行').has('旅行') && textFeatures('Привет бюджет').has('бюджет'))
+  assert.deepEqual(resolveContext('New topic: learn Japanese', []), { action: 'CREATE', title: 'learn Japanese', reason: 'explicit-new-topic' })
 })

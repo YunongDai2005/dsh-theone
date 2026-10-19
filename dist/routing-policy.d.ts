@@ -20,6 +20,8 @@ export declare function continuesCurrent(text: string): boolean;
  * follows the phrase (often the right topic, e.g. "分错了，是论文的"), or undefined.
  */
 export declare function spokenCorrection(text: string): string | undefined;
+/** Search terms in the order they appear: dense-script runs of 2–8 characters, and words starting with a letter. */
+export declare const SEARCH_TERM: RegExp;
 /** A few distinctive terms of a message, used to teach a topic what belongs to it. */
 export declare function topicTerms(text: string, limit?: number): string[];
 /** Word and character-pair features of a short message, for cheap similarity without a model call. */

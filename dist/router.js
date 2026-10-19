@@ -4,7 +4,7 @@ const normalize = (value) => value.toLowerCase().replace(/[\s/_-]+/g, '');
 export function resolveContext(text, contexts, currentId) {
     const current = contexts.find(context => context.id === currentId);
     const input = text.trim();
-    const newTopic = input.match(/^(?:新话题[：:]\s*|我想开始|开始一个新项目[：:]?\s*)(.+)/);
+    const newTopic = input.match(/^(?:新话题[：:]\s*|我想开始|开始一个新项目[：:]?\s*|new topic\s*[:：]\s*)(.+)/i);
     if (newTopic)
         return { action: 'CREATE', title: newTopic[1].trim().slice(0, 80), reason: 'explicit-new-topic' };
     // Negated/deferred clauses don't nominate a Context. A later explicit resumption
