@@ -35,7 +35,7 @@ Each project reasons, runs tools and compacts in its own session. What you see i
 
 ## Why try it
 
-Version 0.3.36 adds **Ongoing tasks**: follow a public GitHub PR and CI on this computer, notify main chat about changes, pause or cancel, and recover after restart. Memory proposals are queued and checked against their evidence before merging. See the [implementation and limitations](./docs/persistent-work.md) (Chinese).
+Version 0.3.38 **routes more accurately**: when the quick decision would open a new topic, ask you, or goes against a number, code or name only one topic has mentioned, it takes a second look with thinking on. On our benchmark that lifts accuracy from 90% to 96% when starting from nothing, and one thing is split over fewer topics (see [How well does it route?](#how-well-does-it-route)). It also picks up cleanly after a DSH restart and after "wrong topic". Ongoing tasks (follow a GitHub PR and CI from main chat, since 0.3.36) are described in [implementation and limitations](./docs/persistent-work.md) (Chinese).
 
 | | Usual workflow | With TheOne |
 | --- | --- | --- |
@@ -49,7 +49,9 @@ Version 0.3.36 adds **Ongoing tasks**: follow a public GitHub PR and CI on this 
 - **Keep talking while it works.** A message sent during a reply that is about that reply joins it, as in any DSH chat; one about something else starts in its own topic right away, in the background, and its answer follows in main chat in the order you sent things. At most three topics work at once.
 - **Works where the work is.** A new topic about one of your projects works in that project's folder; anything else goes to DSH's folder for chats outside any project. Nothing is added to your projects in the sidebar.
 - **Related work connects; unrelated work stays out.** Related topics share progress automatically, and which ones belong together is learned from how you use them. A topic's constraints (say, "budget figures stay out of the paper") are attached verbatim every time, so compaction never drops them.
-- **Learns your words.** Once a topic has replies, a short routing card is written in the background (what it is, what you call it, the people, places and files involved), so it is recognised however you phrase it. Say "wrong topic" and it remembers which terms tie that kind of message to the right one. Topics you haven't touched in a long while go to the back of the line; how long is "long" is learned from how you come back to things.
+- **Learns your words.** Once a topic has replies, a short routing card is written in the background (what it is, what you call it, the people, places and files involved, and the values it has settled on, such as a budget or an order number), and rewritten as the topic goes on, so it is recognised however you phrase it. Say "wrong topic" and it remembers which terms tie that kind of message to the right one. Topics you haven't touched in a long while go to the back of the line; how long is "long" is learned from how you come back to things.
+- **Picks up after a restart.** If DSH stopped while a topic was working, the topic's own session tells what happened: finished work is shown as it was given, and work cut off midway lists what it had already changed; say "continue" and the topic checks the current state before carrying on, instead of redoing it. Each topic keeps where it stands as goal / done / next.
+- **"Wrong topic" cleans up after itself.** The wrong topic forgets that turn (it stays out of its history, card and facts) and is told once; anything the turn already changed is listed for you, since nothing is undone behind your back.
 - **Your old sessions become a topic directory.** After install it reads your existing sessions in the background, turns them into topics grouped into workspaces, and you pick up where you left off.
 - **Nothing extra to configure.** No separate API key: it uses the model you chose in DSH. When TheOne is selected, a layers icon beside the model menu shows and switches which model routes and which does the work.
 
@@ -85,7 +87,7 @@ No coding needed:
 - **"Too new" and it won't install:** DSH only installs versions published at least 24 hours ago. That's a safety rule, not an error. Wait a day, or enter the GitHub address `https://github.com/YunongDai2005/dsh-theone` instead, which installs right away.
 - **No TheOne in the sidebar after installing:** restart DSH.
 - **Something wrong?** Click **Report a problem** at the top right of **Topic workspaces**: versions and diagnostics (no chat content) are attached, and Send delivers it without GitHub. Or email [theone@yulid.org](mailto:theone@yulid.org); a screenshot helps.
-- **Will it cost a lot?** Each message adds one short classification call (no deep thinking), and "ok" or "go on" skips even that. With many old chats, the first pass that organises them uses some of your quota; turn **History catalog** off in the settings if you don't need it.
+- **Will it cost a lot?** Each message adds one short classification call (no deep thinking); about one in six (a new topic, a question, or a doubtful pick) gets a second call with thinking. "ok" or "go on" skips even the first. On DeepSeek V4.1 Flash that is about half a US dollar per thousand messages. With many old chats, the first pass that organises them uses some of your quota; turn **History catalog** off in the settings if you don't need it.
 </details>
 
 <details>
@@ -113,12 +115,14 @@ Messages arrive only while DSH is running, not while the computer sleeps or DSH 
 
 ## How well does it route?
 
-Claims are cheap, so we built a public benchmark, **InterleaveBench**: one person pushing 3–5 things forward in the same chat at once (a trip, a budget, a paper, a training plan…), half in Chinese and half in English, 50 conversations and 2,466 messages, each labelled in advance with the thing it belongs to. Below, the 40-conversation dev split replayed message by message through TheOne's own routing code with DeepSeek V4.1 Flash (messages even a careful human could not attribute are not scored):
+Claims are cheap, so we built a public benchmark, **InterleaveBench**: one person pushing 3–5 things forward in the same chat at once (a trip, a budget, a paper, a training plan…), half in Chinese and half in English, 50 conversations and 2,466 messages, each labelled in advance with the thing it belongs to. Below, the 40-conversation dev split replayed message by message through TheOne's own routing code with DeepSeek V4.1 Flash, thinking off as TheOne routes (messages even a careful human could not attribute are not scored):
 
 | Approach | Messages routed correctly |
 | --- | --- |
-| TheOne, topic list given up front | **91.6%** |
-| TheOne, starting from nothing and creating topics as it goes (your first day) | **86.6%** |
+| TheOne 0.3.38, topic list given up front | **98.7%** |
+| TheOne 0.3.38, starting from nothing and creating topics as it goes (your first day) | **96.3%** |
+| TheOne 0.3.37 (one quick decision per message), topic list given up front | 92.9% |
+| TheOne 0.3.37, starting from nothing | 90.1% |
 | Keyword search (BM25), topic list given up front | 73.3% |
 | No routing, everything in one chat | 44.5% |
 | Keyword search, starting from nothing | 39.9% |
@@ -126,9 +130,12 @@ Claims are cheap, so we built a public benchmark, **InterleaveBench**: one perso
 
 A few numbers worth knowing:
 
-- **A message landing in another thing's topic**, the mistake that hurts context most: about 3.7% when starting from nothing.
-- The main weakness today is **opening new topics too eagerly**: one thing ends up split over 2.1 topics on average. 0.3.21's routing cards go after exactly that.
-- The whole run cost about one US dollar. Data, code and scoring live in [`eval/`](./eval/README.md); reproduce it, or try another model.
+- **On ten conversations kept aside while tuning**, starting from nothing: 97.1% (0.3.37: 90.7%).
+- **One thing is split over 1.47 topics** on average (0.3.37: 1.80), and needless questions back to you dropped from 49 to 9.
+- **A message landing in another thing's topic**, the mistake that hurts context most: 2.8% when starting from nothing. It is 1.5% with thinking on for every message, so this is what we work on next.
+- **Routing cards** are not simulated in the table. With them (as in the plugin), starting from nothing: 96.9%, and 1.9% of messages land in another thing's topic.
+- **What it costs:** about one message in six gets the second look; routing costs about $0.5 per thousand messages (one quick decision only: $0.41; thinking on for every message: $0.55), and routing cards add about $0.16.
+- Data, code and scoring live in [`eval/`](./eval/README.md); reproduce it, or try another model. The full write-up, with confidence intervals, token use and what did not work, is in [`docs/routing-eval.md`](./docs/routing-eval.md) (Chinese).
 
 The conversations are model-written from a script and this version has no assistant replies, so it measures whether messages are routed right, not everything about how chatting feels.
 
@@ -138,7 +145,7 @@ For now, TheOne is being refined on DeepSeek Harness, whose background sessions,
 
 In progress:
 
-- **Better routing**: looking at a burst of messages together while deciding each one separately, and measuring what routing cards add.
+- **Better routing**: fewer messages landing in another thing's topic, and looking at a burst of messages together while deciding each one separately.
 - **Confirmed facts shared between topics**: a budget, a date, where a file lives, kept current wherever you need it. It is experimental and will only be turned on by default once it passes its benchmark.
 
 Once it is stable, the next step goes beyond DSH:
@@ -152,6 +159,7 @@ Which comes first depends on what people need more. If you have a view, say so i
 
 **Choosing a topic.** Each message is matched to the current topic, an earlier one, or a new one. By default the model you selected makes one short classification (thinking off, at most 2,048 tokens), with candidates recalled through DSH full-text search.
 
+- When the quick decision would start a new topic, ask you, or goes against a number, code or name only one topic has mentioned, the same model looks again with thinking on (about one message in six). If that call fails, the first decision stands.
 - With no credible match it starts a new topic instead of asking whether it is new. It only asks when you refer to an earlier chat it cannot find, or it truly cannot tell which one you mean.
 - When one message draws on several topics, the one doing the work gets it and the others come along as reference.
 - "ok" or "go on" continues the current topic without waiting for a decision, and so does a picture or file sent without words.
