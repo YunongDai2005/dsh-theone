@@ -162,16 +162,18 @@ Which comes first depends on what people need more. If you have a view, say so i
 - When the quick decision would start a new topic, ask you, or goes against a number, code or name only one topic has mentioned, the same model looks again with thinking on (about one message in six). If that call fails, the first decision stands.
 - It never asks you where a message belongs. With no credible match it starts a new topic; when it cannot tell which of a few topics you mean, the closest one does the work and the others come along as reference; an earlier chat it cannot find continues the current topic, which can search your history itself.
 - When one message draws on several topics, the one doing the work gets it and the others come along as reference.
+- If the topic that gets a message finds it is not its own, it hands it back before doing anything; TheOne routes it again without that topic, and main chat shows the right topic's answer. Once per message.
 - "ok" or "go on" continues the current topic without waiting for a decision, and so does a picture or file sent without words.
 - If the classification call fails, rules decide, staying in the current topic when unsure. Rule-based routing (`THEONE_ROUTER_MODE=rules`) makes no model calls at all.
 
 **Linking topics.** A background session starting work receives a reference briefing, and none when there is nothing new:
 
 - right after a topic switch, the last few turns of main chat, so "use what we just said" carries over;
-- what changed in related topics since it last heard: their latest compaction summary (dated) and the progress after it;
+- when the message mentions a number, code or name that only another topic has mentioned, what that topic said about it and where it stands, linked or not;
+- what changed in related topics since it last heard: their latest compaction summary (dated) and the progress after it. Topics are related when a message draws on both or one looks the other up; switching between them does not count;
 - each topic's constraints, verbatim, every time.
 
-The briefing is marked as reference, not instructions. For details, the background session can use `theone_read_topic` and `theone_search_history`. Linking scope is **Learn automatically** (default), **Same workspace only** or **Off**. In the directory you can link or unlink topics and mark a topic **Do not share**; your choices always win.
+The briefing is marked as reference, not instructions. For details, the background session can use `theone_read_topic` and `theone_search_history` (which can also search every topic that shares with it). Linking scope is **Learn automatically** (default), **Same workspace only** or **Off**. In the directory you can link or unlink topics and mark a topic **Do not share**; your choices always win.
 
 **Topic directory.** Each topic shows its latest progress and constraints, the project (DSH workspace) it works in, and its status when that is not plain in progress: **Waiting on you** (it asks you something, or a restart cut its work off), **Set aside** (untouched for longer than you usually come back), or **Done** (you marked it; a new message to it reopens it). Status is kept apart from the topic's record of what it worked on (its latest 20 messages and how each ended), and is worked out from it. **Mark done** / **Reopen** sits next to **Manage**. Under **Manage** you can rename, edit the summary and constraints, move to another workspace, merge, delete, or attach an existing DSH session as searchable history; **+ New topic** starts one by hand. **Recent topic routing** lists where each message went, why, with which model and how long it took. With a long history, the first pass takes some time and API quota; set `THEONE_HISTORY_CATALOG=false` to turn it off.
 
