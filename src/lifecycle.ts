@@ -9,6 +9,9 @@ const READ_ONLY = new Set(['read', 'read_image', 'glob', 'grep', 'ls', 'list_age
   'ask_user_question', 'exit_plan_mode', 'todo_write', 'skill', 'web_search', 'web_fetch',
   'theone_search_history', 'theone_read_topic', 'theone_read_fact', 'theone_update_state', 'theone_task', 'theone_handback'])
 
+/** Whether a tool may change files, run commands or send something (anything but reading and asking). */
+export const changesSomething = (name: string) => !READ_ONLY.has(name)
+
 interface Event { type: string; seq: number; data: unknown }
 
 export interface TopicTurn {

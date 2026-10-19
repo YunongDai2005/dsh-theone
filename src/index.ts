@@ -5,7 +5,7 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { basename, dirname, join, resolve, sep } from 'node:path'
+import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path'
 import { LlmAdapter, createUserMessage, isAgentLoopRequest, resolveRetryPolicy } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, LlmModelInfo, LlmResolvedModelInfo, ReasoningEffortId, StreamChunk, UserMessage } from '@deepseek-ai/dsh-llm'
 import type { Agent, AgentHandle, ModelSelection, ModelSelectionRef } from '@deepseek-ai/dsh-agent'
@@ -46,7 +46,7 @@ import { PACKAGE_NAME, Updater, type PluginInstaller } from './update.ts'
 import { NOTICE_URL, NoticeBoard } from './notices.ts'
 import { exchange, FEEDBACK_EMAIL, FEEDBACK_LIMITS, FEEDBACK_URL, finalReport, replySection, routeDigest, scrub, sendReport, type FeedbackDraft } from './feedback.ts'
 import { createRequire } from 'node:module'
-import { misrouteNote, resumeNote, topicTurn, type TopicTurn } from './lifecycle.ts'
+import { changesSomething, misrouteNote, resumeNote, topicTurn, type TopicTurn } from './lifecycle.ts'
 import { WeixinBridge } from './weixin.ts'
 import { TelegramApp } from './telegram.ts'
 import { IMessageApp } from './imessage.ts'
@@ -1579,6 +1579,7 @@ export default class TheOne extends Service {
       this.registerWorkerTools(agentCtx, agent, context.id)
       this.forwardApprovals(agentCtx, agent)
       this.forwardQuestions(agentCtx, agent)
+      this.checkTargets(agentCtx, agent, context.id)
     }
     const handle = stored
       ? await this.ctx.agents.resume({ resumeSessionId: sessionId, agentOptions, signal, setup })
@@ -1735,6 +1736,53 @@ export default class TheOne extends Service {
       source: { kind: 'theone-links', form: 'recall', contextId: context.id, related: related.map(topic => topic.id) },
       content: [{ type: 'text', text: redactDescriptor(briefing.text) }],
     }) }
+  }
+
+  /**
+   * Before a topic changes something for a message (edits a file, runs a command, sends something),
+   * check that it is the right topic for it: when routing hesitated, or when the target belongs to
+   * another project, ask once in main chat. Reading and answering never wait; a confident route with
+   * a target in its own project goes ahead.
+   */
+  private checkTargets(agentCtx: Context, worker: Agent, contextId: string): void {
+    agentCtx.on('tools/pre-execute', async (exec, next) => {
+      if (exec.agent !== worker || !changesSomething(exec.name)) return next()
+      const run = this.runForWorker(worker)
+      const decision = run && this.store.route(run.inputId)?.decision
+      if (!run || decision?.contextId !== contextId || this.store.hasFlag(`target:${run.inputId}`)) return next()
+      const doubt = this.targetDoubt(decision, contextId, worker, exec.arguments)
+      const approval = this.ctx.get('approval') as { request(req: ApprovalRequestEvent): Promise<ApprovalOutcome> } | undefined
+      if (!doubt || !approval) return next()
+      const outcome = await approval.request({ agent: run.gateway, toolName: exec.name, reason: doubt.en, displayReason: doubt, signal: exec.signal })
+      if (outcome === 'allowed-once') { this.store.markOnce(`target:${run.inputId}`); return next() }
+      if (outcome === 'unavailable') return next()
+      if (outcome === 'cancelled') return { kind: 'cancel' as const }
+      return { kind: 'deny' as const, reason: 'The user did not confirm that this topic should make this change. Do not change anything; say briefly that the message may belong to another topic, which the user can choose in Topic workspaces.' }
+    }, { prepend: true })
+  }
+
+  /** Why a change for this message may be in the wrong topic, in both languages, or undefined. */
+  private targetDoubt(decision: Decision, contextId: string, worker: Agent, args: unknown): { en: string; zh: string } | undefined {
+    const titleOf = (id: string) => this.store.contexts().find(context => context.id === id)?.title
+    const title = titleOf(contextId) ?? ''
+    const maybe = (decision.alternateIds ?? []).flatMap(id => titleOf(id) ?? [])
+    if (maybe.length) return {
+      en: `This message went to "${title}", but it may be about ${maybe.map(item => `"${item}"`).join(' or ')}. Make this change in "${title}"?`,
+      zh: `这条消息放在了「${title}」，但也可能是「${maybe.join('」或「')}」的事。确定在「${title}」里做这个改动吗？`,
+    }
+    // A file in another project than the topic works in.
+    const value = (args ?? {}) as Record<string, unknown>
+    const raw = ['file_path', 'path', 'notebook_path', 'cwd'].map(key => value[key]).find((item): item is string => typeof item === 'string' && !!item.trim())
+    if (!raw) return undefined
+    const cwd = worker.session.header.cwd
+    const target = isAbsolute(raw) ? raw : cwd ? join(cwd, raw) : undefined
+    const folders = this.projectFolders()
+    const there = this.projectOf(target, folders)
+    if (!there || there.path === this.projectOf(cwd, folders)?.path) return undefined
+    return {
+      en: `"${title}" is about to change ${raw}, which is in the project "${there.name}", not the one this topic works in. Go ahead?`,
+      zh: `「${title}」要改的 ${raw} 在项目「${there.name}」里，不是这个话题所在的项目。确定要改吗？`,
+    }
   }
 
   /**
