@@ -3,13 +3,14 @@ import type { ContextDescriptor } from './types.ts'
 
 export interface TopicGroup { id: string; title: string; summary: string; contextIds: string[] }
 /** Every conversation a topic draws on is gone from disk (`orphaned`) or archived in DSH (`archived`). */
-export type HiddenReason = 'orphaned' | 'archived'
+export type HiddenReason = 'orphaned' | 'archived' | 'excluded'
 /** `hidden` says why routing and briefings skip this topic; the directory still lists it. */
 export interface CatalogContext extends ContextDescriptor { workingSessionId: string; sourceSessionIds: string[]; hidden?: HiddenReason
   /** The DSH project (workspace) the topic works in; none for DSH's default workspace. */
   projectInfo?: { name: string; path: string }
   topicStatus?: TopicStatus }
 export interface CatalogStatus {
+  consent?: 'ask' | 'declined' | 'granted'; waiting?: number; excluded?: number
   running: boolean; scanned: number; indexed: number; skipped: number; failed: number
   pending: number; lastCompletedAt?: number; searchUnavailable?: boolean; hidden?: number
 }
@@ -24,4 +25,10 @@ export interface HistoryPart { seq: number; endSeq: number; text: string; finger
 export interface ExtractedTopic {
   contextId: string | null; title: string; summary: string; entities: string[]; keywords: string[]; lastState: string
   turns: number[]; groupId: string | null; groupTitle: string | null; groupSummary: string
+}
+
+/** Header/title metadata only; choosing chats never loads their conversation contents. */
+export interface CatalogSessions {
+  folders: { path: string; name: string; excluded: boolean }[]
+  sessions: { id: string; title: string; folder: string | null; createdAt: number; excluded: boolean }[]
 }

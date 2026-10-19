@@ -215,6 +215,7 @@ test('while history is still being catalogued, a message about an old chat that 
   const model = fixture()
   const app = await harness(root, model, { routerMode: 'llm', historyCatalog: true })
   try {
+    app.ctx.theone.store.setCatalogConsent('granted')
     const old = await source(app, root, '论文方法：历史项目')
     const originalRead = app.ctx.sessionQuery.readSession.bind(app.ctx.sessionQuery)
     app.ctx.sessionQuery.readSession = async id => { if (id === old.id) throw new Error('unavailable'); return originalRead(id) }

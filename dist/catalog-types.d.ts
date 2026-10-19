@@ -7,7 +7,7 @@ export interface TopicGroup {
     contextIds: string[];
 }
 /** Every conversation a topic draws on is gone from disk (`orphaned`) or archived in DSH (`archived`). */
-export type HiddenReason = 'orphaned' | 'archived';
+export type HiddenReason = 'orphaned' | 'archived' | 'excluded';
 /** `hidden` says why routing and briefings skip this topic; the directory still lists it. */
 export interface CatalogContext extends ContextDescriptor {
     workingSessionId: string;
@@ -21,6 +21,9 @@ export interface CatalogContext extends ContextDescriptor {
     topicStatus?: TopicStatus;
 }
 export interface CatalogStatus {
+    consent?: 'ask' | 'declined' | 'granted';
+    waiting?: number;
+    excluded?: number;
     running: boolean;
     scanned: number;
     indexed: number;
@@ -77,4 +80,19 @@ export interface ExtractedTopic {
     groupId: string | null;
     groupTitle: string | null;
     groupSummary: string;
+}
+/** Header/title metadata only; choosing chats never loads their conversation contents. */
+export interface CatalogSessions {
+    folders: {
+        path: string;
+        name: string;
+        excluded: boolean;
+    }[];
+    sessions: {
+        id: string;
+        title: string;
+        folder: string | null;
+        createdAt: number;
+        excluded: boolean;
+    }[];
 }

@@ -11,7 +11,7 @@ import { installModelSelection } from '@deepseek-ai/dsh-agent';
 import { defineTool } from '@deepseek-ai/dsh-tools';
 import { SessionId, SessionLogOffset, SessionSeq, buildForkSeed } from '@deepseek-ai/dsh-session';
 import { buildSessionEventSearchDocuments, filterSessionEventDocuments } from '@deepseek-ai/dsh-session-query';
-import { HistoryCatalog } from "./history-catalog.js";
+import { HistoryCatalog, catalogSessionExcluded, withinCatalogFolder } from "./history-catalog.js";
 import { gatewayCheckpoint } from "./gateway-compaction.js";
 import { ContextStore } from "./store.js";
 import { resolveContext } from "./router.js";
@@ -144,10 +144,20 @@ const TERMS_PROMPT = `你在帮话题路由器从用户的更正中学习。用�
 从 message 原文中挑出最多 4 个能把它和 rightTopic 联系起来、又能和 wrongTopic 区分开的词语：项目名、术语、产品、人名、文件名等，每个 2–12 个字，必须在 message 中原样出现。
 不要选泛泛的词（如「帮我」「这个」「问题」），不要选 wrongTopic 的名字。只输出 JSON 字符串数组，例如 ["消融实验","第三章"]。`;
 /** The first words of a new main chat, in the interface language. */
-function welcomeText(locale) {
-    return locale.toLowerCase().startsWith('zh')
-        ? '你好！以后所有的事都在这里聊就行。TheOne 会判断每句话属于哪件事，交给那件事自己的后台会话去做，过程原样显示在这里。你以前在 DSH 里聊过的内容，会整理到左侧的「话题工作区」。'
-        : 'Hi! From now on, just talk here about anything. TheOne works out which topic each message belongs to, hands it to that topic\'s own background session, and shows the work right here. Your earlier DSH conversations are organized under **Topic workspaces** in the sidebar.';
+function welcomeText(locale, consent, enabled) {
+    const zh = locale.toLowerCase().startsWith('zh');
+    const intro = zh
+        ? '你好，我是 TheOne。以后不管什么事，都在这儿跟我说就行。我会分清你说的是哪件事，交给那件事自己的后台会话去做，过程都显示在这里。'
+        : "Hi, I'm TheOne. From now on you can bring anything here. I'll work out which thing you're talking about, hand it to that topic's own background session, and show the work right here.";
+    if (!enabled)
+        return intro;
+    if (consent === 'granted')
+        return intro + (zh
+            ? '你以前的聊天在左边的「话题工作区」里，原来的会话都还在。'
+            : ' Your earlier chats are in **Topic workspaces** on the left, and the original conversations are all still there.');
+    return intro + '\n\n' + (zh
+        ? '你以前在 DSH 里的聊天，我一条都还没看。要不要我把它们整理成话题目录？整理好之后，你提到以前的事，我就能接上。原来的会话一个都不会删，不想让我看的也可以先挑出来。想好了去左边的「话题工作区」点一下就行，不着急。'
+        : "I haven't looked at any of your earlier DSH chats yet. Want me to sort them into a topic directory? Then when you mention something from before, I can pick it up. Nothing gets deleted, and you can leave out any chats you'd rather I didn't read. Whenever you're ready, it's one click in **Topic workspaces** on the left. No rush.");
 }
 /** Why a message went where it did, as a short phrase for the "show every decision" notice. */
 function reasonLabel(reason, english = false) {
@@ -375,8 +385,10 @@ export default class TheOne extends Service {
             });
         });
         this.router = this.routerFor(config.routerMode);
+        if (!this.store.catalogConsent() && this.store.hasIndexedHistory())
+            this.store.setCatalogConsent('granted');
         if (config.historyCatalog ?? true) {
-            this.catalog = new HistoryCatalog(ctx, this.store, () => this.backingModel(), config.catalogIntervalMs);
+            this.catalog = new HistoryCatalog(ctx, this.store, () => this.backingModel(), config.catalogIntervalMs, 64, true);
             this.catalog.start();
         }
         const host = (channel) => ({
@@ -1059,13 +1071,37 @@ export default class TheOne extends Service {
                     const fallback = { groups: this.store.groups(),
                         contexts: this.store.contexts().map(c => ({ ...c, sourceSessionIds: this.store.sources(c.id),
                             ...(hidden.has(c.id) ? { hidden: hidden.get(c.id) } : {}) })),
-                        status: { running: false, scanned: 0, indexed: 0, skipped: 0, failed: 0, pending: 0, hidden: hidden.size } };
+                        status: { running: false, scanned: 0, indexed: 0, skipped: 0, failed: 0, pending: 0, waiting: 0, excluded: 0, hidden: hidden.size } };
                     const snapshot = this.catalog?.snapshot() ?? fallback, states = this.topicStates();
                     const contexts = snapshot.contexts.map(context => {
                         const state = states.get(context.id);
                         return { ...context, ...(state ? { topicStatus: state.status } : {}), ...(state?.project ? { projectInfo: state.project } : {}) };
                     });
                     return Response.json({ ...snapshot, contexts, merges: this.store.merges(), linkage: this.linkageSnapshot() }, { headers: { 'cache-control': 'no-store' } });
+                } }));
+            child.effect(() => connection.fetch.register({ path: '/api/theone/catalog/consent', methods: ['POST'], requestBody: 'buffered', fetch: async (request) => {
+                    if (!this.catalog)
+                        return Response.json({ error: 'CATALOG_DISABLED' }, { status: 409 });
+                    const body = await request.json().catch(() => null);
+                    if (typeof body?.consent !== 'boolean')
+                        return Response.json({ error: 'INVALID_INPUT' }, { status: 400 });
+                    this.store.setCatalogConsent(body.consent ? 'granted' : 'declined');
+                    this.catalog.requestRefresh();
+                    return Response.json(this.catalog.snapshot().status, { headers: { 'cache-control': 'no-store' } });
+                } }));
+            child.effect(() => connection.fetch.register({ path: '/api/theone/catalog/sessions', methods: ['GET', 'POST'], requestBody: 'buffered', fetch: async (request) => {
+                    if (request.method === 'POST') {
+                        const body = await request.json().catch(() => null);
+                        if (!body || (body.kind !== 'session' && body.kind !== 'folder') || typeof body.value !== 'string' || typeof body.excluded !== 'boolean')
+                            return Response.json({ error: 'INVALID_INPUT' }, { status: 400 });
+                        const choices = await this.catalogSessions();
+                        const valid = body.kind === 'session' ? choices.sessions.some(session => session.id === body.value) : choices.folders.some(folder => folder.path === body.value);
+                        if (!valid)
+                            return Response.json({ error: 'INVALID_INPUT' }, { status: 400 });
+                        this.store.setCatalogExcluded(body.kind, body.value, body.excluded);
+                        this.catalog?.requestRefresh();
+                    }
+                    return Response.json(await this.catalogSessions(), { headers: { 'cache-control': 'no-store' } });
                 } }));
             // Recent routing decisions, and moving a misrouted message to the right topic.
             child.effect(() => connection.fetch.register({ path: '/api/theone/routes', methods: ['GET', 'POST'], requestBody: 'buffered', fetch: async (request) => {
@@ -1331,6 +1367,20 @@ export default class TheOne extends Service {
             }
         }
         throw new Error('INVALID_INPUT');
+    }
+    async catalogSessions() {
+        const projects = this.projectFolders();
+        const owned = new Set(this.store.ownedSessionIds());
+        const archived = new Set(this.ownArchive?.archivedSessionIds ?? []);
+        const records = (await this.ctx.sessionQuery.listSessions()).filter(({ header }) => header.origin !== 'subagent' && !owned.has(header.id) && !this.store.isGateway(header.id) && !archived.has(header.id))
+            .sort((a, b) => b.header.createdAt - a.header.createdAt);
+        const exclusions = this.store.catalogExclusions();
+        const folders = projects.map(({ path, name }) => ({ path, name, excluded: exclusions.folders.some(folder => withinCatalogFolder(path, folder)) }));
+        const sessions = await Promise.all(records.map(async ({ header }) => ({ id: header.id,
+            title: (await this.ctx.sessionQuery.readTitle(header.id).catch(() => undefined))?.title ?? '',
+            folder: projects.filter(project => withinCatalogFolder(header.cwd, project.path)).sort((a, b) => b.path.length - a.path.length)[0]?.path ?? null,
+            createdAt: header.createdAt, excluded: catalogSessionExcluded(header.id, header.cwd, exclusions) })));
+        return { folders, sessions };
     }
     /** Existing DSH sessions a topic can take as history: not main chats and not topics' own Workers. */
     async attachableSessions() {
@@ -2351,7 +2401,7 @@ export default class TheOne extends Service {
             && (message.source?.kind === 'user' || goalRoundOf(message) !== undefined || message.source?.kind === 'theone-welcome' || message.source?.kind === 'theone-note' || this.isRelay(message)));
         const relayed = latest && this.relays.has(latest.id) && this.background.has(latest.id);
         if (latest && 'source' in latest && !relayed && (latest.source?.kind === 'theone-welcome' || latest.source?.kind === 'theone-note' || this.isRelay(latest))) {
-            const text = latest.source?.kind === 'theone-welcome' ? welcomeText(latest.source.locale)
+            const text = latest.source?.kind === 'theone-welcome' ? welcomeText(latest.source.locale, this.store.catalogConsent(), this.config.historyCatalog ?? true)
                 : latest.content.filter(block => block.type === 'text').map(block => block.text).join('\n');
             yield { type: 'block-start', index: 0, blockType: 'text' };
             yield { type: 'text-delta', index: 0, text };

@@ -314,6 +314,22 @@ var zh = {
   "catalog.loadError": "\u6682\u65F6\u65E0\u6CD5\u8BFB\u53D6\u8BDD\u9898\uFF0C\u8BF7\u68C0\u67E5 DSH \u8FDE\u63A5\u3002",
   "catalog.continueError": "\u6682\u65F6\u65E0\u6CD5\u7EE7\u7EED\u8FD9\u4E2A\u8BDD\u9898\uFF0C\u8BF7\u7B49\u5F53\u524D\u804A\u5929\u7ED3\u675F\u540E\u91CD\u8BD5\u3002",
   "catalog.refreshError": "\u6682\u65F6\u65E0\u6CD5\u6574\u7406\u5386\u53F2\uFF0C\u8BF7\u68C0\u67E5 DSH \u6A21\u578B\u914D\u7F6E\u3002",
+  "catalog.consentTitle": "\u8981\u4E0D\u8981\u6574\u7406\u4EE5\u524D\u7684\u804A\u5929\uFF1F",
+  "catalog.consentBody": "\u4F60\u5728 DSH \u91CC\u6709 {count} \u4E2A\u4EE5\u524D\u7684\u4F1A\u8BDD\u3002\u6574\u7406\u4E4B\u540E\uFF0C\u4F60\u5728\u4E3B\u804A\u5929\u91CC\u63D0\u5230\u4EE5\u524D\u7684\u4E8B\uFF0CTheOne \u80FD\u627E\u5230\u5E76\u63A5\u7740\u505A\u3002",
+  "catalog.consentKeep": "\u539F\u6765\u7684\u4F1A\u8BDD\u4E00\u4E2A\u90FD\u4E0D\u5220\uFF0C\u4E5F\u4E0D\u4F1A\u6539\u3002",
+  "catalog.consentQuota": "\u4F1A\u7528\u4F60\u5728 DSH \u91CC\u9009\u7684\u6A21\u578B\u8BFB\u4E00\u904D\uFF0C\u4F1A\u82B1\u4E00\u70B9\u989D\u5EA6\u3002",
+  "catalog.consentChoose": "\u4E0D\u60F3\u8BA9\u5B83\u770B\u7684\uFF0C\u53EF\u4EE5\u5148\u6311\u51FA\u6765\u3002",
+  "catalog.start": "\u5F00\u59CB\u6574\u7406",
+  "catalog.chooseFirst": "\u5148\u6311\u4E00\u6311",
+  "catalog.notNow": "\u4EE5\u540E\u518D\u8BF4",
+  "catalog.declined": "\u4EE5\u524D\u7684\u804A\u5929\u6CA1\u6709\u6574\u7406\u3002\u60F3\u6574\u7406\u7684\u65F6\u5019\u70B9\u8FD9\u91CC\u3002",
+  "catalog.reconsider": "\u6574\u7406\u4EE5\u524D\u7684\u804A\u5929",
+  "catalog.chooseChats": "\u9009\u62E9\u8981\u6574\u7406\u7684\u4F1A\u8BDD",
+  "catalog.chooseHint": "\u52FE\u6389\u7684\u4F1A\u8BDD\u4E0D\u4F1A\u88AB\u8BFB\uFF0C\u4E5F\u4E0D\u4F1A\u8FDB\u76EE\u5F55\u3002\u968F\u65F6\u53EF\u4EE5\u6539\u3002",
+  "catalog.wholeFolder": "\u6574\u4E2A\u6587\u4EF6\u5939",
+  "catalog.otherChats": "\u5176\u4ED6\u4F1A\u8BDD",
+  "catalog.untitledChat": "\u672A\u547D\u540D\u4F1A\u8BDD",
+  "topic.hiddenExcluded": "\u8FD9\u4E2A\u8BDD\u9898\u6765\u81EA\u4F60\u6392\u9664\u7684\u4F1A\u8BDD\uFF0C\u4E0D\u4F1A\u518D\u88AB\u7528\u5230\u3002",
   "catalog.emptyIndexing": "\u6B63\u5728\u4ECE\u4EE5\u524D\u7684\u804A\u5929\u4E2D\u6574\u7406\u8BDD\u9898\u3002\u4F60\u4E5F\u53EF\u4EE5\u5148\u56DE\u5230\u4E3B\u804A\u5929\u3002",
   "catalog.empty": "\u76EE\u524D\u8FD8\u6CA1\u6709\u6574\u7406\u51FA\u8BDD\u9898\u3002\u5F00\u59CB\u804A\u5929\u540E\uFF0C\u5B83\u4EEC\u4F1A\u81EA\u52A8\u51FA\u73B0\u5728\u8FD9\u91CC\u3002",
   "catalog.unassigned": "\u5F85\u6574\u7406",
@@ -657,6 +673,22 @@ var en = {
   "catalog.loadError": "Topics could not load. Check your DSH connection.",
   "catalog.continueError": "This topic could not open. Wait for the current conversation to finish, then try again.",
   "catalog.refreshError": "History could not be organized. Check your DSH model settings.",
+  "catalog.consentTitle": "Sort out your earlier chats?",
+  "catalog.consentBody": "You have {count} earlier conversation(s) in DSH. Once they're sorted, TheOne can find them when you bring something up in main chat and carry on from there.",
+  "catalog.consentKeep": "Nothing is deleted or changed.",
+  "catalog.consentQuota": "It reads them once with the model you picked in DSH, which uses a little of your quota.",
+  "catalog.consentChoose": "Anything you'd rather keep out, you can leave out first.",
+  "catalog.start": "Start",
+  "catalog.chooseFirst": "Choose chats first",
+  "catalog.notNow": "Not now",
+  "catalog.declined": "Your earlier chats aren't sorted. Click here whenever you want them to be.",
+  "catalog.reconsider": "Sort earlier chats",
+  "catalog.chooseChats": "Choose chats",
+  "catalog.chooseHint": "Unchecked chats won't be read or added to the directory. You can change this any time.",
+  "catalog.wholeFolder": "Whole folder",
+  "catalog.otherChats": "Other chats",
+  "catalog.untitledChat": "Untitled chat",
+  "topic.hiddenExcluded": "This topic comes from chats you left out, so it won't be used.",
   "catalog.emptyIndexing": "Organizing topics from your earlier chats. You can return to main chat while this runs.",
   "catalog.empty": "No topics yet. They\u2019ll appear here as you chat.",
   "catalog.unassigned": "To organize",
@@ -4162,6 +4194,10 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
     const [managing, setManaging] = (0, import_react2.useState)();
     const [creating, setCreating] = (0, import_react2.useState)(false);
     const [newTitle, setNewTitle] = (0, import_react2.useState)("");
+    const [choosing, setChoosing] = (0, import_react2.useState)(false);
+    const [choices, setChoices] = (0, import_react2.useState)();
+    const [reconsidering, setReconsidering] = (0, import_react2.useState)(false);
+    const choosingRef = (0, import_react2.useRef)(false);
     const reload = (0, import_react2.useRef)(async () => {
     });
     (0, import_react2.useEffect)(() => {
@@ -4178,6 +4214,12 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
           if (!signal.aborted) {
             setSnapshot(value);
             setError((current) => current === "catalog.loadError" ? void 0 : current);
+          }
+          if (choosingRef.current) {
+            const selected = await fetch("/api/theone/catalog/sessions", { signal, cache: "no-store" });
+            if (!selected.ok) throw new Error("Chat choices unavailable");
+            const chats = await selected.json();
+            if (!signal.aborted) setChoices(chats);
           }
           const recent = await fetch("/api/theone/routes", { signal, cache: "no-store" }).then((r) => r.ok ? r.json() : void 0).catch(() => void 0);
           if (recent && !signal.aborted) {
@@ -4253,6 +4295,28 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
         setBusy(void 0);
       }
     };
+    async function chooseChats() {
+      setBusy("choices");
+      setError(void 0);
+      try {
+        const response = await fetch("/api/theone/catalog/sessions", { signal: lifetime.signal, cache: "no-store" });
+        if (!response.ok) throw new Error("Chat choices unavailable");
+        setChoices(await response.json());
+        choosingRef.current = true;
+        setChoosing(true);
+      } catch {
+        setError("manage.error");
+      } finally {
+        setBusy(void 0);
+      }
+    }
+    async function consent(value) {
+      if (await post("/api/theone/catalog/consent", { consent: value })) {
+        setReconsidering(false);
+        choosingRef.current = false;
+        setChoosing(false);
+      }
+    }
     async function editLinks(body) {
       setBusy("links");
       setError(void 0);
@@ -4346,6 +4410,8 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
     const assigned = new Set(snapshot?.groups.flatMap((group) => group.contextIds) ?? []);
     const groups = [...snapshot?.groups ?? [], ...snapshot?.contexts.some((c) => !assigned.has(c.id)) ? [{ id: "pending", title: t2("catalog.unassigned"), summary: t2("catalog.unassignedSummary"), contextIds: snapshot.contexts.filter((c) => !assigned.has(c.id)).map((c) => c.id) }] : []];
     const status = snapshot?.status;
+    const asking = status?.consent === "ask" || status?.consent === "declined" && reconsidering;
+    const unconsented = status?.consent === "ask" || status?.consent === "declined";
     const kept = routeStats?.total ? Math.round(100 * (routeStats.total - routeStats.corrected) / routeStats.total) : void 0;
     const figure = (value, name) => (0, import_react2.createElement)("div", { key: name }, (0, import_react2.createElement)("dd", null, value), (0, import_react2.createElement)("dt", null, name));
     return (0, import_react2.createElement)(
@@ -4372,12 +4438,13 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
       (0, import_react2.createElement)(
         "div",
         { className: "theone-toolbar" },
-        (0, import_react2.createElement)("p", { className: "theone-catalog-status", role: "status" }, snapshot ? status?.running ? t2("catalog.indexing") : status?.pending ? t2("catalog.pending", { count: status.pending, sessionSuffix: status.pending === 1 ? "" : "s" }) : t2("catalog.updated") : t2("catalog.reading")),
+        (0, import_react2.createElement)("p", { className: "theone-catalog-status", role: "status" }, snapshot ? unconsented ? "" : status?.running ? t2("catalog.indexing") : status?.pending ? t2("catalog.pending", { count: status.pending, sessionSuffix: status.pending === 1 ? "" : "s" }) : t2("catalog.updated") : t2("catalog.reading")),
         (0, import_react2.createElement)(
           "div",
           { className: "theone-catalog-tools" },
           (0, import_react2.createElement)("button", { type: "button", className: "theone-primary", disabled: !!busy, onClick: () => setCreating((open) => !open) }, t2("manage.create")),
-          (0, import_react2.createElement)("button", { type: "button", onClick: refresh, disabled: !!busy || status?.running }, t2("catalog.refresh")),
+          (0, import_react2.createElement)("button", { type: "button", onClick: refresh, disabled: !!busy || status?.running || unconsented }, t2("catalog.refresh")),
+          status?.consent === "granted" ? (0, import_react2.createElement)("button", { type: "button", className: "theone-quiet", disabled: !!busy, onClick: () => void chooseChats() }, t2("catalog.chooseChats")) : null,
           snapshot?.linkage && snapshot.linkage.scope !== "off" ? (0, import_react2.createElement)("button", {
             type: "button",
             className: "theone-quiet",
@@ -4390,6 +4457,79 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
           (0, import_react2.createElement)("button", { type: "button", className: "theone-quiet", onClick: () => openFeedbackDialog() }, t2("feedback.open"))
         )
       ),
+      asking ? (0, import_react2.createElement)(
+        "section",
+        { className: "theone-consent", "aria-label": t2("catalog.consentTitle") },
+        (0, import_react2.createElement)("h2", null, t2("catalog.consentTitle")),
+        (0, import_react2.createElement)("p", null, t2("catalog.consentBody", { count: (status?.waiting ?? 0) + (status?.excluded ?? 0) })),
+        (0, import_react2.createElement)(
+          "ul",
+          { className: "theone-catalog-note" },
+          (0, import_react2.createElement)("li", null, t2("catalog.consentKeep")),
+          (0, import_react2.createElement)("li", null, t2("catalog.consentQuota")),
+          (0, import_react2.createElement)("li", null, t2("catalog.consentChoose"))
+        ),
+        (0, import_react2.createElement)(
+          "div",
+          { className: "theone-catalog-tools" },
+          (0, import_react2.createElement)("button", { type: "button", className: "theone-primary", disabled: !!busy, onClick: () => void consent(true) }, t2("catalog.start")),
+          (0, import_react2.createElement)("button", { type: "button", disabled: !!busy, onClick: () => void chooseChats() }, t2("catalog.chooseFirst")),
+          (0, import_react2.createElement)("button", { type: "button", className: "theone-quiet", disabled: !!busy, onClick: () => void consent(false) }, t2("catalog.notNow"))
+        )
+      ) : null,
+      status?.consent === "declined" && !reconsidering ? (0, import_react2.createElement)(
+        "div",
+        { className: "theone-catalog-note" },
+        t2("catalog.declined"),
+        " ",
+        (0, import_react2.createElement)("button", {
+          type: "button",
+          className: "theone-quiet",
+          disabled: !!busy,
+          onClick: () => setReconsidering(true)
+        }, t2("catalog.reconsider"))
+      ) : null,
+      choosing && choices ? (0, import_react2.createElement)(
+        "section",
+        { className: "theone-consent", "aria-label": t2("catalog.chooseChats") },
+        (0, import_react2.createElement)("p", { className: "theone-catalog-note" }, t2("catalog.chooseHint")),
+        ...[...choices.folders, { path: null, name: t2("catalog.otherChats"), excluded: false }].map((folder) => (0, import_react2.createElement)(
+          "fieldset",
+          { key: folder.path ?? "other", className: "theone-chat-group", disabled: !!busy },
+          (0, import_react2.createElement)("legend", { title: folder.path ?? void 0 }, folder.name),
+          folder.path ? (0, import_react2.createElement)(
+            "label",
+            { className: "theone-chat-choice" },
+            (0, import_react2.createElement)("input", {
+              type: "checkbox",
+              checked: !folder.excluded,
+              onChange: (event) => void post("/api/theone/catalog/sessions", { kind: "folder", value: folder.path, excluded: !event.target.checked })
+            }),
+            t2("catalog.wholeFolder")
+          ) : null,
+          ...choices.sessions.filter((session) => session.folder === folder.path).map((session) => (0, import_react2.createElement)(
+            "label",
+            { key: session.id, className: "theone-chat-choice" },
+            (0, import_react2.createElement)("input", {
+              type: "checkbox",
+              checked: !session.excluded,
+              disabled: folder.excluded,
+              onChange: (event) => void post("/api/theone/catalog/sessions", { kind: "session", value: session.id, excluded: !event.target.checked })
+            }),
+            (0, import_react2.createElement)("span", null, session.title || t2("catalog.untitledChat")),
+            (0, import_react2.createElement)("time", { dateTime: new Date(session.createdAt).toISOString() }, new Date(session.createdAt).toLocaleDateString(localeSnapshot().active))
+          ))
+        )),
+        (0, import_react2.createElement)(
+          "div",
+          { className: "theone-catalog-tools" },
+          asking ? (0, import_react2.createElement)("button", { type: "button", className: "theone-primary", disabled: !!busy, onClick: () => void consent(true) }, t2("catalog.start")) : null,
+          (0, import_react2.createElement)("button", { type: "button", className: "theone-quiet", disabled: !!busy, onClick: () => {
+            choosingRef.current = false;
+            setChoosing(false);
+          } }, t2("manage.close"))
+        )
+      ) : null,
       creating ? (0, import_react2.createElement)(
         "form",
         { className: "theone-manage theone-create", onSubmit: (event) => {
@@ -4408,7 +4548,7 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
       status?.searchUnavailable ? (0, import_react2.createElement)("p", { className: "theone-catalog-warning" }, t2("catalog.searchUnavailable")) : null,
       error ? (0, import_react2.createElement)("p", { role: "alert", className: "theone-catalog-warning" }, t2(error)) : null,
       snapshot ? (0, import_react2.createElement)(RouteList, { routes, stats: routeStats, contexts: snapshot.contexts, post, busy: !!busy }) : null,
-      snapshot && !snapshot.contexts.length ? (0, import_react2.createElement)("p", { className: "theone-catalog-empty" }, t2(status?.running ? "catalog.emptyIndexing" : "catalog.empty")) : null,
+      snapshot && !snapshot.contexts.length && !unconsented ? (0, import_react2.createElement)("p", { className: "theone-catalog-empty" }, t2(status?.running ? "catalog.emptyIndexing" : "catalog.empty")) : null,
       (0, import_react2.createElement)("div", { className: "theone-catalog-groups" }, ...groups.map((group, index) => (0, import_react2.createElement)(
         "section",
         { key: group.id, className: "theone-topic-group" },
@@ -4427,13 +4567,13 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
           const links = linkRow(id);
           return [(0, import_react2.createElement)(
             "li",
-            { key: id, className: `theone-topic-card${open ? " theone-open" : ""}${topic.hidden === "orphaned" ? " theone-hidden" : ""}` },
+            { key: id, className: `theone-topic-card${open ? " theone-open" : ""}${topic.hidden === "orphaned" || topic.hidden === "excluded" ? " theone-hidden" : ""}` },
             (0, import_react2.createElement)(
               "div",
               { className: "theone-topic-main" },
               (0, import_react2.createElement)("h3", null, topic.title, topic.topicStatus && topic.topicStatus !== "active" ? (0, import_react2.createElement)("span", { className: `theone-tag theone-status-${topic.topicStatus}` }, t2(`topic.status.${topic.topicStatus}`)) : null),
               topic.summary && topic.summary.trim() !== topic.title.trim() ? (0, import_react2.createElement)("p", { className: "theone-topic-summary" }, topic.summary) : null,
-              topic.hidden ? (0, import_react2.createElement)("p", { className: "theone-topic-warning" }, t2(topic.hidden === "archived" ? "topic.hiddenArchived" : "topic.hiddenOrphaned")) : null,
+              topic.hidden ? (0, import_react2.createElement)("p", { className: "theone-topic-warning" }, t2(topic.hidden === "excluded" ? "topic.hiddenExcluded" : topic.hidden === "archived" ? "topic.hiddenArchived" : "topic.hiddenOrphaned")) : null,
               topic.lastState || constraints || topic.projectInfo || links && !open ? (0, import_react2.createElement)(
                 "dl",
                 { className: "theone-topic-meta" },
@@ -4459,7 +4599,7 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
               (0, import_react2.createElement)("button", {
                 type: "button",
                 className: "theone-continue",
-                disabled: !!busy || topic.hidden === "orphaned",
+                disabled: !!busy || topic.hidden === "orphaned" || topic.hidden === "excluded",
                 title: topic.hidden === "orphaned" ? t2("topic.continueHidden") : void 0,
                 onClick: () => {
                   void continueTopic(id);
@@ -4716,6 +4856,13 @@ button:has(.theone-catalog-entry)>span:not(:has(.theone-catalog-entry)){display:
 .theone-catalog-tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .theone-catalog-note,.theone-catalog-empty{color:var(--t-muted);font-size:14px;line-height:1.7}
 .theone-catalog-empty{padding:48px 0}
+.theone-consent{margin-bottom:28px;padding:20px 24px;border:1px solid var(--t-rule);border-radius:8px;background:var(--t-field);line-height:1.7}
+.theone-consent h2{margin:0;font-size:20px}.theone-consent p{margin:10px 0}.theone-consent ul{padding-left:22px}
+.theone-chat-group{min-width:0;border:1px solid var(--t-rule);border-radius:6px;margin:16px 0;padding:10px 14px}
+.theone-chat-group legend{max-width:100%;overflow-wrap:anywhere;padding:0 6px}
+.theone-chat-choice{display:flex;align-items:baseline;gap:10px;padding:5px 0;font-size:14px}
+.theone-chat-choice input{accent-color:var(--t-accent);flex:none}.theone-chat-choice span{overflow-wrap:anywhere;min-width:0}
+.theone-chat-choice time{margin-left:auto;color:var(--t-muted);font-size:12px;white-space:nowrap}
 .theone-catalog-warning{margin:0 0 24px;padding:10px 0 10px 14px;border-left:2px solid var(--t-warn);font-size:13px;line-height:1.6}
 .theone-catalog-entry{display:flex;align-items:center;gap:10px;font-size:14px}
 .theone-routes{margin-bottom:56px;border-top:1px solid var(--t-rule);border-bottom:1px solid var(--t-rule)}

@@ -97,6 +97,13 @@ export class ContextStore {
       CREATE TABLE IF NOT EXISTS topic_group_members (
         context_id TEXT PRIMARY KEY REFERENCES contexts(id), group_id TEXT NOT NULL REFERENCES topic_groups(id)
       );
+      CREATE TABLE IF NOT EXISTS catalog_consent (
+        id INTEGER PRIMARY KEY CHECK (id = 1), consent TEXT NOT NULL CHECK (consent IN ('granted','declined')), at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS catalog_exclusions (
+        kind TEXT NOT NULL CHECK (kind IN ('session','folder')), value TEXT NOT NULL, at INTEGER NOT NULL,
+        PRIMARY KEY (kind, value)
+      );
       CREATE TABLE IF NOT EXISTS history_index (
         session_id TEXT PRIMARY KEY, through_seq INTEGER NOT NULL, status TEXT NOT NULL, error_code TEXT
       );
@@ -398,6 +405,29 @@ export class ContextStore {
   origin(contextId: string): { sessionId: string; cwd?: string } | undefined {
     const row = this.db.prepare('SELECT * FROM context_origins WHERE context_id = ?').get(contextId)
     return row ? { sessionId: String(row.session_id), ...(row.cwd ? { cwd: String(row.cwd) } : {}) } : undefined
+  }
+
+  catalogConsent(): 'granted' | 'declined' | undefined {
+    return this.db.prepare('SELECT consent FROM catalog_consent WHERE id = 1').get()?.consent as 'granted' | 'declined' | undefined
+  }
+
+  setCatalogConsent(value: 'granted' | 'declined'): void {
+    this.db.prepare('INSERT OR REPLACE INTO catalog_consent VALUES (1, ?, ?)').run(value, Date.now())
+  }
+
+  catalogExclusions(): { sessions: Set<string>; folders: string[] } {
+    const rows = this.db.prepare('SELECT kind, value FROM catalog_exclusions ORDER BY value').all()
+    return { sessions: new Set(rows.filter(row => row.kind === 'session').map(row => String(row.value))),
+      folders: rows.filter(row => row.kind === 'folder').map(row => String(row.value)) }
+  }
+
+  setCatalogExcluded(kind: 'session' | 'folder', value: string, excluded: boolean): void {
+    if (excluded) this.db.prepare('INSERT OR REPLACE INTO catalog_exclusions VALUES (?, ?, ?)').run(kind, value, Date.now())
+    else this.db.prepare('DELETE FROM catalog_exclusions WHERE kind = ? AND value = ?').run(kind, value)
+  }
+
+  hasIndexedHistory(): boolean {
+    return !!this.db.prepare("SELECT 1 FROM history_index WHERE status = 'ready' LIMIT 1").get()
   }
 
   indexState(sessionId: string): { throughSeq: number; status: string } | undefined {
@@ -1449,7 +1479,7 @@ export class ContextStore {
    * put away: it still answers when the user comes back to it.
    */
   unreachable(): Set<string> {
-    return new Set([...this.hiddenReasons()].filter(([, reason]) => reason === 'orphaned').map(([id]) => id))
+    return new Set([...this.hiddenReasons()].filter(([, reason]) => (reason === 'orphaned' || reason === 'excluded')).map(([id]) => id))
   }
 
   /** Replace the hidden set in one write, so a scan never leaves a stale entry behind. */

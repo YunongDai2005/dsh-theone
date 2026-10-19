@@ -1,3 +1,4 @@
+import { posix, win32 } from 'node:path';
 import { createHash } from 'node:crypto';
 import { redactRoutingText, RouterFailure } from "./llm-router.js";
 import { modelJson } from "./model-json.js";
@@ -76,6 +77,19 @@ export function validateCatalog(value, parts, contextIds, groupIds, ownedContext
         return fail('COVERAGE');
     return topics;
 }
+/** Compare directory boundaries, including Windows paths on non-Windows hosts. */
+export function withinCatalogFolder(cwd, folder) {
+    if (!cwd)
+        return false;
+    const windows = /^[a-z]:[\\/]|^\\\\/i.test(folder) || /^[a-z]:[\\/]|^\\\\/i.test(cwd);
+    const normalize = (value) => windows ? win32.normalize(value).replace(/\\/g, '/').toLowerCase() : posix.normalize(value);
+    const root = normalize(folder).replace(/\/+$/, '');
+    const path = normalize(cwd).replace(/\/+$/, '');
+    return path === root || path.startsWith(root + '/');
+}
+export function catalogSessionExcluded(id, cwd, exclusions) {
+    return exclusions.sessions.has(id) || exclusions.folders.some(folder => withinCatalogFolder(cwd, folder));
+}
 /** Incremental descriptor index. Original messages remain solely in DSH. */
 export class HistoryCatalog {
     ctx;
@@ -83,20 +97,24 @@ export class HistoryCatalog {
     selection;
     intervalMs;
     batchBudget;
+    askFirst;
     abort = new AbortController();
     run;
     timer;
     dirty = false;
+    activeRequest;
     status = { running: false, scanned: 0, indexed: 0, skipped: 0, failed: 0, pending: 0 };
     /** Sessions the last finished scan could not index; a scan in progress doesn't make the catalog incomplete. */
     settledPending;
-    constructor(ctx, store, selection, intervalMs = 60000, batchBudget = 64) {
+    constructor(ctx, store, selection, intervalMs = 60000, batchBudget = 64, askFirst = false) {
         this.ctx = ctx;
         this.store = store;
         this.selection = selection;
         this.intervalMs = intervalMs;
         this.batchBudget = batchBudget;
+        this.askFirst = askFirst;
     }
+    get allowed() { return !this.askFirst || this.store.catalogConsent() === 'granted'; }
     start() { this.schedule(200); }
     schedule(ms) {
         if (this.abort.signal.aborted)
@@ -105,16 +123,24 @@ export class HistoryCatalog {
         this.timer = setTimeout(() => { void this.refresh().catch(() => { }); }, ms);
         this.timer.unref?.();
     }
-    requestRefresh() { this.dirty = true; if (!this.run)
-        this.schedule(1000); }
+    requestRefresh() {
+        this.dirty = true;
+        const active = this.activeRequest;
+        if (active && (!this.allowed || catalogSessionExcluded(active.id, active.cwd, this.store.catalogExclusions())))
+            active.abort.abort();
+        if (!this.run)
+            this.schedule(1000);
+    }
     async close() { this.abort.abort(); clearTimeout(this.timer); await this.run?.catch(() => { }); }
     snapshot() {
         const hidden = this.store.hiddenReasons();
-        return { status: { ...this.status }, groups: this.store.groups(),
+        return { status: { ...this.status, consent: this.askFirst ? this.store.catalogConsent() ?? 'ask' : this.store.catalogConsent(),
+                waiting: this.status.waiting ?? 0, excluded: this.status.excluded ?? 0 }, groups: this.store.groups(),
             contexts: this.store.contexts().map(context => ({ ...context, sourceSessionIds: this.store.sources(context.id),
                 ...(hidden.has(context.id) ? { hidden: hidden.get(context.id) } : {}) })) };
     }
-    get incomplete() { return !this.status.lastCompletedAt || (this.settledPending ?? 1) > 0 || !!this.status.searchUnavailable; }
+    get incomplete() { if (!this.allowed)
+        return false; return !this.status.lastCompletedAt || (this.settledPending ?? 1) > 0 || !!this.status.searchUnavailable; }
     refresh() {
         if (this.abort.signal.aborted)
             return Promise.resolve();
@@ -126,7 +152,7 @@ export class HistoryCatalog {
         return this.run;
     }
     async scan() {
-        this.status = { ...this.status, running: true, scanned: 0, indexed: 0, skipped: 0, failed: 0, pending: 0 };
+        this.status = { ...this.status, running: true, scanned: 0, indexed: 0, skipped: 0, failed: 0, pending: 0, waiting: 0, excluded: 0 };
         const signal = this.abort.signal;
         let records;
         try {
@@ -145,7 +171,13 @@ export class HistoryCatalog {
         for (const record of records) {
             signal.throwIfAborted();
             const sessionId = record.header.id;
-            if (record.header.origin === 'subagent' || this.store.isGateway(sessionId) || this.store.indexState(sessionId)?.status === 'excluded') {
+            if (this.store.isGateway(sessionId) || this.store.ownedSessionIds().includes(sessionId)) {
+                this.store.markIndex(sessionId, this.store.indexState(sessionId)?.throughSeq ?? -1, 'skipped');
+                this.status.skipped++;
+                this.status.pending--;
+                continue;
+            }
+            if (record.header.origin === 'subagent' || this.store.indexState(sessionId)?.status === 'excluded') {
                 this.status.skipped++;
                 this.status.pending--;
                 continue;
@@ -156,6 +188,23 @@ export class HistoryCatalog {
                 this.status.pending--;
                 continue;
             }
+            const excluded = () => catalogSessionExcluded(sessionId, record.header.cwd, this.store.catalogExclusions());
+            // Recheck after asynchronous reads and model calls: choices can change during a scan.
+            const blocked = () => {
+                if (excluded()) {
+                    this.status.excluded++;
+                    this.status.pending--;
+                    return true;
+                }
+                if (!this.allowed) {
+                    this.status.waiting++;
+                    this.status.pending--;
+                    return true;
+                }
+                return false;
+            };
+            if (blocked())
+                continue;
             const live = this.ctx.agents.get(sessionId);
             if (live && live.status !== 'idle') {
                 // Its turn in progress is indexed once it settles; what was already indexed stays usable meanwhile.
@@ -170,6 +219,8 @@ export class HistoryCatalog {
             try {
                 const log = await this.ctx.sessionQuery.readSession(sessionId);
                 signal.throwIfAborted();
+                if (blocked())
+                    continue;
                 this.status.scanned++;
                 const through = log.events.at(-1)?.seq ?? -1;
                 const previous = this.store.indexState(sessionId);
@@ -198,10 +249,17 @@ export class HistoryCatalog {
                 const changed = parts.filter(part => this.store.indexedTurn(sessionId, part.seq)?.fingerprint !== part.fingerprint && !dismissed(part));
                 const owned = this.store.contexts().find(context => context.workingSessionId === sessionId);
                 const title = clean((await this.ctx.sessionQuery.readTitle(sessionId, signal))?.title ?? '', 120);
+                if (blocked())
+                    continue;
+                let interrupted = false;
                 for (let offset = 0; offset < changed.length; offset += 8) {
                     if (budget <= 0)
                         break;
                     signal.throwIfAborted();
+                    if (blocked()) {
+                        interrupted = true;
+                        break;
+                    }
                     const batch = changed.slice(offset, offset + 8);
                     const knownIds = new Set(batch.flatMap(p => this.store.indexedTurn(sessionId, p.seq)?.contextId ?? []));
                     if (owned)
@@ -217,12 +275,21 @@ export class HistoryCatalog {
                         .map(c => ({ id: c.id, title: c.title, summary: clean(c.summary, 240), lastState: clean(c.lastState, 120) }));
                     const groups = this.store.groups().slice(-24).map(({ id, title, summary }) => ({ id, title, summary: clean(summary, 120) }));
                     budget--;
+                    const requestAbort = new AbortController();
+                    this.activeRequest = { id: sessionId, cwd: record.header.cwd, abort: requestAbort };
                     const value = await modelJson(this.ctx.llm, this.selection(), CATALOG_PROMPT, { title, ownedContextId: owned?.id ?? null, compactionSummaries: summaries,
-                        turns: batch.map(({ seq, text }) => ({ seq, text })), contexts, groups }, signal, { sessionId: log.session.id });
+                        turns: batch.map(({ seq, text }) => ({ seq, text })), contexts, groups }, AbortSignal.any([signal, requestAbort.signal]), { sessionId: log.session.id })
+                        .finally(() => { this.activeRequest = undefined; });
+                    if (blocked()) {
+                        interrupted = true;
+                        break;
+                    }
                     const topics = validateCatalog(value, batch, contexts.map(c => c.id), groups.map(g => g.id), owned?.id);
                     signal.throwIfAborted();
                     this.store.importTopics(sessionId, log.session.cwd, batch, topics);
                 }
+                if (interrupted)
+                    continue;
                 if (parts.every(p => this.store.indexedTurn(sessionId, p.seq)?.fingerprint === p.fingerprint || dismissed(p))) {
                     this.store.markIndex(sessionId, through, 'ready');
                     this.status.indexed++;
@@ -231,6 +298,8 @@ export class HistoryCatalog {
             }
             catch (error) {
                 signal.throwIfAborted();
+                if (blocked())
+                    continue;
                 this.status.failed++;
                 this.store.markIndex(sessionId, -1, 'failed', error instanceof RouterFailure ? error.code : 'CATALOG_SOURCE_UNAVAILABLE');
                 if (error instanceof RouterFailure && [401, 403, 429].includes(error.meta?.httpStatus ?? 0))
@@ -264,13 +333,18 @@ export class HistoryCatalog {
      */
     reconcile(records, archived) {
         const live = new Set(records.map(record => record.header.id));
+        const exclusions = this.store.catalogExclusions();
+        const directories = new Map(records.map(record => [record.header.id, record.header.cwd]));
+        const excluded = (id) => catalogSessionExcluded(id, directories.get(id), exclusions);
         const hidden = [];
         for (const context of this.store.contexts()) {
             const conversations = [context.workingSessionId, ...this.store.sources(context.id)];
             // Only conversations the catalog has actually seen count: a Worker session exists on disk only
             // once TheOne has run it, so an untouched placeholder must not look like a lost conversation.
             const known = conversations.filter(sessionId => this.store.indexState(sessionId) !== undefined);
-            if (known.length && known.every(sessionId => archived.has(sessionId)))
+            if (known.length && known.every(excluded))
+                hidden.push({ id: context.id, reason: 'excluded' });
+            else if (known.length && known.every(sessionId => archived.has(sessionId)))
                 hidden.push({ id: context.id, reason: 'archived' });
             // Nothing left to read: every conversation is off disk, and at least one of them was indexed.
             else if (known.length && !conversations.some(sessionId => live.has(sessionId)))

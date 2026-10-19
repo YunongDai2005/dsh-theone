@@ -99,6 +99,14 @@ export declare class ContextStore {
         sessionId: string;
         cwd?: string;
     } | undefined;
+    catalogConsent(): 'granted' | 'declined' | undefined;
+    setCatalogConsent(value: 'granted' | 'declined'): void;
+    catalogExclusions(): {
+        sessions: Set<string>;
+        folders: string[];
+    };
+    setCatalogExcluded(kind: 'session' | 'folder', value: string, excluded: boolean): void;
+    hasIndexedHistory(): boolean;
     indexState(sessionId: string): {
         throughSeq: number;
         status: string;

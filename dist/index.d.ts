@@ -142,6 +142,7 @@ export default class TheOne extends Service {
     private registerCatalogChannel;
     /** One topic-directory edit. Changes that remove a topic wait until no reply is running. */
     private editTopics;
+    private catalogSessions;
     /** Existing DSH sessions a topic can take as history: not main chats and not topics' own Workers. */
     private attachableSessions;
     /**
