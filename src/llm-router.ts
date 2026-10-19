@@ -74,20 +74,51 @@ export const routingPrompt = (payload: object) => {
   return ROUTING_PROMPT + facts + projects + ('running' in payload && payload.running ? RUNNING_PROMPT : '') + recheck
 }
 
+/** How much of each field a routing request carries; the later steps apply only when a request would not fit. */
+const PAYLOAD_STEPS = [
+  { summary: 600, lastState: 400, terms: 24, recent: 12, reply: 700 },
+  { summary: 600, lastState: 400, terms: 24, recent: 12, reply: 300 },
+  { summary: 600, lastState: 400, terms: 24, recent: 6, reply: 300 },
+  { summary: 300, lastState: 200, terms: 12, recent: 6, reply: 300 },
+] as const
+const PAYLOAD_MAX = 24000
+
+/**
+ * The classifier's input. A request that would be too large is cut down step by step (shorter
+ * replies, fewer recent messages, shorter topic descriptions, then the last-ranked candidates)
+ * rather than failing, which would quietly hand the message to the rules.
+ */
 export function routingPayload(input: RoutingInput): Omit<RoutingInput, 'currentId'> & {currentId:string|null} {
   const text = redactRoutingText(input.text).slice(0, 2000)
-  const contexts = input.contexts.map(context => ({
+  if (!text.trim()) throw new RouterFailure('ROUTER_INPUT_INVALID')
+  for (const step of PAYLOAD_STEPS) {
+    const payload = buildPayload(input, text, input.contexts, step)
+    if (JSON.stringify(payload).length <= PAYLOAD_MAX) return payload
+  }
+  // Still too large: keep the current topic and the best-ranked candidates that fit.
+  const step = PAYLOAD_STEPS.at(-1)!
+  const current = input.contexts.filter(context => context.id === input.currentId)
+  const others = input.contexts.filter(context => context.id !== input.currentId)
+  for (let keep = others.length - 1; keep >= 0; keep--) {
+    const payload = buildPayload(input, text, [...current, ...others.slice(0, keep)], step)
+    if (JSON.stringify(payload).length <= PAYLOAD_MAX) return payload
+  }
+  throw new RouterFailure('ROUTER_INPUT_INVALID')
+}
+
+function buildPayload(input: RoutingInput, text: string, offeredContexts: readonly ContextDescriptor[], step: typeof PAYLOAD_STEPS[number]) {
+  const contexts = offeredContexts.map(context => ({
     id: context.id, title: redactRoutingText(context.title).slice(0, 120),
-    summary: redactRoutingText(context.summary).slice(0, 600),
-    entities: context.entities.slice(0, 24).map(redactRoutingText),
-    keywords: context.keywords.slice(0, 24).map(redactRoutingText),
-    lastState: redactRoutingText(context.lastState).slice(0, 400),
+    summary: redactRoutingText(context.summary).slice(0, step.summary),
+    entities: context.entities.slice(0, step.terms).map(redactRoutingText),
+    keywords: context.keywords.slice(0, step.terms).map(redactRoutingText),
+    lastState: redactRoutingText(context.lastState).slice(0, step.lastState),
     ...(context.activity ? { activity: context.activity.slice(0, 40) } : {}),
     ...(context.project ? { project: redactRoutingText(context.project).slice(0, 80) } : {}),
     ...(context.status ? { status: context.status } : {}),
   }))
-  const recent = (input.recent ?? []).slice(-12).map(message => ({role:message.role,text:redactRoutingText(message.text).slice(0, 700)}))
-  const offered = new Set(input.contexts.map(context => context.id))
+  const recent = (input.recent ?? []).slice(-step.recent).map(message => ({role:message.role,text:redactRoutingText(message.text).slice(0, message.role === 'user' ? 700 : step.reply)}))
+  const offered = new Set(offeredContexts.map(context => context.id))
   const corrections = (input.corrections ?? []).filter(item => offered.has(item.rightId)).slice(0, 5)
     .map(item => ({ text: redactRoutingText(item.text).slice(0, 200), rightId: item.rightId, ...(item.wrongId && offered.has(item.wrongId) ? { wrongId: item.wrongId } : {}) }))
   // Candidates arrive within their size budget; names are cleaned again here, as everything sent is.
@@ -99,9 +130,7 @@ export function routingPayload(input: RoutingInput): Omit<RoutingInput, 'current
   const clue = input.recheck?.contextId && offered.has(input.recheck.contextId) ? { contextId: input.recheck.contextId,
     terms: (input.recheck.terms ?? []).slice(0, EVIDENCE_LIMITS.terms).map(term => redactRoutingText(term).slice(0, 40)) } : {}
   const recheck = input.recheck ? { recheck: { previous: input.recheck.previous.slice(0, 80), ...clue } } : {}
-  const payload = {text, contexts, currentId: mounted(input, contexts), recent, historyIncomplete: input.historyIncomplete ?? false, ...(corrections.length ? { corrections } : {}), ...(symbols.length ? { symbols } : {}), ...running, ...(projects.length ? { projects } : {}), ...recheck}
-  if (!text.trim() || JSON.stringify(payload).length > 24000) throw new RouterFailure('ROUTER_INPUT_INVALID')
-  return payload
+  return {text, contexts, currentId: mounted(input, contexts), recent, historyIncomplete: input.historyIncomplete ?? false, ...(corrections.length ? { corrections } : {}), ...(symbols.length ? { symbols } : {}), ...running, ...(projects.length ? { projects } : {}), ...recheck}
 }
 
 /**

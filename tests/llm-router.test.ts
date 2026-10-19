@@ -195,3 +195,19 @@ test('reasoning a model writes before its answer (<think>…</think>) does not h
  const closing=service(function*(){yield* textResponse(`想一想……</think>\n\n\`\`\`json\n${JSON.stringify(decision)}\n\`\`\``)}).router()
  assert.equal((await closing.decide(input)).decision.action,'KEEP')
 })
+
+test('a request too large for the classifier is cut down, keeping the current topic, instead of failing', () => {
+ const topic = (i: number) => ({ id: `ctx_${i}`, title: `话题 ${i}`, summary: '摘'.repeat(600), entities: Array.from({ length: 24 }, (_, k) => `实体${k}`),
+  keywords: Array.from({ length: 24 }, (_, k) => `关键词${k}`), lastState: '状'.repeat(400) })
+ const recent = Array.from({ length: 12 }, (_, k) => ({ role: k % 2 ? 'assistant' as const : 'user' as const, text: (k % 2 ? '答' : '问').repeat(k % 2 ? 700 : 60) }))
+ const contexts = Array.from({ length: 16 }, (_, i) => topic(i))
+ const payload = routingPayload({ text: '你好', contexts, currentId: 'ctx_15', recent })
+ assert.ok(JSON.stringify(payload).length <= 24000)
+ assert.equal(payload.currentId, 'ctx_15')
+ assert.ok(payload.recent!.length < 12 || payload.recent!.some(message => message.role === 'assistant' && message.text.length < 700), 'replies are shortened first')
+ // Far too many candidates: the current topic stays, the last-ranked ones go.
+ const many = routingPayload({ text: '你好', contexts: Array.from({ length: 60 }, (_, i) => topic(i)), currentId: 'ctx_59', recent })
+ assert.ok(many.contexts.some(context => context.id === 'ctx_59') && many.contexts.some(context => context.id === 'ctx_0'))
+ assert.ok(many.contexts.length < 60)
+ assert.throws(() => routingPayload({ text: '   ', contexts, recent }), RouterFailure)
+})

@@ -67,6 +67,11 @@ export declare const RUNNING_PROMPT = "\nrunning\uFF08\u53EF\u80FD\u6CA1\u6709\u
 export declare const PROJECTS_PROMPT = "\nprojects\uFF08\u53EF\u80FD\u6CA1\u6709\uFF09\u662F\u7528\u6237\u7535\u8111\u4E0A\u7684\u9879\u76EE\u6587\u4EF6\u5939\uFF08\u53EA\u6709\u540D\u5B57\uFF09\u3002CREATE \u65F6\uFF0C\u5982\u679C\u8FD9\u4EF6\u65B0\u4E8B\u60C5\u660E\u663E\u662F\u5728\u5176\u4E2D\u67D0\u4E2A\u9879\u76EE\u91CC\u5E72\u6D3B\uFF08\u63D0\u5230\u8FD9\u4E2A\u9879\u76EE\u6216\u5B83\u7684\u4EE3\u7801\u3001\u6587\u4EF6\u3001\u4ED3\u5E93\uFF0C\u6216\u63A5\u7740\u505A\u90A3\u4E2A\u9879\u76EE\u91CC\u7684\u4E8B\uFF09\uFF0C\u628A\u5B83\u7684 id \u586B\u8FDB projectId\uFF1B\u548C\u8FD9\u4E9B\u9879\u76EE\u65E0\u5173\u3001\u6216\u62FF\u4E0D\u51C6\u65F6\u586B null\u3002\u5176\u4ED6\u52A8\u4F5C projectId \u4E3A null\u3002\u8F93\u51FA JSON \u65F6\u589E\u52A0\u5B57\u6BB5 \"projectId\"\u3002";
 /** The routing instructions for one request. */
 export declare const routingPrompt: (payload: object) => string;
+/**
+ * The classifier's input. A request that would be too large is cut down step by step (shorter
+ * replies, fewer recent messages, shorter topic descriptions, then the last-ranked candidates)
+ * rather than failing, which would quietly hand the message to the rules.
+ */
 export declare function routingPayload(input: RoutingInput): Omit<RoutingInput, 'currentId'> & {
     currentId: string | null;
 };
