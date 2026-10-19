@@ -140,6 +140,19 @@ export function buildBriefing(store, input) {
         parts.push(['本轮用到的其他话题要点（引用资料，是用户确认过的值）：', ...input.facts].join('\n'));
         worthSending = true;
     }
+    // What this message itself refers to comes before what is merely related, so the budget keeps it.
+    for (const item of input.recall ?? []) {
+        const context = store.contexts().find(other => other.id === item.topicId);
+        if (!context)
+            continue;
+        const lines = [`本轮消息提到的「${item.terms.join('」「')}」出现在【${context.title}】（topicId: ${item.topicId}）里，这条消息可能要用到那边的信息：`,
+            ...item.lines.map(line => `- 那边说过：${clip(line, 200)}`), ...topicDigest(store, context, 300, 1)];
+        const rules = store.constraints(item.topicId);
+        if (rules)
+            lines.push(`约束（必须遵守）：${rules.text}`);
+        parts.push(lines.join('\n'));
+        worthSending = true;
+    }
     if (input.recent.length) {
         let room = 1500;
         const lines = [];

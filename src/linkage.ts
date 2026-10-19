@@ -110,6 +110,8 @@ export function buildBriefing(store: ContextStore, input: {
   context: StoredContext; related: RelatedTopic[]; recent: RecentMessage[]; now?: number; budget?: number
   /** Changes to facts this topic used before, and confirmed facts this request uses (shared facts only). */
   notices?: string[]; facts?: string[]
+  /** Other topics holding a number, code or name this message mentions: where it was said, and where that topic stands. */
+  recall?: { topicId: string; terms: string[]; lines: string[] }[]
 }): Briefing | undefined {
   const now = input.now ?? Date.now()
   const budget = input.budget ?? 6000
@@ -121,6 +123,17 @@ export function buildBriefing(store: ContextStore, input: {
   if (own) { parts.push(`本话题的约束（必须遵守）：${own.text}`); worthSending = true }
   if (input.notices?.length) { parts.push(['你之前用到的其他话题要点有变化，以此为准：', ...input.notices].join('\n')); worthSending = true }
   if (input.facts?.length) { parts.push(['本轮用到的其他话题要点（引用资料，是用户确认过的值）：', ...input.facts].join('\n')); worthSending = true }
+  // What this message itself refers to comes before what is merely related, so the budget keeps it.
+  for (const item of input.recall ?? []) {
+    const context = store.contexts().find(other => other.id === item.topicId)
+    if (!context) continue
+    const lines = [`本轮消息提到的「${item.terms.join('」「')}」出现在【${context.title}】（topicId: ${item.topicId}）里，这条消息可能要用到那边的信息：`,
+      ...item.lines.map(line => `- 那边说过：${clip(line, 200)}`), ...topicDigest(store, context, 300, 1)]
+    const rules = store.constraints(item.topicId)
+    if (rules) lines.push(`约束（必须遵守）：${rules.text}`)
+    parts.push(lines.join('\n'))
+    worthSending = true
+  }
   if (input.recent.length) {
     let room = 1500
     const lines: string[] = []

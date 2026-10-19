@@ -55,4 +55,10 @@ export declare function buildBriefing(store: ContextStore, input: {
     /** Changes to facts this topic used before, and confirmed facts this request uses (shared facts only). */
     notices?: string[];
     facts?: string[];
+    /** Other topics holding a number, code or name this message mentions: where it was said, and where that topic stands. */
+    recall?: {
+        topicId: string;
+        terms: string[];
+        lines: string[];
+    }[];
 }): Briefing | undefined;

@@ -248,6 +248,11 @@ export default class TheOne extends Service {
      * A topic another topic's Worker may read: never private or kept apart by the user, and within
      * the linking scope. Reading it is evidence the two are related.
      */
+    /**
+     * Search the topics that share with `reader` for `query`: those whose routed messages or entry name
+     * it, then the most recently used, five at most (each search reads that topic's sessions).
+     */
+    private searchEverywhere;
     private readableTopic;
     /** Wait briefly for the main chat to log its mirror of a Worker tool call. */
     private mirroredCall;
@@ -265,6 +270,11 @@ export default class TheOne extends Service {
      * still being written when the message was sent.
      */
     private classify;
+    /**
+     * Other topics this message refers to by a number, code or name only they have mentioned: the lines
+     * there that mention it. Topics kept apart from this one (private, unlinked) stay out.
+     */
+    private recallFor;
     /** Routing evidence for `text` from each topic's routed messages and what its catalog entry and card know. */
     private routingEvidence;
     /** The user's project folders: DSH workspaces that exist, other than DSH's default one and TheOne's own. */

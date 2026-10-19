@@ -69,6 +69,8 @@ test('a decision against a clue is asked once more with thinking on, and the sec
     assert.deepEqual(routed[1].payload.recheck, { previous: 'ctx_thesis', contextId: 'ctx_qwen_9070xt', terms: ['fp8'] })
     assert.ok((routed[1].maxTokens ?? 0) > (routed[0].maxTokens ?? 0), 'the second call leaves room to think')
     assert.equal(app.ctx.theone.store.route(input.id)?.decision.contextId, 'ctx_qwen_9070xt')
+    // The first pick comes along as reference, in case it was right.
+    assert.deepEqual(app.ctx.theone.store.route(input.id)?.decision.relatedIds, ['ctx_thesis'])
     // Agreeing with the clue needs no second call.
     await ask(app.gateway, 'FP8 再试一次')
     assert.equal(routed.length, 3)
