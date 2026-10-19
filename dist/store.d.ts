@@ -336,6 +336,14 @@ export declare class ContextStore {
     /** A messaging app bound to main chat (its login, cursor and switch), or undefined when none is. */
     remoteLink<T>(channel: string): T | undefined;
     saveRemoteLink(channel: string, state: unknown): void;
+    /** What a correction of `messageId` taught, so undoing it can take exactly that back. */
+    recordCorrectionTerms(messageId: string, contextId: string, terms: string[], delta: number): void;
+    /**
+     * Undo the user's move of a message: it belongs where it was first routed again, the terms the move
+     * taught are taken back, and the first topic's turn counts as its own again. Returns the topic the
+     * message was moved to, or undefined when it was not moved.
+     */
+    uncorrectRoute(messageId: string, now?: number): string | undefined;
     /** A topic's turn for a message that was not its own: later reads of its history leave it out. */
     recordMisroute(turn: {
         messageId: string;

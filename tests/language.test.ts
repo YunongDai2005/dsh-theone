@@ -15,6 +15,10 @@ test('a message naming two topics is not asked about, in either language: the fi
       const decision = app.ctx.theone.store.route(result.input.id)?.decision
       assert.equal(decision?.reason, 'unclear-settled')
       assert.deepEqual(decision?.alternateIds, ['ctx_thesis'])
+      // Notices are hidden by default, but a route that hesitated says so, in the message's language.
+      const notice = result.events.find(event => event.type === 'user/message' && event.data.source.kind === 'theone-route')
+      assert.ok(notice?.type === 'user/message')
+      assert.match(notice.data.content.map(block => block.type === 'text' ? block.text : '').join(''), /may be about "Video Attention Thesis"|也可能是「Video Attention Thesis」/)
     }
   } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
 })

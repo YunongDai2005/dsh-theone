@@ -149,6 +149,9 @@ export class ContextStore {
       CREATE TABLE IF NOT EXISTS learned_terms (
         context_id TEXT NOT NULL, term TEXT NOT NULL, weight REAL NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY(context_id, term)
       );
+      CREATE TABLE IF NOT EXISTS correction_terms (
+        message_id TEXT NOT NULL, context_id TEXT NOT NULL, term TEXT NOT NULL, delta REAL NOT NULL
+      );
       CREATE TABLE IF NOT EXISTS topic_runs (
         message_id TEXT PRIMARY KEY, context_id TEXT NOT NULL, session_id TEXT NOT NULL,
         outcome TEXT NOT NULL CHECK (outcome IN ('running', 'completed', 'failed', 'stopped', 'interrupted', 'moved')),
@@ -909,7 +912,7 @@ export class ContextStore {
       // The source's own Worker conversation is now reviewed history of the target, not a new catalog source.
       this.markIndex(source.workingSessionId, Number.MAX_SAFE_INTEGER, 'excluded')
       this.db.prepare('INSERT OR IGNORE INTO context_source_ranges VALUES (?, ?, ?, ?)').run(targetId, source.workingSessionId, WHOLE_SESSION.startSeq, WHOLE_SESSION.endSeq)
-      for (const table of ['history_turns', 'context_state_updates', 'topic_runs']) this.db.prepare(`UPDATE ${table} SET context_id = ? WHERE context_id = ?`).run(targetId, sourceId)
+      for (const table of ['history_turns', 'context_state_updates', 'topic_runs', 'correction_terms']) this.db.prepare(`UPDATE ${table} SET context_id = ? WHERE context_id = ?`).run(targetId, sourceId)
       this.db.prepare('UPDATE OR IGNORE context_summary_updates SET context_id = ? WHERE context_id = ?').run(targetId, sourceId)
       this.db.prepare('UPDATE gateway_state SET context_id = ? WHERE context_id = ?').run(targetId, sourceId)
       this.db.prepare('UPDATE route_details SET corrected_to = ? WHERE corrected_to = ?').run(targetId, sourceId)
@@ -947,7 +950,7 @@ export class ContextStore {
   private purge(contextId: string): void {
     for (const table of ['topic_group_members', 'history_turns', 'context_origins', 'context_sources', 'context_source_ranges',
       'gateway_state', 'context_state_updates', 'context_summary_updates', 'topic_flags', 'compaction_digests', 'learned_terms',
-      'topic_runs', 'topic_status', 'topic_names', 'topic_settled', 'topic_open'])
+      'topic_runs', 'topic_status', 'topic_names', 'topic_settled', 'topic_open', 'correction_terms'])
       this.db.prepare(`DELETE FROM ${table} WHERE context_id = ?`).run(contextId)
     this.db.prepare('DELETE FROM topic_links WHERE a = ? OR b = ?').run(contextId, contextId)
     this.db.prepare('DELETE FROM hidden_contexts WHERE context_id = ?').run(contextId)
@@ -1222,6 +1225,32 @@ export class ContextStore {
   saveRemoteLink(channel: string, state: unknown): void {
     if (state === undefined) this.db.prepare('DELETE FROM remote_links WHERE channel = ?').run(channel)
     else this.db.prepare('INSERT INTO remote_links VALUES (?, ?) ON CONFLICT(channel) DO UPDATE SET state = excluded.state').run(channel, JSON.stringify(state))
+  }
+
+  /** What a correction of `messageId` taught, so undoing it can take exactly that back. */
+  recordCorrectionTerms(messageId: string, contextId: string, terms: string[], delta: number): void {
+    for (const term of terms) this.db.prepare('INSERT INTO correction_terms VALUES (?, ?, ?, ?)').run(messageId, contextId, term, delta)
+  }
+
+  /**
+   * Undo the user's move of a message: it belongs where it was first routed again, the terms the move
+   * taught are taken back, and the first topic's turn counts as its own again. Returns the topic the
+   * message was moved to, or undefined when it was not moved.
+   */
+  uncorrectRoute(messageId: string, now = Date.now()): string | undefined {
+    const row = this.db.prepare('SELECT corrected_to FROM route_details WHERE message_id = ?').get(messageId)
+    if (!row?.corrected_to) return undefined
+    this.db.exec('BEGIN IMMEDIATE')
+    try {
+      this.db.prepare('UPDATE route_details SET corrected_to = NULL, corrected_at = NULL WHERE message_id = ?').run(messageId)
+      for (const taught of this.db.prepare('SELECT context_id, term, delta FROM correction_terms WHERE message_id = ?').all(messageId))
+        this.learnTerms(String(taught.context_id), [String(taught.term)], -Number(taught.delta), now)
+      this.db.prepare('DELETE FROM correction_terms WHERE message_id = ?').run(messageId)
+      this.db.prepare('DELETE FROM misrouted_turns WHERE message_id = ?').run(messageId)
+      this.db.prepare("UPDATE topic_runs SET outcome = 'completed' WHERE message_id = ? AND outcome = 'moved'").run(messageId)
+      this.db.exec('COMMIT')
+      return String(row.corrected_to)
+    } catch (error) { this.db.exec('ROLLBACK'); throw error }
   }
 
   /** A topic's turn for a message that was not its own: later reads of its history leave it out. */

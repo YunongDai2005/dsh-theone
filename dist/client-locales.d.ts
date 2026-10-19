@@ -281,6 +281,8 @@ export declare const zh: {
     readonly 'routes.empty': "还没有分配记录。";
     readonly 'routes.move': "改到…";
     readonly 'routes.corrected': "已改到 {title}";
+    readonly 'routes.moveTo': "换到 {title}";
+    readonly 'routes.undo': "撤销";
     readonly 'routes.clarify': "? 追问";
     readonly 'routes.error': "分类出错：{code}";
     readonly 'routes.rules': "规则判断";

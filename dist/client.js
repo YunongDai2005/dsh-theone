@@ -368,6 +368,8 @@ var zh = {
   "routes.empty": "\u8FD8\u6CA1\u6709\u5206\u914D\u8BB0\u5F55\u3002",
   "routes.move": "\u6539\u5230\u2026",
   "routes.corrected": "\u5DF2\u6539\u5230 {title}",
+  "routes.moveTo": "\u6362\u5230 {title}",
+  "routes.undo": "\u64A4\u9500",
   "routes.clarify": "? \u8FFD\u95EE",
   "routes.error": "\u5206\u7C7B\u51FA\u9519\uFF1A{code}",
   "routes.rules": "\u89C4\u5219\u5224\u65AD",
@@ -707,6 +709,8 @@ var en = {
   "routes.empty": "No routing records yet.",
   "routes.move": "Move to\u2026",
   "routes.corrected": "Moved to {title}",
+  "routes.moveTo": "Move to {title}",
+  "routes.undo": "Undo",
   "routes.clarify": "? Asked",
   "routes.error": "Classifier error: {code}",
   "routes.rules": "rules",
@@ -4115,18 +4119,29 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
             "div",
             { className: "theone-route-actions" },
             (0, import_react2.createElement)("button", { type: "button", className: "theone-quiet", onClick: () => openFeedbackDialog(route.messageId) }, t2("routes.report")),
-            route.correctedTo ? (0, import_react2.createElement)("span", { className: "theone-route-fixed" }, t2("routes.corrected", { title: titleOf(route.correctedTo) })) : (0, import_react2.createElement)(
-              "select",
-              {
-                value: "",
-                disabled: busy,
-                "aria-label": t2("routes.move"),
-                onChange: (event) => {
-                  if (event.target.value) void post("/api/theone/routes", { messageId: route.messageId, contextId: event.target.value });
-                }
-              },
-              (0, import_react2.createElement)("option", { value: "" }, t2("routes.move")),
-              ...contexts.filter((context) => context.id !== target).map((context) => (0, import_react2.createElement)("option", { key: context.id, value: context.id }, context.title))
+            route.correctedTo ? (0, import_react2.createElement)(
+              "span",
+              { className: "theone-route-fixed" },
+              t2("routes.corrected", { title: titleOf(route.correctedTo) }),
+              " ",
+              (0, import_react2.createElement)("button", { type: "button", className: "theone-quiet", disabled: busy, onClick: () => void post("/api/theone/routes", { messageId: route.messageId, undo: true }) }, t2("routes.undo"))
+            ) : (0, import_react2.createElement)(
+              import_react2.Fragment,
+              null,
+              ...(route.decision.alternateIds ?? []).filter((id) => id !== target && contexts.some((context) => context.id === id)).slice(0, 2).map((id) => (0, import_react2.createElement)("button", { key: id, type: "button", className: "theone-quiet", disabled: busy, onClick: () => void post("/api/theone/routes", { messageId: route.messageId, contextId: id }) }, t2("routes.moveTo", { title: titleOf(id) }))),
+              (0, import_react2.createElement)(
+                "select",
+                {
+                  value: "",
+                  disabled: busy,
+                  "aria-label": t2("routes.move"),
+                  onChange: (event) => {
+                    if (event.target.value) void post("/api/theone/routes", { messageId: route.messageId, contextId: event.target.value });
+                  }
+                },
+                (0, import_react2.createElement)("option", { value: "" }, t2("routes.move")),
+                ...contexts.filter((context) => context.id !== target).map((context) => (0, import_react2.createElement)("option", { key: context.id, value: context.id }, context.title))
+              )
             )
           )
         );

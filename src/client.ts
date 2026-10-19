@@ -1,4 +1,4 @@
-import { createElement as h, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { createElement as h, Fragment, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
@@ -1061,10 +1061,15 @@ export function apply(ctx: Context) {
             h('small', null, details)),
           h('div', { className: 'theone-route-actions' },
             h('button', { type: 'button', className: 'theone-quiet', onClick: () => openFeedbackDialog(route.messageId) }, t('routes.report')),
-            route.correctedTo ? h('span', { className: 'theone-route-fixed' }, t('routes.corrected', { title: titleOf(route.correctedTo) }))
-              : h('select', { value: '', disabled: busy, 'aria-label': t('routes.move'),
-                onChange: (event: React.ChangeEvent<HTMLSelectElement>) => { if (event.target.value) void post('/api/theone/routes', { messageId: route.messageId, contextId: event.target.value }) } },
-                h('option', { value: '' }, t('routes.move')), ...contexts.filter(context => context.id !== target).map(context => h('option', { key: context.id, value: context.id }, context.title)))))
+            route.correctedTo ? h('span', { className: 'theone-route-fixed' }, t('routes.corrected', { title: titleOf(route.correctedTo) }), ' ',
+              h('button', { type: 'button', className: 'theone-quiet', disabled: busy, onClick: () => void post('/api/theone/routes', { messageId: route.messageId, undo: true }) }, t('routes.undo')))
+              : h(Fragment, null,
+                // The topics routing hesitated between come first: one click, nothing to remember.
+                ...(route.decision.alternateIds ?? []).filter(id => id !== target && contexts.some(context => context.id === id)).slice(0, 2).map(id =>
+                  h('button', { key: id, type: 'button', className: 'theone-quiet', disabled: busy, onClick: () => void post('/api/theone/routes', { messageId: route.messageId, contextId: id }) }, t('routes.moveTo', { title: titleOf(id) }))),
+                h('select', { value: '', disabled: busy, 'aria-label': t('routes.move'),
+                  onChange: (event: React.ChangeEvent<HTMLSelectElement>) => { if (event.target.value) void post('/api/theone/routes', { messageId: route.messageId, contextId: event.target.value }) } },
+                  h('option', { value: '' }, t('routes.move')), ...contexts.filter(context => context.id !== target).map(context => h('option', { key: context.id, value: context.id }, context.title))))))
       })) : h('p', { className: 'theone-links-empty' }, t('routes.empty')))
   }
 

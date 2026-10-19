@@ -857,9 +857,12 @@ export default class TheOne extends Service {
       // The notice speaks the language the message was written in.
       const english = writtenInEnglish(text)
       const why = notice === 'all' ? ` · ${reasonLabel(route.decision.reason, english)}` : ''
-      const summary = `${mark} ${titleOf(route.decision.contextId) ?? (english ? 'needs a topic' : '请补充话题')}${references.length ? (english ? ` · reference: ${references.join(', ')}` : ` · 参考：${references.join('、')}`) : ''}${why}`.slice(0, 160)
+      // Where routing hesitated, say so even with notices hidden: the topic workspace moves it in one click.
+      const maybe = (route.decision.alternateIds ?? []).flatMap(id => titleOf(id) ?? [])
+      const hesitated = maybe.length ? (english ? ` · may be about ${maybe.map(title => `"${title}"`).join(' or ')}: move it in Topic workspaces` : ` · 也可能是「${maybe.join('」或「')}」，可以在话题工作区一键换`) : ''
+      const summary = `${mark} ${titleOf(route.decision.contextId) ?? (english ? 'needs a topic' : '请补充话题')}${references.length ? (english ? ` · reference: ${references.join(', ')}` : ` · 参考：${references.join('、')}`) : ''}${hesitated}${why}`.slice(0, 200)
       const switched = route.decision.action === 'MOUNT' || route.decision.action === 'SWAP' || route.decision.action === 'CREATE'
-      if (notice === 'hidden' || (notice === 'switch' && !switched)) return decision
+      if (!maybe.length && (notice === 'hidden' || (notice === 'switch' && !switched))) return decision
       return { ...decision, messages: [...decision.messages, createUserMessage({
         source: { kind: 'theone-route', form: 'notice', summary, messageId: input.id, router: Object.fromEntries(Object.entries(receipt).filter(([, value]) => value !== undefined)) as unknown as RouterReceipt },
         content: [{ type: 'text', text: summary }],
@@ -1017,11 +1020,18 @@ export default class TheOne extends Service {
           try { row = await request.json() as Record<string, unknown> } catch { return Response.json({ error: 'INVALID_INPUT' }, { status: 400 }) }
           if (this.busy) return Response.json({ error: 'GATEWAY_BUSY' }, { status: 409 })
           const route = typeof row?.messageId === 'string' ? this.store.route(row.messageId) : undefined
-          if (!route || !this.store.isGateway(route.gatewayId) || typeof row.contextId !== 'string' || !this.store.contexts().some(context => context.id === row.contextId))
-            return Response.json({ error: 'INVALID_INPUT' }, { status: 400 })
-          this.applyCorrection(route.messageId, row.contextId)
-          // The conversation continues in the topic the user chose.
-          this.store.mount(this.config.gatewayKey, row.contextId)
+          if (route && this.store.isGateway(route.gatewayId) && row.undo === true) {
+            // Undo a move: the message is the first topic's again, and the conversation goes back there.
+            await this.learning
+            if (!this.store.uncorrectRoute(route.messageId)) return Response.json({ error: 'NOT_MOVED' }, { status: 409 })
+            if (route.decision.contextId && this.store.contexts().some(context => context.id === route.decision.contextId)) this.store.mount(this.config.gatewayKey, route.decision.contextId)
+          } else {
+            if (!route || !this.store.isGateway(route.gatewayId) || typeof row.contextId !== 'string' || !this.store.contexts().some(context => context.id === row.contextId))
+              return Response.json({ error: 'INVALID_INPUT' }, { status: 400 })
+            this.applyCorrection(route.messageId, row.contextId)
+            // The conversation continues in the topic the user chose.
+            this.store.mount(this.config.gatewayKey, row.contextId)
+          }
         }
         return Response.json({ routes: this.store.recentRoutes(this.config.gatewayKey, 30) satisfies RouteView[], stats: this.store.routeStats(this.config.gatewayKey) },
           { headers: { 'cache-control': 'no-store' } })
@@ -2704,8 +2714,9 @@ export default class TheOne extends Service {
     const learn = (terms: string[]) => {
       if (!terms.length || !right) return
       this.store.learnTerms(contextId, terms, weight)
+      this.store.recordCorrectionTerms(messageId, contextId, terms, weight)
       // Only an explicit correction says the first topic was wrong; a hint only strengthens the other.
-      if (wrong && record) this.store.learnTerms(wrong.id, terms, -weight)
+      if (wrong && record) { this.store.learnTerms(wrong.id, terms, -weight); this.store.recordCorrectionTerms(messageId, wrong.id, terms, -weight) }
     }
     const picked = this.router && right ? this.pickTerms(source, right, wrong).catch(() => [] as string[]) : Promise.resolve([] as string[])
     this.learning = this.learning.then(() => picked).then(terms => {
