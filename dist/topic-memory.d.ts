@@ -102,3 +102,10 @@ export declare function topicStatus(input: {
     dormant: boolean;
     asking?: boolean;
 }): TopicStatus;
+/** How long a topic must have been left for its next reply to start from where it last stood. */
+export declare const RETURN_GAP: number;
+/**
+ * For a topic taken up again after a long break: what it holds is where things stood then, not
+ * necessarily now. The reply opens with one line of that, said as the last record, then goes on.
+ */
+export declare function returnNote(lastAt: number | undefined, now?: number): string;

@@ -141,3 +141,16 @@ export function topicStatus(input: { latest?: { outcome: string; startedAt: numb
   if (input.declaredDoneAt !== undefined && !(input.latest && input.latest.startedAt > input.declaredDoneAt)) return 'done'
   return input.dormant ? 'dormant' : 'active'
 }
+
+/** How long a topic must have been left for its next reply to start from where it last stood. */
+export const RETURN_GAP = 3 * DAY
+
+/**
+ * For a topic taken up again after a long break: what it holds is where things stood then, not
+ * necessarily now. The reply opens with one line of that, said as the last record, then goes on.
+ */
+export function returnNote(lastAt: number | undefined, now = Date.now()): string {
+  if (lastAt === undefined || !Number.isFinite(lastAt) || now - lastAt < RETURN_GAP) return ''
+  const date = new Date(lastAt).toISOString().slice(0, 10)
+  return `\n\n这个话题上次活动是 ${date}（${Math.floor((now - lastAt) / DAY)} 天前），上面的记录是当时的状态，不一定今天仍然成立。回答开头先用一句「上次记录是……」交代当时和这条消息有关的进展（用用户的语言，英文如“Last time we noted …”），再接着处理；日期、金额、进度这类可能已经变了的内容，当作上次的记录来说，要据此做事时先向用户确认。`
+}

@@ -6,7 +6,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ROUTING_PROMPT } from '../src/llm-router.ts'
-import { activityLabel, CARD_PROMPT, cardDue, learnDormancy, parseCard, routingSummary } from '../src/topic-memory.ts'
+import { activityLabel, CARD_PROMPT, cardDue, learnDormancy, parseCard, returnNote, routingSummary } from '../src/topic-memory.ts'
 import { FixtureModel, harness, ask, textResponse } from './harness.ts'
 
 const DAY = 86400000
@@ -111,5 +111,36 @@ test('after a topic’s first reply a card is written in the background, and rou
     assert.equal(qwen.activity, '刚刚')
     // Only after the first reply, and later once more (the fourth); not on every turn.
     assert.equal(cards, 1)
+  } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
+})
+
+test('an old topic is not ruled out for its age; time only orders otherwise equal topics', () => {
+  assert.match(ROUTING_PROMPT, /不是排除理由/)
+  assert.match(ROUTING_PROMPT, /「刚才那个」「继续」这类只靠时间的指代，优先最近活跃的话题/)
+  assert.match(ROUTING_PROMPT, /以内容为准/)
+  assert.doesNotMatch(ROUTING_PROMPT, /只有明确相关证据时才选它/)
+})
+
+test('a topic taken up after a long break starts from its last record, said as the last record', { timeout: 30000 }, async () => {
+  const now = Date.UTC(2026, 9, 19)
+  assert.equal(returnNote(undefined, now), '')
+  assert.equal(returnNote(now - 2 * DAY, now), '')
+  const note = returnNote(now - 40 * DAY, now)
+  assert.match(note, /上次活动是 2026-09-09（40 天前）/)
+  assert.match(note, /不一定今天仍然成立/)
+  assert.match(note, /「上次记录是……」/)
+  // Last active: the newer of its last routed message and the last thing in its own session.
+  const root = await mkdtemp(join(tmpdir(), 'theone-return-'))
+  const app = await harness(root)
+  try {
+    const service = app.ctx.theone as unknown as { lastActive(contextId: string, worker: unknown, inputId: string): number | undefined }
+    const store = app.ctx.theone.store
+    store.startTopicRun('m-old', 'ctx_qwen_9070xt', 's1', now - 40 * DAY)
+    store.startTopicRun('m-now', 'ctx_qwen_9070xt', 's1', now)
+    const worker = (time?: number) => ({ session: { snapshotEvents: () => time === undefined ? [] : [{ time }] } })
+    assert.equal(service.lastActive('ctx_qwen_9070xt', worker(), 'm-now'), now - 40 * DAY)
+    // The user worked in the topic directly last week.
+    assert.equal(service.lastActive('ctx_qwen_9070xt', worker(now - 7 * DAY), 'm-now'), now - 7 * DAY)
+    assert.equal(service.lastActive('ctx_nothing', worker(), 'm-now'), undefined)
   } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
 })

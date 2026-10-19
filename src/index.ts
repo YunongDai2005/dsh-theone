@@ -40,7 +40,7 @@ import { buildBriefing, LINK_SIGNAL, mayShare, relatedTopics, type LinkScope } f
 import { evidenceEvents, FACT_KINDS, FACT_LIMITS, findQuote, rankCandidates, retracts, safe, verify, type EvidenceEvent, type FactCandidate, type FactKind, type FactView } from './facts.ts'
 import { applyExtraction, EXTRACT_PROMPT, extractionPayload, factCandidates, factDelivery, ownFactsText } from './fact-flow.ts'
 import { routingEvidence, secondLook, type Evidence } from './routing-evidence.ts'
-import { activityLabel, CARD_PROMPT, cardDue, cardPayload, routingSummary, learnDormancy, parseCard, topicStatus, type TopicStatus } from './topic-memory.ts'
+import { activityLabel, CARD_PROMPT, cardDue, cardPayload, routingSummary, learnDormancy, parseCard, returnNote, topicStatus, type TopicStatus } from './topic-memory.ts'
 import type { FactResult } from './store.ts'
 import { PACKAGE_NAME, Updater, type PluginInstaller } from './update.ts'
 import { NOTICE_URL, NoticeBoard } from './notices.ts'
@@ -2514,6 +2514,17 @@ export default class TheOne extends Service {
     return turn.found ? `\n\n${resumeNote(turn)}` : ''
   }
 
+  /**
+   * When a topic last did anything before `inputId`: its last routed message, or the last thing in
+   * its own session (the user may have worked in the topic directly).
+   */
+  private lastActive(contextId: string, worker: Agent, inputId: string): number | undefined {
+    const run = this.store.topicRuns(contextId, 2).find(item => item.messageId !== inputId)?.startedAt
+    const own = worker.session.snapshotEvents().at(-1)?.time
+    const times = [run, own].filter((time): time is number => typeof time === 'number' && Number.isFinite(time))
+    return times.length ? Math.max(...times) : undefined
+  }
+
   /** Move an interjection to the queue, after what is already queued: it is answered as its own turn. */
   private requeue(gateway: Agent, message: UserMessage): void {
     this.moving.add(message.id)
@@ -2565,6 +2576,7 @@ export default class TheOne extends Service {
       run.request = messageText(input)
       register(run)
       const resume = this.resumeFor(context.id, worker, input.id) + this.misrouteFor(context.id)
+        + returnNote(this.lastActive(context.id, worker, input.id))
       this.store.startTopicRun(input.id, context.id, worker.id)
       // Linking only adds reference; a failure in it must never stop the reply.
       const links = await this.briefingFor(refreshed, route.decision, gateway, input.id, messageText(input), signal).catch(() => undefined)

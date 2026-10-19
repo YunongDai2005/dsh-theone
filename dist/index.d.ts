@@ -333,6 +333,11 @@ export default class TheOne extends Service {
      * next time it works, what it had done, so it checks before carrying on instead of repeating.
      */
     private resumeFor;
+    /**
+     * When a topic last did anything before `inputId`: its last routed message, or the last thing in
+     * its own session (the user may have worked in the topic directly).
+     */
+    private lastActive;
     /** Move an interjection to the queue, after what is already queued: it is answered as its own turn. */
     private requeue;
     /** Stop background work on a message main chat will not show (deleted, or answered with other input). */
