@@ -1,0 +1,78 @@
+/* Visual treatment inspired by Harness; TheOne's layout and identity stay intact. */
+:root {
+  color-scheme: dark;
+  --paper: #0b0e13;
+  --ink: #f0f3f8;
+  --muted: #abb5c4;
+  --line: #ffffff16;
+  --lime: #b7d7df;
+  --white: #151a22;
+}
+body {
+  background: radial-gradient(ellipse 64% 700px at 85% 0%, #49678966, transparent),
+    radial-gradient(ellipse 85% 900px at 24% 0%, #193e66b3, transparent), #0b0e13;
+  font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+a:hover { color: #d4e7ff; }
+a:focus-visible, button:focus-visible, summary:focus-visible { outline-color: #a8cbff; }
+.header { border-bottom-color: #ffffff0c; }
+.brand { font-weight: 600; letter-spacing: -.6px; }
+.brand span { color: #b4becb; }
+.nav-install { border-color: #ffffff36; border-radius: 24px; background: #ffffff08; }
+.hero { padding-top: 96px; padding-bottom: 100px; }
+.hero h1 { font-weight: 450; line-height: 1.4; letter-spacing: -1.8px; }
+.eyebrow { color: #a9bacd; font-weight: 400; }
+.dot { background: #b7d7df; box-shadow: 0 0 12px #badce333; }
+.underline:after { height: 2px; bottom: -5px; background: #a8c9df70; transform: none; }
+.intro { color: #bac3d1; }
+.button { border-radius: 28px; font-weight: 500; transition: background .2s, color .2s; }
+.button:hover { transform: none; }
+.primary { color: #111a26; background: #f1f4f8; }
+.primary:hover { color: #142537; background: #dce8f5; }
+.text-link { border-bottom-color: #9aaac94d; }
+.hero-note { color: #a5b4c6; }
+:root .thread-art { background: linear-gradient(145deg, #9fbedb13, #7999b006); border: 1px solid #c6d9ed18; }
+.art-topic { background: #233243e8; border-color: #b9cce82b; box-shadow: 0 14px 35px #00000018; border-radius: 12px; }
+.art-topic strong { font-weight: 400; color: #e8eef6; }
+.art-topic span { color: #aebfd2; }
+.topic-b { background: #2b3748ed; }
+.topic-c { background: #28434bea; }
+.thread-lines path { stroke: #a5c3d566; }
+.thread-lines circle { fill: #c0dce4; }
+.thread-lines .arrow { stroke: #203745; }
+.orbit-label, .orbit-bottom { color: #a4bbcf; }
+h2 { font-weight: 450; letter-spacing: -.7px; }
+h3 { font-weight: 450; }
+.demo { border-color: #bac9dc26; background: #13171d; border-radius: 18px; box-shadow: 0 24px 70px #00000025; }
+.topic-list { background: linear-gradient(160deg, #394b61b3, #202b37); }
+.sidebar-brand { font-weight: 500; }
+.topic.selected { background: #c0d3ed15; border-color: #bccde620; }
+.topic-status { color: #c2dce5; }
+.chat-top { border-color: #ffffff0b; }
+.message>span { background: #2b3039; color: #c9d2de; }
+.message .mini-brand { background: #b7d7df; color: #203745; }
+.user p { background: #282e37; border-radius: 14px; }
+.composer { border-color: #ffffff14; }
+.choices button { background: #1b222c; border-color: #d7e4f51c; color: #d3dce8; border-radius: 11px; }
+.choices button:hover, .choices button[aria-pressed=true] { background: #344858; border-color: #a3c5e05c; color: #f1f7ff; }
+.principles { padding-top: 125px; padding-bottom: 120px; }
+.principle-list article>span { color: #8da8bd; }
+.install-wrap { background: linear-gradient(135deg, #182432, #111720); color: var(--ink); border-block: 1px solid #ffffff0c; }
+.install { padding-top: 86px; padding-bottom: 86px; }
+.install>div>p:not(.eyebrow), .install-steps p { color: #b2bdcc; }
+.install-steps article>span { border-color: #9dafc04d; color: #cbd8e6; }
+.copy-box { background: #ffffff06; border-color: #c7d6e62b; border-radius: 12px; }
+.copy-box button { color: #e6edf5; }
+.questions { padding-top: 105px; }
+.faq summary { font-weight: 400; }
+.closing p { font-weight: 400; }
+.skip { background: #e7eff8; color: #101822; }
+@media(max-width:700px) {
+  body { background: radial-gradient(ellipse 110% 750px at 65% 0%, #294f7980, transparent), #0b0e13; }
+  .hero { padding-top: 52px; padding-bottom: 65px; }
+  .hero h1 { font-weight: 450; }
+  .principles { padding-top: 72px; padding-bottom: 68px; }
+  .install { padding-top: 50px; padding-bottom: 50px; }
+  .questions { padding-top: 65px; }
+}
