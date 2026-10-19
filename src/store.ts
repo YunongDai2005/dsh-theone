@@ -653,7 +653,26 @@ export class ContextStore {
       const working = this.db.prepare('SELECT working_session_id FROM contexts WHERE id = ?').get(context.id)
       this.db.prepare('INSERT OR IGNORE INTO context_origins VALUES (?, ?, ?)').run(context.id, String(working?.working_session_id), proposed.folder)
     }
+    const group = this.groupForNew(proposed)
+    if (group) this.db.prepare('INSERT OR IGNORE INTO topic_group_members VALUES (?, ?)').run(context.id, group)
     return { ...proposed, contextId: context.id }
+  }
+
+  /**
+   * The topic workspace a new topic joins by itself, so the user need not file it: that of a topic it
+   * draws on, else the one most topics in its project folder are in. Only a placement; the user can
+   * move it, and nothing is merged.
+   */
+  private groupForNew(proposed: Decision): string | undefined {
+    const groupOf = (id: string) => this.db.prepare('SELECT group_id FROM topic_group_members WHERE context_id = ?').get(id)?.group_id
+    for (const id of proposed.relatedIds ?? []) {
+      const group = groupOf(id)
+      if (group) return String(group)
+    }
+    if (!proposed.folder) return undefined
+    const row = this.db.prepare(`SELECT m.group_id, COUNT(*) AS n FROM context_origins o JOIN topic_group_members m ON m.context_id = o.context_id
+      WHERE o.cwd = ? GROUP BY m.group_id ORDER BY n DESC, m.group_id LIMIT 1`).get(proposed.folder)
+    return row ? String(row.group_id) : undefined
   }
 
   /**

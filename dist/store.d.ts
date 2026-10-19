@@ -167,6 +167,12 @@ export declare class ContextStore {
     /** A decision with its topic: a CREATE makes the topic (in its project's folder, when it has one). */
     private topicFor;
     /**
+     * The topic workspace a new topic joins by itself, so the user need not file it: that of a topic it
+     * draws on, else the one most topics in its project folder are in. Only a placement; the user can
+     * move it, and nothing is merged.
+     */
+    private groupForNew;
+    /**
      * Give a message being answered to another topic (its first topic handed it back), and make that
      * topic the one in use. Returns the decision it now has, or undefined when the message has no route.
      */
