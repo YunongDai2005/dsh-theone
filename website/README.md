@@ -47,7 +47,7 @@ The existing Cloudflare GitHub installation may already allow this repository. I
 
 Read-only discovery found `wrangler.toml` in the user's `sirusan---ai-cleanliness-evaluator` repository with Worker name `sirusan` and static assets `./dist`. That establishes a Workers deployment pattern, but does not prove which current Worker serves `yulid.org`; the live apex returns a Yuli Dai portfolio.
 
-If the existing account uses Workers Builds, a separate Worker named `theone-website` can instead use this directory's `wrangler.toml`: root `website`, build `npm run build`, deploy `npx wrangler deploy`, production branch `website/theone-landing`. The custom domain must be added separately after reviewing the Cloudflare-managed DNS change. Do not reuse `sirusan`, change its routes, or deploy from the repository root. No Worker deployment has been performed.
+If the existing account uses Workers Builds, a separate Worker named `theone-website` can instead use this directory's `wrangler.workers.toml`: root `website`, build `npm run build`, deploy `npx wrangler deploy --config wrangler.workers.toml`, production branch `website/theone-landing`. The custom domain must be added separately after reviewing the Cloudflare-managed DNS change. Do not reuse `sirusan`, change its routes, or deploy from the repository root. No Worker deployment has been performed.
 
 ### Vercel alternative
 
@@ -64,3 +64,14 @@ Import the same repository/branch with root `website`, framework Other, build `n
 - Existing plugin CI triggers on all pushes; a website branch push therefore runs the existing plugin verification. Its release workflow only publishes from its existing release triggers; this branch does not change them.
 
 Official hosting references: https://developers.cloudflare.com/pages/configuration/git-integration/ and https://developers.cloudflare.com/workers/ci-cd/builds/configuration/.
+
+## Current publication status (2026-10-19)
+
+- Cloudflare Pages project `theone-website` is connected through the existing GitHub installation.
+- Public staging hostname: https://theone-website-f03.pages.dev (HTTP 200 verified).
+- Production branch `website/theone-landing`, root `website`, command `npm run build`, output `out`.
+- The first cloud build used Node 22.16.0 successfully; Node 24 remains the recommended local runtime. No runtime dependency installation is required.
+- Requested custom domain is still awaiting DNS approval: CNAME `theone` -> `theone-website-f03.pages.dev`.
+- Existing `sirusan` Worker is verified to serve `yulid.org/*` and builds from its own repository's `main`; it is unchanged.
+- Optional Worker configuration is named `wrangler.workers.toml` so Pages does not auto-detect it. It is not an active deployment.
+- Visual refinement follows an actual browser inspection of https://www.deepseek.com/harness/: dark blue ambient background, lighter typography, quiet borders and restrained product panels. Original TheOne structure/content and demo arrangement are preserved. No reference assets or branding are copied.
