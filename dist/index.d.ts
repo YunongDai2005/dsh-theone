@@ -108,6 +108,8 @@ export default class TheOne extends Service {
      * matter, sent while a reply was running. Main chat shows that work when it gets to the message.
      */
     private readonly background;
+    /** Main chat id → the run a reply left when its topic handed the message back; main chat may still collect that call's result. */
+    private readonly handedFrom;
     /** "<main chat id>:<seq>" of a changed-files record shown in main chat → the topic's own record. */
     /** Main-chat message id → its classification, made while a reply was running. */
     /** Background topics being started: message id → topic id; they count toward the limit. */
@@ -319,9 +321,16 @@ export default class TheOne extends Service {
     /** A reply or background work is under way. */
     private get busy();
     /** Start the routed topic working on `input`; `register` sees the run before the Worker starts. */
+    /** `takeOver`: the run handing this message over still holds the project; waiting for it would wait on ourselves. */
     private startRun;
     /** The message answered just before `inputId` in this main chat, with the topic it went to. */
     private previousRoute;
+    /**
+     * The topic answering main chat's message says it is not its own. Route it again without that
+     * topic and let main chat follow the right topic's answer from its next step; the first topic's
+     * turn stops counting as its own. Once per message, and only for a reply main chat is showing.
+     */
+    private handBack;
     /** Route a misrouted message again, never back to the topic it was wrongly given. */
     private reroute;
     /** Learning from corrections in flight; tests and shutdown can wait for it. */

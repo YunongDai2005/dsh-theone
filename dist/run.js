@@ -144,6 +144,10 @@ export class WorkerRun {
         this.worker.cancel({ kind: 'parent' }); }
     dispose() { for (const dispose of this.disposers.splice(0))
         dispose(); }
+    /** Whether one of this Worker's steps made tool call `callId` (main chat may ask after a hand-back moved on). */
+    owns(callId) {
+        return this.results.has(callId) || this.steps.some(step => step.attempt.chunks.some(chunk => chunk.type === 'block-end' && chunk.block.type === 'tool-call' && chunk.block.id === callId));
+    }
     /** The Worker's own outcome for one of its tool calls, shown as the main chat's result. */
     async toolResult(callId, signal) {
         signal.throwIfAborted();

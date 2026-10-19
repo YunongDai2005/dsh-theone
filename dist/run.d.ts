@@ -55,6 +55,8 @@ export declare class WorkerRun {
     idleOrUnshown(): Promise<void>;
     cancel(): void;
     dispose(): void;
+    /** Whether one of this Worker's steps made tool call `callId` (main chat may ask after a hand-back moved on). */
+    owns(callId: string): boolean;
     /** The Worker's own outcome for one of its tool calls, shown as the main chat's result. */
     toolResult(callId: string, signal: AbortSignal): Promise<ToolExecutionResult>;
     /** Stream the next Worker step, or the same one again after a retry, as one main-chat attempt. */

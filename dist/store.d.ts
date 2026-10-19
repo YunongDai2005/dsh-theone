@@ -156,6 +156,13 @@ export declare class ContextStore {
      * reply runs (`mount` false) leaves the topic in use as it is until main chat gets to it.
      */
     plan(messageId: string, gatewayId: string, gatewayKey: string, proposed: Decision, mount?: boolean): RouteRecord;
+    /** A decision with its topic: a CREATE makes the topic (in its project's folder, when it has one). */
+    private topicFor;
+    /**
+     * Give a message being answered to another topic (its first topic handed it back), and make that
+     * topic the one in use. Returns the decision it now has, or undefined when the message has no route.
+     */
+    moveRoute(messageId: string, gatewayKey: string, proposed: Decision): Decision | undefined;
     /** Only a planned route may execute. Ambiguous interrupted work is never replayed automatically. */
     claim(messageId: string): void;
     /** Drop the route of a message main chat never got to (the user deleted it from the queue). */

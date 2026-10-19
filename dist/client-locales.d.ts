@@ -323,6 +323,7 @@ export declare const zh: {
     readonly 'route.reason.no-history-evidence': "新的问题";
     readonly 'route.reason.unclear-settled': "最接近的话题";
     readonly 'route.reason.unclear-new': "新的问题";
+    readonly 'route.reason.handback': "原话题交回后重新分配";
     readonly 'route.reason.entity-or-keyword': "提到了这个话题";
     readonly 'route.reason.keyword-only-switch': "提到了这个话题";
     readonly 'route.reason.current-reference': "接着当前话题";

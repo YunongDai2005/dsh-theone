@@ -586,20 +586,7 @@ export class ContextStore {
         this.db.exec('COMMIT')
         return existing
       }
-      let decision = { ...proposed }
-      if (decision.action === 'CREATE') {
-        const context: ContextDescriptor = {
-          id: randomUUID(), title: decision.title!, summary: '新话题，尚无历史摘要。',
-          entities: [], keywords: [decision.title!], lastState: '等待首次执行',
-        }
-        this.seed([context])
-        decision = { ...decision, contextId: context.id }
-        // A new topic about one of the user's projects works in that project's folder.
-        if (decision.folder) {
-          const working = this.db.prepare('SELECT working_session_id FROM contexts WHERE id = ?').get(context.id)
-          this.db.prepare('INSERT OR IGNORE INTO context_origins VALUES (?, ?, ?)').run(context.id, String(working?.working_session_id), decision.folder)
-        }
-      }
+      const decision = this.topicFor(proposed)
       if (decision.contextId && mount) {
         this.db.prepare('INSERT INTO gateway_state VALUES (?, ?) ON CONFLICT(gateway_key) DO UPDATE SET context_id = excluded.context_id')
           .run(gatewayKey, decision.contextId)
@@ -609,6 +596,42 @@ export class ContextStore {
       this.db.prepare('INSERT OR IGNORE INTO gateway_sessions VALUES (?, ?)').run(gatewayKey, gatewayId)
       this.db.exec('COMMIT')
       return { messageId, gatewayId, decision, status: 'planned' }
+    } catch (error) {
+      this.db.exec('ROLLBACK')
+      throw error
+    }
+  }
+
+  /** A decision with its topic: a CREATE makes the topic (in its project's folder, when it has one). */
+  private topicFor(proposed: Decision): Decision {
+    if (proposed.action !== 'CREATE') return { ...proposed }
+    const context: ContextDescriptor = {
+      id: randomUUID(), title: proposed.title!, summary: '新话题，尚无历史摘要。',
+      entities: [], keywords: [proposed.title!], lastState: '等待首次执行',
+    }
+    this.seed([context])
+    // A new topic about one of the user's projects works in that project's folder.
+    if (proposed.folder) {
+      const working = this.db.prepare('SELECT working_session_id FROM contexts WHERE id = ?').get(context.id)
+      this.db.prepare('INSERT OR IGNORE INTO context_origins VALUES (?, ?, ?)').run(context.id, String(working?.working_session_id), proposed.folder)
+    }
+    return { ...proposed, contextId: context.id }
+  }
+
+  /**
+   * Give a message being answered to another topic (its first topic handed it back), and make that
+   * topic the one in use. Returns the decision it now has, or undefined when the message has no route.
+   */
+  moveRoute(messageId: string, gatewayKey: string, proposed: Decision): Decision | undefined {
+    this.db.exec('BEGIN IMMEDIATE')
+    try {
+      if (!this.route(messageId)) { this.db.exec('COMMIT'); return undefined }
+      const decision = this.topicFor(proposed)
+      this.db.prepare('UPDATE routing_events SET decision = ? WHERE message_id = ?').run(JSON.stringify(decision), messageId)
+      if (decision.contextId) this.db.prepare('INSERT INTO gateway_state VALUES (?, ?) ON CONFLICT(gateway_key) DO UPDATE SET context_id = excluded.context_id')
+        .run(gatewayKey, decision.contextId)
+      this.db.exec('COMMIT')
+      return decision
     } catch (error) {
       this.db.exec('ROLLBACK')
       throw error

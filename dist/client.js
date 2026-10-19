@@ -410,6 +410,7 @@ var zh = {
   "route.reason.no-history-evidence": "\u65B0\u7684\u95EE\u9898",
   "route.reason.unclear-settled": "\u6700\u63A5\u8FD1\u7684\u8BDD\u9898",
   "route.reason.unclear-new": "\u65B0\u7684\u95EE\u9898",
+  "route.reason.handback": "\u539F\u8BDD\u9898\u4EA4\u56DE\u540E\u91CD\u65B0\u5206\u914D",
   "route.reason.entity-or-keyword": "\u63D0\u5230\u4E86\u8FD9\u4E2A\u8BDD\u9898",
   "route.reason.keyword-only-switch": "\u63D0\u5230\u4E86\u8FD9\u4E2A\u8BDD\u9898",
   "route.reason.current-reference": "\u63A5\u7740\u5F53\u524D\u8BDD\u9898",
@@ -748,6 +749,7 @@ var en = {
   "route.reason.no-history-evidence": "New question",
   "route.reason.unclear-settled": "Closest topic",
   "route.reason.unclear-new": "New question",
+  "route.reason.handback": "Handed back by the first topic",
   "route.reason.entity-or-keyword": "Mentions this topic",
   "route.reason.keyword-only-switch": "Mentions this topic",
   "route.reason.current-reference": "Continues the current topic",
@@ -3947,7 +3949,7 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
     "CATALOG_REVIEW_LIMIT",
     "HISTORY_SEARCH_UNAVAILABLE"
   ]);
-  const routeReason = (reason) => ROUTE_REASONS.has(reason) ? t(`route.reason.${reason}`) : reason.startsWith("router-fallback:") ? t("route.reason.router-fallback") : reason;
+  const routeReason = (reason) => ROUTE_REASONS.has(reason) ? t(`route.reason.${reason}`) : reason.startsWith("router-fallback:") ? t("route.reason.router-fallback") : reason.startsWith("handback:") ? t("route.reason.handback") : reason;
   function TopicManager({ topic, constraints, groups, contexts, post, busy }) {
     const t2 = useText();
     const [title, setTitle] = (0, import_react2.useState)(topic.title);
