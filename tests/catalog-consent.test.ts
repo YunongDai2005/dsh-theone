@@ -19,7 +19,7 @@ function fixture() {
   model.behavior = async function* (options) {
     if (options.system !== CATALOG_PROMPT) { yield* textResponse('Done'); return }
     const payload = JSON.parse(options.messages[0].content.filter(b => b.type === 'text').map(b => b.text).join(''))
-    yield* textResponse(JSON.stringify({ topics: [{ contextId: null, title: 'Imported topic', summary: 'History', entities: [], keywords: [],
+    yield* textResponse(JSON.stringify({ topics: [{ contextId: payload.ownedContextId ?? null, title: 'Imported topic', summary: 'History', entities: [], keywords: [],
       lastState: 'In progress', turns: payload.turns.map((turn: { seq: number }) => turn.seq), groupId: null, groupTitle: 'History', groupSummary: '' }] }))
   }
   return model
@@ -62,9 +62,11 @@ test('askFirst never reads or indexes user histories before consent, while own s
     assert.equal(app.catalog.snapshot().status.waiting, 2)
     assert.equal(app.catalog.incomplete, false)
     assert.equal(app.model.requests.filter(r => r.system === CATALOG_PROMPT).length, 0)
-    assert.deepEqual(reads, [])
+    // Only the topic's own session is read: it holds what was said through TheOne, not earlier chats.
+    assert.deepEqual(reads, [owned.workingSessionId])
     for (const id of [a.id, b.id]) assert.equal(app.store.indexState(id), undefined)
-    for (const id of [app.gateway.id, owned.workingSessionId]) assert.equal(app.store.indexState(id)?.status, 'skipped')
+    assert.equal(app.store.indexState(app.gateway.id)?.status, 'skipped')
+    assert.equal(app.store.indexState(owned.workingSessionId)?.status, 'ready')
     assert.equal(app.store.hiddenReasons().get('lost'), 'orphaned')
     assert.equal(app.store.hiddenReasons().get('archived'), 'archived')
   } finally { await app.close() }
@@ -162,6 +164,10 @@ test('consent and exclusions persist across reopening the database and can be re
   try {
     assert.equal(store.catalogConsent(), undefined); assert.equal(store.hasIndexedHistory(), false)
     store.markIndex('failed', -1, 'failed'); assert.equal(store.hasIndexedHistory(), false)
+    // A topic's own session is indexed without asking, so it must not count as consent on the next start.
+    store.seed([{ id: 'own', title: 'Own', summary: '', entities: [], keywords: [], lastState: '' }])
+    store.markIndex(store.contexts().find(c => c.id === 'own')!.workingSessionId, 3, 'ready'); assert.equal(store.hasIndexedHistory(), false)
+    store.markIndex('earlier-chat', 3, 'ready'); assert.equal(store.hasIndexedHistory(), true)
     store.setCatalogConsent('declined'); store.setCatalogConsent('granted')
     store.setCatalogExcluded('session', 'private', true); store.setCatalogExcluded('folder', root, true)
     store.close(); store = new ContextStore(path)
@@ -330,5 +336,22 @@ for (const change of ['decline', 'exclude'] as const) test(`changing consent or 
     assert.equal(app.store.indexState(history.id), undefined)
     assert.equal(app.catalog.snapshot().status.failed, 0)
     assert.equal(app.catalog.incomplete, false)
+  } finally { await app.close() }
+})
+
+test('a topic session keeps its descriptor current before consent and inside an excluded folder', async () => {
+  const app = await setup()
+  try {
+    const history = await source(app, app.root, 'EARLIER_PRIVATE_CHAT')
+    app.store.setCatalogExcluded('folder', app.root, true)
+    assert.equal((await ask(app.gateway, '帮我写一份周报')).end?.data.reason.kind, 'completed')
+    await app.catalog.refresh()
+    const requests = app.model.requests.filter(r => r.system === CATALOG_PROMPT)
+      .map(r => JSON.parse(r.messages[0].content.filter(b => b.type === 'text').map(b => b.text).join('')))
+    assert.ok(requests.length > 0)
+    assert.ok(requests.every(payload => payload.ownedContextId && app.store.contexts().some(c => c.id === payload.ownedContextId)))
+    assert.ok(!JSON.stringify(requests).includes('EARLIER_PRIVATE_CHAT'))
+    assert.equal(app.store.indexState(history.id), undefined)
+    assert.equal(app.catalog.snapshot().status.consent, 'ask')
   } finally { await app.close() }
 })

@@ -106,6 +106,7 @@ export declare class ContextStore {
         folders: string[];
     };
     setCatalogExcluded(kind: 'session' | 'folder', value: string, excluded: boolean): void;
+    /** An earlier chat of the user's was catalogued: TheOne's own sessions are indexed without asking. */
     hasIndexedHistory(): boolean;
     indexState(sessionId: string): {
         throughSeq: number;

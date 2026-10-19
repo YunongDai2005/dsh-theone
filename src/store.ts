@@ -426,8 +426,10 @@ export class ContextStore {
     else this.db.prepare('DELETE FROM catalog_exclusions WHERE kind = ? AND value = ?').run(kind, value)
   }
 
+  /** An earlier chat of the user's was catalogued: TheOne's own sessions are indexed without asking. */
   hasIndexedHistory(): boolean {
-    return !!this.db.prepare("SELECT 1 FROM history_index WHERE status = 'ready' LIMIT 1").get()
+    return !!this.db.prepare(`SELECT 1 FROM history_index WHERE status = 'ready'
+      AND session_id NOT IN (SELECT gateway_id FROM pinned_gateways UNION SELECT working_session_id FROM contexts) LIMIT 1`).get()
   }
 
   indexState(sessionId: string): { throughSeq: number; status: string } | undefined {

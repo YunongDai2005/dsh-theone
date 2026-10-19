@@ -150,10 +150,13 @@ export class HistoryCatalog {
     this.status.pending = records.length
     const archived = this.archivedSessionIds()
     let budget = this.batchBudget
+    // A topic's own session keeps its descriptor current. It holds what was said through TheOne, not
+    // the earlier chats the user is asked about, so consent and exclusions don't apply to it.
+    const own = new Set(this.store.ownedSessionIds())
     for (const record of records) {
       signal.throwIfAborted()
       const sessionId = record.header.id
-      if (this.store.isGateway(sessionId) || this.store.ownedSessionIds().includes(sessionId)) {
+      if (this.store.isGateway(sessionId)) {
         this.store.markIndex(sessionId, this.store.indexState(sessionId)?.throughSeq ?? -1, 'skipped')
         this.status.skipped++; this.status.pending--; continue
       }
@@ -165,6 +168,7 @@ export class HistoryCatalog {
       const excluded = () => catalogSessionExcluded(sessionId, record.header.cwd, this.store.catalogExclusions())
       // Recheck after asynchronous reads and model calls: choices can change during a scan.
       const blocked = () => {
+        if (own.has(sessionId)) return false
         if (excluded()) { this.status.excluded!++; this.status.pending--; return true }
         if (!this.allowed) { this.status.waiting!++; this.status.pending--; return true }
         return false

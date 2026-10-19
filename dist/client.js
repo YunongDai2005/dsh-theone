@@ -314,18 +314,21 @@ var zh = {
   "catalog.loadError": "\u6682\u65F6\u65E0\u6CD5\u8BFB\u53D6\u8BDD\u9898\uFF0C\u8BF7\u68C0\u67E5 DSH \u8FDE\u63A5\u3002",
   "catalog.continueError": "\u6682\u65F6\u65E0\u6CD5\u7EE7\u7EED\u8FD9\u4E2A\u8BDD\u9898\uFF0C\u8BF7\u7B49\u5F53\u524D\u804A\u5929\u7ED3\u675F\u540E\u91CD\u8BD5\u3002",
   "catalog.refreshError": "\u6682\u65F6\u65E0\u6CD5\u6574\u7406\u5386\u53F2\uFF0C\u8BF7\u68C0\u67E5 DSH \u6A21\u578B\u914D\u7F6E\u3002",
+  "catalog.consentOverline": "\u4EE5\u524D\u7684\u804A\u5929",
   "catalog.consentTitle": "\u8981\u4E0D\u8981\u6574\u7406\u4EE5\u524D\u7684\u804A\u5929\uFF1F",
-  "catalog.consentBody": "\u4F60\u5728 DSH \u91CC\u6709 {count} \u4E2A\u4EE5\u524D\u7684\u4F1A\u8BDD\u3002\u6574\u7406\u4E4B\u540E\uFF0C\u4F60\u5728\u4E3B\u804A\u5929\u91CC\u63D0\u5230\u4EE5\u524D\u7684\u4E8B\uFF0CTheOne \u80FD\u627E\u5230\u5E76\u63A5\u7740\u505A\u3002",
-  "catalog.consentKeep": "\u539F\u6765\u7684\u4F1A\u8BDD\u4E00\u4E2A\u90FD\u4E0D\u5220\uFF0C\u4E5F\u4E0D\u4F1A\u6539\u3002",
-  "catalog.consentQuota": "\u4F1A\u7528\u4F60\u5728 DSH \u91CC\u9009\u7684\u6A21\u578B\u8BFB\u4E00\u904D\uFF0C\u4F1A\u82B1\u4E00\u70B9\u989D\u5EA6\u3002",
+  "catalog.consentBody": "\u4F60\u5728 DSH \u91CC\u6709 {count} \u4E2A\u4EE5\u524D\u7684\u4F1A\u8BDD\u3002\u6574\u7406\u597D\u4E4B\u540E\uFF0C\u4F60\u5728\u4E3B\u804A\u5929\u91CC\u63D0\u5230\u4EE5\u524D\u7684\u4E8B\uFF0CTheOne \u5C31\u80FD\u627E\u5230\uFF0C\u63A5\u7740\u5F80\u4E0B\u505A\u3002",
+  "catalog.consentKeep": "\u539F\u6765\u7684\u4F1A\u8BDD\u4E00\u4E2A\u90FD\u4E0D\u5220\uFF0C\u4E5F\u4E0D\u6539\u3002",
+  "catalog.consentQuota": "\u4F1A\u7528\u4F60\u5728 DSH \u91CC\u9009\u7684\u6A21\u578B\u8BFB\u4E00\u904D\uFF0C\u8981\u82B1\u4E00\u70B9\u989D\u5EA6\u3002",
   "catalog.consentChoose": "\u4E0D\u60F3\u8BA9\u5B83\u770B\u7684\uFF0C\u53EF\u4EE5\u5148\u6311\u51FA\u6765\u3002",
-  "catalog.start": "\u5F00\u59CB\u6574\u7406",
+  "catalog.startCount": "\u6574\u7406 {count} \u4E2A\u4F1A\u8BDD",
   "catalog.chooseFirst": "\u5148\u6311\u4E00\u6311",
+  "catalog.doneChoosing": "\u6311\u597D\u4E86",
   "catalog.notNow": "\u4EE5\u540E\u518D\u8BF4",
-  "catalog.declined": "\u4EE5\u524D\u7684\u804A\u5929\u6CA1\u6709\u6574\u7406\u3002\u60F3\u6574\u7406\u7684\u65F6\u5019\u70B9\u8FD9\u91CC\u3002",
-  "catalog.reconsider": "\u6574\u7406\u4EE5\u524D\u7684\u804A\u5929",
+  "catalog.declined": "\u4EE5\u524D\u7684\u804A\u5929\u8FD8\u6CA1\u6574\u7406\u3002",
+  "catalog.reconsider": "\u73B0\u5728\u6574\u7406",
   "catalog.chooseChats": "\u9009\u62E9\u8981\u6574\u7406\u7684\u4F1A\u8BDD",
-  "catalog.chooseHint": "\u52FE\u6389\u7684\u4F1A\u8BDD\u4E0D\u4F1A\u88AB\u8BFB\uFF0C\u4E5F\u4E0D\u4F1A\u8FDB\u76EE\u5F55\u3002\u968F\u65F6\u53EF\u4EE5\u6539\u3002",
+  "catalog.chooseHint": "\u52FE\u6389\u7684\u4F1A\u8BDD\u4E0D\u4F1A\u88AB\u8BFB\uFF0C\u4E5F\u4E0D\u4F1A\u8FDB\u76EE\u5F55\uFF0C\u968F\u65F6\u53EF\u4EE5\u6539\u56DE\u6765\u3002",
+  "catalog.pickerLoading": "\u6B63\u5728\u8BFB\u53D6\u4F1A\u8BDD\u5217\u8868\u2026",
   "catalog.wholeFolder": "\u6574\u4E2A\u6587\u4EF6\u5939",
   "catalog.otherChats": "\u5176\u4ED6\u4F1A\u8BDD",
   "catalog.untitledChat": "\u672A\u547D\u540D\u4F1A\u8BDD",
@@ -673,18 +676,21 @@ var en = {
   "catalog.loadError": "Topics could not load. Check your DSH connection.",
   "catalog.continueError": "This topic could not open. Wait for the current conversation to finish, then try again.",
   "catalog.refreshError": "History could not be organized. Check your DSH model settings.",
+  "catalog.consentOverline": "Earlier chats",
   "catalog.consentTitle": "Sort out your earlier chats?",
-  "catalog.consentBody": "You have {count} earlier conversation(s) in DSH. Once they're sorted, TheOne can find them when you bring something up in main chat and carry on from there.",
+  "catalog.consentBody": "You have {count} earlier chat{sessionSuffix} in DSH. Once they're sorted, TheOne can find them when you bring something up in main chat, and carry on from there.",
   "catalog.consentKeep": "Nothing is deleted or changed.",
   "catalog.consentQuota": "It reads them once with the model you picked in DSH, which uses a little of your quota.",
-  "catalog.consentChoose": "Anything you'd rather keep out, you can leave out first.",
-  "catalog.start": "Start",
+  "catalog.consentChoose": "Anything you'd rather keep to yourself, you can leave out first.",
+  "catalog.startCount": "Sort {count} chat{sessionSuffix}",
   "catalog.chooseFirst": "Choose chats first",
+  "catalog.doneChoosing": "Done",
   "catalog.notNow": "Not now",
-  "catalog.declined": "Your earlier chats aren't sorted. Click here whenever you want them to be.",
-  "catalog.reconsider": "Sort earlier chats",
-  "catalog.chooseChats": "Choose chats",
-  "catalog.chooseHint": "Unchecked chats won't be read or added to the directory. You can change this any time.",
+  "catalog.declined": "Your earlier chats aren't sorted yet.",
+  "catalog.reconsider": "Sort them now",
+  "catalog.chooseChats": "Choose chats to sort",
+  "catalog.chooseHint": "Unticked chats won't be read or added to the directory. You can change this any time.",
+  "catalog.pickerLoading": "Loading chats\u2026",
   "catalog.wholeFolder": "Whole folder",
   "catalog.otherChats": "Other chats",
   "catalog.untitledChat": "Untitled chat",
@@ -2982,6 +2988,7 @@ function apply(ctx) {
   }
   const ICONS = {
     download: ["M12 4v11", "M7 10l5 5 5-5", "M5 20h14"],
+    check: ["M5 12.5l4.5 4.5L19 7.5"],
     restart: ["M20 12a8 8 0 1 1-2.34-5.66L20 8.5", "M20 4v4.5h-4.5"],
     alert: ["M3 12a9 9 0 1 0 18 0a9 9 0 1 0-18 0", "M12 7.5v5.5", "M12 16.5h.01"],
     notice: ["M4 10v4h3l6 4V6L7 10H4z", "M16.5 9a4 4 0 0 1 0 6", "M19 6.5a7.5 7.5 0 0 1 0 11"],
@@ -4192,6 +4199,7 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
     const [routes, setRoutes] = (0, import_react2.useState)([]);
     const [routeStats, setRouteStats] = (0, import_react2.useState)();
     const [managing, setManaging] = (0, import_react2.useState)();
+    const [folded, setFolded] = (0, import_react2.useState)(/* @__PURE__ */ new Set());
     const [creating, setCreating] = (0, import_react2.useState)(false);
     const [newTitle, setNewTitle] = (0, import_react2.useState)("");
     const [choosing, setChoosing] = (0, import_react2.useState)(false);
@@ -4317,6 +4325,80 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
         setChoosing(false);
       }
     }
+    function closeChoices() {
+      choosingRef.current = false;
+      setChoosing(false);
+    }
+    async function toggleChoice(kind, value, excluded) {
+      setError(void 0);
+      setChoices((current) => current && {
+        folders: current.folders.map((folder) => kind === "folder" && folder.path === value ? { ...folder, excluded } : folder),
+        sessions: current.sessions.map((session) => (kind === "session" ? session.id === value : session.folder === value) ? { ...session, excluded } : session)
+      });
+      try {
+        const response = await fetch("/api/theone/catalog/sessions", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ kind, value, excluded }),
+          signal: lifetime.signal,
+          cache: "no-store"
+        });
+        if (!response.ok) throw new Error("Choice not saved");
+        setChoices(await response.json());
+        void reload.current();
+      } catch {
+        setError("manage.error");
+        void reload.current();
+      }
+    }
+    function chatPicker() {
+      if (!choices) return (0, import_react2.createElement)("p", { className: "theone-picker-hint" }, t2("catalog.pickerLoading"));
+      const groups2 = [...choices.folders.map((folder) => ({ ...folder, key: folder.path })), { path: null, name: t2("catalog.otherChats"), excluded: false, key: null }].map((folder) => ({ folder, sessions: choices.sessions.filter((session) => session.folder === folder.key) })).filter((group) => group.sessions.length);
+      return (0, import_react2.createElement)(
+        "div",
+        { className: "theone-picker" },
+        (0, import_react2.createElement)("p", { className: "theone-picker-hint" }, t2("catalog.chooseHint")),
+        (0, import_react2.createElement)("div", { className: "theone-picker-list" }, ...groups2.map(({ folder, sessions }) => (0, import_react2.createElement)(
+          "section",
+          { key: folder.path ?? "other", className: "theone-picker-group" },
+          (0, import_react2.createElement)(
+            "header",
+            null,
+            (0, import_react2.createElement)("span", { className: "theone-picker-folder", title: folder.path ?? void 0 }, folder.name),
+            (0, import_react2.createElement)("span", { className: "theone-picker-count" }, `${sessions.filter((session) => !session.excluded).length}/${sessions.length}`),
+            folder.path ? (0, import_react2.createElement)(
+              "label",
+              { className: "theone-picker-whole" },
+              (0, import_react2.createElement)("input", {
+                type: "checkbox",
+                checked: !folder.excluded,
+                onChange: (event) => void toggleChoice("folder", folder.path, !event.target.checked)
+              }),
+              t2("catalog.wholeFolder")
+            ) : null
+          ),
+          (0, import_react2.createElement)("ul", null, ...sessions.map((session) => {
+            const title = session.title || t2("catalog.untitledChat");
+            return (0, import_react2.createElement)(
+              "li",
+              { key: session.id, className: session.excluded ? "theone-picker-off" : void 0 },
+              (0, import_react2.createElement)(
+                "label",
+                null,
+                (0, import_react2.createElement)("input", {
+                  type: "checkbox",
+                  checked: !session.excluded,
+                  disabled: folder.excluded,
+                  onChange: (event) => void toggleChoice("session", session.id, !event.target.checked)
+                }),
+                (0, import_react2.createElement)("span", { className: "theone-picker-title", title }, title),
+                (0, import_react2.createElement)("time", { dateTime: new Date(session.createdAt).toISOString() }, new Date(session.createdAt).toLocaleDateString(localeSnapshot().active))
+              )
+            );
+          }))
+        )))
+      );
+    }
     async function editLinks(body) {
       setBusy("links");
       setError(void 0);
@@ -4412,6 +4494,8 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
     const status = snapshot?.status;
     const asking = status?.consent === "ask" || status?.consent === "declined" && reconsidering;
     const unconsented = status?.consent === "ask" || status?.consent === "declined";
+    const total = choices ? choices.sessions.length : (status?.waiting ?? 0) + (status?.excluded ?? 0);
+    const included = choices ? choices.sessions.filter((session) => !session.excluded).length : status?.waiting ?? 0;
     const kept = routeStats?.total ? Math.round(100 * (routeStats.total - routeStats.corrected) / routeStats.total) : void 0;
     const figure = (value, name) => (0, import_react2.createElement)("div", { key: name }, (0, import_react2.createElement)("dd", null, value), (0, import_react2.createElement)("dt", null, name));
     return (0, import_react2.createElement)(
@@ -4443,8 +4527,15 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
           "div",
           { className: "theone-catalog-tools" },
           (0, import_react2.createElement)("button", { type: "button", className: "theone-primary", disabled: !!busy, onClick: () => setCreating((open) => !open) }, t2("manage.create")),
-          (0, import_react2.createElement)("button", { type: "button", onClick: refresh, disabled: !!busy || status?.running || unconsented }, t2("catalog.refresh")),
-          status?.consent === "granted" ? (0, import_react2.createElement)("button", { type: "button", className: "theone-quiet", disabled: !!busy, onClick: () => void chooseChats() }, t2("catalog.chooseChats")) : null,
+          // Before consent there is no history to refresh, so the button would only confuse.
+          unconsented ? null : (0, import_react2.createElement)("button", { type: "button", onClick: refresh, disabled: !!busy || status?.running }, t2("catalog.refresh")),
+          status?.consent === "granted" ? (0, import_react2.createElement)("button", {
+            type: "button",
+            className: "theone-quiet",
+            disabled: !!busy,
+            "aria-expanded": choosing,
+            onClick: () => choosing ? closeChoices() : void chooseChats()
+          }, t2("catalog.chooseChats")) : null,
           snapshot?.linkage && snapshot.linkage.scope !== "off" ? (0, import_react2.createElement)("button", {
             type: "button",
             className: "theone-quiet",
@@ -4457,77 +4548,46 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
           (0, import_react2.createElement)("button", { type: "button", className: "theone-quiet", onClick: () => openFeedbackDialog() }, t2("feedback.open"))
         )
       ),
+      // One card from question to choice: the list opens inside it and the button counts what will be read.
       asking ? (0, import_react2.createElement)(
         "section",
-        { className: "theone-consent", "aria-label": t2("catalog.consentTitle") },
-        (0, import_react2.createElement)("h2", null, t2("catalog.consentTitle")),
-        (0, import_react2.createElement)("p", null, t2("catalog.consentBody", { count: (status?.waiting ?? 0) + (status?.excluded ?? 0) })),
-        (0, import_react2.createElement)(
-          "ul",
-          { className: "theone-catalog-note" },
-          (0, import_react2.createElement)("li", null, t2("catalog.consentKeep")),
-          (0, import_react2.createElement)("li", null, t2("catalog.consentQuota")),
-          (0, import_react2.createElement)("li", null, t2("catalog.consentChoose"))
-        ),
+        { className: "theone-consent", "aria-labelledby": "theone-consent-title" },
+        (0, import_react2.createElement)("p", { className: "theone-overline" }, t2("catalog.consentOverline")),
+        (0, import_react2.createElement)("h2", { id: "theone-consent-title" }, t2("catalog.consentTitle")),
+        (0, import_react2.createElement)("p", { className: "theone-consent-body" }, t2("catalog.consentBody", { count: total, sessionSuffix: total === 1 ? "" : "s" })),
+        (0, import_react2.createElement)("ul", { className: "theone-consent-points" }, ...["catalog.consentKeep", "catalog.consentQuota", "catalog.consentChoose"].map((key) => (0, import_react2.createElement)("li", { key }, icon("check", 14), (0, import_react2.createElement)("span", null, t2(key))))),
+        choosing ? chatPicker() : null,
         (0, import_react2.createElement)(
           "div",
-          { className: "theone-catalog-tools" },
-          (0, import_react2.createElement)("button", { type: "button", className: "theone-primary", disabled: !!busy, onClick: () => void consent(true) }, t2("catalog.start")),
-          (0, import_react2.createElement)("button", { type: "button", disabled: !!busy, onClick: () => void chooseChats() }, t2("catalog.chooseFirst")),
+          { className: "theone-consent-actions" },
+          (0, import_react2.createElement)(
+            "button",
+            { type: "button", className: "theone-primary", disabled: !!busy || !included, onClick: () => void consent(true) },
+            t2("catalog.startCount", { count: included, sessionSuffix: included === 1 ? "" : "s" })
+          ),
+          (0, import_react2.createElement)(
+            "button",
+            { type: "button", disabled: !!busy, "aria-expanded": choosing, onClick: () => choosing ? closeChoices() : void chooseChats() },
+            t2(choosing ? "catalog.doneChoosing" : "catalog.chooseFirst")
+          ),
           (0, import_react2.createElement)("button", { type: "button", className: "theone-quiet", disabled: !!busy, onClick: () => void consent(false) }, t2("catalog.notNow"))
         )
       ) : null,
       status?.consent === "declined" && !reconsidering ? (0, import_react2.createElement)(
         "div",
-        { className: "theone-catalog-note" },
-        t2("catalog.declined"),
-        " ",
-        (0, import_react2.createElement)("button", {
-          type: "button",
-          className: "theone-quiet",
-          disabled: !!busy,
-          onClick: () => setReconsidering(true)
-        }, t2("catalog.reconsider"))
+        { className: "theone-consent-strip" },
+        (0, import_react2.createElement)("span", null, t2("catalog.declined")),
+        (0, import_react2.createElement)("button", { type: "button", className: "theone-quiet", disabled: !!busy, onClick: () => setReconsidering(true) }, t2("catalog.reconsider"))
       ) : null,
-      choosing && choices ? (0, import_react2.createElement)(
+      status?.consent === "granted" && choosing ? (0, import_react2.createElement)(
         "section",
-        { className: "theone-consent", "aria-label": t2("catalog.chooseChats") },
-        (0, import_react2.createElement)("p", { className: "theone-catalog-note" }, t2("catalog.chooseHint")),
-        ...[...choices.folders, { path: null, name: t2("catalog.otherChats"), excluded: false }].map((folder) => (0, import_react2.createElement)(
-          "fieldset",
-          { key: folder.path ?? "other", className: "theone-chat-group", disabled: !!busy },
-          (0, import_react2.createElement)("legend", { title: folder.path ?? void 0 }, folder.name),
-          folder.path ? (0, import_react2.createElement)(
-            "label",
-            { className: "theone-chat-choice" },
-            (0, import_react2.createElement)("input", {
-              type: "checkbox",
-              checked: !folder.excluded,
-              onChange: (event) => void post("/api/theone/catalog/sessions", { kind: "folder", value: folder.path, excluded: !event.target.checked })
-            }),
-            t2("catalog.wholeFolder")
-          ) : null,
-          ...choices.sessions.filter((session) => session.folder === folder.path).map((session) => (0, import_react2.createElement)(
-            "label",
-            { key: session.id, className: "theone-chat-choice" },
-            (0, import_react2.createElement)("input", {
-              type: "checkbox",
-              checked: !session.excluded,
-              disabled: folder.excluded,
-              onChange: (event) => void post("/api/theone/catalog/sessions", { kind: "session", value: session.id, excluded: !event.target.checked })
-            }),
-            (0, import_react2.createElement)("span", null, session.title || t2("catalog.untitledChat")),
-            (0, import_react2.createElement)("time", { dateTime: new Date(session.createdAt).toISOString() }, new Date(session.createdAt).toLocaleDateString(localeSnapshot().active))
-          ))
-        )),
+        { className: "theone-consent", "aria-labelledby": "theone-choose-title" },
+        (0, import_react2.createElement)("h2", { id: "theone-choose-title" }, t2("catalog.chooseChats")),
+        chatPicker(),
         (0, import_react2.createElement)(
           "div",
-          { className: "theone-catalog-tools" },
-          asking ? (0, import_react2.createElement)("button", { type: "button", className: "theone-primary", disabled: !!busy, onClick: () => void consent(true) }, t2("catalog.start")) : null,
-          (0, import_react2.createElement)("button", { type: "button", className: "theone-quiet", disabled: !!busy, onClick: () => {
-            choosingRef.current = false;
-            setChoosing(false);
-          } }, t2("manage.close"))
+          { className: "theone-consent-actions" },
+          (0, import_react2.createElement)("button", { type: "button", onClick: closeChoices }, t2("catalog.doneChoosing"))
         )
       ) : null,
       creating ? (0, import_react2.createElement)(
@@ -4549,94 +4609,116 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
       error ? (0, import_react2.createElement)("p", { role: "alert", className: "theone-catalog-warning" }, t2(error)) : null,
       snapshot ? (0, import_react2.createElement)(RouteList, { routes, stats: routeStats, contexts: snapshot.contexts, post, busy: !!busy }) : null,
       snapshot && !snapshot.contexts.length && !unconsented ? (0, import_react2.createElement)("p", { className: "theone-catalog-empty" }, t2(status?.running ? "catalog.emptyIndexing" : "catalog.empty")) : null,
-      (0, import_react2.createElement)("div", { className: "theone-catalog-groups" }, ...groups.map((group, index) => (0, import_react2.createElement)(
-        "section",
-        { key: group.id, className: "theone-topic-group" },
-        (0, import_react2.createElement)(
-          "header",
-          { className: "theone-group-head" },
-          (0, import_react2.createElement)("span", { className: "theone-group-index" }, String(index + 1).padStart(2, "0")),
-          (0, import_react2.createElement)("h2", null, group.title, (0, import_react2.createElement)("span", null, group.contextIds.length)),
-          group.summary ? (0, import_react2.createElement)("p", { className: "theone-group-summary" }, group.summary) : null
-        ),
-        (0, import_react2.createElement)("ol", { className: "theone-topic-list" }, ...group.contextIds.flatMap((id) => {
-          const topic = snapshot?.contexts.find((c) => c.id === id);
-          if (!topic) return [];
-          const constraints = snapshot?.linkage?.topics[id]?.constraints ?? "";
-          const open = managing === id;
-          const links = linkRow(id);
-          return [(0, import_react2.createElement)(
-            "li",
-            { key: id, className: `theone-topic-card${open ? " theone-open" : ""}${topic.hidden === "orphaned" || topic.hidden === "excluded" ? " theone-hidden" : ""}` },
+      // Laid out like DSH's built-in plugins: foldable groups of two-column cards; a card opens to full width.
+      (0, import_react2.createElement)("div", { className: "theone-catalog-groups" }, ...groups.map((group) => {
+        const shut = folded.has(group.id);
+        return (0, import_react2.createElement)(
+          "section",
+          { key: group.id, className: "theone-topic-group" },
+          (0, import_react2.createElement)(
+            "div",
+            { className: "theone-group-head" },
             (0, import_react2.createElement)(
-              "div",
-              { className: "theone-topic-main" },
-              (0, import_react2.createElement)("h3", null, topic.title, topic.topicStatus && topic.topicStatus !== "active" ? (0, import_react2.createElement)("span", { className: `theone-tag theone-status-${topic.topicStatus}` }, t2(`topic.status.${topic.topicStatus}`)) : null),
-              topic.summary && topic.summary.trim() !== topic.title.trim() ? (0, import_react2.createElement)("p", { className: "theone-topic-summary" }, topic.summary) : null,
-              topic.hidden ? (0, import_react2.createElement)("p", { className: "theone-topic-warning" }, t2(topic.hidden === "excluded" ? "topic.hiddenExcluded" : topic.hidden === "archived" ? "topic.hiddenArchived" : "topic.hiddenOrphaned")) : null,
-              topic.lastState || constraints || topic.projectInfo || links && !open ? (0, import_react2.createElement)(
-                "dl",
-                { className: "theone-topic-meta" },
-                topic.projectInfo ? [(0, import_react2.createElement)("dt", { key: "p" }, label(t2("topic.project"))), (0, import_react2.createElement)("dd", { key: "pv", title: topic.projectInfo.path }, topic.projectInfo.name)] : null,
-                topic.lastState ? [(0, import_react2.createElement)("dt", { key: "s" }, label(t2("topic.state"))), (0, import_react2.createElement)("dd", { key: "sv" }, topic.lastState)] : null,
-                constraints ? [(0, import_react2.createElement)("dt", { key: "c" }, label(t2("topic.constraints"))), (0, import_react2.createElement)("dd", { key: "cv" }, constraints)] : null,
-                open ? null : links
-              ) : null
-            ),
-            ...(snapshot?.merges ?? []).filter((merge) => merge.targetId === id).map((merge) => (0, import_react2.createElement)(
-              "p",
-              { key: `merge:${merge.sourceId}`, className: "theone-topic-merged" },
-              t2("topic.mergedFrom", { title: merge.title }),
-              " ",
-              (0, import_react2.createElement)("button", { type: "button", className: "theone-quiet", disabled: !!busy, onClick: () => {
-                void post("/api/theone/topics", { action: "unmerge", id: merge.sourceId });
-              } }, t2("topic.unmerge"))
-            )),
-            (0, import_react2.createElement)(
-              "div",
-              { className: "theone-topic-actions" },
-              // A topic whose conversations are gone has nothing left to continue; an archived one does.
-              (0, import_react2.createElement)("button", {
+              "button",
+              {
                 type: "button",
-                className: "theone-continue",
-                disabled: !!busy || topic.hidden === "orphaned" || topic.hidden === "excluded",
-                title: topic.hidden === "orphaned" ? t2("topic.continueHidden") : void 0,
-                onClick: () => {
-                  void continueTopic(id);
-                }
-              }, t2(busy === id ? "topic.opening" : "topic.continue"), (0, import_react2.createElement)("span", { "aria-hidden": true }, " \u2192")),
-              (0, import_react2.createElement)("button", { type: "button", className: "theone-quiet", "aria-expanded": open, onClick: () => setManaging((current) => current === id ? void 0 : id) }, t2(open ? "manage.close" : "manage.open")),
-              topic.hidden ? null : (0, import_react2.createElement)(
-                "button",
-                {
-                  type: "button",
-                  className: "theone-quiet",
-                  disabled: !!busy,
-                  onClick: () => {
-                    void post("/api/theone/topics", { action: "status", id, done: topic.topicStatus !== "done" });
-                  }
-                },
-                t2(topic.topicStatus === "done" ? "topic.reopen" : "topic.markDone")
+                className: "theone-group-toggle",
+                "aria-expanded": !shut,
+                onClick: () => setFolded((current) => {
+                  const next = new Set(current);
+                  if (!next.delete(group.id)) next.add(group.id);
+                  return next;
+                })
+              },
+              icon("chevron", 12),
+              (0, import_react2.createElement)("h2", null, group.title),
+              (0, import_react2.createElement)("span", { className: "theone-group-count" }, group.contextIds.length)
+            )
+          ),
+          group.summary ? (0, import_react2.createElement)("p", { className: "theone-group-summary" }, group.summary) : null,
+          shut ? null : (0, import_react2.createElement)("ol", { className: "theone-topic-list" }, ...group.contextIds.flatMap((id) => {
+            const topic = snapshot?.contexts.find((c) => c.id === id);
+            if (!topic) return [];
+            const constraints = snapshot?.linkage?.topics[id]?.constraints ?? "";
+            const open = managing === id;
+            return [(0, import_react2.createElement)(
+              "li",
+              { key: id, "data-open": open, className: `theone-topic-card${open ? " theone-open" : ""}${topic.hidden === "orphaned" || topic.hidden === "excluded" ? " theone-hidden" : ""}` },
+              (0, import_react2.createElement)(
+                "div",
+                { className: "theone-topic-main" },
+                (0, import_react2.createElement)(
+                  "div",
+                  { className: "theone-topic-row" },
+                  (0, import_react2.createElement)("h3", { title: topic.title }, topic.title),
+                  topic.topicStatus && topic.topicStatus !== "active" ? (0, import_react2.createElement)("span", { className: `theone-tag theone-status-${topic.topicStatus}` }, t2(`topic.status.${topic.topicStatus}`)) : null
+                ),
+                topic.summary && topic.summary.trim() !== topic.title.trim() ? (0, import_react2.createElement)("p", { className: "theone-topic-summary" }, topic.summary) : null,
+                topic.lastState ? (0, import_react2.createElement)("p", { className: "theone-topic-state" }, (0, import_react2.createElement)("span", null, label(t2("topic.state"))), topic.lastState) : null,
+                topic.hidden ? (0, import_react2.createElement)("p", { className: "theone-topic-warning" }, t2(topic.hidden === "excluded" ? "topic.hiddenExcluded" : topic.hidden === "archived" ? "topic.hiddenArchived" : "topic.hiddenOrphaned")) : null,
+                ...(snapshot?.merges ?? []).filter((merge) => merge.targetId === id).map((merge) => (0, import_react2.createElement)(
+                  "p",
+                  { key: `merge:${merge.sourceId}`, className: "theone-topic-merged" },
+                  t2("topic.mergedFrom", { title: merge.title }),
+                  " ",
+                  (0, import_react2.createElement)("button", { type: "button", className: "theone-quiet", disabled: !!busy, onClick: () => {
+                    void post("/api/theone/topics", { action: "unmerge", id: merge.sourceId });
+                  } }, t2("topic.unmerge"))
+                ))
               ),
-              ...(topic.hidden === "orphaned" ? [] : topic.sourceSessionIds).slice(0, 3).map((sessionId, i) => (0, import_react2.createElement)("button", {
-                key: sessionId,
-                type: "button",
-                className: "theone-quiet",
-                onClick: () => {
-                  ctx.layout.beginNavigation();
-                  ctx.uiWorkspace.openSession(sessionId);
-                }
-              }, t2("topic.source") + (topic.sourceSessionIds.length > 1 ? " " + (i + 1) : "")))
-            ),
-            open ? (0, import_react2.createElement)(
-              "div",
-              { className: "theone-topic-edit" },
-              links,
-              (0, import_react2.createElement)(TopicManager, { key: `${id}:${topic.title}:${topic.summary}:${constraints}`, topic, constraints, groups: snapshot.groups, contexts: snapshot.contexts, post, busy: !!busy })
-            ) : null
-          )];
-        }))
-      )))
+              (0, import_react2.createElement)(
+                "div",
+                { className: "theone-topic-foot" },
+                topic.projectInfo ? (0, import_react2.createElement)("code", { className: "theone-topic-chip", title: topic.projectInfo.path }, topic.projectInfo.name) : null,
+                (0, import_react2.createElement)(
+                  "div",
+                  { className: "theone-topic-actions" },
+                  (0, import_react2.createElement)("button", { type: "button", className: "theone-quiet", "aria-expanded": open, onClick: () => setManaging((current) => current === id ? void 0 : id) }, t2(open ? "manage.close" : "manage.open")),
+                  // A topic whose conversations are gone has nothing left to continue; an archived one does.
+                  (0, import_react2.createElement)("button", {
+                    type: "button",
+                    className: "theone-continue",
+                    disabled: !!busy || topic.hidden === "orphaned" || topic.hidden === "excluded",
+                    title: topic.hidden === "orphaned" ? t2("topic.continueHidden") : void 0,
+                    onClick: () => {
+                      void continueTopic(id);
+                    }
+                  }, t2(busy === id ? "topic.opening" : "topic.continue"), (0, import_react2.createElement)("span", { "aria-hidden": true }, " \u2192"))
+                )
+              ),
+              open ? (0, import_react2.createElement)(
+                "div",
+                { className: "theone-topic-edit" },
+                (0, import_react2.createElement)(
+                  "div",
+                  { className: "theone-topic-quick" },
+                  topic.hidden ? null : (0, import_react2.createElement)(
+                    "button",
+                    {
+                      type: "button",
+                      disabled: !!busy,
+                      onClick: () => {
+                        void post("/api/theone/topics", { action: "status", id, done: topic.topicStatus !== "done" });
+                      }
+                    },
+                    t2(topic.topicStatus === "done" ? "topic.reopen" : "topic.markDone")
+                  ),
+                  ...(topic.hidden === "orphaned" ? [] : topic.sourceSessionIds).slice(0, 3).map((sessionId, i) => (0, import_react2.createElement)("button", {
+                    key: sessionId,
+                    type: "button",
+                    onClick: () => {
+                      ctx.layout.beginNavigation();
+                      ctx.uiWorkspace.openSession(sessionId);
+                    }
+                  }, t2("topic.source") + (topic.sourceSessionIds.length > 1 ? " " + (i + 1) : "")))
+                ),
+                linkRow(id),
+                (0, import_react2.createElement)(TopicManager, { key: `${id}:${topic.title}:${topic.summary}:${constraints}`, topic, constraints, groups: snapshot.groups, contexts: snapshot.contexts, post, busy: !!busy })
+              ) : null
+            )];
+          }))
+        );
+      }))
     );
   }
   ctx.effect(() => {
@@ -4796,9 +4878,9 @@ button:has(.theone-nav[data-wide=true])>span:has(.theone-nav){flex:1;min-width:0
 .theone-dialog-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:16px}
 .theone-dialog-actions button{padding:8px 14px;border:1px solid var(--dsw-alias-border-l2,#ffffff1f);border-radius:9px;background:transparent;color:inherit;font:inherit;cursor:pointer}
 .theone-dialog-actions button:hover{background:var(--dsw-alias-interactive-bg-hover,#ffffff12)}
-.theone-dialog-actions .theone-dialog-primary{border-color:transparent;background:#3b6fb0;color:#fff}
-.theone-dialog-actions .theone-dialog-primary:hover{background:#4a7fc0}
-.theone-dialog-actions button:focus-visible{outline:2px solid #4a7fc0;outline-offset:2px}
+.theone-dialog-actions .theone-dialog-primary{border-color:transparent;background:var(--one-accent);color:var(--one-on-accent)}
+.theone-dialog-actions .theone-dialog-primary:hover{background:var(--one-accent-hover)}
+.theone-dialog-actions button:focus-visible{outline:2px solid var(--one-accent);outline-offset:2px}
 .theone-dialog .theone-dialog-body{white-space:pre-wrap;color:var(--dsw-alias-label-primary,#e8e8ea)}
 .theone-feedback{width:min(560px,100%);max-height:calc(100vh - 32px);overflow:auto}
 .theone-feedback textarea,.theone-feedback input:not([type=checkbox]){display:block;width:100%;box-sizing:border-box;margin:0 0 10px;padding:8px 10px;border:1px solid var(--dsw-alias-border-l2,#ffffff1f);border-radius:9px;background:transparent;color:inherit;font:inherit;resize:vertical}
@@ -4807,12 +4889,12 @@ button:has(.theone-nav[data-wide=true])>span:has(.theone-nav){flex:1;min-width:0
 .theone-feedback-preview summary{cursor:pointer;color:var(--dsw-alias-label-secondary,#a0a0a6)}
 .theone-feedback-preview pre{max-height:220px;overflow:auto;margin:6px 0 0;padding:8px 10px;border-radius:9px;background:#0000001f;font-size:12px;line-height:1.5;white-space:pre-wrap;word-break:break-word}
 .theone-notice{display:flex;align-items:center;gap:8px;margin:6px 4px 0;padding:6px 8px 6px 10px;border:1px solid var(--dsw-alias-border-l2,#ffffff1f);border-radius:10px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary,#a0a0a6);min-width:0}
-.theone-notice-tag{flex:none;display:inline-flex;padding:3px;border-radius:6px;background:#3b6fb033;color:#7fa9dd}
+.theone-notice-tag{flex:none;display:inline-flex;padding:3px;border-radius:6px;background:var(--one-tint);box-shadow:inset 0 0 0 .5px var(--one-line);color:var(--one-accent)}
 .theone-notice-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .theone-notice-text strong{color:var(--dsw-alias-label-primary,#e8e8ea);font-weight:500}
 .theone-notice button{flex:none;display:inline-flex;border:0;background:transparent;color:inherit;font:inherit;cursor:pointer;padding:4px;border-radius:6px}
 .theone-notice button:hover{background:var(--dsw-alias-interactive-bg-hover,#ffffff12)}
-.theone-notice-link{color:#7fa9dd!important}
+.theone-notice-link{color:var(--one-accent)!important}
 .theone-update-spin{width:12px;height:12px;border-radius:50%;border:1.5px solid currentColor;border-right-color:transparent;animation:theone-spin 800ms linear infinite}
 @keyframes theone-spin{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){.theone-update-spin{animation:none}}
@@ -4829,105 +4911,143 @@ button:has(.theone-nav[data-wide=true])>span:has(.theone-nav){flex:1;min-width:0
 `;
 var catalogCss = `
 button:has(.theone-catalog-entry)>span:not(:has(.theone-catalog-entry)){display:none}
-.theone-catalog{--t-fg:var(--dsw-alias-label-primary,#18181b);--t-muted:var(--dsw-alias-label-secondary,#6b6b72);--t-rule:var(--dsw-alias-border-l2,#18181b1f);--t-accent:#b4531c;--t-warn:#c2410c;--t-field:#18181b0a;
-  container-type:inline-size;box-sizing:border-box;height:100%;overflow:auto;padding:48px 56px 96px;color:var(--t-fg);font-feature-settings:"tnum" 1}
-[data-ds-dark-theme] .theone-catalog{--t-accent:#8cc2ef;--t-warn:#fb923c;--t-field:#ffffff0d}
-.theone-catalog>*{max-width:1120px;margin-left:auto;margin-right:auto}
-.theone-catalog button{font:inherit;font-size:13px;line-height:1.4;color:inherit;background:transparent;border:1px solid var(--t-rule);border-radius:6px;padding:6px 12px;cursor:pointer;white-space:nowrap}
-.theone-catalog button:hover:not(:disabled){border-color:var(--t-fg)}
-.theone-catalog button:disabled{opacity:.4;cursor:default}
+body{--one-accent:#a75b1e;--one-accent-hover:#8c4a15;--one-on-accent:#fff;--one-tint:#fff5ec;--one-line:#eed3bb;--one-soft:#a75b1e14}
+body[data-ds-dark-theme]{--one-accent:#93c8f3;--one-accent-hover:#b6dbf8;--one-on-accent:#0e1a24;--one-tint:#1d2a37;--one-line:#344d64;--one-soft:#93c8f31a}
+.theone-catalog{--t-fg:var(--dsw-alias-label-primary,#18181b);--t-muted:var(--dsw-alias-label-secondary,#5c6370);--t-caption:var(--dsw-alias-label-caption,#9aa0aa);--t-rule:var(--dsw-alias-border-l2,#0000001a);--t-line:var(--dsw-alias-border-l3,#0000001f);--t-hover:var(--dsw-alias-interactive-bg-hover,#26314810);--t-base:var(--dsw-alias-bg-base,#fff);--t-accent:var(--one-accent);--t-warn:var(--dsw-alias-state-error-primary,#d9480f);--t-field:var(--t-hover);
+  container-type:inline-size;box-sizing:border-box;height:100%;overflow:auto;padding:0 clamp(24px,4vw,48px) 64px;color:var(--t-fg);font-family:var(--dsw-font-family,inherit);font-size:14px;line-height:22px}
+.theone-catalog>*{max-width:960px;margin-left:auto;margin-right:auto}
+.theone-catalog button{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;gap:4px;height:28px;padding:0 10px;border:.5px solid var(--t-line);border-radius:var(--dsw-radius-sm,8px);background:transparent;color:inherit;font:inherit;font-size:12px;line-height:18px;font-weight:400;cursor:pointer;white-space:nowrap}
+.theone-catalog button:hover:not(:disabled){background:var(--t-hover)}
+.theone-catalog button:disabled{opacity:.4;cursor:not-allowed}
 .theone-catalog button:focus-visible{outline:2px solid var(--t-accent);outline-offset:2px}
-.theone-catalog .theone-primary{background:var(--t-fg);border-color:var(--t-fg);color:var(--dsw-alias-bg-primary,#fff)}
-[data-ds-dark-theme] .theone-catalog .theone-primary{color:#111}
-.theone-catalog .theone-quiet{border-color:transparent;color:var(--t-muted);padding-left:6px;padding-right:6px}
-.theone-catalog .theone-quiet:hover:not(:disabled){border-color:transparent;color:var(--t-fg);text-decoration:underline;text-underline-offset:3px}
-.theone-catalog .theone-continue{border-color:transparent;color:var(--t-accent);font-weight:600;padding-left:0;padding-right:6px}
-.theone-catalog .theone-continue:hover:not(:disabled){border-color:transparent;text-decoration:underline;text-underline-offset:3px}
-.theone-catalog-header{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:24px 48px;padding-bottom:28px;border-bottom:2px solid var(--t-fg)}
-.theone-overline{margin:0 0 14px;font-size:12px;font-weight:600;letter-spacing:.06em;color:var(--t-accent)}
-.theone-catalog h1{margin:0;font-size:44px;line-height:1.05;font-weight:700;letter-spacing:-.02em}
-.theone-catalog-lede{margin:14px 0 0;max-width:34em;font-size:15px;line-height:1.6;color:var(--t-muted)}
-.theone-figures{display:flex;gap:40px;margin:0}
-.theone-figures>div{display:flex;flex-direction:column-reverse;gap:6px;min-width:64px}
-.theone-figures dd{margin:0;font-size:40px;line-height:1;font-weight:600;letter-spacing:-.02em}
-.theone-figures dt{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--t-muted)}
-.theone-toolbar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px 24px;padding:14px 0 40px}
-.theone-catalog-status{margin:0;font-size:13px;color:var(--t-muted)}
-.theone-catalog-tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
-.theone-catalog-note,.theone-catalog-empty{color:var(--t-muted);font-size:14px;line-height:1.7}
-.theone-catalog-empty{padding:48px 0}
-.theone-consent{margin-bottom:28px;padding:20px 24px;border:1px solid var(--t-rule);border-radius:8px;background:var(--t-field);line-height:1.7}
-.theone-consent h2{margin:0;font-size:20px}.theone-consent p{margin:10px 0}.theone-consent ul{padding-left:22px}
-.theone-chat-group{min-width:0;border:1px solid var(--t-rule);border-radius:6px;margin:16px 0;padding:10px 14px}
-.theone-chat-group legend{max-width:100%;overflow-wrap:anywhere;padding:0 6px}
-.theone-chat-choice{display:flex;align-items:baseline;gap:10px;padding:5px 0;font-size:14px}
-.theone-chat-choice input{accent-color:var(--t-accent);flex:none}.theone-chat-choice span{overflow-wrap:anywhere;min-width:0}
-.theone-chat-choice time{margin-left:auto;color:var(--t-muted);font-size:12px;white-space:nowrap}
-.theone-catalog-warning{margin:0 0 24px;padding:10px 0 10px 14px;border-left:2px solid var(--t-warn);font-size:13px;line-height:1.6}
+.theone-catalog .theone-primary{border-color:transparent;background:var(--one-accent);color:var(--one-on-accent)}
+.theone-catalog .theone-primary:hover:not(:disabled){background:var(--one-accent-hover)}
+.theone-catalog .theone-quiet{border-color:transparent;color:var(--t-muted)}
+.theone-catalog .theone-quiet:hover:not(:disabled){color:var(--t-fg)}
+.theone-catalog .theone-continue{border-color:transparent;color:var(--t-accent);font-weight:500}
+.theone-catalog .theone-continue:hover:not(:disabled){background:var(--one-soft)}
+.theone-catalog-header{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:8px 24px;padding-top:28px}
+.theone-catalog-header .theone-overline{display:none}
+.theone-overline{margin:0 0 4px;font-size:12px;line-height:18px;font-weight:500;color:var(--t-accent)}
+.theone-catalog h1{margin:0;font-size:20px;line-height:28px;font-weight:600}
+.theone-catalog-lede{margin:4px 0 0;font-size:13px;line-height:20px;color:var(--t-muted)}
+.theone-figures{display:flex;gap:16px;margin:0;padding-top:4px}
+.theone-figures>div{display:flex;align-items:baseline;gap:4px}
+.theone-figures dd{margin:0;font-size:13px;line-height:20px;font-weight:500;font-variant-numeric:tabular-nums}
+.theone-figures dt{font-size:13px;line-height:20px;color:var(--t-muted)}
+.theone-toolbar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px;padding:20px 0 24px}
+.theone-catalog-status{margin:0;font-size:13px;line-height:20px;color:var(--dsw-alias-label-tertiary,var(--t-muted))}
+.theone-catalog-status:empty{display:none}
+.theone-catalog-tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-left:auto}
+.theone-catalog .theone-catalog-tools .theone-primary{border-color:var(--t-line);background:transparent;color:inherit}
+.theone-catalog .theone-catalog-tools .theone-primary:hover:not(:disabled){background:var(--t-hover)}
+.theone-catalog-note,.theone-catalog-empty{margin:0 0 24px;color:var(--t-muted);font-size:13px;line-height:20px}
+.theone-catalog-empty{padding:40px 0;text-align:center}
+.theone-consent{box-sizing:border-box;margin:0 auto 32px;padding:20px 24px;border:1px solid var(--one-line);border-radius:var(--dsw-radius-lg,16px);background:var(--one-tint)}
+.theone-consent .theone-overline{display:flex;align-items:center;gap:6px}
+.theone-consent .theone-overline::before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor}
+.theone-consent h2{margin:0;font-size:16px;line-height:24px;font-weight:600}
+.theone-consent-body{margin:6px 0 0;max-width:640px;font-size:14px;line-height:22px}
+.theone-consent-points{list-style:none;margin:12px 0 0;padding:0;display:grid;gap:4px;font-size:13px;line-height:20px;color:var(--t-muted)}
+.theone-consent-points li{display:flex;gap:8px;align-items:flex-start}
+.theone-consent-points .theone-icon{flex:none;margin-top:3px;color:var(--t-accent)}
+.theone-consent-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:20px}
+.theone-catalog .theone-consent-actions button{height:32px;padding:0 14px;font-size:13px}
+.theone-catalog .theone-consent-actions button:not(.theone-primary):not(.theone-quiet){background:var(--t-base)}
+.theone-consent-strip{box-sizing:border-box;display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px;margin:0 auto 32px;padding:8px 8px 8px 16px;border:1px solid var(--one-line);border-radius:var(--dsw-radius-md,12px);font-size:13px;line-height:20px;color:var(--t-muted)}
+.theone-consent-strip>span{display:flex;align-items:center;gap:8px}
+.theone-consent-strip>span::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--t-accent)}
+.theone-catalog .theone-consent-strip button{margin-left:auto;color:var(--t-accent)}
+.theone-picker{margin-top:16px}
+.theone-picker-hint{margin:0 0 8px;font-size:13px;line-height:20px;color:var(--t-muted)}
+.theone-picker-list{max-height:min(400px,55vh);overflow:auto;border:.5px solid var(--t-line);border-radius:var(--dsw-radius-md,12px);background:var(--t-base)}
+.theone-picker-group+.theone-picker-group{border-top:.5px solid var(--t-line)}
+.theone-picker-group>header{position:sticky;top:0;z-index:1;display:flex;align-items:center;gap:8px;height:36px;padding:0 12px 0 16px;border-bottom:.5px solid var(--t-rule);background:var(--t-base);font-size:12px;line-height:18px}
+.theone-picker-folder{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
+.theone-picker-count{color:var(--t-caption);font-variant-numeric:tabular-nums}
+.theone-picker-whole{margin-left:auto;display:flex;align-items:center;gap:6px;color:var(--t-muted);white-space:nowrap;cursor:pointer}
+.theone-picker-group ul{list-style:none;margin:0;padding:4px}
+.theone-picker-group li label{display:flex;align-items:center;gap:10px;height:36px;padding:0 12px;border-radius:var(--dsw-radius-sm,8px);font-size:13px;cursor:pointer}
+.theone-picker-group li label:hover{background:var(--t-hover)}
+.theone-picker input,.theone-catalog input[type=checkbox]{flex:none;width:14px;height:14px;margin:0;accent-color:var(--one-accent);cursor:pointer}
+.theone-picker input:disabled{cursor:not-allowed}
+.theone-picker-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.theone-picker-off .theone-picker-title{color:var(--t-caption)}
+.theone-picker time{color:var(--t-caption);font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}
+@container (max-width:560px){.theone-consent{padding:16px}.theone-picker time{display:none}}
+.theone-catalog-warning{box-sizing:border-box;margin:0 auto 24px;padding:10px 16px;border:.5px solid color-mix(in srgb,var(--t-warn) 40%,transparent);border-radius:var(--dsw-radius-md,12px);background:color-mix(in srgb,var(--t-warn) 6%,transparent);font-size:13px;line-height:20px}
 .theone-catalog-entry{display:flex;align-items:center;gap:10px;font-size:14px}
-.theone-routes{margin-bottom:56px;border-top:1px solid var(--t-rule);border-bottom:1px solid var(--t-rule)}
-.theone-routes summary{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;padding:14px 0;cursor:pointer;font-size:13px;font-weight:600;letter-spacing:.04em;list-style:none}
+.theone-routes{box-sizing:border-box;margin:0 auto 32px;padding:0 16px;border:.5px solid var(--t-line);border-radius:var(--dsw-radius-md,12px)}
+.theone-routes summary{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;min-height:44px;cursor:pointer;font-size:14px;line-height:22px;font-weight:500;list-style:none}
 .theone-routes summary::-webkit-details-marker{display:none}
-.theone-routes summary::before{content:"+";display:inline-block;width:14px;color:var(--t-muted);font-weight:400}
-.theone-routes[open] summary::before{content:"\u2212"}
-.theone-routes summary>span{color:var(--t-muted);font-weight:400}
-.theone-route-stats{font-weight:400;color:var(--t-muted);font-size:12px}
-.theone-routes .theone-manage-hint{margin:0 0 12px 26px;max-width:46em}
+.theone-routes summary::before{content:'';width:6px;height:6px;margin:0 4px 0 2px;border-right:1.5px solid var(--t-muted);border-bottom:1.5px solid var(--t-muted);transform:rotate(-45deg);transition:transform 150ms ease}
+.theone-routes[open] summary::before{transform:rotate(45deg) translate(-2px,-1px)}
+.theone-routes summary>span{color:var(--t-caption);font-weight:400}
+.theone-route-stats{font-weight:400;color:var(--t-caption);font-size:13px}
+.theone-routes .theone-manage-hint{margin:0 0 8px 20px;max-width:46em}
 .theone-routes ol{list-style:none;margin:0;padding:0 0 8px}
-.theone-routes li{display:grid;grid-template-columns:52px minmax(0,1.3fr) minmax(0,1fr) auto;gap:4px 20px;align-items:baseline;padding:10px 0;border-top:1px solid var(--t-rule);font-size:13px}
-.theone-routes time{color:var(--t-muted)}
+.theone-routes li{display:grid;grid-template-columns:48px minmax(0,1fr) minmax(0,1fr) 248px;gap:4px 16px;align-items:center;min-height:44px;padding:6px 0;border-top:.5px solid var(--t-rule);font-size:13px;line-height:20px}
+.theone-routes time{color:var(--t-caption);font-variant-numeric:tabular-nums}
 .theone-routes q{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;quotes:none}
-.theone-route-target{display:flex;flex-direction:column;gap:2px;min-width:0}
-.theone-route-target strong{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.theone-route-target small{color:var(--t-muted);font-size:12px}
+.theone-route-target{display:flex;flex-direction:column;min-width:0}
+.theone-route-target strong{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.theone-route-target small{color:var(--t-caption);font-size:12px;line-height:18px}
 .theone-route-actions{display:flex;gap:8px;align-items:center;justify-content:flex-end}
-.theone-route-fixed{color:var(--t-muted);font-size:12px}
-.theone-routes select{width:auto;max-width:150px;padding-top:4px;padding-bottom:4px;font-size:12px}
-.theone-catalog-groups{display:flex;flex-direction:column;gap:56px}
-.theone-topic-group{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,9fr);gap:0 40px;border-top:2px solid var(--t-fg);padding-top:16px}
-.theone-group-head{position:sticky;top:0;align-self:start}
-.theone-group-index{display:block;margin-bottom:10px;font-size:13px;font-weight:600;color:var(--t-accent)}
-.theone-topic-group h2{margin:0;font-size:22px;line-height:1.2;font-weight:700;letter-spacing:-.01em}
-.theone-topic-group h2 span{margin-left:8px;font-size:13px;font-weight:400;color:var(--t-muted)}
-.theone-group-summary{margin:10px 0 0;font-size:13px;line-height:1.6;color:var(--t-muted)}
-.theone-topic-list{list-style:none;margin:0;padding:0}
-.theone-topic-card{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 32px;padding:18px 0 20px;border-top:1px solid var(--t-rule)}
-.theone-topic-card:first-child{border-top:0;padding-top:4px}
-.theone-topic-card.theone-hidden .theone-topic-main{opacity:.6}
-.theone-topic-card h3{margin:0;font-size:16px;line-height:1.4;font-weight:600}
-.theone-topic-summary{margin:6px 0 0;max-width:42em;font-size:14px;line-height:1.6;color:var(--t-muted);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.theone-topic-meta{display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 16px;margin:14px 0 0;max-width:46em;font-size:13px;line-height:1.55}
-.theone-topic-meta dt{color:var(--t-muted);font-size:12px;white-space:nowrap}
-.theone-topic-meta dd{margin:0}
-.theone-tag{display:inline-block;margin-left:8px;padding:0 6px;border:1px solid var(--t-rule);border-radius:4px;font-size:11px;color:var(--t-muted)}
-.theone-topic-main h3 .theone-tag{vertical-align:middle;font-weight:400;letter-spacing:0}
-.theone-status-waiting{color:var(--t-warn);border-color:currentColor}
-.theone-status-done{color:var(--t-accent);border-color:currentColor}
-.theone-topic-warning{margin:10px 0 0;padding-left:12px;border-left:2px solid var(--t-warn);font-size:12px;line-height:1.6}
-.theone-topic-merged{margin:8px 0 0;font-size:12px;line-height:1.6;color:var(--dsw-alias-label-secondary)}
-.theone-topic-merged .theone-quiet{padding:2px 8px;font-size:12px}
-.theone-topic-actions{display:flex;flex-direction:column;align-items:flex-end;gap:0}.theone-topic-actions button{padding-top:3px;padding-bottom:3px}
-.theone-topic-edit{grid-column:1/-1;margin-top:12px;padding:4px 0 4px 20px;border-left:2px solid var(--t-accent)}
+.theone-route-fixed{color:var(--t-caption);font-size:12px}
+.theone-routes select{width:auto;width:132px;height:28px;min-height:28px;padding-top:0;padding-bottom:0;font-size:12px}
+.theone-catalog-groups{display:flex;flex-direction:column;gap:14px}
+.theone-topic-group{display:flex;flex-direction:column;gap:10px}
+.theone-topic-group+.theone-topic-group{padding-top:14px;border-top:.5px solid var(--t-rule)}
+.theone-group-head{display:flex;align-items:center;min-height:36px}
+.theone-catalog .theone-group-toggle{height:auto;gap:8px;padding:0;border:0;background:none;font-size:14px;line-height:22px}
+.theone-catalog .theone-group-toggle:hover:not(:disabled){background:none}
+.theone-group-toggle .theone-icon{color:var(--t-caption);transform:rotate(90deg);transition:transform 150ms ease}
+.theone-group-toggle[aria-expanded=true] .theone-icon{transform:rotate(180deg)}
+.theone-topic-group h2{margin:0;font-size:14px;line-height:22px;font-weight:400}
+.theone-group-count{color:var(--t-caption);font-variant-numeric:tabular-nums}
+.theone-group-summary{margin:-6px 0 0 20px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary,var(--t-muted))}
+.theone-topic-list{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.theone-topic-card{display:flex;flex-direction:column;min-width:0;overflow:hidden;border:.5px solid var(--dsw-alias-settings-card-stroke,var(--dsw-alias-border-l4,#00000029));border-radius:var(--dsw-radius-xl,20px);background:var(--dsw-alias-settings-card-fill,var(--t-base))}
+.theone-topic-card[data-open=true]{grid-column:1/-1;border-color:var(--t-line)}
+.theone-topic-main{display:flex;flex-direction:column;gap:2px;padding:12px 14px 0}
+.theone-topic-card.theone-hidden .theone-topic-main{opacity:.55}
+.theone-topic-row{display:flex;align-items:center;gap:12px;min-width:0}
+.theone-topic-card h3{flex:1;min-width:0;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;line-height:20px;font-weight:500}
+.theone-topic-summary{margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary,var(--t-muted));display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;text-wrap:pretty}
+.theone-topic-card[data-open=true] .theone-topic-summary{display:block}
+.theone-topic-state{margin:4px 0 0;font-size:12px;line-height:18px;color:var(--t-muted);display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}
+.theone-topic-state>span{margin-right:6px;color:var(--t-caption)}
+.theone-topic-foot{display:flex;align-items:center;gap:8px;margin-top:auto;padding:8px 8px 10px 14px}
+.theone-topic-chip{min-width:0;max-width:50%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:1px 6px;border-radius:var(--dsw-radius-xs,4px);background:var(--dsw-alias-bg-module-platform,#f2f3f5);color:var(--t-muted);font-family:var(--ds-font-family-code,ui-monospace,SFMono-Regular,Consolas,monospace);font-size:12px;line-height:18px}
+.theone-tag{flex:none;display:inline-flex;align-items:center;height:18px;padding:0 7px;border-radius:999px;background:var(--dsw-alias-bg-module-platform,#f2f3f5);font-size:10px;line-height:1;font-weight:400;color:var(--t-muted)}
+.theone-status-waiting{color:var(--t-warn);background:color-mix(in srgb,var(--t-warn) 10%,transparent)}
+.theone-status-done{color:var(--t-accent);background:var(--one-soft)}
+.theone-topic-warning{margin:6px 0 0;padding-left:8px;border-left:2px solid var(--t-warn);font-size:12px;line-height:18px;color:var(--t-muted)}
+.theone-topic-merged{margin:4px 0 0;font-size:12px;line-height:18px;color:var(--t-muted)}
+.theone-catalog .theone-topic-merged .theone-quiet{height:22px;padding:0 6px;color:var(--t-accent)}
+.theone-topic-actions{display:flex;align-items:center;gap:2px;margin-left:auto}
+.theone-catalog .theone-topic-actions button{height:26px}
+.theone-topic-edit{display:flex;flex-direction:column;gap:14px;margin:2px 14px 14px;padding-top:14px;border-top:.5px solid var(--t-rule)}
+.theone-topic-quick{display:flex;flex-wrap:wrap;gap:8px}
 .theone-topic-links{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin:0 0 16px;font-size:13px}
 .theone-links-label,.theone-links-empty{color:var(--t-muted)}
-.theone-link-chip{display:inline-flex;align-items:center;gap:2px;padding:2px 2px 2px 10px;border:1px solid var(--t-rule);border-radius:4px}
-.theone-catalog .theone-link-chip button{border:0;padding:0 6px;font-size:14px;line-height:1;color:var(--t-muted)}
+.theone-link-chip{display:inline-flex;align-items:center;gap:2px;height:24px;padding:0 2px 0 10px;border:.5px solid var(--t-line);border-radius:999px;font-size:12px}
+.theone-catalog .theone-link-chip button{height:20px;border:0;padding:0 6px;font-size:14px;line-height:1;color:var(--t-muted);border-radius:999px}
 .theone-link-private{display:inline-flex;align-items:center;gap:6px;color:var(--t-muted);cursor:pointer}
-.theone-catalog input:not([type=checkbox]),.theone-catalog textarea,.theone-catalog select{font:inherit;font-size:13px;color:inherit;background:var(--t-field);border:1px solid transparent;border-bottom-color:var(--t-rule);border-radius:4px 4px 0 0;padding:7px 10px;box-sizing:border-box;min-width:0}
-.theone-catalog input:not([type=checkbox]):focus,.theone-catalog textarea:focus,.theone-catalog select:focus{outline:none;border-bottom-color:var(--t-accent)}
+.theone-catalog input:not([type=checkbox]),.theone-catalog textarea,.theone-catalog select{box-sizing:border-box;min-width:0;min-height:32px;padding:5px 10px;border:.5px solid var(--t-line);border-radius:var(--dsw-radius-sm,8px);background:var(--t-base);color:inherit;font:inherit;font-size:13px;line-height:20px}
+.theone-catalog input:not([type=checkbox]):focus,.theone-catalog textarea:focus,.theone-catalog select:focus{outline:none;border-color:var(--t-accent);box-shadow:0 0 0 3px var(--one-soft)}
 .theone-manage{display:flex;flex-direction:column;gap:14px;font-size:13px}
-.theone-create{flex-direction:row;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 40px;padding:16px 0;border-top:1px solid var(--t-rule);border-bottom:1px solid var(--t-rule)}
+.theone-create{box-sizing:border-box;flex-direction:row;flex-wrap:wrap;align-items:center;gap:8px;margin:0 auto 32px;padding:12px;border:.5px solid var(--t-line);border-radius:var(--dsw-radius-md,12px)}
 .theone-create input{flex:1;min-width:200px}
 .theone-manage-field{display:flex;flex-direction:column;gap:6px}
-.theone-manage-field>span{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--t-muted)}
+.theone-manage-field>span{font-size:12px;line-height:18px;color:var(--t-muted)}
 .theone-manage textarea{resize:vertical;width:100%}
 .theone-manage-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .theone-manage-row select,.theone-manage-row input{flex:1;min-width:160px}
-.theone-manage-hint{margin:0;font-size:12px;line-height:1.6;color:var(--t-muted)}
-.theone-catalog .theone-danger{color:var(--t-warn);border-color:var(--t-warn)}
-@container (max-width:860px){.theone-topic-group{grid-template-columns:1fr}.theone-group-head{position:static;margin-bottom:20px}.theone-catalog-header{grid-template-columns:1fr}.theone-figures{gap:32px}}
-@container (max-width:640px){.theone-catalog h1{font-size:32px}.theone-figures dd{font-size:30px}.theone-topic-card{grid-template-columns:1fr}.theone-topic-actions{flex-direction:row;flex-wrap:wrap;align-items:center}.theone-routes li{grid-template-columns:44px minmax(0,1fr)}.theone-route-target,.theone-route-actions{grid-column:2}.theone-route-actions{justify-content:flex-start}}
-@media(max-width:640px){.theone-catalog{padding:28px 16px 64px}}
+.theone-manage-hint{margin:0;font-size:12px;line-height:18px;color:var(--t-muted)}
+.theone-catalog .theone-danger{color:var(--t-warn);border-color:color-mix(in srgb,var(--t-warn) 40%,transparent)}
+@container (max-width:640px){.theone-catalog-tools{margin-left:0}.theone-topic-list{grid-template-columns:1fr}.theone-routes li{grid-template-columns:40px minmax(0,1fr)}.theone-route-target,.theone-route-actions{grid-column:2}.theone-route-actions{justify-content:flex-start}}
+@media(max-width:640px){.theone-catalog{padding:0 16px 48px}}
 `;
 var composerCss = `
 .theone-bg{display:inline-flex;align-items:center;gap:5px;height:32px;padding:0 10px;border:0;border-radius:10px;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:14px;white-space:nowrap;cursor:pointer;max-width:220px}
