@@ -19,7 +19,7 @@ const userText = (messages: readonly { role: string; content: readonly { type: s
 
 test('steering during a Worker tool reaches its next step and appears between the steps, as in a native session', { timeout: 30000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'theone-mirror-steer-'))
-  const app = await harness(root)
+  const app = await harness(root, undefined, { theoneConfig: { routeNotice: 'switch' } })
   const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>()
   let calls = 0
   const requests: string[] = []

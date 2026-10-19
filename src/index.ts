@@ -315,7 +315,7 @@ export default class TheOne extends Service {
     routerTransport: z.union([z.const('dsh'), z.const('legacy')]),
     routerBaseUrl: z.string(), routerModel: z.string(), routerApiKeyEnv: z.string(),
     linkScope: z.union([z.const('off'), z.const('workspace'), z.const('auto')]).default('auto'),
-    routeNotice: z.union([z.const('hidden'), z.const('switch'), z.const('all')]).default('switch'),
+    routeNotice: z.union([z.const('hidden'), z.const('switch'), z.const('all')]).default('hidden'),
     notices: z.boolean().default(true),
     factLinks: z.boolean().default(false),
     factExtraction: z.boolean().default(false),
@@ -850,7 +850,8 @@ export default class TheOne extends Service {
       const references = (route.decision.relatedIds ?? []).flatMap(id => titleOf(id) ?? [])
       // Symbols keep the notice language-neutral: → switched, ＋ new topic, · same topic, ? clarifying.
       const mark = { KEEP: '·', MOUNT: '→', SWAP: '→', CREATE: '＋', CLARIFY: '?' }[route.decision.action]
-      const notice = this.config.routeNotice ?? 'switch'
+      // Main chat stays one conversation by default; the topic workspace shows where each message went.
+      const notice = this.config.routeNotice ?? 'hidden'
       // Showing every decision also says why it was made.
       // The notice speaks the language the message was written in.
       const english = writtenInEnglish(text)
@@ -1271,7 +1272,7 @@ export default class TheOne extends Service {
       workerProvider: c.workerProvider ? redactDescriptor(c.workerProvider) : null, workerModel: c.workerModel ? redactDescriptor(c.workerModel) : null,
       maxDescriptorChars: c.maxDescriptorChars, maxResponseChars: c.maxResponseChars,
       routerMode: c.routerMode ?? 'llm',
-      linkScope: c.linkScope ?? 'auto', routeNotice: c.routeNotice ?? 'switch', notices: c.notices ?? true,
+      linkScope: c.linkScope ?? 'auto', routeNotice: c.routeNotice ?? 'hidden', notices: c.notices ?? true,
       factLinks: c.factLinks ?? false, factExtraction: c.factExtraction ?? false,
     }
     const activeEditable = Object.fromEntries(EDITABLE_SETTINGS_KEYS.map(key => [key, key === 'contextsPath' ? c.contextsPath ?? null : values[key]])) as EditableSettings

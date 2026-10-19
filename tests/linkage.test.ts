@@ -221,7 +221,7 @@ test('settings saved before linking existed keep working with the new defaults',
     maxDescriptorChars: 4000, maxResponseChars: 100000, routerBaseUrl: 'https://api.deepseek.com', routerModel: 'deepseek-flash', routerApiKeyEnv: 'THEONE_ROUTER_API_KEY' }
   const values = validateSettings(old)
   assert.equal(values.linkScope, 'auto')
-  assert.equal(values.routeNotice, 'switch')
+  assert.equal(values.routeNotice, 'hidden')
   assert.throws(() => validateSettings({ ...old, linkScope: 'everything' }))
 })
 

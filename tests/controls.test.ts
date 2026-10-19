@@ -46,7 +46,8 @@ test('the thinking effort chosen in main chat is the one the Worker uses', { tim
 test('picking another model in main chat makes the Workers use it; main chat still routes through TheOne', { timeout: 30000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'theone-controls-picker-'))
   // A model fixed in TheOne's settings would take precedence; this follows DSH's selection.
-  const app = await harness(root, undefined, { autoModel: true })
+  // The route notice is shown here to confirm main chat routed through TheOne.
+  const app = await harness(root, undefined, { autoModel: true, theoneConfig: { routeNotice: 'switch' } })
   try {
     app.model.behavior = async function* () { yield* textResponse('换了模型也照常路由') }
     const picked = (await app.ctx.agents.create({ sessionId: SessionId(randomUUID()),
