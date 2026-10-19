@@ -283,8 +283,8 @@ var zh = {
   "settings.help.contextsPath": "\u53EF\u9009 JSON \u6587\u4EF6\uFF0C\u7528\u4E8E\u5BFC\u5165\u4EBA\u5DE5\u51C6\u5907\u7684\u8BDD\u9898\u76EE\u5F55\u3002\u4FDD\u5B58\u65F6\u8BFB\u53D6\u5E76\u5BFC\u5165\uFF1B\u5DF2\u5BFC\u5165\u7684\u8BDD\u9898\u4E0D\u4F1A\u56E0\u6E05\u7A7A\u6B64\u9879\u800C\u5220\u9664\u3002",
   "settings.help.gatewayKey": "\u533A\u5206\u4E0D\u540C\u7684\u4E3B\u804A\u5929\u5165\u53E3\u72B6\u6001\uFF08\u5F53\u524D\u8BDD\u9898\u3001\u8DEF\u7531\u8BB0\u5F55\u3001\u8BBE\u7F6E\uFF09\u3002\u6539\u52A8\u76F8\u5F53\u4E8E\u6362\u4E00\u4E2A\u65B0\u7684\u5165\u53E3\uFF0C\u56E0\u6B64\u53EA\u80FD\u7528\u73AF\u5883\u53D8\u91CF THEONE_GATEWAY_KEY \u4FEE\u6539\uFF0C\u901A\u5E38\u4FDD\u7559 default\u3002",
   "catalog.title": "\u8BDD\u9898\u5DE5\u4F5C\u533A",
-  "catalog.subtitle": "\u76F8\u5173\u7684\u4E8B\u60C5\u653E\u5728\u4E00\u8D77\uFF0C\u968F\u65F6\u56DE\u5230\u4E3B\u804A\u5929\u7EE7\u7EED\u3002",
-  "catalog.figTopics": "\u8BDD\u9898",
+  "catalog.subtitle": "\u76F8\u5173\u7684\u4E8B\u653E\u5728\u4E00\u8D77\uFF0C\u56DE\u4E3B\u804A\u5929\u63A5\u7740\u804A\u3002",
+  "catalog.figTopics": "\u4E2A\u8BDD\u9898",
   "catalog.figGroups": "\u5DE5\u4F5C\u533A",
   "catalog.figKept": "\u6CA1\u88AB\u66F4\u6B63",
   "catalog.refresh": "\u6574\u7406\u5386\u53F2",
@@ -314,12 +314,12 @@ var zh = {
   "catalog.loadError": "\u6682\u65F6\u65E0\u6CD5\u8BFB\u53D6\u8BDD\u9898\uFF0C\u8BF7\u68C0\u67E5 DSH \u8FDE\u63A5\u3002",
   "catalog.continueError": "\u6682\u65F6\u65E0\u6CD5\u7EE7\u7EED\u8FD9\u4E2A\u8BDD\u9898\uFF0C\u8BF7\u7B49\u5F53\u524D\u804A\u5929\u7ED3\u675F\u540E\u91CD\u8BD5\u3002",
   "catalog.refreshError": "\u6682\u65F6\u65E0\u6CD5\u6574\u7406\u5386\u53F2\uFF0C\u8BF7\u68C0\u67E5 DSH \u6A21\u578B\u914D\u7F6E\u3002",
-  "catalog.consentOverline": "\u4EE5\u524D\u7684\u804A\u5929",
   "catalog.consentTitle": "\u8981\u4E0D\u8981\u6574\u7406\u4EE5\u524D\u7684\u804A\u5929\uFF1F",
-  "catalog.consentBody": "\u4F60\u5728 DSH \u91CC\u6709 {count} \u4E2A\u4EE5\u524D\u7684\u4F1A\u8BDD\u3002\u6574\u7406\u597D\u4E4B\u540E\uFF0C\u4F60\u5728\u4E3B\u804A\u5929\u91CC\u63D0\u5230\u4EE5\u524D\u7684\u4E8B\uFF0CTheOne \u5C31\u80FD\u627E\u5230\uFF0C\u63A5\u7740\u5F80\u4E0B\u505A\u3002",
-  "catalog.consentKeep": "\u539F\u6765\u7684\u4F1A\u8BDD\u4E00\u4E2A\u90FD\u4E0D\u5220\uFF0C\u4E5F\u4E0D\u6539\u3002",
-  "catalog.consentQuota": "\u4F1A\u7528\u4F60\u5728 DSH \u91CC\u9009\u7684\u6A21\u578B\u8BFB\u4E00\u904D\uFF0C\u8981\u82B1\u4E00\u70B9\u989D\u5EA6\u3002",
-  "catalog.consentChoose": "\u4E0D\u60F3\u8BA9\u5B83\u770B\u7684\uFF0C\u53EF\u4EE5\u5148\u6311\u51FA\u6765\u3002",
+  "catalog.chooseChatsShort": "\u9009\u62E9\u4F1A\u8BDD",
+  "catalog.consentBody": "\u6574\u7406\u597D\u4E4B\u540E\uFF0C\u4F60\u5728\u4E3B\u804A\u5929\u63D0\u5230\u4EE5\u524D\u7684\u4E8B\uFF0CTheOne \u5C31\u80FD\u63A5\u4E0A\u3002",
+  "catalog.consentKeep": "\u539F\u4F1A\u8BDD\u4E0D\u5220\u4E0D\u6539",
+  "catalog.consentQuota": "\u7528\u4F60\u9009\u7684\u6A21\u578B\u8BFB\u4E00\u904D\uFF0C\u82B1\u4E00\u70B9\u989D\u5EA6",
+  "catalog.consentChoose": "\u4E0D\u60F3\u7ED9\u5B83\u770B\u7684\u53EF\u4EE5\u5148\u6311\u51FA\u6765",
   "catalog.startCount": "\u6574\u7406 {count} \u4E2A\u4F1A\u8BDD",
   "catalog.chooseFirst": "\u5148\u6311\u4E00\u6311",
   "catalog.doneChoosing": "\u6311\u597D\u4E86",
@@ -327,7 +327,7 @@ var zh = {
   "catalog.declined": "\u4EE5\u524D\u7684\u804A\u5929\u8FD8\u6CA1\u6574\u7406\u3002",
   "catalog.reconsider": "\u73B0\u5728\u6574\u7406",
   "catalog.chooseChats": "\u9009\u62E9\u8981\u6574\u7406\u7684\u4F1A\u8BDD",
-  "catalog.chooseHint": "\u52FE\u6389\u7684\u4F1A\u8BDD\u4E0D\u4F1A\u88AB\u8BFB\uFF0C\u4E5F\u4E0D\u4F1A\u8FDB\u76EE\u5F55\uFF0C\u968F\u65F6\u53EF\u4EE5\u6539\u56DE\u6765\u3002",
+  "catalog.chooseHint": "\u52FE\u6389\u7684\u4E0D\u4F1A\u88AB\u8BFB\uFF0C\u968F\u65F6\u53EF\u4EE5\u6539\u3002",
   "catalog.pickerLoading": "\u6B63\u5728\u8BFB\u53D6\u4F1A\u8BDD\u5217\u8868\u2026",
   "catalog.wholeFolder": "\u6574\u4E2A\u6587\u4EF6\u5939",
   "catalog.otherChats": "\u5176\u4ED6\u4F1A\u8BDD",
@@ -338,7 +338,7 @@ var zh = {
   "catalog.unassigned": "\u5F85\u6574\u7406",
   "catalog.unassignedSummary": "\u8FD9\u4E9B\u8BDD\u9898\u8FD8\u5728\u7B49\u5F85\u81EA\u52A8\u5F52\u7C7B\u3002",
   "topic.opening": "\u6B63\u5728\u6253\u5F00\u2026",
-  "topic.continue": "\u7EE7\u7EED\u804A\u5929",
+  "topic.continue": "\u7EE7\u7EED",
   "topic.continueHidden": "\u8FD9\u4E2A\u8BDD\u9898\u7684\u539F\u4F1A\u8BDD\u5DF2\u4ECE\u78C1\u76D8\u4E0A\u6D88\u5931\uFF0C\u6CA1\u6709\u53EF\u4EE5\u63A5\u7740\u804A\u7684\u5185\u5BB9\u3002",
   "topic.source": "\u67E5\u770B\u539F\u4F1A\u8BDD",
   "topic.state": "\u8FDB\u5C55\uFF1A",
@@ -384,8 +384,8 @@ var zh = {
   "manage.createButton": "\u521B\u5EFA",
   "manage.cancel": "\u53D6\u6D88",
   "routes.title": "\u6700\u8FD1\u7684\u8BDD\u9898\u5206\u914D",
-  "routes.hint": "\u5206\u9519\u65F6\u53EF\u4EE5\u5728\u8FD9\u91CC\u6539\u5230\u6B63\u786E\u7684\u8BDD\u9898\uFF1ATheOne \u4F1A\u8BB0\u4F4F\uFF0C\u7C7B\u4F3C\u7684\u6D88\u606F\u4EE5\u540E\u5206\u5230\u90A3\u91CC\uFF0C\u4E0B\u4E00\u6761\u6D88\u606F\u4E5F\u63A5\u7740\u90A3\u4E2A\u8BDD\u9898\u3002\u4E5F\u53EF\u4EE5\u76F4\u63A5\u5728\u4E3B\u804A\u5929\u91CC\u8BF4\u300C\u5206\u9519\u4E86\uFF0C\u662F \u67D0\u67D0 \u7684\u300D\uFF0C\u4E0A\u4E00\u6761\u4F1A\u4EA4\u7ED9\u6B63\u786E\u7684\u8BDD\u9898\u91CD\u65B0\u5904\u7406\u3002",
-  "routes.stats": "\u6700\u8FD1 {total} \u6761\uFF1A{rate}% \u6CA1\u6709\u88AB\u66F4\u6B63\uFF0C\u8FFD\u95EE {clarified} \u6B21",
+  "routes.hint": "\u5206\u9519\u4E86\u5C31\u5728\u8FD9\u91CC\u6539\uFF0CTheOne \u4F1A\u8BB0\u4F4F\u3002\u5728\u4E3B\u804A\u5929\u91CC\u8BF4\u300C\u5206\u9519\u4E86\u300D\u4E5F\u884C\u3002",
+  "routes.stats": "\u6700\u8FD1 {total} \u6761\uFF0C{rate}% \u5206\u5BF9",
   "routes.empty": "\u8FD8\u6CA1\u6709\u5206\u914D\u8BB0\u5F55\u3002",
   "routes.move": "\u6539\u5230\u2026",
   "routes.corrected": "\u5DF2\u6539\u5230 {title}",
@@ -396,7 +396,7 @@ var zh = {
   "routes.rules": "\u89C4\u5219\u5224\u65AD",
   "routes.removed": "\uFF08\u5DF2\u5220\u9664\u7684\u8BDD\u9898\uFF09",
   "routes.report": "\u62A5\u544A\u95EE\u9898",
-  "feedback.open": "\u53CD\u9988\u95EE\u9898",
+  "feedback.open": "\u53CD\u9988",
   "feedback.title": "\u53CD\u9988\u95EE\u9898",
   "feedback.titleMessage": "\u62A5\u544A\u8FD9\u6761\u56DE\u590D\u7684\u95EE\u9898",
   "feedback.intro": "\u8BF4\u8BF4\u53D1\u751F\u4E86\u4EC0\u4E48\u3002\u4E0B\u9762\u80FD\u770B\u5230\u8981\u53D1\u51FA\u7684\u5168\u90E8\u5185\u5BB9\uFF0C\u70B9\u300C\u53D1\u9001\u300D\u4E4B\u524D\u4EC0\u4E48\u90FD\u4E0D\u4F1A\u53D1\u51FA\u3002",
@@ -645,8 +645,8 @@ var en = {
   "settings.help.contextsPath": "Optional JSON file with a hand-written topic catalog. It is read and imported when saved; clearing it does not remove topics already imported.",
   "settings.help.gatewayKey": "Separates main-chat entry state (current topic, routing records, settings). Changing it amounts to a new entry, so it can only be set through THEONE_GATEWAY_KEY; usually leave it as default.",
   "catalog.title": "Topic workspaces",
-  "catalog.subtitle": "Keep related topics together and pick up the conversation in main chat.",
-  "catalog.figTopics": "Topics",
+  "catalog.subtitle": "Related things together. Carry on in main chat.",
+  "catalog.figTopics": "topics",
   "catalog.figGroups": "Workspaces",
   "catalog.figKept": "Kept as routed",
   "catalog.refresh": "Organize history",
@@ -676,12 +676,12 @@ var en = {
   "catalog.loadError": "Topics could not load. Check your DSH connection.",
   "catalog.continueError": "This topic could not open. Wait for the current conversation to finish, then try again.",
   "catalog.refreshError": "History could not be organized. Check your DSH model settings.",
-  "catalog.consentOverline": "Earlier chats",
   "catalog.consentTitle": "Sort out your earlier chats?",
-  "catalog.consentBody": "You have {count} earlier chat{sessionSuffix} in DSH. Once they're sorted, TheOne can find them when you bring something up in main chat, and carry on from there.",
-  "catalog.consentKeep": "Nothing is deleted or changed.",
-  "catalog.consentQuota": "It reads them once with the model you picked in DSH, which uses a little of your quota.",
-  "catalog.consentChoose": "Anything you'd rather keep to yourself, you can leave out first.",
+  "catalog.chooseChatsShort": "Choose chats",
+  "catalog.consentBody": "Once they're sorted, TheOne can pick up whenever you mention something from before.",
+  "catalog.consentKeep": "Nothing deleted or changed",
+  "catalog.consentQuota": "Read once with your DSH model, a little quota",
+  "catalog.consentChoose": "Leave out anything private",
   "catalog.startCount": "Sort {count} chat{sessionSuffix}",
   "catalog.chooseFirst": "Choose chats first",
   "catalog.doneChoosing": "Done",
@@ -689,7 +689,7 @@ var en = {
   "catalog.declined": "Your earlier chats aren't sorted yet.",
   "catalog.reconsider": "Sort them now",
   "catalog.chooseChats": "Choose chats to sort",
-  "catalog.chooseHint": "Unticked chats won't be read or added to the directory. You can change this any time.",
+  "catalog.chooseHint": "Unticked chats won't be read. You can change this any time.",
   "catalog.pickerLoading": "Loading chats\u2026",
   "catalog.wholeFolder": "Whole folder",
   "catalog.otherChats": "Other chats",
@@ -700,7 +700,7 @@ var en = {
   "catalog.unassigned": "To organize",
   "catalog.unassignedSummary": "These topics are waiting to be grouped.",
   "topic.opening": "Opening\u2026",
-  "topic.continue": "Continue chatting",
+  "topic.continue": "Continue",
   "topic.continueHidden": "This topic\u2019s conversations are gone from disk, so there is nothing to continue.",
   "topic.source": "View original chat",
   "topic.state": "Progress:",
@@ -746,8 +746,8 @@ var en = {
   "manage.createButton": "Create",
   "manage.cancel": "Cancel",
   "routes.title": "Recent topic routing",
-  "routes.hint": 'Move a misrouted message to the right topic here: TheOne remembers, routes similar messages there from now on, and continues the next message in that topic. You can also say "wrong topic, it is the X one" in main chat, and the previous message is redone in the right topic.',
-  "routes.stats": "Last {total}: {rate}% kept as routed, {clarified} asked back",
+  "routes.hint": 'Wrong topic? Fix it here and TheOne remembers. Saying "wrong topic" in main chat works too.',
+  "routes.stats": "Last {total}: {rate}% right",
   "routes.empty": "No routing records yet.",
   "routes.move": "Move to\u2026",
   "routes.corrected": "Moved to {title}",
@@ -758,7 +758,7 @@ var en = {
   "routes.rules": "rules",
   "routes.removed": "(deleted topic)",
   "routes.report": "Report a problem",
-  "feedback.open": "Report a problem",
+  "feedback.open": "Feedback",
   "feedback.title": "Report a problem",
   "feedback.titleMessage": "Report a problem with this reply",
   "feedback.intro": "Tell us what happened. Everything that would be sent is shown below; nothing leaves this computer until you press Send.",
@@ -2989,6 +2989,7 @@ function apply(ctx) {
   const ICONS = {
     download: ["M12 4v11", "M7 10l5 5 5-5", "M5 20h14"],
     check: ["M5 12.5l4.5 4.5L19 7.5"],
+    more: ["M5.5 12h.01", "M12 12h.01", "M18.5 12h.01"],
     restart: ["M20 12a8 8 0 1 1-2.34-5.66L20 8.5", "M20 4v4.5h-4.5"],
     alert: ["M3 12a9 9 0 1 0 18 0a9 9 0 1 0-18 0", "M12 7.5v5.5", "M12 16.5h.01"],
     notice: ["M4 10v4h3l6 4V6L7 10H4z", "M16.5 9a4 4 0 0 1 0 6", "M19 6.5a7.5 7.5 0 0 1 0 11"],
@@ -4496,7 +4497,6 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
     const unconsented = status?.consent === "ask" || status?.consent === "declined";
     const total = choices ? choices.sessions.length : (status?.waiting ?? 0) + (status?.excluded ?? 0);
     const included = choices ? choices.sessions.filter((session) => !session.excluded).length : status?.waiting ?? 0;
-    const kept = routeStats?.total ? Math.round(100 * (routeStats.total - routeStats.corrected) / routeStats.total) : void 0;
     const figure = (value, name) => (0, import_react2.createElement)("div", { key: name }, (0, import_react2.createElement)("dd", null, value), (0, import_react2.createElement)("dt", null, name));
     return (0, import_react2.createElement)(
       "section",
@@ -4511,18 +4511,14 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
           (0, import_react2.createElement)("h1", null, t2("catalog.title")),
           (0, import_react2.createElement)("p", { className: "theone-catalog-lede" }, t2("catalog.subtitle"))
         ),
-        snapshot ? (0, import_react2.createElement)(
-          "dl",
-          { className: "theone-figures" },
-          figure(snapshot.contexts.length, t2("catalog.figTopics")),
-          figure(snapshot.groups.length, t2("catalog.figGroups")),
-          kept !== void 0 ? figure(`${kept}%`, t2("catalog.figKept")) : null
-        ) : null
+        // One number is enough here; how often routing was right lives with the routing list.
+        snapshot?.contexts.length ? (0, import_react2.createElement)("dl", { className: "theone-figures" }, figure(snapshot.contexts.length, t2("catalog.figTopics"))) : null
       ),
       (0, import_react2.createElement)(
         "div",
         { className: "theone-toolbar" },
-        (0, import_react2.createElement)("p", { className: "theone-catalog-status", role: "status" }, snapshot ? unconsented ? "" : status?.running ? t2("catalog.indexing") : status?.pending ? t2("catalog.pending", { count: status.pending, sessionSuffix: status.pending === 1 ? "" : "s" }) : t2("catalog.updated") : t2("catalog.reading")),
+        // Only work in progress is worth a line; "up to date" is the normal state.
+        (0, import_react2.createElement)("p", { className: "theone-catalog-status", role: "status" }, snapshot ? unconsented ? "" : status?.running ? t2("catalog.indexing") : status?.pending ? t2("catalog.pending", { count: status.pending, sessionSuffix: status.pending === 1 ? "" : "s" }) : "" : t2("catalog.reading")),
         (0, import_react2.createElement)(
           "div",
           { className: "theone-catalog-tools" },
@@ -4535,7 +4531,7 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
             disabled: !!busy,
             "aria-expanded": choosing,
             onClick: () => choosing ? closeChoices() : void chooseChats()
-          }, t2("catalog.chooseChats")) : null,
+          }, t2("catalog.chooseChatsShort")) : null,
           snapshot?.linkage && snapshot.linkage.scope !== "off" ? (0, import_react2.createElement)("button", {
             type: "button",
             className: "theone-quiet",
@@ -4552,7 +4548,6 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
       asking ? (0, import_react2.createElement)(
         "section",
         { className: "theone-consent", "aria-labelledby": "theone-consent-title" },
-        (0, import_react2.createElement)("p", { className: "theone-overline" }, t2("catalog.consentOverline")),
         (0, import_react2.createElement)("h2", { id: "theone-consent-title" }, t2("catalog.consentTitle")),
         (0, import_react2.createElement)("p", { className: "theone-consent-body" }, t2("catalog.consentBody", { count: total, sessionSuffix: total === 1 ? "" : "s" })),
         (0, import_react2.createElement)("ul", { className: "theone-consent-points" }, ...["catalog.consentKeep", "catalog.consentQuota", "catalog.consentChoose"].map((key) => (0, import_react2.createElement)("li", { key }, icon("check", 14), (0, import_react2.createElement)("span", null, t2(key))))),
@@ -4641,9 +4636,11 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
             if (!topic) return [];
             const constraints = snapshot?.linkage?.topics[id]?.constraints ?? "";
             const open = managing === id;
+            const summary = topic.summary && topic.summary.trim() !== topic.title.trim() ? topic.summary : "";
+            const stuck = topic.hidden === "orphaned" || topic.hidden === "excluded";
             return [(0, import_react2.createElement)(
               "li",
-              { key: id, "data-open": open, className: `theone-topic-card${open ? " theone-open" : ""}${topic.hidden === "orphaned" || topic.hidden === "excluded" ? " theone-hidden" : ""}` },
+              { key: id, "data-open": open, className: `theone-topic-card${open ? " theone-open" : ""}${stuck ? " theone-hidden" : ""}` },
               (0, import_react2.createElement)(
                 "div",
                 { className: "theone-topic-main" },
@@ -4651,10 +4648,21 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
                   "div",
                   { className: "theone-topic-row" },
                   (0, import_react2.createElement)("h3", { title: topic.title }, topic.title),
-                  topic.topicStatus && topic.topicStatus !== "active" ? (0, import_react2.createElement)("span", { className: `theone-tag theone-status-${topic.topicStatus}` }, t2(`topic.status.${topic.topicStatus}`)) : null
+                  topic.topicStatus && topic.topicStatus !== "active" ? (0, import_react2.createElement)("span", { className: `theone-tag theone-status-${topic.topicStatus}` }, t2(`topic.status.${topic.topicStatus}`)) : null,
+                  (0, import_react2.createElement)("button", {
+                    type: "button",
+                    className: "theone-topic-more",
+                    "aria-expanded": open,
+                    "aria-label": t2(open ? "manage.close" : "manage.open"),
+                    title: t2(open ? "manage.close" : "manage.open"),
+                    onClick: () => setManaging((current) => current === id ? void 0 : id)
+                  }, icon("more", 16))
                 ),
-                topic.summary && topic.summary.trim() !== topic.title.trim() ? (0, import_react2.createElement)("p", { className: "theone-topic-summary" }, topic.summary) : null,
-                topic.lastState ? (0, import_react2.createElement)("p", { className: "theone-topic-state" }, (0, import_react2.createElement)("span", null, label(t2("topic.state"))), topic.lastState) : null,
+                // Closed, a card answers one question, where it left off; open, it shows everything.
+                open ? [
+                  summary ? (0, import_react2.createElement)("p", { key: "s", className: "theone-topic-summary" }, summary) : null,
+                  topic.lastState ? (0, import_react2.createElement)("p", { key: "l", className: "theone-topic-state" }, (0, import_react2.createElement)("span", null, label(t2("topic.state"))), topic.lastState) : null
+                ] : topic.lastState || summary ? (0, import_react2.createElement)("p", { className: "theone-topic-summary" }, topic.lastState || summary) : null,
                 topic.hidden ? (0, import_react2.createElement)("p", { className: "theone-topic-warning" }, t2(topic.hidden === "excluded" ? "topic.hiddenExcluded" : topic.hidden === "archived" ? "topic.hiddenArchived" : "topic.hiddenOrphaned")) : null,
                 ...(snapshot?.merges ?? []).filter((merge) => merge.targetId === id).map((merge) => (0, import_react2.createElement)(
                   "p",
@@ -4666,25 +4674,19 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
                   } }, t2("topic.unmerge"))
                 ))
               ),
-              (0, import_react2.createElement)(
+              stuck && !topic.projectInfo ? null : (0, import_react2.createElement)(
                 "div",
                 { className: "theone-topic-foot" },
                 topic.projectInfo ? (0, import_react2.createElement)("code", { className: "theone-topic-chip", title: topic.projectInfo.path }, topic.projectInfo.name) : null,
-                (0, import_react2.createElement)(
-                  "div",
-                  { className: "theone-topic-actions" },
-                  (0, import_react2.createElement)("button", { type: "button", className: "theone-quiet", "aria-expanded": open, onClick: () => setManaging((current) => current === id ? void 0 : id) }, t2(open ? "manage.close" : "manage.open")),
-                  // A topic whose conversations are gone has nothing left to continue; an archived one does.
-                  (0, import_react2.createElement)("button", {
-                    type: "button",
-                    className: "theone-continue",
-                    disabled: !!busy || topic.hidden === "orphaned" || topic.hidden === "excluded",
-                    title: topic.hidden === "orphaned" ? t2("topic.continueHidden") : void 0,
-                    onClick: () => {
-                      void continueTopic(id);
-                    }
-                  }, t2(busy === id ? "topic.opening" : "topic.continue"), (0, import_react2.createElement)("span", { "aria-hidden": true }, " \u2192"))
-                )
+                // The whole closed card is this button's target: the most common click needs no aiming.
+                stuck ? null : (0, import_react2.createElement)("button", {
+                  type: "button",
+                  className: `theone-continue${open ? "" : " theone-stretch"}`,
+                  disabled: !!busy,
+                  onClick: () => {
+                    void continueTopic(id);
+                  }
+                }, t2(busy === id ? "topic.opening" : "topic.continue"), (0, import_react2.createElement)("span", { "aria-hidden": true }, "\u2192"))
               ),
               open ? (0, import_react2.createElement)(
                 "div",
@@ -4924,8 +4926,6 @@ body[data-ds-dark-theme]{--one-accent:#93c8f3;--one-accent-hover:#b6dbf8;--one-o
 .theone-catalog .theone-primary:hover:not(:disabled){background:var(--one-accent-hover)}
 .theone-catalog .theone-quiet{border-color:transparent;color:var(--t-muted)}
 .theone-catalog .theone-quiet:hover:not(:disabled){color:var(--t-fg)}
-.theone-catalog .theone-continue{border-color:transparent;color:var(--t-accent);font-weight:500}
-.theone-catalog .theone-continue:hover:not(:disabled){background:var(--one-soft)}
 .theone-catalog-header{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:8px 24px;padding-top:28px}
 .theone-catalog-header .theone-overline{display:none}
 .theone-overline{margin:0 0 4px;font-size:12px;line-height:18px;font-weight:500;color:var(--t-accent)}
@@ -4947,10 +4947,10 @@ body[data-ds-dark-theme]{--one-accent:#93c8f3;--one-accent-hover:#b6dbf8;--one-o
 .theone-consent .theone-overline{display:flex;align-items:center;gap:6px}
 .theone-consent .theone-overline::before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor}
 .theone-consent h2{margin:0;font-size:16px;line-height:24px;font-weight:600}
-.theone-consent-body{margin:6px 0 0;max-width:640px;font-size:14px;line-height:22px}
-.theone-consent-points{list-style:none;margin:12px 0 0;padding:0;display:grid;gap:4px;font-size:13px;line-height:20px;color:var(--t-muted)}
-.theone-consent-points li{display:flex;gap:8px;align-items:flex-start}
-.theone-consent-points .theone-icon{flex:none;margin-top:3px;color:var(--t-accent)}
+.theone-consent-body{margin:4px 0 0;max-width:640px;font-size:14px;line-height:22px;color:var(--t-muted)}
+.theone-consent-points{list-style:none;margin:10px 0 0;padding:0;display:flex;flex-wrap:wrap;gap:4px 16px;font-size:12px;line-height:18px;color:var(--t-muted)}
+.theone-consent-points li{display:flex;gap:6px;align-items:center}
+.theone-consent-points .theone-icon{flex:none;color:var(--t-accent)}
 .theone-consent-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:20px}
 .theone-catalog .theone-consent-actions button{height:32px;padding:0 14px;font-size:13px}
 .theone-catalog .theone-consent-actions button:not(.theone-primary):not(.theone-quiet){background:var(--t-base)}
@@ -5007,17 +5007,23 @@ body[data-ds-dark-theme]{--one-accent:#93c8f3;--one-accent-hover:#b6dbf8;--one-o
 .theone-group-count{color:var(--t-caption);font-variant-numeric:tabular-nums}
 .theone-group-summary{margin:-6px 0 0 20px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary,var(--t-muted))}
 .theone-topic-list{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
-.theone-topic-card{display:flex;flex-direction:column;min-width:0;overflow:hidden;border:.5px solid var(--dsw-alias-settings-card-stroke,var(--dsw-alias-border-l4,#00000029));border-radius:var(--dsw-radius-xl,20px);background:var(--dsw-alias-settings-card-fill,var(--t-base))}
+.theone-topic-card{position:relative;display:flex;flex-direction:column;min-width:0;overflow:hidden;border:.5px solid var(--dsw-alias-settings-card-stroke,var(--dsw-alias-border-l4,#00000029));border-radius:var(--dsw-radius-xl,20px);background:var(--dsw-alias-settings-card-fill,var(--t-base));transition:background 120ms ease}
 .theone-topic-card[data-open=true]{grid-column:1/-1;border-color:var(--t-line)}
+.theone-topic-card:not(.theone-hidden):hover{background-image:linear-gradient(var(--t-hover),var(--t-hover))}
+.theone-topic-card:not(.theone-hidden):hover .theone-continue{background:var(--one-soft)}
+.theone-catalog .theone-stretch::after{content:'';position:absolute;inset:0;border-radius:inherit}
+.theone-catalog .theone-stretch:focus-visible{outline:none}
+.theone-catalog .theone-stretch:focus-visible::after{outline:2px solid var(--t-accent);outline-offset:-2px}
 .theone-topic-main{display:flex;flex-direction:column;gap:2px;padding:12px 14px 0}
+.theone-topic-main:last-child{padding-bottom:14px}
 .theone-topic-card.theone-hidden .theone-topic-main{opacity:.55}
 .theone-topic-row{display:flex;align-items:center;gap:12px;min-width:0}
 .theone-topic-card h3{flex:1;min-width:0;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;line-height:20px;font-weight:500}
-.theone-topic-summary{margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary,var(--t-muted));display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;text-wrap:pretty}
+.theone-topic-summary{margin:0;font-size:13px;line-height:20px;color:var(--t-muted);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;text-wrap:pretty}
 .theone-topic-card[data-open=true] .theone-topic-summary{display:block}
-.theone-topic-state{margin:4px 0 0;font-size:12px;line-height:18px;color:var(--t-muted);display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}
+.theone-topic-state{margin:4px 0 0;font-size:13px;line-height:20px;color:var(--t-muted)}
 .theone-topic-state>span{margin-right:6px;color:var(--t-caption)}
-.theone-topic-foot{display:flex;align-items:center;gap:8px;margin-top:auto;padding:8px 8px 10px 14px}
+.theone-topic-foot{display:flex;align-items:center;gap:8px;min-height:28px;margin-top:auto;padding:8px 8px 10px 14px}
 .theone-topic-chip{min-width:0;max-width:50%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:1px 6px;border-radius:var(--dsw-radius-xs,4px);background:var(--dsw-alias-bg-module-platform,#f2f3f5);color:var(--t-muted);font-family:var(--ds-font-family-code,ui-monospace,SFMono-Regular,Consolas,monospace);font-size:12px;line-height:18px}
 .theone-tag{flex:none;display:inline-flex;align-items:center;height:18px;padding:0 7px;border-radius:999px;background:var(--dsw-alias-bg-module-platform,#f2f3f5);font-size:10px;line-height:1;font-weight:400;color:var(--t-muted)}
 .theone-status-waiting{color:var(--t-warn);background:color-mix(in srgb,var(--t-warn) 10%,transparent)}
@@ -5025,8 +5031,10 @@ body[data-ds-dark-theme]{--one-accent:#93c8f3;--one-accent-hover:#b6dbf8;--one-o
 .theone-topic-warning{margin:6px 0 0;padding-left:8px;border-left:2px solid var(--t-warn);font-size:12px;line-height:18px;color:var(--t-muted)}
 .theone-topic-merged{margin:4px 0 0;font-size:12px;line-height:18px;color:var(--t-muted)}
 .theone-catalog .theone-topic-merged .theone-quiet{height:22px;padding:0 6px;color:var(--t-accent)}
-.theone-topic-actions{display:flex;align-items:center;gap:2px;margin-left:auto}
-.theone-catalog .theone-topic-actions button{height:26px}
+.theone-catalog .theone-continue{margin-left:auto;height:26px;gap:6px;border-color:transparent;color:var(--t-accent);font-weight:500}
+.theone-catalog .theone-topic-more{position:relative;z-index:1;flex:none;width:26px;height:26px;margin:-3px -6px -3px 0;padding:0;border-color:transparent;color:var(--t-caption)}
+.theone-catalog .theone-topic-more:hover:not(:disabled),.theone-catalog .theone-topic-more[aria-expanded=true]{color:var(--t-fg);background:var(--t-hover)}
+.theone-topic-merged button{position:relative;z-index:1}
 .theone-topic-edit{display:flex;flex-direction:column;gap:14px;margin:2px 14px 14px;padding-top:14px;border-top:.5px solid var(--t-rule)}
 .theone-topic-quick{display:flex;flex-wrap:wrap;gap:8px}
 .theone-topic-links{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin:0 0 16px;font-size:13px}

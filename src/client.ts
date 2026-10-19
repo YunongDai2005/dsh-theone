@@ -313,6 +313,7 @@ export function apply(ctx: Context) {
   const ICONS = {
     download: ['M12 4v11', 'M7 10l5 5 5-5', 'M5 20h14'],
     check: ['M5 12.5l4.5 4.5L19 7.5'],
+    more: ['M5.5 12h.01', 'M12 12h.01', 'M18.5 12h.01'],
     restart: ['M20 12a8 8 0 1 1-2.34-5.66L20 8.5', 'M20 4v4.5h-4.5'],
     alert: ['M3 12a9 9 0 1 0 18 0a9 9 0 1 0-18 0', 'M12 7.5v5.5', 'M12 16.5h.01'],
     notice: ['M4 10v4h3l6 4V6L7 10H4z', 'M16.5 9a4 4 0 0 1 0 6', 'M19 6.5a7.5 7.5 0 0 1 0 11'],
@@ -1257,7 +1258,6 @@ export function apply(ctx: Context) {
     // Before the list is open, the scan's counts stand in for it.
     const total = choices ? choices.sessions.length : (status?.waiting ?? 0) + (status?.excluded ?? 0)
     const included = choices ? choices.sessions.filter(session => !session.excluded).length : status?.waiting ?? 0
-    const kept = routeStats?.total ? Math.round(100 * (routeStats.total - routeStats.corrected) / routeStats.total) : undefined
     const figure = (value: string | number, name: string) => h('div', { key: name }, h('dd', null, value), h('dt', null, name))
     return h('section', { className: 'theone-catalog', translate: 'no' },
       h('header', { className: 'theone-catalog-header' },
@@ -1265,26 +1265,24 @@ export function apply(ctx: Context) {
           h('p', { className: 'theone-overline' }, 'TheOne'),
           h('h1', null, t('catalog.title')),
           h('p', { className: 'theone-catalog-lede' }, t('catalog.subtitle'))),
-        snapshot ? h('dl', { className: 'theone-figures' },
-          figure(snapshot.contexts.length, t('catalog.figTopics')),
-          figure(snapshot.groups.length, t('catalog.figGroups')),
-          kept !== undefined ? figure(`${kept}%`, t('catalog.figKept')) : null) : null),
+        // One number is enough here; how often routing was right lives with the routing list.
+        snapshot?.contexts.length ? h('dl', { className: 'theone-figures' }, figure(snapshot.contexts.length, t('catalog.figTopics'))) : null),
       h('div', { className: 'theone-toolbar' },
+        // Only work in progress is worth a line; "up to date" is the normal state.
         h('p', { className: 'theone-catalog-status', role: 'status' }, snapshot
-          ? (unconsented ? '' : status?.running ? t('catalog.indexing') : status?.pending ? t('catalog.pending', { count: status.pending, sessionSuffix: status.pending === 1 ? '' : 's' }) : t('catalog.updated'))
+          ? (unconsented ? '' : status?.running ? t('catalog.indexing') : status?.pending ? t('catalog.pending', { count: status.pending, sessionSuffix: status.pending === 1 ? '' : 's' }) : '')
           : t('catalog.reading')),
         h('div', { className: 'theone-catalog-tools' },
           h('button', { type: 'button', className: 'theone-primary', disabled: !!busy, onClick: () => setCreating(open => !open) }, t('manage.create')),
           // Before consent there is no history to refresh, so the button would only confuse.
           unconsented ? null : h('button', { type: 'button', onClick: refresh, disabled: !!busy || status?.running }, t('catalog.refresh')),
           status?.consent === 'granted' ? h('button', { type: 'button', className: 'theone-quiet', disabled: !!busy, 'aria-expanded': choosing,
-            onClick: () => choosing ? closeChoices() : void chooseChats() }, t('catalog.chooseChats')) : null,
+            onClick: () => choosing ? closeChoices() : void chooseChats() }, t('catalog.chooseChatsShort')) : null,
           snapshot?.linkage && snapshot.linkage.scope !== 'off' ? h('button', { type: 'button', className: 'theone-quiet', disabled: !!busy, title: t('link.clearLearnedHint'),
             onClick: () => { void editLinks({ action: 'clearLearned' }) } }, t('link.clearLearned')) : null,
           h('button', { type: 'button', className: 'theone-quiet', onClick: () => openFeedbackDialog() }, t('feedback.open')))),
       // One card from question to choice: the list opens inside it and the button counts what will be read.
       asking ? h('section', { className: 'theone-consent', 'aria-labelledby': 'theone-consent-title' },
-        h('p', { className: 'theone-overline' }, t('catalog.consentOverline')),
         h('h2', { id: 'theone-consent-title' }, t('catalog.consentTitle')),
         h('p', { className: 'theone-consent-body' }, t('catalog.consentBody', { count: total, sessionSuffix: total === 1 ? '' : 's' })),
         h('ul', { className: 'theone-consent-points' }, ...(['catalog.consentKeep', 'catalog.consentQuota', 'catalog.consentChoose'] as const)
@@ -1328,26 +1326,31 @@ export function apply(ctx: Context) {
             if (!topic) return []
             const constraints = snapshot?.linkage?.topics[id]?.constraints ?? ''
             const open = managing === id
-            return [h('li', { key: id, 'data-open': open, className: `theone-topic-card${open ? ' theone-open' : ''}${(topic.hidden === 'orphaned' || topic.hidden === 'excluded') ? ' theone-hidden' : ''}` },
+            const summary = topic.summary && topic.summary.trim() !== topic.title.trim() ? topic.summary : ''
+            // A topic whose conversations are gone has nothing left to continue; an archived one does.
+            const stuck = topic.hidden === 'orphaned' || topic.hidden === 'excluded'
+            return [h('li', { key: id, 'data-open': open, className: `theone-topic-card${open ? ' theone-open' : ''}${stuck ? ' theone-hidden' : ''}` },
               h('div', { className: 'theone-topic-main' },
                 h('div', { className: 'theone-topic-row' },
                   h('h3', { title: topic.title }, topic.title),
                   topic.topicStatus && topic.topicStatus !== 'active'
-                    ? h('span', { className: `theone-tag theone-status-${topic.topicStatus}` }, t(`topic.status.${topic.topicStatus}` as TheOneLocaleKey)) : null),
-                topic.summary && topic.summary.trim() !== topic.title.trim() ? h('p', { className: 'theone-topic-summary' }, topic.summary) : null,
-                topic.lastState ? h('p', { className: 'theone-topic-state' }, h('span', null, label(t('topic.state'))), topic.lastState) : null,
+                    ? h('span', { className: `theone-tag theone-status-${topic.topicStatus}` }, t(`topic.status.${topic.topicStatus}` as TheOneLocaleKey)) : null,
+                  h('button', { type: 'button', className: 'theone-topic-more', 'aria-expanded': open, 'aria-label': t(open ? 'manage.close' : 'manage.open'), title: t(open ? 'manage.close' : 'manage.open'),
+                    onClick: () => setManaging(current => current === id ? undefined : id) }, icon('more', 16))),
+                // Closed, a card answers one question, where it left off; open, it shows everything.
+                open ? [summary ? h('p', { key: 's', className: 'theone-topic-summary' }, summary) : null,
+                  topic.lastState ? h('p', { key: 'l', className: 'theone-topic-state' }, h('span', null, label(t('topic.state'))), topic.lastState) : null]
+                  : topic.lastState || summary ? h('p', { className: 'theone-topic-summary' }, topic.lastState || summary) : null,
                 topic.hidden ? h('p', { className: 'theone-topic-warning' }, t(topic.hidden === 'excluded' ? 'topic.hiddenExcluded' : topic.hidden === 'archived' ? 'topic.hiddenArchived' : 'topic.hiddenOrphaned')) : null,
                 // Topics merged into this one, each of which can be taken apart again.
                 ...(snapshot?.merges ?? []).filter(merge => merge.targetId === id).map(merge => h('p', { key: `merge:${merge.sourceId}`, className: 'theone-topic-merged' },
                   t('topic.mergedFrom', { title: merge.title }), ' ',
                   h('button', { type: 'button', className: 'theone-quiet', disabled: !!busy, onClick: () => { void post('/api/theone/topics', { action: 'unmerge', id: merge.sourceId }) } }, t('topic.unmerge'))))),
-              h('div', { className: 'theone-topic-foot' },
+              stuck && !topic.projectInfo ? null : h('div', { className: 'theone-topic-foot' },
                 topic.projectInfo ? h('code', { className: 'theone-topic-chip', title: topic.projectInfo.path }, topic.projectInfo.name) : null,
-                h('div', { className: 'theone-topic-actions' },
-                  h('button', { type: 'button', className: 'theone-quiet', 'aria-expanded': open, onClick: () => setManaging(current => current === id ? undefined : id) }, t(open ? 'manage.close' : 'manage.open')),
-                  // A topic whose conversations are gone has nothing left to continue; an archived one does.
-                  h('button', { type: 'button', className: 'theone-continue', disabled: !!busy || topic.hidden === 'orphaned' || topic.hidden === 'excluded', title: topic.hidden === 'orphaned' ? t('topic.continueHidden') : undefined,
-                    onClick: () => { void continueTopic(id) } }, t(busy === id ? 'topic.opening' : 'topic.continue'), h('span', { 'aria-hidden': true }, ' →')))),
+                // The whole closed card is this button's target: the most common click needs no aiming.
+                stuck ? null : h('button', { type: 'button', className: `theone-continue${open ? '' : ' theone-stretch'}`, disabled: !!busy,
+                  onClick: () => { void continueTopic(id) } }, t(busy === id ? 'topic.opening' : 'topic.continue'), h('span', { 'aria-hidden': true }, '→'))),
               open ? h('div', { className: 'theone-topic-edit' },
                 h('div', { className: 'theone-topic-quick' },
                   topic.hidden ? null : h('button', { type: 'button', disabled: !!busy,
@@ -1556,8 +1559,6 @@ body[data-ds-dark-theme]{--one-accent:#93c8f3;--one-accent-hover:#b6dbf8;--one-o
 .theone-catalog .theone-primary:hover:not(:disabled){background:var(--one-accent-hover)}
 .theone-catalog .theone-quiet{border-color:transparent;color:var(--t-muted)}
 .theone-catalog .theone-quiet:hover:not(:disabled){color:var(--t-fg)}
-.theone-catalog .theone-continue{border-color:transparent;color:var(--t-accent);font-weight:500}
-.theone-catalog .theone-continue:hover:not(:disabled){background:var(--one-soft)}
 .theone-catalog-header{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:8px 24px;padding-top:28px}
 .theone-catalog-header .theone-overline{display:none}
 .theone-overline{margin:0 0 4px;font-size:12px;line-height:18px;font-weight:500;color:var(--t-accent)}
@@ -1579,10 +1580,10 @@ body[data-ds-dark-theme]{--one-accent:#93c8f3;--one-accent-hover:#b6dbf8;--one-o
 .theone-consent .theone-overline{display:flex;align-items:center;gap:6px}
 .theone-consent .theone-overline::before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor}
 .theone-consent h2{margin:0;font-size:16px;line-height:24px;font-weight:600}
-.theone-consent-body{margin:6px 0 0;max-width:640px;font-size:14px;line-height:22px}
-.theone-consent-points{list-style:none;margin:12px 0 0;padding:0;display:grid;gap:4px;font-size:13px;line-height:20px;color:var(--t-muted)}
-.theone-consent-points li{display:flex;gap:8px;align-items:flex-start}
-.theone-consent-points .theone-icon{flex:none;margin-top:3px;color:var(--t-accent)}
+.theone-consent-body{margin:4px 0 0;max-width:640px;font-size:14px;line-height:22px;color:var(--t-muted)}
+.theone-consent-points{list-style:none;margin:10px 0 0;padding:0;display:flex;flex-wrap:wrap;gap:4px 16px;font-size:12px;line-height:18px;color:var(--t-muted)}
+.theone-consent-points li{display:flex;gap:6px;align-items:center}
+.theone-consent-points .theone-icon{flex:none;color:var(--t-accent)}
 .theone-consent-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:20px}
 .theone-catalog .theone-consent-actions button{height:32px;padding:0 14px;font-size:13px}
 .theone-catalog .theone-consent-actions button:not(.theone-primary):not(.theone-quiet){background:var(--t-base)}
@@ -1639,17 +1640,23 @@ body[data-ds-dark-theme]{--one-accent:#93c8f3;--one-accent-hover:#b6dbf8;--one-o
 .theone-group-count{color:var(--t-caption);font-variant-numeric:tabular-nums}
 .theone-group-summary{margin:-6px 0 0 20px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary,var(--t-muted))}
 .theone-topic-list{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
-.theone-topic-card{display:flex;flex-direction:column;min-width:0;overflow:hidden;border:.5px solid var(--dsw-alias-settings-card-stroke,var(--dsw-alias-border-l4,#00000029));border-radius:var(--dsw-radius-xl,20px);background:var(--dsw-alias-settings-card-fill,var(--t-base))}
+.theone-topic-card{position:relative;display:flex;flex-direction:column;min-width:0;overflow:hidden;border:.5px solid var(--dsw-alias-settings-card-stroke,var(--dsw-alias-border-l4,#00000029));border-radius:var(--dsw-radius-xl,20px);background:var(--dsw-alias-settings-card-fill,var(--t-base));transition:background 120ms ease}
 .theone-topic-card[data-open=true]{grid-column:1/-1;border-color:var(--t-line)}
+.theone-topic-card:not(.theone-hidden):hover{background-image:linear-gradient(var(--t-hover),var(--t-hover))}
+.theone-topic-card:not(.theone-hidden):hover .theone-continue{background:var(--one-soft)}
+.theone-catalog .theone-stretch::after{content:'';position:absolute;inset:0;border-radius:inherit}
+.theone-catalog .theone-stretch:focus-visible{outline:none}
+.theone-catalog .theone-stretch:focus-visible::after{outline:2px solid var(--t-accent);outline-offset:-2px}
 .theone-topic-main{display:flex;flex-direction:column;gap:2px;padding:12px 14px 0}
+.theone-topic-main:last-child{padding-bottom:14px}
 .theone-topic-card.theone-hidden .theone-topic-main{opacity:.55}
 .theone-topic-row{display:flex;align-items:center;gap:12px;min-width:0}
 .theone-topic-card h3{flex:1;min-width:0;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;line-height:20px;font-weight:500}
-.theone-topic-summary{margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary,var(--t-muted));display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;text-wrap:pretty}
+.theone-topic-summary{margin:0;font-size:13px;line-height:20px;color:var(--t-muted);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;text-wrap:pretty}
 .theone-topic-card[data-open=true] .theone-topic-summary{display:block}
-.theone-topic-state{margin:4px 0 0;font-size:12px;line-height:18px;color:var(--t-muted);display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}
+.theone-topic-state{margin:4px 0 0;font-size:13px;line-height:20px;color:var(--t-muted)}
 .theone-topic-state>span{margin-right:6px;color:var(--t-caption)}
-.theone-topic-foot{display:flex;align-items:center;gap:8px;margin-top:auto;padding:8px 8px 10px 14px}
+.theone-topic-foot{display:flex;align-items:center;gap:8px;min-height:28px;margin-top:auto;padding:8px 8px 10px 14px}
 .theone-topic-chip{min-width:0;max-width:50%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:1px 6px;border-radius:var(--dsw-radius-xs,4px);background:var(--dsw-alias-bg-module-platform,#f2f3f5);color:var(--t-muted);font-family:var(--ds-font-family-code,ui-monospace,SFMono-Regular,Consolas,monospace);font-size:12px;line-height:18px}
 .theone-tag{flex:none;display:inline-flex;align-items:center;height:18px;padding:0 7px;border-radius:999px;background:var(--dsw-alias-bg-module-platform,#f2f3f5);font-size:10px;line-height:1;font-weight:400;color:var(--t-muted)}
 .theone-status-waiting{color:var(--t-warn);background:color-mix(in srgb,var(--t-warn) 10%,transparent)}
@@ -1657,8 +1664,10 @@ body[data-ds-dark-theme]{--one-accent:#93c8f3;--one-accent-hover:#b6dbf8;--one-o
 .theone-topic-warning{margin:6px 0 0;padding-left:8px;border-left:2px solid var(--t-warn);font-size:12px;line-height:18px;color:var(--t-muted)}
 .theone-topic-merged{margin:4px 0 0;font-size:12px;line-height:18px;color:var(--t-muted)}
 .theone-catalog .theone-topic-merged .theone-quiet{height:22px;padding:0 6px;color:var(--t-accent)}
-.theone-topic-actions{display:flex;align-items:center;gap:2px;margin-left:auto}
-.theone-catalog .theone-topic-actions button{height:26px}
+.theone-catalog .theone-continue{margin-left:auto;height:26px;gap:6px;border-color:transparent;color:var(--t-accent);font-weight:500}
+.theone-catalog .theone-topic-more{position:relative;z-index:1;flex:none;width:26px;height:26px;margin:-3px -6px -3px 0;padding:0;border-color:transparent;color:var(--t-caption)}
+.theone-catalog .theone-topic-more:hover:not(:disabled),.theone-catalog .theone-topic-more[aria-expanded=true]{color:var(--t-fg);background:var(--t-hover)}
+.theone-topic-merged button{position:relative;z-index:1}
 .theone-topic-edit{display:flex;flex-direction:column;gap:14px;margin:2px 14px 14px;padding-top:14px;border-top:.5px solid var(--t-rule)}
 .theone-topic-quick{display:flex;flex-wrap:wrap;gap:8px}
 .theone-topic-links{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin:0 0 16px;font-size:13px}

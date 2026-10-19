@@ -196,8 +196,8 @@ export declare const zh: {
     readonly 'settings.help.contextsPath': "可选 JSON 文件，用于导入人工准备的话题目录。保存时读取并导入；已导入的话题不会因清空此项而删除。";
     readonly 'settings.help.gatewayKey': "区分不同的主聊天入口状态（当前话题、路由记录、设置）。改动相当于换一个新的入口，因此只能用环境变量 THEONE_GATEWAY_KEY 修改，通常保留 default。";
     readonly 'catalog.title': "话题工作区";
-    readonly 'catalog.subtitle': "相关的事情放在一起，随时回到主聊天继续。";
-    readonly 'catalog.figTopics': "话题";
+    readonly "catalog.subtitle": "相关的事放在一起，回主聊天接着聊。";
+    readonly "catalog.figTopics": "个话题";
     readonly 'catalog.figGroups': "工作区";
     readonly 'catalog.figKept': "没被更正";
     readonly 'catalog.refresh': "整理历史";
@@ -227,12 +227,12 @@ export declare const zh: {
     readonly 'catalog.loadError': "暂时无法读取话题，请检查 DSH 连接。";
     readonly 'catalog.continueError': "暂时无法继续这个话题，请等当前聊天结束后重试。";
     readonly 'catalog.refreshError': "暂时无法整理历史，请检查 DSH 模型配置。";
-    readonly "catalog.consentOverline": "以前的聊天";
     readonly "catalog.consentTitle": "要不要整理以前的聊天？";
-    readonly "catalog.consentBody": "你在 DSH 里有 {count} 个以前的会话。整理好之后，你在主聊天里提到以前的事，TheOne 就能找到，接着往下做。";
-    readonly "catalog.consentKeep": "原来的会话一个都不删，也不改。";
-    readonly "catalog.consentQuota": "会用你在 DSH 里选的模型读一遍，要花一点额度。";
-    readonly "catalog.consentChoose": "不想让它看的，可以先挑出来。";
+    readonly "catalog.chooseChatsShort": "选择会话";
+    readonly "catalog.consentBody": "整理好之后，你在主聊天提到以前的事，TheOne 就能接上。";
+    readonly "catalog.consentKeep": "原会话不删不改";
+    readonly "catalog.consentQuota": "用你选的模型读一遍，花一点额度";
+    readonly "catalog.consentChoose": "不想给它看的可以先挑出来";
     readonly "catalog.startCount": "整理 {count} 个会话";
     readonly "catalog.chooseFirst": "先挑一挑";
     readonly "catalog.doneChoosing": "挑好了";
@@ -240,7 +240,7 @@ export declare const zh: {
     readonly "catalog.declined": "以前的聊天还没整理。";
     readonly "catalog.reconsider": "现在整理";
     readonly "catalog.chooseChats": "选择要整理的会话";
-    readonly "catalog.chooseHint": "勾掉的会话不会被读，也不会进目录，随时可以改回来。";
+    readonly "catalog.chooseHint": "勾掉的不会被读，随时可以改。";
     readonly "catalog.pickerLoading": "正在读取会话列表…";
     readonly "catalog.wholeFolder": "整个文件夹";
     readonly "catalog.otherChats": "其他会话";
@@ -251,7 +251,7 @@ export declare const zh: {
     readonly 'catalog.unassigned': "待整理";
     readonly 'catalog.unassignedSummary': "这些话题还在等待自动归类。";
     readonly 'topic.opening': "正在打开…";
-    readonly 'topic.continue': "继续聊天";
+    readonly "topic.continue": "继续";
     readonly 'topic.continueHidden': "这个话题的原会话已从磁盘上消失，没有可以接着聊的内容。";
     readonly 'topic.source': "查看原会话";
     readonly 'topic.state': "进展：";
@@ -297,8 +297,8 @@ export declare const zh: {
     readonly 'manage.createButton': "创建";
     readonly 'manage.cancel': "取消";
     readonly 'routes.title': "最近的话题分配";
-    readonly 'routes.hint': "分错时可以在这里改到正确的话题：TheOne 会记住，类似的消息以后分到那里，下一条消息也接着那个话题。也可以直接在主聊天里说「分错了，是 某某 的」，上一条会交给正确的话题重新处理。";
-    readonly 'routes.stats': "最近 {total} 条：{rate}% 没有被更正，追问 {clarified} 次";
+    readonly "routes.hint": "分错了就在这里改，TheOne 会记住。在主聊天里说「分错了」也行。";
+    readonly "routes.stats": "最近 {total} 条，{rate}% 分对";
     readonly 'routes.empty': "还没有分配记录。";
     readonly 'routes.move': "改到…";
     readonly 'routes.corrected': "已改到 {title}";
@@ -309,7 +309,7 @@ export declare const zh: {
     readonly 'routes.rules': "规则判断";
     readonly 'routes.removed': "（已删除的话题）";
     readonly 'routes.report': "报告问题";
-    readonly 'feedback.open': "反馈问题";
+    readonly "feedback.open": "反馈";
     readonly 'feedback.title': "反馈问题";
     readonly 'feedback.titleMessage': "报告这条回复的问题";
     readonly 'feedback.intro': "说说发生了什么。下面能看到要发出的全部内容，点「发送」之前什么都不会发出。";

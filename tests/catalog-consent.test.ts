@@ -311,8 +311,8 @@ for (const locale of ['zh-CN', 'en-US']) for (const mode of ['ask', 'granted', '
       await app.gateway.whenIdle()
       const text = app.gateway.session.snapshotEvents().flatMap(event => event.type === 'assistant/message'
         ? event.data.message.content.flatMap(block => block.type === 'text' ? [block.text] : []) : []).join('')
-      if (mode === 'ask') assert.match(text, locale === 'zh-CN' ? /一条都还没看/ : /haven't looked/)
-      if (mode === 'granted') assert.match(text, locale === 'zh-CN' ? /原来的会话都还在/ : /original conversations are all still there/)
+      if (mode === 'ask') assert.match(text, locale === 'zh-CN' ? /还没看过/ : /haven't read/)
+      if (mode === 'granted') assert.match(text, locale === 'zh-CN' ? /原会话都还在/ : /originals are all still there/)
       if (mode === 'disabled') assert.doesNotMatch(text, /话题工作区|Topic workspaces/)
       assert.equal(app.model.requests.length, 0)
     } finally { await app.close() }

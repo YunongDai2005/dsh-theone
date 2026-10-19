@@ -226,15 +226,15 @@ const TERMS_PROMPT = `你在帮话题路由器从用户的更正中学习。用�
 function welcomeText(locale: string, consent: 'granted' | 'declined' | undefined, enabled: boolean): string {
   const zh = locale.toLowerCase().startsWith('zh')
   const intro = zh
-    ? '你好，我是 TheOne。以后不管什么事，都在这儿跟我说就行。我会分清你说的是哪件事，交给那件事自己的后台会话去做，过程都显示在这里。'
-    : "Hi, I'm TheOne. From now on you can bring anything here. I'll work out which thing you're talking about, hand it to that topic's own background session, and show the work right here."
+    ? '你好，我是 TheOne。以后什么事都在这儿说就行，我会分清是哪件事，交给它自己的后台会话去做。'
+    : "Hi, I'm TheOne. Bring anything here: I'll work out which thing it's about and hand it to that topic's own background session."
   if (!enabled) return intro
   if (consent === 'granted') return intro + (zh
-    ? '你以前的聊天在左边的「话题工作区」里，原来的会话都还在。'
-    : ' Your earlier chats are in **Topic workspaces** on the left, and the original conversations are all still there.')
+    ? '你以前的聊天在左边「话题工作区」里，原会话都还在。'
+    : ' Your earlier chats are in **Topic workspaces** on the left, and the originals are all still there.')
   return intro + '\n\n' + (zh
-    ? '你以前在 DSH 里的聊天，我一条都还没看。要不要我把它们整理成话题目录？整理好之后，你提到以前的事，我就能接上。原来的会话一个都不会删，不想让我看的也可以先挑出来。想好了去左边的「话题工作区」点一下就行，不着急。'
-    : "I haven't looked at any of your earlier DSH chats yet. Want me to sort them into a topic directory? Then when you mention something from before, I can pick it up. Nothing gets deleted, and you can leave out any chats you'd rather I didn't read. Whenever you're ready, it's one click in **Topic workspaces** on the left. No rush.")
+    ? '你以前的聊天我还没看过。想让我整理一下、以后提到能接上，就去左边「话题工作区」点一下，原会话不会删。'
+    : "I haven't read your earlier chats yet. If you'd like me to sort them so I can pick up where you left off, it's one click in **Topic workspaces** on the left. Nothing gets deleted.")
 }
 
 /** Why a message went where it did, as a short phrase for the "show every decision" notice. */
