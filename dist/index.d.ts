@@ -240,6 +240,15 @@ export default class TheOne extends Service {
     private ownFacts;
     private briefingFor;
     /**
+     * Before a topic changes something for a message (edits a file, runs a command, sends something),
+     * check that it is the right topic for it: when routing hesitated, or when the target belongs to
+     * another project, ask once in main chat. Reading and answering never wait; a confident route with
+     * a target in its own project goes ahead.
+     */
+    private checkTargets;
+    /** Why a change for this message may be in the wrong topic, in both languages, or undefined. */
+    private targetDoubt;
+    /**
      * No one views a Worker session, so its approval questions would fail closed. Ask in the
      * main chat whose turn the Worker is answering instead, naming the exact call being approved.
      */

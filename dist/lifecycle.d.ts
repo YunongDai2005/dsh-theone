@@ -3,6 +3,8 @@
  * the reply it gave, and the steps that may have changed something. Used after a restart, when
  * TheOne's memory of the run is gone but the topic session (persisted by DSH) still has it all.
  */
+/** Whether a tool may change files, run commands or send something (anything but reading and asking). */
+export declare const changesSomething: (name: string) => boolean;
 interface Event {
     type: string;
     seq: number;

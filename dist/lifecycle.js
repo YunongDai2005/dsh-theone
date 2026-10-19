@@ -7,6 +7,8 @@
 const READ_ONLY = new Set(['read', 'read_image', 'glob', 'grep', 'ls', 'list_agents', 'job_list', 'job_output', 'get_goal',
     'ask_user_question', 'exit_plan_mode', 'todo_write', 'skill', 'web_search', 'web_fetch',
     'theone_search_history', 'theone_read_topic', 'theone_read_fact', 'theone_update_state', 'theone_task', 'theone_handback']);
+/** Whether a tool may change files, run commands or send something (anything but reading and asking). */
+export const changesSomething = (name) => !READ_ONLY.has(name);
 const textOf = (content) => (content ?? []).filter(block => block.type === 'text').map(block => block.text ?? '').join('\n').trim();
 /** One step in a few words, from the tool's name and the arguments the model gave it. */
 export function describeStep(name, args) {
