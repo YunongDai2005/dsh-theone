@@ -123,6 +123,7 @@
     "tsx": "^4.20.0",
     "typescript": "^5.9.0"
   },
+  "homepage": "http://theone.yulid.org/",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/YunongDai2005/dsh-theone.git"

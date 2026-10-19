@@ -8,7 +8,7 @@
   <img alt="English / 中文" src="https://img.shields.io/badge/UI-English%20%2F%20中文-4a7fb5">
 </p>
 
-<p align="center">English | <a href="./README.zh.md">简体中文</a></p>
+<p align="center"><a href="http://theone.yulid.org/">Website</a> · English | <a href="./README.zh.md">简体中文</a></p>
 
 <p align="center"><img src="https://raw.githubusercontent.com/YunongDai2005/dsh-theone/main/docs/images/theone-demo-en.webp" alt="Demo: two unrelated requests in the main chat each get their own topic in the sidebar; going back to the first one continues it in its own topic" width="100%"></p>
 
@@ -35,9 +35,9 @@ Each project reasons, runs tools and compacts in its own session. What you see i
 
 ## Why try it
 
-Version 0.3.40 makes mistakes **cheap to notice and undo**: a topic about to change a file, run a command or send something checks with you once when it may have the wrong topic or the wrong project; a misrouted message moves to the other likely topic in one click, and the move can be undone; a merge of two topics can be taken apart again. Old and archived topics come back when you mention them, and say where things stood last time instead of treating it as today's state (see [How it works](#how-it-works)). These changes have not been benchmarked yet.
+Version 0.3.40 makes mistakes **cheap to notice and undo**: a topic about to change a file, run a command or send something checks with you once when it may have the wrong topic or the wrong project; a misrouted message moves to the other likely topic in one click, and the move can be undone; a merge can be undone. Old and archived topics come back when you mention them, and say where things stood last time instead of treating it as today's state (see [How it works](#how-it-works)). These changes have not been benchmarked yet.
 
-Version 0.3.39 makes the topics **disappear into the background**: main chat no longer shows topic switches or asks where a message belongs, a topic that gets a message not its own hands it back before doing anything, and a message that mentions a figure, code or name from another topic gets that topic's words along (see [How it works](#how-it-works)). These changes have not been benchmarked yet.
+Version 0.3.39 makes the topics **disappear into the background**: main chat no longer shows topic switches (turn on **Topic notices** in the settings to see where each message went) or asks where a message belongs, a topic that gets a message not its own hands it back before doing anything, and a message that mentions a figure, code or name from another topic gets that topic's words along (see [How it works](#how-it-works)). These changes have not been benchmarked yet.
 
 Version 0.3.38 **routes more accurately**: when the quick decision would open a new topic, ask you, or goes against a number, code or name only one topic has mentioned, it takes a second look with thinking on. On our benchmark that lifts accuracy from 90% to 96% when starting from nothing, and one thing is split over fewer topics (see [How well does it route?](#how-well-does-it-route)). It also picks up cleanly after a DSH restart and after "wrong topic". Ongoing tasks (follow a GitHub PR and CI from main chat, since 0.3.36) are described in [implementation and limitations](./docs/persistent-work.md) (Chinese).
 
@@ -53,11 +53,11 @@ Version 0.3.38 **routes more accurately**: when the quick decision would open a 
 - **Keep talking while it works.** A message sent during a reply that is about that reply joins it, as in any DSH chat; one about something else starts in its own topic right away, in the background, and its answer follows in main chat in the order you sent things. At most three topics work at once.
 - **Works where the work is.** A new topic about one of your projects works in that project's folder; anything else goes to DSH's folder for chats outside any project. Nothing is added to your projects in the sidebar.
 - **Related work connects; unrelated work stays out.** Related topics share progress automatically, and which ones belong together is learned from how you use them. A topic's constraints (say, "budget figures stay out of the paper") are attached verbatim every time, so compaction never drops them.
-- **Learns your words.** Once a topic has replies, a short routing card is written in the background (what it is, what you call it, the people, places and files involved, and the values it has settled on, such as a budget or an order number), and rewritten as the topic goes on, so it is recognised however you phrase it. New names you use are added without forgetting the old ones, and a settled value keeps when it was recorded and what it replaced. Say "wrong topic" and it remembers which terms tie that kind of message to the right one. A topic you haven't touched for months, or whose conversations you archived, is not ruled out: when the message says what it is about ("the deposit from last year"), that topic is picked; time only decides between topics that fit equally, so "that thing just now" means the recent one. Back after three days or more, the topic opens with "last time we noted…" and treats dates, amounts and progress as the last record, not as today's.
+- **Learns your words.** Once a topic has replies, a short topic card is written in the background (what it is, what you call it, the people, places and files involved, and the values it has settled on, such as a budget or an order number), and rewritten as the topic goes on, so it is recognised however you phrase it. New names you use are added without forgetting the old ones, and a settled value keeps when it was recorded and what it replaced. Say "wrong topic" and it remembers which terms tie that kind of message to the right one. A topic you haven't touched for months, or whose conversations you archived, is not ruled out: when the message says what it is about ("the deposit from last year"), that topic is picked; time only decides between topics that fit equally, so "that thing just now" means the recent one. Back after three days or more, the topic opens with "last time we noted…" and treats dates, amounts and progress as the last record, not as today's.
 - **Picks up after a restart.** If DSH stopped while a topic was working, the topic's own session tells what happened: finished work is shown as it was given, and work cut off midway lists what it had already changed; say "continue" and the topic checks the current state before carrying on, instead of redoing it. Each topic keeps where it stands as goal / done / next.
 - **Checks before acting on the wrong thing.** Before a topic first changes a file, runs a command or sends something for a message, it asks you once in main chat if the message might have belonged to another topic, or if the change points into a different project than the topic works in. A confident route in the right folder goes ahead without asking.
 - **"Wrong topic" cleans up after itself.** Under **Recent topic routing**, a message that might have belonged elsewhere offers **Move to …** for the likely topics, and a moved message offers **Undo**. The wrong topic forgets that turn (it stays out of its history, card and facts) and is told once; anything the turn already changed is listed for you, since nothing is undone behind your back.
-- **Your old sessions become a topic directory.** After install it reads your existing sessions in the background, turns them into topics grouped into workspaces, and you pick up where you left off.
+- **Your old sessions become a topic directory.** Right after install it starts reading your existing sessions in the background with the model you chose, turns them into topics and sorts them into topic workspaces (TheOne's own groups, unrelated to the projects in DSH's sidebar), and you pick up where you left off. It only reads: your sessions stay as they are. With many sessions this uses some quota; turn **History catalog** off in the settings if you don't want it.
 - **Nothing extra to configure.** No separate API key: it uses the model you chose in DSH. When TheOne is selected, a layers icon beside the model menu shows and switches which model routes and which does the work.
 
 ## Install in 30 seconds
@@ -92,7 +92,7 @@ No coding needed:
 - **"Too new" and it won't install:** DSH only installs versions published at least 24 hours ago. That's a safety rule, not an error. Wait a day, or enter the GitHub address `https://github.com/YunongDai2005/dsh-theone` instead, which installs right away.
 - **No TheOne in the sidebar after installing:** restart DSH.
 - **Something wrong?** Click **Report a problem** at the top right of **Topic workspaces**: versions and diagnostics (no chat content) are attached, and Send delivers it without GitHub. Or email [theone@yulid.org](mailto:theone@yulid.org); a screenshot helps.
-- **Will it cost a lot?** Each message adds one short classification call (no deep thinking); about one in six (a new topic, a question, or a doubtful pick) gets a second call with thinking. "ok" or "go on" skips even the first. On DeepSeek V4.1 Flash that is about half a US dollar per thousand messages. With many old chats, the first pass that organises them uses some of your quota; turn **History catalog** off in the settings if you don't need it.
+- **Will it cost a lot?** Each message adds one short classification call (no deep thinking); about one in six (a new topic, a question, or a doubtful pick) gets a second call with thinking. "ok" or "go on" skips even the first. On DeepSeek V4.1 Flash that is about half a US dollar per thousand messages: at 100 messages a day, routing adds about $2 a month. The work itself runs on the model you chose and costs what it always does. With many old chats, the first pass that organises them uses some of your quota; turn **History catalog** off in the settings if you don't need it.
 </details>
 
 <details>
@@ -139,8 +139,8 @@ A few numbers worth knowing:
 - **On ten conversations kept aside while tuning**, starting from nothing: 97.1% (0.3.37: 90.7%).
 - **One thing is split over 1.47 topics** on average (0.3.37: 1.80), and needless questions back to you dropped from 49 to 9.
 - **A message landing in another thing's topic**, the mistake that hurts context most: 2.8% when starting from nothing. It is 1.5% with thinking on for every message, so this is what we work on next.
-- **Routing cards** are not simulated in the table. With them (as in the plugin), starting from nothing: 96.9%, and 1.9% of messages land in another thing's topic.
-- **What it costs:** about one message in six gets the second look; routing costs about $0.5 per thousand messages (one quick decision only: $0.41; thinking on for every message: $0.55), and routing cards add about $0.16.
+- **Topic cards** are not simulated in the table. With them (as in the plugin), starting from nothing: 96.9%, and 1.9% of messages land in another thing's topic.
+- **What it costs:** about one message in six gets the second look; routing costs about $0.5 per thousand messages (one quick decision only: $0.41; thinking on for every message: $0.55), and topic cards add about $0.16.
 - Data, code and scoring live in [`eval/`](./eval/README.md); reproduce it, or try another model. The full write-up, with confidence intervals, token use and what did not work, is in [`docs/routing-eval.md`](./docs/routing-eval.md) (Chinese).
 
 The conversations are model-written from a script and this version has no assistant replies, so it measures whether messages are routed right, not everything about how chatting feels.
@@ -208,6 +208,7 @@ The database location and entry identifier switch TheOne to different data, so t
 <details>
 <summary><b>Data and privacy</b></summary>
 
+- Everything stays on your computer. Routing, topic cards and organising old sessions use the model you chose in DSH; requests go straight to that model provider, never through a TheOne server.
 - DSH keeps the original conversations and tool results; TheOne keeps only its catalog, summaries, links and routing records in its own SQLite database (`$DSH_HOME/theone/contexts.db`, `~/.dsh/theone/` by default).
 - Text sent to the router or written into briefings has API keys, passwords and similar secrets removed.
 - A topic marked **Do not share** never appears in other topics' briefings, recent-chat excerpts or lookups.
@@ -224,8 +225,8 @@ The database location and entry identifier switch TheOne to different data, so t
 - A new topic not about any of your projects works in DSH's own folder for chats outside any project (`Documents/deepseek-harness/default-workspace`), or in `~/.dsh/theone/gateway` if you do not have that folder. Topics organised from your existing chats work in those chats' folders.
 - Main chat stores copies of tool calls, so its log grows with use; entry-log rotation is not implemented yet.
 - Only one DSH process should use a database at a time.
-- Image output is not forwarded yet; there is no vector search; topics cannot be split yet.
-- Main chat shows tool cards without running them because TheOne sits first in DSH's tool pipeline. If another plugin also places itself first, it may see these mirrored calls, but no tool runs twice.
+- Image output is not forwarded yet; there is no vector search; a topic cannot be split in two yet (a merge can be undone).
+- The tool cards in main chat only show the tools the topic is using; nothing runs a second time. This relies on TheOne sitting first in DSH's tool pipeline; if another plugin also places itself first, it may see these display-only copies, but each tool still runs once.
 </details>
 
 <details>
