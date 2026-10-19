@@ -8,6 +8,10 @@ import { mergeSettled } from "./topic-memory.js";
 export const TERM_HALF_LIFE_MS = 30 * 86400000;
 /** A whole session attached by hand counts as reviewed from its first event to its last. */
 export const WHOLE_SESSION = { startSeq: 0, endSeq: Number.MAX_SAFE_INTEGER };
+/** Tables keyed by topic that removing a topic clears. */
+const PURGED_TABLES = ['topic_group_members', 'history_turns', 'context_origins', 'context_sources', 'context_source_ranges',
+    'gateway_state', 'context_state_updates', 'context_summary_updates', 'topic_flags', 'compaction_digests', 'learned_terms',
+    'topic_runs', 'topic_status', 'topic_names', 'topic_settled', 'topic_open', 'correction_terms'];
 /** A topic's progress as one note: the three parts with labels in the language they were written in. */
 export function progressText(progress) {
     const english = !/[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/.test(progress.goal + progress.done + progress.next);
@@ -105,6 +109,9 @@ export class ContextStore {
       );
       CREATE TABLE IF NOT EXISTS learned_terms (
         context_id TEXT NOT NULL, term TEXT NOT NULL, weight REAL NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY(context_id, term)
+      );
+      CREATE TABLE IF NOT EXISTS topic_merges (
+        source_id TEXT PRIMARY KEY, target_id TEXT NOT NULL, at INTEGER NOT NULL, journal TEXT NOT NULL
       );
       CREATE TABLE IF NOT EXISTS correction_terms (
         message_id TEXT NOT NULL, context_id TEXT NOT NULL, term TEXT NOT NULL, delta REAL NOT NULL
@@ -880,49 +887,168 @@ export class ContextStore {
     }
     /**
      * Fold `sourceId` into `targetId`: its history, progress, summaries and links move over, and its
-     * own Worker session becomes searchable history of the target. The source topic is removed.
+     * own Worker session becomes searchable history of the target. The source topic leaves the
+     * directory, but everything the merge did is written down so `unmergeTopic` can take it apart.
      */
-    mergeTopics(sourceId, targetId) {
+    mergeTopics(sourceId, targetId, now = Date.now()) {
         if (sourceId === targetId)
             throw new Error('Cannot merge a topic into itself');
         const source = this.context(sourceId), target = this.context(targetId);
+        const journal = { at: now, moved: {}, added: {}, purged: {}, terms: { entities: [], keywords: [] }, corrected: [], facts: [], removedDependencies: [], links: [] };
+        const rowids = (table, where, ...params) => this.db.prepare(`SELECT rowid AS id FROM ${table} WHERE ${where}`).all(...params).map(row => Number(row.id));
+        // Rows that move to the target keep their rowid; rows copied into it are new ones.
+        const move = (table, ignore = false) => {
+            const before = rowids(table, 'context_id = ?', sourceId);
+            this.db.prepare(`UPDATE ${ignore ? 'OR IGNORE ' : ''}${table} SET context_id = ? WHERE context_id = ?`).run(targetId, sourceId);
+            const moved = new Set(rowids(table, 'context_id = ?', targetId));
+            journal.moved[table] = before.filter(id => moved.has(id));
+        };
+        const copy = (table, sql, ...params) => {
+            const before = new Set(rowids(table, 'context_id = ?', targetId));
+            this.db.prepare(sql).run(...params);
+            journal.added[table] = rowids(table, 'context_id = ?', targetId).filter(id => !before.has(id));
+        };
         this.db.exec('BEGIN IMMEDIATE');
         try {
             const merged = (a, b) => [...new Map([...a, ...b].map(term => [term.toLowerCase(), term])).values()].slice(0, 40);
-            this.writeDescriptor({ ...target, entities: merged(target.entities, source.entities), keywords: merged(target.keywords, source.keywords) });
-            this.db.prepare('INSERT OR IGNORE INTO context_source_ranges SELECT ?, session_id, start_seq, end_seq FROM context_source_ranges WHERE context_id = ?').run(targetId, sourceId);
+            const entities = merged(target.entities, source.entities), keywords = merged(target.keywords, source.keywords);
+            journal.terms = { entities: entities.filter(term => !target.entities.includes(term)), keywords: keywords.filter(term => !target.keywords.includes(term)) };
+            this.writeDescriptor({ ...target, entities, keywords });
+            copy('context_source_ranges', 'INSERT OR IGNORE INTO context_source_ranges SELECT ?, session_id, start_seq, end_seq FROM context_source_ranges WHERE context_id = ?', targetId, sourceId);
             // The source's own Worker conversation is now reviewed history of the target, not a new catalog source.
+            journal.index = { sessionId: source.workingSessionId, row: this.db.prepare('SELECT * FROM history_index WHERE session_id = ?').get(source.workingSessionId) ?? null };
             this.markIndex(source.workingSessionId, Number.MAX_SAFE_INTEGER, 'excluded');
+            const ranges = new Set(rowids('context_source_ranges', 'context_id = ?', targetId));
             this.db.prepare('INSERT OR IGNORE INTO context_source_ranges VALUES (?, ?, ?, ?)').run(targetId, source.workingSessionId, WHOLE_SESSION.startSeq, WHOLE_SESSION.endSeq);
+            journal.added.context_source_ranges.push(...rowids('context_source_ranges', 'context_id = ?', targetId).filter(id => !ranges.has(id)));
             for (const table of ['history_turns', 'context_state_updates', 'topic_runs', 'correction_terms'])
-                this.db.prepare(`UPDATE ${table} SET context_id = ? WHERE context_id = ?`).run(targetId, sourceId);
-            this.db.prepare('UPDATE OR IGNORE context_summary_updates SET context_id = ? WHERE context_id = ?').run(targetId, sourceId);
+                move(table);
+            move('context_summary_updates', true);
             this.db.prepare('UPDATE gateway_state SET context_id = ? WHERE context_id = ?').run(targetId, sourceId);
+            journal.corrected = this.db.prepare('SELECT message_id FROM route_details WHERE corrected_to = ?').all(sourceId).map(row => String(row.message_id));
             this.db.prepare('UPDATE route_details SET corrected_to = ? WHERE corrected_to = ?').run(targetId, sourceId);
-            this.db.prepare('INSERT OR IGNORE INTO learned_terms SELECT ?, term, weight, updated_at FROM learned_terms WHERE context_id = ?').run(targetId, sourceId);
+            copy('learned_terms', 'INSERT OR IGNORE INTO learned_terms SELECT ?, term, weight, updated_at FROM learned_terms WHERE context_id = ?', targetId, sourceId);
             // The merged topic keeps both topics' names; its own settled values win over the source's.
-            this.db.prepare('INSERT OR IGNORE INTO topic_names SELECT ?, name_key, name, first_at, last_at FROM topic_names WHERE context_id = ?').run(targetId, sourceId);
-            this.db.prepare('INSERT OR IGNORE INTO topic_settled SELECT ?, label_key, label, value, since, previous, previous_since FROM topic_settled WHERE context_id = ?').run(targetId, sourceId);
-            const rules = [this.constraints(targetId)?.text, this.constraints(sourceId)?.text].filter(Boolean);
-            if (rules.length)
-                this.setConstraints(targetId, rules.join('\n').slice(0, 400));
+            copy('topic_names', 'INSERT OR IGNORE INTO topic_names SELECT ?, name_key, name, first_at, last_at FROM topic_names WHERE context_id = ?', targetId, sourceId);
+            copy('topic_settled', 'INSERT OR IGNORE INTO topic_settled SELECT ?, label_key, label, value, since, previous, previous_since FROM topic_settled WHERE context_id = ?', targetId, sourceId);
+            const before = this.constraints(targetId)?.text;
+            const rules = [before, this.constraints(sourceId)?.text].filter(Boolean);
+            if (rules.length) {
+                const joined = rules.join('\n').slice(0, 400);
+                if (joined !== before) {
+                    journal.constraints = { before: before ?? null, after: joined };
+                    this.setConstraints(targetId, joined);
+                }
+            }
             for (const link of this.links(sourceId)) {
                 const other = link.a === sourceId ? link.b : link.a;
                 if (other === targetId)
                     continue;
+                const [a, b] = targetId < other ? [targetId, other] : [other, targetId];
+                journal.links.push({ a, b, row: this.db.prepare('SELECT * FROM topic_links WHERE a = ? AND b = ?').get(a, b) ?? null });
                 if (link.manual)
                     this.setManualLink(targetId, other, link.manual);
                 if (link.weight > 0)
                     this.learnLink(targetId, other, link.weight);
             }
-            this.mergeFacts(sourceId, targetId, source.title);
+            this.mergeFacts(sourceId, targetId, source.title, journal);
+            // What is left of the source is kept in the journal before it goes.
+            journal.purged = { ...this.snapshot(sourceId), fact_dependencies: journal.purged.fact_dependencies ?? [] };
             this.purge(sourceId);
+            this.db.prepare('INSERT OR REPLACE INTO topic_merges VALUES (?, ?, ?, ?)').run(sourceId, targetId, now, JSON.stringify(journal));
             this.db.exec('COMMIT');
         }
         catch (error) {
             this.db.exec('ROLLBACK');
             throw error;
         }
+    }
+    /** Topics merged into others that can still be taken apart, newest first. */
+    merges() {
+        const live = new Set(this.contexts().map(context => context.id));
+        return this.db.prepare('SELECT * FROM topic_merges ORDER BY at DESC, rowid DESC').all().flatMap(row => {
+            const journal = JSON.parse(String(row.journal));
+            const descriptor = journal.purged.contexts?.[0]?.descriptor;
+            const title = descriptor ? JSON.parse(String(descriptor)).title : String(row.source_id);
+            return live.has(String(row.target_id)) && !live.has(String(row.source_id))
+                ? [{ sourceId: String(row.source_id), targetId: String(row.target_id), title, at: Number(row.at) }] : [];
+        });
+    }
+    /**
+     * Take a merge apart: the source topic comes back with what it had, and what came from it leaves
+     * the target. What either topic did since stays where it happened.
+     */
+    unmergeTopic(sourceId) {
+        const row = this.db.prepare('SELECT * FROM topic_merges WHERE source_id = ?').get(sourceId);
+        if (!row)
+            throw new Error('Not a merged topic');
+        const targetId = String(row.target_id);
+        if (!this.contexts().some(context => context.id === targetId))
+            throw new Error('The topic it was merged into is gone');
+        if (this.contexts().some(context => context.id === sourceId))
+            throw new Error('The topic is already back');
+        const journal = JSON.parse(String(row.journal));
+        const target = this.context(targetId);
+        const insert = (table, rows = []) => {
+            for (const item of rows) {
+                const columns = Object.keys(item);
+                this.db.prepare(`INSERT OR IGNORE INTO ${table} (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`).run(...columns.map(column => item[column]));
+            }
+        };
+        const ids = (list) => list.length ? list.join(', ') : 'NULL';
+        this.db.exec('BEGIN IMMEDIATE');
+        try {
+            insert('contexts', journal.purged.contexts);
+            for (const [table, rows] of Object.entries(journal.purged))
+                if (table !== 'contexts')
+                    insert(table, rows);
+            for (const [table, list] of Object.entries(journal.moved))
+                this.db.prepare(`UPDATE OR IGNORE ${table} SET context_id = ? WHERE context_id = ? AND rowid IN (${ids(list)})`).run(sourceId, targetId);
+            for (const [table, list] of Object.entries(journal.added))
+                this.db.prepare(`DELETE FROM ${table} WHERE context_id = ? AND rowid IN (${ids(list)})`).run(targetId);
+            const added = new Set(journal.added.fact_dependencies ?? []);
+            insert('fact_dependencies', journal.removedDependencies.filter(item => !added.has(Number(item.rowid))).map(({ rowid: _, ...item }) => item));
+            for (const fact of journal.facts)
+                this.db.prepare('UPDATE OR IGNORE facts SET context_id = ?, key = ?, label = ?, merged_from = ? WHERE id = ? AND context_id = ?').run(sourceId, fact.key, fact.label, fact.mergedFrom, fact.id, targetId);
+            const drop = (list, gone) => list.filter(term => !gone.includes(term));
+            this.writeDescriptor({ ...target, entities: drop(target.entities, journal.terms.entities), keywords: drop(target.keywords, journal.terms.keywords) });
+            for (const messageId of journal.corrected)
+                this.db.prepare('UPDATE route_details SET corrected_to = ? WHERE message_id = ? AND corrected_to = ?').run(sourceId, messageId, targetId);
+            if (journal.constraints && this.constraints(targetId)?.text === journal.constraints.after)
+                this.setConstraints(targetId, journal.constraints.before);
+            for (const link of journal.links) {
+                this.db.prepare('DELETE FROM topic_links WHERE a = ? AND b = ?').run(link.a, link.b);
+                if (link.row)
+                    insert('topic_links', [link.row]);
+            }
+            if (journal.index) {
+                this.db.prepare('DELETE FROM history_index WHERE session_id = ?').run(journal.index.sessionId);
+                if (journal.index.row)
+                    insert('history_index', [journal.index.row]);
+            }
+            this.db.prepare('DELETE FROM topic_merges WHERE source_id = ?').run(sourceId);
+            this.db.exec('COMMIT');
+        }
+        catch (error) {
+            this.db.exec('ROLLBACK');
+            throw error;
+        }
+        return targetId;
+    }
+    /** Every row TheOne keeps about a topic, by table, as `purge` would remove them. */
+    snapshot(contextId) {
+        const rows = (table, where, ...params) => this.db.prepare(`SELECT * FROM ${table} WHERE ${where}`).all(...params);
+        const out = { contexts: rows('contexts', 'id = ?', contextId) };
+        for (const table of PURGED_TABLES)
+            out[table] = rows(table, 'context_id = ?', contextId);
+        out.topic_links = rows('topic_links', 'a = ? OR b = ?', contextId, contextId);
+        out.hidden_contexts = rows('hidden_contexts', 'context_id = ?', contextId);
+        out.briefing_seen = rows('briefing_seen', 'reader = ? OR source = ?', contextId, contextId);
+        out.facts = rows('facts', 'context_id = ?', contextId);
+        out.fact_versions = rows('fact_versions', 'fact_id IN (SELECT id FROM facts WHERE context_id = ?)', contextId);
+        out.fact_dependencies = rows('fact_dependencies', 'context_id = ?', contextId);
+        out.fact_deliveries = rows('fact_deliveries', 'context_id = ?', contextId).map(({ id: _, ...item }) => item);
+        return out;
     }
     /** Remove a topic and everything TheOne kept about it. DSH keeps the conversations themselves. */
     deleteTopic(contextId) {
@@ -932,6 +1058,8 @@ export class ContextStore {
             // The catalog would otherwise find the same conversation again and bring the topic back.
             this.db.prepare('INSERT OR REPLACE INTO dismissed_turns SELECT session_id, user_seq, fingerprint FROM history_turns WHERE context_id = ?').run(contextId);
             this.markIndex(context.workingSessionId, Number.MAX_SAFE_INTEGER, 'excluded');
+            // Topics merged into it can no longer be taken apart from it.
+            this.db.prepare('DELETE FROM topic_merges WHERE target_id = ? OR source_id = ?').run(contextId, contextId);
             this.purge(contextId);
             this.db.exec('COMMIT');
         }
@@ -941,9 +1069,7 @@ export class ContextStore {
         }
     }
     purge(contextId) {
-        for (const table of ['topic_group_members', 'history_turns', 'context_origins', 'context_sources', 'context_source_ranges',
-            'gateway_state', 'context_state_updates', 'context_summary_updates', 'topic_flags', 'compaction_digests', 'learned_terms',
-            'topic_runs', 'topic_status', 'topic_names', 'topic_settled', 'topic_open', 'correction_terms'])
+        for (const table of PURGED_TABLES)
             this.db.prepare(`DELETE FROM ${table} WHERE context_id = ?`).run(contextId);
         this.db.prepare('DELETE FROM topic_links WHERE a = ? OR b = ?').run(contextId, contextId);
         this.db.prepare('DELETE FROM hidden_contexts WHERE context_id = ?').run(contextId);
@@ -1103,8 +1229,9 @@ export class ContextStore {
      * Facts of a merged topic move with their identity, so whoever depends on them keeps doing so. A name
      * both topics use stays two facts: the incoming one is renamed after its topic; values never merge.
      */
-    mergeFacts(sourceId, targetId, sourceTitle) {
-        for (const fact of this.db.prepare('SELECT id, key, label FROM facts WHERE context_id = ? AND deleted_at IS NULL').all(sourceId)) {
+    mergeFacts(sourceId, targetId, sourceTitle, journal) {
+        for (const fact of this.db.prepare('SELECT id, key, label, merged_from FROM facts WHERE context_id = ? AND deleted_at IS NULL').all(sourceId)) {
+            journal.facts.push({ id: String(fact.id), key: String(fact.key), label: String(fact.label), mergedFrom: fact.merged_from == null ? null : String(fact.merged_from) });
             let key = String(fact.key), label = String(fact.label);
             if (this.db.prepare('SELECT 1 FROM facts WHERE context_id = ? AND key = ?').get(targetId, key)) {
                 label = `${label}（来自 ${sourceTitle}）`.slice(0, FACT_LIMITS.label + 30);
@@ -1114,10 +1241,16 @@ export class ContextStore {
             }
             this.db.prepare('UPDATE facts SET context_id = ?, key = ?, label = ?, merged_from = ? WHERE id = ?').run(targetId, key, label, sourceId, String(fact.id));
         }
+        const rowids = (where, ...params) => this.db.prepare(`SELECT rowid AS id FROM fact_dependencies WHERE ${where}`).all(...params).map(row => Number(row.id));
+        const before = new Set(rowids('context_id = ?', targetId));
         this.db.prepare('INSERT OR IGNORE INTO fact_dependencies SELECT ?, fact_id, version_seen, first_at, last_at FROM fact_dependencies WHERE context_id = ?').run(targetId, sourceId);
+        journal.added.fact_dependencies = rowids('context_id = ?', targetId).filter(id => !before.has(id));
+        journal.purged.fact_dependencies = this.db.prepare('SELECT * FROM fact_dependencies WHERE context_id = ?').all(sourceId);
         this.db.prepare('DELETE FROM fact_dependencies WHERE context_id = ?').run(sourceId);
         // A topic does not depend on its own facts.
+        journal.removedDependencies = this.db.prepare('SELECT rowid, * FROM fact_dependencies WHERE context_id = ? AND fact_id IN (SELECT id FROM facts WHERE context_id = ?)').all(targetId, targetId);
         this.db.prepare('DELETE FROM fact_dependencies WHERE context_id = ? AND fact_id IN (SELECT id FROM facts WHERE context_id = ?)').run(targetId, targetId);
+        journal.moved.fact_deliveries = this.db.prepare('SELECT rowid AS id FROM fact_deliveries WHERE context_id = ?').all(sourceId).map(row => Number(row.id));
         this.db.prepare('UPDATE fact_deliveries SET context_id = ? WHERE context_id = ?').run(targetId, sourceId);
     }
     /**

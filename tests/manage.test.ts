@@ -144,6 +144,14 @@ test('topics can be created, edited, moved, given sessions, merged and deleted f
     assert.match(store.constraints(id)!.text, /预算只用于订酒店\n显卡型号保密/)
     assert.ok(store.sourceRanges(id).some(range => range.sessionId === qwenWorker))
     assert.equal(store.indexState(qwenWorker)?.status, 'excluded')
+    // The merge can be taken apart from the target topic's card, and made again.
+    const merges = (await client.get('catalog') as { merges: { sourceId: string; targetId: string; title: string }[] }).merges
+    assert.deepEqual(merges.map(merge => [merge.sourceId, merge.targetId]), [['ctx_qwen_9070xt', id]])
+    assert.equal((await client.post('topics', { action: 'unmerge', id: 'ctx_qwen_9070xt' })).status, 200)
+    assert.ok(store.contexts().some(context => context.id === 'ctx_qwen_9070xt'))
+    assert.equal(store.constraints('ctx_qwen_9070xt')?.text, '显卡型号保密')
+    assert.equal((await client.post('topics', { action: 'unmerge', id: 'ctx_qwen_9070xt' })).status, 400)
+    assert.equal((await client.post('topics', { action: 'merge', id: 'ctx_qwen_9070xt', into: id })).status, 200)
     assert.equal((await ask(app.gateway, '京都旅行的酒店')).output, `模拟回答：${id}`)
 
     assert.equal((await client.post('topics', { action: 'delete', id })).status, 200)

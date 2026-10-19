@@ -1237,6 +1237,10 @@ export function apply(ctx: Context) {
                   topic.lastState ? [h('dt', { key: 's' }, label(t('topic.state'))), h('dd', { key: 'sv' }, topic.lastState)] : null,
                   constraints ? [h('dt', { key: 'c' }, label(t('topic.constraints'))), h('dd', { key: 'cv' }, constraints)] : null,
                   open ? null : links) : null),
+                // Topics merged into this one, each of which can be taken apart again.
+                ...(snapshot?.merges ?? []).filter(merge => merge.targetId === id).map(merge => h('p', { key: `merge:${merge.sourceId}`, className: 'theone-topic-merged' },
+                  t('topic.mergedFrom', { title: merge.title }), ' ',
+                  h('button', { type: 'button', className: 'theone-quiet', disabled: !!busy, onClick: () => { void post('/api/theone/topics', { action: 'unmerge', id: merge.sourceId }) } }, t('topic.unmerge')))),
               h('div', { className: 'theone-topic-actions' },
                 // A topic whose conversations are gone has nothing left to continue; an archived one does.
                 h('button', { type: 'button', className: 'theone-continue', disabled: !!busy || topic.hidden === 'orphaned', title: topic.hidden === 'orphaned' ? t('topic.continueHidden') : undefined,
@@ -1502,6 +1506,8 @@ button:has(.theone-catalog-entry)>span:not(:has(.theone-catalog-entry)){display:
 .theone-status-waiting{color:var(--t-warn);border-color:currentColor}
 .theone-status-done{color:var(--t-accent);border-color:currentColor}
 .theone-topic-warning{margin:10px 0 0;padding-left:12px;border-left:2px solid var(--t-warn);font-size:12px;line-height:1.6}
+.theone-topic-merged{margin:8px 0 0;font-size:12px;line-height:1.6;color:var(--dsw-alias-label-secondary)}
+.theone-topic-merged .theone-quiet{padding:2px 8px;font-size:12px}
 .theone-topic-actions{display:flex;flex-direction:column;align-items:flex-end;gap:0}.theone-topic-actions button{padding-top:3px;padding-bottom:3px}
 .theone-topic-edit{grid-column:1/-1;margin-top:12px;padding:4px 0 4px 20px;border-left:2px solid var(--t-accent)}
 .theone-topic-links{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin:0 0 16px;font-size:13px}

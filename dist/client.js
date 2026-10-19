@@ -353,7 +353,9 @@ var zh = {
   "manage.mergePick": "\u9009\u62E9\u76EE\u6807\u8BDD\u9898",
   "manage.mergeButton": "\u5408\u5E76",
   "manage.confirm": "\u786E\u8BA4\u5408\u5E76",
-  "manage.mergeHint": "\u8FD9\u4E2A\u8BDD\u9898\u7684\u5386\u53F2\u3001\u8FDB\u5C55\u3001\u7EA6\u675F\u548C\u5173\u8054\u4F1A\u5E76\u5165\u76EE\u6807\u8BDD\u9898\uFF0C\u7136\u540E\u79FB\u9664\u8FD9\u4E2A\u8BDD\u9898\u3002\u539F\u4F1A\u8BDD\u4ECD\u4FDD\u7559\u5728 DSH\u3002",
+  "manage.mergeHint": "\u8FD9\u4E2A\u8BDD\u9898\u7684\u5386\u53F2\u3001\u8FDB\u5C55\u3001\u7EA6\u675F\u548C\u5173\u8054\u4F1A\u5E76\u5165\u76EE\u6807\u8BDD\u9898\uFF0C\u8FD9\u4E2A\u8BDD\u9898\u4ECE\u76EE\u5F55\u91CC\u6536\u8D77\u3002\u4E4B\u540E\u53EF\u4EE5\u5728\u76EE\u6807\u8BDD\u9898\u4E0A\u64A4\u9500\u5408\u5E76\uFF1B\u539F\u4F1A\u8BDD\u4ECD\u4FDD\u7559\u5728 DSH\u3002",
+  "topic.mergedFrom": "\u5408\u5E76\u81EA\u300C{title}\u300D",
+  "topic.unmerge": "\u64A4\u9500\u5408\u5E76",
   "manage.delete": "\u5220\u9664\u8BDD\u9898",
   "manage.deleteConfirm": "\u786E\u8BA4\u5220\u9664",
   "manage.deleteHint": "\u53EA\u5220\u9664 TheOne \u7684\u76EE\u5F55\u8BB0\u5F55\uFF0C\u539F\u59CB\u4F1A\u8BDD\u4ECD\u4FDD\u7559\u5728 DSH\uFF0C\u4E4B\u540E\u4E5F\u4E0D\u4F1A\u88AB\u91CD\u65B0\u6574\u7406\u51FA\u6765\u3002",
@@ -694,7 +696,9 @@ var en = {
   "manage.mergePick": "Choose the target topic",
   "manage.mergeButton": "Merge",
   "manage.confirm": "Confirm merge",
-  "manage.mergeHint": "This topic's history, progress, constraints and links move into the target topic, then this topic is removed. DSH keeps the original sessions.",
+  "manage.mergeHint": "This topic's history, progress, constraints and links move into the target topic, and this topic leaves the directory. You can undo the merge from the target topic; DSH keeps the original sessions.",
+  "topic.mergedFrom": "Merged from \u201C{title}\u201D",
+  "topic.unmerge": "Undo merge",
   "manage.delete": "Delete topic",
   "manage.deleteConfirm": "Confirm delete",
   "manage.deleteHint": "Removes only TheOne's catalog entry. DSH keeps the original sessions, and the catalog will not extract this topic again.",
@@ -4439,6 +4443,15 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
                 open ? null : links
               ) : null
             ),
+            ...(snapshot?.merges ?? []).filter((merge) => merge.targetId === id).map((merge) => (0, import_react2.createElement)(
+              "p",
+              { key: `merge:${merge.sourceId}`, className: "theone-topic-merged" },
+              t2("topic.mergedFrom", { title: merge.title }),
+              " ",
+              (0, import_react2.createElement)("button", { type: "button", className: "theone-quiet", disabled: !!busy, onClick: () => {
+                void post("/api/theone/topics", { action: "unmerge", id: merge.sourceId });
+              } }, t2("topic.unmerge"))
+            )),
             (0, import_react2.createElement)(
               "div",
               { className: "theone-topic-actions" },
@@ -4744,6 +4757,8 @@ button:has(.theone-catalog-entry)>span:not(:has(.theone-catalog-entry)){display:
 .theone-status-waiting{color:var(--t-warn);border-color:currentColor}
 .theone-status-done{color:var(--t-accent);border-color:currentColor}
 .theone-topic-warning{margin:10px 0 0;padding-left:12px;border-left:2px solid var(--t-warn);font-size:12px;line-height:1.6}
+.theone-topic-merged{margin:8px 0 0;font-size:12px;line-height:1.6;color:var(--dsw-alias-label-secondary)}
+.theone-topic-merged .theone-quiet{padding:2px 8px;font-size:12px}
 .theone-topic-actions{display:flex;flex-direction:column;align-items:flex-end;gap:0}.theone-topic-actions button{padding-top:3px;padding-bottom:3px}
 .theone-topic-edit{grid-column:1/-1;margin-top:12px;padding:4px 0 4px 20px;border-left:2px solid var(--t-accent)}
 .theone-topic-links{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin:0 0 16px;font-size:13px}

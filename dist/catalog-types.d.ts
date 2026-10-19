@@ -46,11 +46,19 @@ export interface LinkageSnapshot {
         related: TopicLinkView[];
     }>;
 }
+/** A topic merged into another, which can still be taken apart. */
+export interface MergeView {
+    sourceId: string;
+    targetId: string;
+    title: string;
+    at: number;
+}
 export interface CatalogSnapshot {
     groups: TopicGroup[];
     contexts: CatalogContext[];
     status: CatalogStatus;
     linkage?: LinkageSnapshot;
+    merges?: MergeView[];
 }
 export interface HistoryPart {
     seq: number;

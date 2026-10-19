@@ -244,9 +244,24 @@ export declare class ContextStore {
     attachSession(contextId: string, sessionId: string): void;
     /**
      * Fold `sourceId` into `targetId`: its history, progress, summaries and links move over, and its
-     * own Worker session becomes searchable history of the target. The source topic is removed.
+     * own Worker session becomes searchable history of the target. The source topic leaves the
+     * directory, but everything the merge did is written down so `unmergeTopic` can take it apart.
      */
-    mergeTopics(sourceId: string, targetId: string): void;
+    mergeTopics(sourceId: string, targetId: string, now?: number): void;
+    /** Topics merged into others that can still be taken apart, newest first. */
+    merges(): {
+        sourceId: string;
+        targetId: string;
+        title: string;
+        at: number;
+    }[];
+    /**
+     * Take a merge apart: the source topic comes back with what it had, and what came from it leaves
+     * the target. What either topic did since stays where it happened.
+     */
+    unmergeTopic(sourceId: string): string;
+    /** Every row TheOne keeps about a topic, by table, as `purge` would remove them. */
+    private snapshot;
     /** Remove a topic and everything TheOne kept about it. DSH keeps the conversations themselves. */
     deleteTopic(contextId: string): void;
     private purge;

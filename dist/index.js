@@ -1065,7 +1065,7 @@ export default class TheOne extends Service {
                         const state = states.get(context.id);
                         return { ...context, ...(state ? { topicStatus: state.status } : {}), ...(state?.project ? { projectInfo: state.project } : {}) };
                     });
-                    return Response.json({ ...snapshot, contexts, linkage: this.linkageSnapshot() }, { headers: { 'cache-control': 'no-store' } });
+                    return Response.json({ ...snapshot, contexts, merges: this.store.merges(), linkage: this.linkageSnapshot() }, { headers: { 'cache-control': 'no-store' } });
                 } }));
             // Recent routing decisions, and moving a misrouted message to the right topic.
             child.effect(() => connection.fetch.register({ path: '/api/theone/routes', methods: ['GET', 'POST'], requestBody: 'buffered', fetch: async (request) => {
@@ -1314,6 +1314,20 @@ export default class TheOne extends Service {
                 else
                     this.store.deleteTopic(id);
                 return into ? { id: into } : {};
+            }
+            case 'unmerge': {
+                // Take a merge apart: the merged topic is back in the directory, with what it had.
+                if (typeof row.id !== 'string' || !this.store.merges().some(merge => merge.sourceId === row.id))
+                    throw new Error('UNKNOWN_CONTEXT');
+                if (this.busy)
+                    throw new Error('GATEWAY_BUSY');
+                try {
+                    this.store.unmergeTopic(row.id);
+                }
+                catch (error) {
+                    return fail(error);
+                }
+                return { id: row.id };
             }
         }
         throw new Error('INVALID_INPUT');

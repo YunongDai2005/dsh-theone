@@ -266,7 +266,9 @@ export declare const zh: {
     readonly 'manage.mergePick': "选择目标话题";
     readonly 'manage.mergeButton': "合并";
     readonly 'manage.confirm': "确认合并";
-    readonly 'manage.mergeHint': "这个话题的历史、进展、约束和关联会并入目标话题，然后移除这个话题。原会话仍保留在 DSH。";
+    readonly 'manage.mergeHint': "这个话题的历史、进展、约束和关联会并入目标话题，这个话题从目录里收起。之后可以在目标话题上撤销合并；原会话仍保留在 DSH。";
+    readonly 'topic.mergedFrom': "合并自「{title}」";
+    readonly 'topic.unmerge': "撤销合并";
     readonly 'manage.delete': "删除话题";
     readonly 'manage.deleteConfirm': "确认删除";
     readonly 'manage.deleteHint': "只删除 TheOne 的目录记录，原始会话仍保留在 DSH，之后也不会被重新整理出来。";
