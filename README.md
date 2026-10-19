@@ -35,6 +35,8 @@ Each project reasons, runs tools and compacts in its own session. What you see i
 
 ## Why try it
 
+Version 0.3.39 makes the topics **disappear into the background**: main chat no longer shows topic switches or asks where a message belongs, a topic that gets a message not its own hands it back before doing anything, and a message that mentions a figure, code or name from another topic gets that topic's words along (see [How it works](#how-it-works)). These changes have not been benchmarked yet.
+
 Version 0.3.38 **routes more accurately**: when the quick decision would open a new topic, ask you, or goes against a number, code or name only one topic has mentioned, it takes a second look with thinking on. On our benchmark that lifts accuracy from 90% to 96% when starting from nothing, and one thing is split over fewer topics (see [How well does it route?](#how-well-does-it-route)). It also picks up cleanly after a DSH restart and after "wrong topic". Ongoing tasks (follow a GitHub PR and CI from main chat, since 0.3.36) are described in [implementation and limitations](./docs/persistent-work.md) (Chinese).
 
 | | Usual workflow | With TheOne |
@@ -130,6 +132,7 @@ Claims are cheap, so we built a public benchmark, **InterleaveBench**: one perso
 
 A few numbers worth knowing:
 
+- These are 0.3.38's numbers; 0.3.39's changes have not been benchmarked yet.
 - **On ten conversations kept aside while tuning**, starting from nothing: 97.1% (0.3.37: 90.7%).
 - **One thing is split over 1.47 topics** on average (0.3.37: 1.80), and needless questions back to you dropped from 49 to 9.
 - **A message landing in another thing's topic**, the mistake that hurts context most: 2.8% when starting from nothing. It is 1.5% with thinking on for every message, so this is what we work on next.
