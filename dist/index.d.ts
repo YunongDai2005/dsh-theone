@@ -417,8 +417,10 @@ export default class TheOne extends Service {
      */
     private gatewayCommands;
     welcomeGateway(id: string, locale: string): void;
-    /** Topic → when main chat last answered in it; quick alternation between two topics links them. */
-    private lastRoute?;
+    /**
+     * A message that draws on other topics links them. Switching between topics does not: working on
+     * several unrelated things at once is what TheOne is for.
+     */
     private learnFromRoute;
     /**
      * Settle a run when the main chat turn closes: record the outcome and free the gateway once the

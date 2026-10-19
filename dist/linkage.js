@@ -1,5 +1,9 @@
-/** Learning signals, in units of relatedness. A pair counts as related from 0.6. */
-export const LINK_SIGNAL = { mention: 0.5, switch: 0.2, lookup: 0.4, unused: -0.05 };
+/**
+ * Learning signals, in units of relatedness. A pair counts as related from 0.6. Switching between
+ * topics and briefed news the Worker did not look up are not signals: alternating between unrelated
+ * work is ordinary, and a Worker uses briefed news without looking anything up.
+ */
+export const LINK_SIGNAL = { mention: 0.5, lookup: 0.4 };
 const THRESHOLD = 0.6;
 const normalize = (term) => term.toLowerCase().replace(/[\s/_-]+/g, '');
 /**

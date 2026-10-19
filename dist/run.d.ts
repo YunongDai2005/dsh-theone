@@ -32,9 +32,6 @@ export declare class WorkerRun {
     done: boolean;
     settled: Promise<void>;
     constructor(ctx: Context, worker: Agent, gateway: Agent, inputId: string, maxChars: number, beforeToolCalls: (names: string[]) => void);
-    /** Related topics whose news this run's briefing carried, and those the Worker then looked up. */
-    briefed: string[];
-    readonly lookedUp: Set<string>;
     /** The Worker recorded facts itself this run, so no extraction is needed afterwards. */
     recordedFacts: boolean;
     /** The request this run answers, as the user wrote it. */

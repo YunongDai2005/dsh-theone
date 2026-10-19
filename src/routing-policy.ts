@@ -36,8 +36,8 @@ export function settleUnclear(decision: Decision, text: string, contexts: readon
   const candidates = [...new Set(decision.relatedIds ?? [])].filter(known)
   const chosen = currentId && candidates.includes(currentId) ? currentId : candidates[0] ?? (known(currentId) ? currentId : undefined)
   if (!chosen) return newIndependentTopic(text, [...contexts], 'unclear-new')
-  const relatedIds = candidates.filter(id => id !== chosen).slice(0, 3)
-  return { action: chosen === currentId ? 'KEEP' : currentId ? 'SWAP' : 'MOUNT', contextId: chosen, reason: 'unclear-settled', ...(relatedIds.length ? { relatedIds } : {}) }
+  const alternateIds = candidates.filter(id => id !== chosen).slice(0, 3)
+  return { action: chosen === currentId ? 'KEEP' : currentId ? 'SWAP' : 'MOUNT', contextId: chosen, reason: 'unclear-settled', ...(alternateIds.length ? { alternateIds } : {}) }
 }
 
 export function newIndependentTopic(text: string, contexts: ContextDescriptor[], reason: string): Decision {

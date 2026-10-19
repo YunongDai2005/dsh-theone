@@ -89,8 +89,8 @@ test('native gateway never asks back: unsupported clarification becomes CREATE, 
 test('an unclear decision settles without asking: the current topic among the candidates, else the first, else stay, else new', () => {
   const topics = [{ id: 'a', title: 'A', summary: '', entities: [], keywords: [], lastState: '' }, { id: 'b', title: 'B', summary: '', entities: [], keywords: [], lastState: '' }]
   const unclear = (relatedIds?: string[]) => ({ action: 'CLARIFY' as const, reason: 'x', question: '哪个？', ...(relatedIds ? { relatedIds } : {}) })
-  assert.deepEqual(settleUnclear(unclear(['a', 'b']), '那个', topics, 'b'), { action: 'KEEP', contextId: 'b', reason: 'unclear-settled', relatedIds: ['a'] })
-  assert.deepEqual(settleUnclear(unclear(['a', 'b']), '那个', topics), { action: 'MOUNT', contextId: 'a', reason: 'unclear-settled', relatedIds: ['b'] })
+  assert.deepEqual(settleUnclear(unclear(['a', 'b']), '那个', topics, 'b'), { action: 'KEEP', contextId: 'b', reason: 'unclear-settled', alternateIds: ['a'] })
+  assert.deepEqual(settleUnclear(unclear(['a', 'b']), '那个', topics), { action: 'MOUNT', contextId: 'a', reason: 'unclear-settled', alternateIds: ['b'] })
   assert.deepEqual(settleUnclear(unclear(['b']), '那个', topics, 'a'), { action: 'SWAP', contextId: 'b', reason: 'unclear-settled' })
   assert.deepEqual(settleUnclear(unclear(), '继续上次那个', topics, 'a'), { action: 'KEEP', contextId: 'a', reason: 'unclear-settled' })
   assert.equal(settleUnclear(unclear(), '继续上次那个', topics).action, 'CREATE')

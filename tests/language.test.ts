@@ -14,7 +14,7 @@ test('a message naming two topics is not asked about, in either language: the fi
       assert.equal(result.output, '模拟回答：ctx_qwen_9070xt')
       const decision = app.ctx.theone.store.route(result.input.id)?.decision
       assert.equal(decision?.reason, 'unclear-settled')
-      assert.deepEqual(decision?.relatedIds, ['ctx_thesis'])
+      assert.deepEqual(decision?.alternateIds, ['ctx_thesis'])
     }
   } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
 })

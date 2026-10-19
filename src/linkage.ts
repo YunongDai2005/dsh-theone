@@ -8,8 +8,12 @@ export type LinkReason = 'manual' | 'workspace' | 'project' | 'entities' | 'lear
 
 export interface RelatedTopic { id: string; title: string; score: number; reasons: LinkReason[] }
 
-/** Learning signals, in units of relatedness. A pair counts as related from 0.6. */
-export const LINK_SIGNAL = { mention: 0.5, switch: 0.2, lookup: 0.4, unused: -0.05 } as const
+/**
+ * Learning signals, in units of relatedness. A pair counts as related from 0.6. Switching between
+ * topics and briefed news the Worker did not look up are not signals: alternating between unrelated
+ * work is ordinary, and a Worker uses briefed news without looking anything up.
+ */
+export const LINK_SIGNAL = { mention: 0.5, lookup: 0.4 } as const
 const THRESHOLD = 0.6
 
 const normalize = (term: string) => term.toLowerCase().replace(/[\s/_-]+/g, '')

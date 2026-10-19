@@ -10,12 +10,14 @@ export interface RelatedTopic {
     score: number;
     reasons: LinkReason[];
 }
-/** Learning signals, in units of relatedness. A pair counts as related from 0.6. */
+/**
+ * Learning signals, in units of relatedness. A pair counts as related from 0.6. Switching between
+ * topics and briefed news the Worker did not look up are not signals: alternating between unrelated
+ * work is ordinary, and a Worker uses briefed news without looking anything up.
+ */
 export declare const LINK_SIGNAL: {
     readonly mention: 0.5;
-    readonly switch: 0.2;
     readonly lookup: 0.4;
-    readonly unused: -0.05;
 };
 /**
  * Topics related to `contextId` under `scope`, strongest first. Private topics never share, and a

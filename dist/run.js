@@ -82,9 +82,6 @@ export class WorkerRun {
                 this.outcome = event.data.reason;
         }));
     }
-    /** Related topics whose news this run's briefing carried, and those the Worker then looked up. */
-    briefed = [];
-    lookedUp = new Set();
     /** The Worker recorded facts itself this run, so no extraction is needed afterwards. */
     recordedFacts = false;
     /** The request this run answers, as the user wrote it. */

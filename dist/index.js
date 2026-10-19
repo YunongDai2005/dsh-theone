@@ -807,7 +807,6 @@ export default class TheOne extends Service {
             // Reserve before asynchronous classification so a second gateway cannot race it.
             this.reservedGateway = agent.id;
             let route;
-            const currentBefore = this.store.current(config.gatewayKey);
             const receipt = early?.receipt ?? { mode: this.router ? 'llm' : 'rules' };
             const known = this.store.route(input.id);
             // Taken up in the background (now, or before a restart cut it off): it is not classified again.
@@ -862,7 +861,7 @@ export default class TheOne extends Service {
             this.store.recordRouteDetail(input.id, redactRoutingText(text).replace(/\s+/g, ' ').trim().slice(0, 160) || attachmentLabel, Object.fromEntries(Object.entries(receipt).filter(([, value]) => value !== undefined)));
             if (route.decision.correctionOf && route.decision.contextId)
                 this.applyCorrection(route.decision.correctionOf, route.decision.contextId, previous?.text);
-            this.learnFromRoute(route.decision, currentBefore);
+            this.learnFromRoute(route.decision);
             const titleOf = (id) => this.store.contexts().find(context => context.id === id)?.title;
             const references = (route.decision.relatedIds ?? []).flatMap(id => titleOf(id) ?? []);
             // Symbols keep the notice language-neutral: → switched, ＋ new topic, · same topic, ? clarifying.
@@ -1862,7 +1861,8 @@ export default class TheOne extends Service {
                 }) };
         }
         const related = relatedTopics(this.store, context.id, this.linkScope);
-        for (const id of decision.relatedIds ?? []) {
+        // Topics the message may have meant come along too, as reference; they are not learned as related.
+        for (const id of [...decision.relatedIds ?? [], ...decision.alternateIds ?? []]) {
             const other = this.store.contexts().find(item => item.id === id);
             if (!other || other.id === context.id || this.store.isPrivate(id) || this.store.links(id).some(link => link.manual === -1 && (link.a === context.id || link.b === context.id)))
                 continue;
@@ -1965,7 +1965,6 @@ export default class TheOne extends Service {
                 workspace: 'Only topics in the same workspace are shared' }[refused]);
         if (source === reader)
             return source;
-        this.runForWorker(worker)?.lookedUp.add(source);
         this.store.learnLink(reader, source, LINK_SIGNAL.lookup);
         return source;
     }
@@ -2226,7 +2225,6 @@ export default class TheOne extends Service {
                     if (!fact || fact.status !== 'confirmed')
                         return [];
                     this.store.recordDelivery(contextId, fact, 'lookup');
-                    this.runForWorker(worker)?.lookedUp.add(fact.contextId);
                     return [{ factId: fact.id, topicId: fact.contextId, topic: safe(titles.get(fact.contextId), 40), label: safe(fact.label, FACT_LIMITS.label),
                             value: safe(fact.value ?? '', FACT_LIMITS.value), version: fact.version, confirmedAt: new Date(fact.createdAt).toISOString() }];
                 });
@@ -2387,8 +2385,7 @@ export default class TheOne extends Service {
                         const second = await this.router.decide({ text, contexts, currentId, recent, historyIncomplete: this.catalog?.incomplete, corrections, ...facts, running, ...folders, recheck }, signal, agent.id, { think: true });
                         // Changed its mind from one topic to another: the first comes along as reference, in case it was right.
                         const first = contexts.some(context => context.id === recheck.previous) ? recheck.previous : undefined;
-                        proposed = first && second.decision.contextId && second.decision.contextId !== first
-                            ? { ...second.decision, relatedIds: [...new Set([...(second.decision.relatedIds ?? []), first])].slice(0, 3) } : second.decision;
+                        proposed = first && second.decision.contextId && second.decision.contextId !== first ? { ...second.decision, alternateIds: [first] } : second.decision;
                         result.elapsedMs += second.elapsedMs;
                         if (second.usage)
                             result.usage = { prompt_tokens: (result.usage?.prompt_tokens ?? 0) + second.usage.prompt_tokens,
@@ -2753,7 +2750,6 @@ export default class TheOne extends Service {
             this.store.startTopicRun(input.id, context.id, worker.id);
             // Linking only adds reference; a failure in it must never stop the reply.
             const links = await this.briefingFor(refreshed, route.decision, gateway, input.id, messageText(input), signal).catch(() => undefined);
-            run.briefed = links?.shown ?? [];
             signal?.throwIfAborted();
             run.start([createUserMessage({
                     source: { kind: 'theone-context', form: 'recall', contextId: refreshed.id },
@@ -3279,17 +3275,16 @@ export default class TheOne extends Service {
             return;
         agent.followup(createUserMessage({ source: { kind: 'theone-welcome', form: 'notice', locale }, content: [{ type: 'text', text: 'TheOne' }] }));
     }
-    /** Topic → when main chat last answered in it; quick alternation between two topics links them. */
-    lastRoute;
-    learnFromRoute(decision, previous, now = Date.now()) {
+    /**
+     * A message that draws on other topics links them. Switching between topics does not: working on
+     * several unrelated things at once is what TheOne is for.
+     */
+    learnFromRoute(decision, now = Date.now()) {
         const routed = decision.contextId;
         if (!routed || decision.action === 'CLARIFY' || this.linkScope === 'off')
             return;
-        if (previous && previous !== routed && this.lastRoute?.contextId === previous && now - this.lastRoute.at < 30 * 60000)
-            this.store.learnLink(previous, routed, LINK_SIGNAL.switch, now);
         for (const id of decision.relatedIds ?? [])
             this.store.learnLink(routed, id, LINK_SIGNAL.mention, now);
-        this.lastRoute = { contextId: routed, at: now };
     }
     /**
      * Settle a run when the main chat turn closes: record the outcome and free the gateway once the
@@ -3305,12 +3300,6 @@ export default class TheOne extends Service {
             run.cancel();
             this.store.finish(run.inputId, 'failed');
         }
-        // News the Worker never followed up on counts slightly against the link.
-        const ownId = this.store.route(run.inputId)?.decision.contextId;
-        if (ownId && this.linkScope !== 'off')
-            for (const id of run.briefed)
-                if (!run.lookedUp.has(id))
-                    this.store.learnLink(ownId, id, LINK_SIGNAL.unused);
         const closing = run.settled.then(() => {
             run.dispose();
             this.stowWhenIdle(run.worker.id);

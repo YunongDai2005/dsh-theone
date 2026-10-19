@@ -169,18 +169,20 @@ test('a Worker can search a related topic’s history but not its own copies of 
   } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
 })
 
-test('switching back and forth and naming topics together teach links; nothing is learned when linking is off', { timeout: 30000 }, async () => {
+test('naming topics together teaches a link, switching between them does not; nothing is learned when linking is off', { timeout: 30000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'theone-link-learn-'))
   const app = await harness(root)
   try {
     const store = app.ctx.theone.store
     app.model.behavior = async function* () { yield* textResponse('好') }
+    // Working on two unrelated things in turn is what TheOne is for: no link.
     await ask(app.gateway, 'Qwen 那个')
     await ask(app.gateway, '论文那个')
-    const afterSwitch = store.links(QWEN)[0]?.weight ?? 0
-    assert.ok(afterSwitch > 0)
+    await ask(app.gateway, 'Qwen 那个')
+    await ask(app.gateway, '论文那个')
+    assert.equal(store.links(QWEN)[0]?.weight ?? 0, 0)
     await ask(app.gateway, '这个跟 Qwen 结合一下')
-    assert.ok((store.links(QWEN)[0]?.weight ?? 0) > afterSwitch)
+    assert.ok((store.links(QWEN)[0]?.weight ?? 0) > 0)
   } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
   const offRoot = await mkdtemp(join(tmpdir(), 'theone-link-off-'))
   const off = await harness(offRoot, undefined, { theoneConfig: { linkScope: 'off' } })
