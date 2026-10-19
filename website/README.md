@@ -15,7 +15,7 @@ npm run preview
 
 Open http://127.0.0.1:4173. Build output is `website/out/` and is ignored by Git.
 No npm dependencies, remote fonts, analytics, model calls, form submission, or runtime secrets.
-The interactive conversation is explicitly labeled as a preset illustration.
+The product demonstration is the repository's existing Chinese animated WebP, labeled as a README example rather than a live AI session. Pause/play and original-size viewing are provided; reduced-motion preferences start it paused.
 
 ## Git-backed deployment proposal — not yet activated
 
@@ -56,8 +56,8 @@ Import the same repository/branch with root `website`, framework Other, build `n
 ## Verification and maintenance
 
 - Copy button writes only the public package name `dsh-theone`; a manual-copy message handles unavailable clipboard access.
-- Topic buttons update the illustrative answer and active topic; no network request occurs.
-- Native FAQ disclosures and all anchor links work without JavaScript.
+- The demonstration replaces the previously invented chat shell. Its asset is copied unchanged from `docs/images/theone-demo-zh.webp` under this repository's MIT license.
+- The page is reduced to the core promise, product demonstration and installation. Anchor links work without JavaScript.
 - `robots.txt`, sitemap and canonical URL target the requested domain. Publish only after domain configuration is complete.
 - `_headers` provides a restrictive CSP on Cloudflare. Other hosts may need their equivalent header configuration.
 - Content checked against public v0.3.39 README/release on 2026-10-19. No benchmark numbers or user-count claims are published.
@@ -74,4 +74,11 @@ Official hosting references: https://developers.cloudflare.com/pages/configurati
 - Requested custom domain is still awaiting DNS approval: CNAME `theone` -> `theone-website-f03.pages.dev`.
 - Existing `sirusan` Worker is verified to serve `yulid.org/*` and builds from its own repository's `main`; it is unchanged.
 - Optional Worker configuration is named `wrangler.workers.toml` so Pages does not auto-detect it. It is not an active deployment.
-- Visual refinement follows an actual browser inspection of https://www.deepseek.com/harness/: dark blue ambient background, lighter typography, quiet borders and restrained product panels. Original TheOne structure/content and demo arrangement are preserved. No reference assets or branding are copied.
+- Visual refinement follows inspection of https://www.deepseek.com/harness/: dark blue ambient background, lighter typography and quiet borders. The genuine project demonstration shows DSH branding only inside its application UI; the site retains TheOne identity and an explicit independent-plugin disclosure.
+
+## UI verification evidence (2026-10-19)
+
+- Installed Windows DSH executable reports `0.2.1-rc.2`. After the user opened it, its process and local service were confirmed. Native window capture is unavailable in this session; the local HTTP entry requires DSH authentication. No claim of pixel-perfect comparison with the running window is made.
+- Official Harness repository was resolved from the official website and inspected at `687f282e8625c6b8d11ff58211a90524be2e4317`: `SidebarRoot.tsx`, `SidebarRoot.module.css`, `MessageItem.module.css`, theme tokens and brand guidelines.
+- TheOne v0.3.39 `src/client.ts` confirms native `uiWorkspace.openSession` use and sidebar/composer slot integration. The demonstrated asset comes from that public repository, not private local conversations. Its older model label is example content, not a current-version claim.
+- The user's separate local TheOne checkout reports v0.3.7; it was inspected read-only and is not the website source.

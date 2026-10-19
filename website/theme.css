@@ -76,3 +76,11 @@ h3 { font-weight: 450; }
   .install { padding-top: 50px; padding-bottom: 50px; }
   .questions { padding-top: 65px; }
 }
+
+/* Reduced page: promise, product, installation. */
+.hero{display:block;padding-top:76px;padding-bottom:66px}.hero-copy{max-width:850px}.hero h1{font-size:clamp(38px,4.4vw,62px)}
+.demo-section{padding-bottom:76px}.dsh-demo{margin:0;border:1px solid #ffffff1a;border-radius:14px;overflow:hidden;background:#18181b}
+.dsh-viewport{overflow-x:auto;overscroll-behavior-x:contain}.dsh-viewport img,.dsh-viewport canvas{display:block;width:100%;height:auto}.dsh-viewport [hidden]{display:none}
+.dsh-demo figcaption{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 18px;color:var(--muted);font-size:11px;background:#11161e}
+.dsh-demo figcaption>div{display:flex;gap:18px;align-items:center;flex-shrink:0}.dsh-demo button{background:none;border:0;color:inherit;font-size:11px;padding:8px 0}.dsh-demo button:hover{color:white}.mobile-hint{display:none}
+@media(max-width:700px){.hero{padding-top:48px;padding-bottom:48px}.hero h1{font-size:clamp(34px,10vw,43px)}.dsh-viewport img,.dsh-viewport canvas{min-width:760px}.dsh-demo figcaption{align-items:flex-start;flex-direction:column;gap:4px;padding:10px 14px}.mobile-hint{display:inline}.demo-section{padding-bottom:48px}}
