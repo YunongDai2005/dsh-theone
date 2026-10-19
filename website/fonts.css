@@ -1,0 +1,58 @@
+/* Self-hosted Google Fonts text subsets. See fonts/*-OFL.txt. */
+@font-face {
+  font-family: 'TheOne Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(fonts/inter-0.ttf) format('truetype');
+}
+@font-face {
+  font-family: 'TheOne Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url(fonts/inter-1.ttf) format('truetype');
+}
+@font-face {
+  font-family: 'TheOne Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url(fonts/inter-2.ttf) format('truetype');
+}
+@font-face {
+  font-family: 'TheOne Inter';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url(fonts/inter-3.ttf) format('truetype');
+}
+
+@font-face {
+  font-family: 'TheOne Noto Sans SC';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(fonts/noto-sans-sc-0.ttf) format('truetype');
+}
+@font-face {
+  font-family: 'TheOne Noto Sans SC';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url(fonts/noto-sans-sc-1.ttf) format('truetype');
+}
+@font-face {
+  font-family: 'TheOne Noto Sans SC';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url(fonts/noto-sans-sc-2.ttf) format('truetype');
+}
+@font-face {
+  font-family: 'TheOne Noto Sans SC';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url(fonts/noto-sans-sc-3.ttf) format('truetype');
+}

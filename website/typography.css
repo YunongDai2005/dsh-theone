@@ -1,0 +1,16 @@
+/* Apple resolves the native faces first. Other platforms use self-hosted OFL fonts. */
+:root{--font-ui:-apple-system,BlinkMacSystemFont,"PingFang SC","TheOne Inter","TheOne Noto Sans SC","Noto Sans SC","Microsoft YaHei",sans-serif;--font-code:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
+body{font-family:var(--font-ui);font-weight:400;font-synthesis:none;text-rendering:optimizeLegibility}
+button,input,textarea,select{font-family:inherit}
+h1,h2,h3,h4,p,a,span,small,strong,div,aside,nav,header,footer{font-family:inherit}
+.wordmark{font-weight:600;letter-spacing:-.04em}
+.hero h1{font-weight:550;letter-spacing:-.05em}
+.tagline{font-weight:450;letter-spacing:-.025em;line-height:1.5}
+.description,.section-heading p{line-height:1.85}
+.section-heading h2,.closing h2{font-weight:500;letter-spacing:-.025em}
+.button{font-weight:550}.nav-cta{font-weight:500}
+.story-step strong,.install-card h3{font-weight:500;letter-spacing:-.02em}
+.messages,.story-answer{line-height:1.9;letter-spacing:0}
+.one-word strong{font-family:inherit}
+.scene-tabs button span,.step-index,.story-title>span:last-child,code,pre,kbd,samp{font-family:var(--font-code)}
+@media(max-width:767px){.hero h1{letter-spacing:-.045em}.tagline{letter-spacing:-.025em}.section-heading h2,.closing h2{letter-spacing:-.025em}.story-step strong{letter-spacing:-.025em}}
