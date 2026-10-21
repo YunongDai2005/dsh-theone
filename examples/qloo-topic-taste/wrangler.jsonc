@@ -1,0 +1,9 @@
+{
+  "name": "theone-topic-taste",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-08-06",
+  "assets": { "directory": "./public", "binding": "ASSETS", "run_worker_first": true },
+  "durable_objects": { "bindings": [{ "name": "TASTE", "class_name": "TasteObject" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["TasteObject"] }],
+  "vars": { "QLOO_MAX_REQUESTS": "0", "LLM_MAX_REQUESTS": "0" }
+}

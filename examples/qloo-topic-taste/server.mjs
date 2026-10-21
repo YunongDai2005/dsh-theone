@@ -4,6 +4,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { AppError, TasteStore, QlooClient, ModelRouter, TasteAgent, text } from './core.mjs';
 
+import { DurableBudget } from './durable-budget.mjs';
+
 const here = dirname(fileURLToPath(import.meta.url));
 export function createApp({ store, qloo, router, ephemeralStorage = false }) {
   const agent = new TasteAgent(store, qloo, router), limits = new Map(), queues = new Map();
@@ -48,8 +50,12 @@ export function createApp({ store, qloo, router, ephemeralStorage = false }) {
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const dbPath = process.env.TASTE_DB ?? join(here, '.data/taste.db'); mkdirSync(dirname(dbPath), { recursive: true, mode: 0o700 });
   const store = new TasteStore(dbPath);
-  const qloo = new QlooClient({ apiKey: process.env.QLOO_API_KEY, baseURL: process.env.QLOO_BASE_URL, maxRequests: process.env.QLOO_MAX_REQUESTS ?? 200 });
-  const router = new ModelRouter({ apiKey: process.env.LLM_API_KEY, baseURL: process.env.LLM_BASE_URL, model: process.env.LLM_MODEL, maxRequests: process.env.LLM_MAX_REQUESTS ?? 100 });
+  const budget = new DurableBudget({ exec: (query, ...args) => store.db.prepare(query).all(...args) }, {
+    qloo: Number(process.env.QLOO_MAX_REQUESTS ?? 200),
+    model: Number(process.env.LLM_MAX_REQUESTS ?? 100),
+  });
+  const qloo = new QlooClient({ reserveRequest: () => budget.reserve('qloo'), apiKey: process.env.QLOO_API_KEY, baseURL: process.env.QLOO_BASE_URL, maxRequests: process.env.QLOO_MAX_REQUESTS ?? 200 });
+  const router = new ModelRouter({ reserveRequest: () => budget.reserve('model'), apiKey: process.env.LLM_API_KEY, baseURL: process.env.LLM_BASE_URL, model: process.env.LLM_MODEL, maxRequests: process.env.LLM_MAX_REQUESTS ?? 100 });
   const app = createApp({ store, qloo, router, ephemeralStorage: process.env.TASTE_EPHEMERAL === '1' });
   app.listen(Number(process.env.PORT ?? 3057), process.env.HOST ?? '127.0.0.1', () => console.log('TheOne Topic Taste ready. Keys remain server-side; live Qloo validation is pending.'));
   for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => app.close(() => { store.close(); process.exit(0); }));

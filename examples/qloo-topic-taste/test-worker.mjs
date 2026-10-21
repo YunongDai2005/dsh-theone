@@ -1,0 +1,61 @@
+import { Miniflare, Response as MFResponse } from 'miniflare';
+import { build } from 'esbuild';
+import assert from 'node:assert/strict';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+const root = new URL('.', import.meta.url).pathname;
+const bundle=await build({entryPoints:[root+'/worker.mjs'],bundle:true,format:'esm',platform:'browser',write:false});
+const persist=await mkdtemp(tmpdir()+'/qloo-workerd-');
+const opts={modules:true,script:bundle.outputFiles[0].text,compatibilityDate:'2026-08-06',durableObjects:{TASTE:{className:'TasteObject',useSQLite:true}},durableObjectsPersist:persist,bindings:{QLOO_MAX_REQUESTS:'0',LLM_MAX_REQUESTS:'0'}};
+let mf;
+try {
+ mf=new Miniflare(opts);
+ const state=await mf.dispatchFetch('https://demo.test/api/state');
+ assert.equal(state.status,200,await state.clone().text());
+ const cookie=state.headers.get('set-cookie').split(';')[0];
+ const headers={'Cookie':cookie,'Origin':'https://demo.test','Content-Type':'application/json'};
+ const created=await mf.dispatchFetch('https://demo.test/api/topics',{method:'POST',headers,body:JSON.stringify({title:'Persistence test'})});
+ assert.equal(created.status,200,await created.clone().text());
+ const topic=(await created.json()).topic.id;
+ assert.equal((await mf.dispatchFetch('https://demo.test/api/search',{method:'POST',headers,body:JSON.stringify({topicId:topic,query:'Arrival',category:'movie'})})).status,503);
+ assert.equal((await mf.dispatchFetch('https://demo.test/api/topics',{method:'POST',headers:{...headers,Origin:'https://evil.test'},body:'{}'})).status,403);
+ await mf.dispose(); mf=new Miniflare(opts);
+ const restored=await (await mf.dispatchFetch('https://demo.test/api/state',{headers:{Cookie:cookie}})).json();
+ assert.equal(restored.topics[0].id,topic);
+ const stranger=await mf.dispatchFetch('https://demo.test/api/state');
+ assert.deepEqual((await stranger.json()).topics,[]);
+ const alienHeaders={...headers,Cookie:stranger.headers.get('set-cookie').split(';')[0]};
+ assert.equal((await mf.dispatchFetch('https://demo.test/api/recommend',{method:'POST',headers:alienHeaders,body:JSON.stringify({topicId:topic,category:'book'})})).status,404);
+ assert.equal((await mf.dispatchFetch('https://demo.test/api/topics',{method:'POST',headers,body:JSON.stringify({title:'x'.repeat(9000)})})).status,413);
+ // Synthetic upstream only; outboundService intercepts all network requests.
+ await mf.dispose();
+ let upstreamCalls = 0;
+ const liveShape = { ...opts, bindings: {QLOO_API_KEY:'synthetic-only', QLOO_MAX_REQUESTS:'2', LLM_MAX_REQUESTS:'0'},
+   outboundService: async request => {
+     assert.equal(new URL(request.url).hostname,'hackathon.api.qloo.com');
+     upstreamCalls++;
+     return new MFResponse(JSON.stringify({results:[{entity_id:'11111111-1111-4111-8111-111111111111',name:'Synthetic Film',types:['urn:entity:movie']}]}),{headers:{'Content-Type':'application/json'}});
+   } };
+ mf = new Miniflare(liveShape);
+ const search = await mf.dispatchFetch('https://demo.test/api/search',{method:'POST',headers,body:JSON.stringify({topicId:topic,query:'synthetic',category:'movie'})});
+ assert.equal(search.status,200,await search.clone().text()); const pending=await search.json();
+ await mf.dispose(); mf=new Miniflare(liveShape);
+ const confirmation=await mf.dispatchFetch('https://demo.test/api/confirm',{method:'POST',headers,body:JSON.stringify({token:pending.token,entityId:pending.candidates[0].id})});
+ assert.equal(confirmation.status,200,await confirmation.clone().text());
+ const competing=await Promise.all(Array.from({length:3},()=>mf.dispatchFetch('https://demo.test/api/search',{method:'POST',headers,body:JSON.stringify({topicId:topic,query:'synthetic',category:'movie'})})));
+ assert.deepEqual(competing.map(r=>r.status).sort(),[200,429,429]);
+ assert.equal(upstreamCalls,2);
+ await mf.dispose();mf=new Miniflare(liveShape);
+ const capped=await mf.dispatchFetch('https://demo.test/api/search',{method:'POST',headers,body:JSON.stringify({topicId:topic,query:'synthetic',category:'movie'})});
+ assert.equal(capped.status,429); assert.equal(upstreamCalls,2);
+ const saved=await (await mf.dispatchFetch('https://demo.test/api/state',{headers:{Cookie:cookie}})).json();
+ assert.equal(saved.topics[0].seeds.length,1);
+ await mf.dispose();
+ const redirectOpts={...liveShape,bindings:{...liveShape.bindings,QLOO_MAX_REQUESTS:'3'},outboundService:async()=>{upstreamCalls++;return new MFResponse(null,{status:302,headers:{Location:'https://must-not-follow.invalid'}});}};
+ mf=new Miniflare(redirectOpts);
+ assert.equal((await mf.dispatchFetch('https://demo.test/api/search',{method:'POST',headers,body:JSON.stringify({topicId:topic,query:'synthetic',category:'movie'})})).status,502);
+ assert.equal(upstreamCalls,3);
+ console.log('PASS actual local workerd: redirect rejected without follow; attempt still charged.');
+ console.log('PASS actual local workerd: durable candidate confirmation, favorites and budget survive runtime recreation; concurrent requests obey cap; 2 successful synthetic upstream calls before redirect test.');
+ console.log('PASS actual local workerd: state, topic persistence across runtime recreation, foreign owner404, missing key503, cross-origin403, body413. No real provider requests.');
+} finally {if(mf)await mf.dispose();await rm(persist,{recursive:true,force:true});}

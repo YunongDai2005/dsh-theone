@@ -85,3 +85,10 @@ The mirror's `openapi-schema.json` at that revision is a generic OpenAPI schema 
 Original project: TheOne, existing before this contest. New work: standalone taste workflow, Qloo client, constrained model planner, preference confirmation, topic/browser isolation, SQLite and browser UI. Codex assisted code, tests and documentation under the author's direction. MIT license remains at repository root.
 
 Remaining: free public deployment and verified judge access; sponsor qualification and actual final-rule approval; one final entry and its receipt. The public recorded-state video is supporting material, not proof of a currently hosted application. Free hosting must still disclose sleep/reset behavior and have provider-level usage limits before public traffic. Registration alone is not submission, award or shortlist.
+
+
+### Workers port (local validation only)
+
+`worker.mjs` and `wrangler.jsonc` prepare a SQLite Durable Object host. Provider caps default to zero and no secrets are included. The port is deployed at https://theone-topic-taste.yuriddaaii.workers.dev with both provider caps zero and no provider keys. Public static assets and isolated topic storage were verified; hosted recommendations are not yet enabled or verified. `npm install` followed by `npm run test:worker` runs a real local workerd instance with intercepted synthetic upstream responses; it verifies ownership, bounded requests, restart persistence, candidate confirmations, global request caps and redirect rejection. It does not call real Qloo or a real model, establish production performance, or prove a public deployment. Public static asset bytes were checked against the source files. `npm test` retains the Node tests.
+
+Keep the single `global-v1` object identity: changing it or deleting storage resets persisted counters. This is a capped demo, not a multi-region scale claim. Public traffic, secret storage and provider allowances must be configured explicitly before deployment.

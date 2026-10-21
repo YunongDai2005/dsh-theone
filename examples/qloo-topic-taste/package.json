@@ -2,6 +2,16 @@
   "name": "theone-topic-taste",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=24 <25" },
-  "scripts": { "start": "node server.mjs", "test": "node --test test/*.test.mjs" }
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test test/*.test.mjs",
+    "test:worker": "node test-worker.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "miniflare": "4.20260730.0"
+  }
 }
