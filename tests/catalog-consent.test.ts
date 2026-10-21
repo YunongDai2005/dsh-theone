@@ -93,15 +93,19 @@ test('granting consent indexes history; declining stops later reads without dele
   } finally { await app.close() }
 })
 
-test('session and Windows folder exclusions prevent reads and model transmission without matching sibling folders', async () => {
+test('session and folder exclusions prevent reads and model transmission without matching sibling folders', async () => {
+  // DSH only accepts this platform's absolute paths; Windows spellings are covered by withinCatalogFolder's table below.
+  const [nested, other, excluded] = process.platform === 'win32'
+    ? ['C:\\Private\\nested', 'C:\\Private-other', 'c:/private/']
+    : ['/private/nested', '/private-other', '/private/']
   const app = await setup()
   try {
     const byId = await source(app, app.root, 'SECRET_BY_ID')
-    const byFolder = await source(app, 'C:\\Private\\nested', 'SECRET_BY_FOLDER')
-    const sibling = await source(app, 'C:\\Private-other', 'Allowed sibling')
+    const byFolder = await source(app, nested, 'SECRET_BY_FOLDER')
+    const sibling = await source(app, other, 'Allowed sibling')
     app.store.setCatalogConsent('granted')
     app.store.setCatalogExcluded('session', byId.id, true)
-    app.store.setCatalogExcluded('folder', 'c:/private/', true)
+    app.store.setCatalogExcluded('folder', excluded, true)
     const reads: string[] = []
     const read = app.ctx.sessionQuery.readSession.bind(app.ctx.sessionQuery)
     app.ctx.sessionQuery.readSession = async (...args) => { reads.push(args[0]); return read(...args) }
