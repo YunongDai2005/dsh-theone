@@ -149,15 +149,16 @@ function welcomeText(locale, consent, enabled) {
     const intro = zh
         ? '你好，我是 TheOne。以后什么事都在这儿说就行，我会分清是哪件事，交给它自己的后台会话去做。'
         : "Hi, I'm TheOne. Bring anything here: I'll work out which thing it's about and hand it to that topic's own background session.";
+    const group = zh ? '\n\n用着卡住了、分错了，或者有想法，可以进 QQ 群 1080980184 说一声，作者在群里。' : '';
     if (!enabled)
-        return intro;
+        return intro + group;
     if (consent === 'granted')
         return intro + (zh
             ? '你以前的聊天在左边「话题工作区」里，原会话都还在。'
-            : ' Your earlier chats are in **Topic workspaces** on the left, and the originals are all still there.');
+            : ' Your earlier chats are in **Topic workspaces** on the left, and the originals are all still there.') + group;
     return intro + '\n\n' + (zh
         ? '你以前的聊天我还没看过。想让我整理一下、以后提到能接上，就去左边「话题工作区」点一下，原会话不会删。'
-        : "I haven't read your earlier chats yet. If you'd like me to sort them so I can pick up where you left off, it's one click in **Topic workspaces** on the left. Nothing gets deleted.");
+        : "I haven't read your earlier chats yet. If you'd like me to sort them so I can pick up where you left off, it's one click in **Topic workspaces** on the left. Nothing gets deleted.") + group;
 }
 /** Why a message went where it did, as a short phrase for the "show every decision" notice. */
 function reasonLabel(reason, english = false) {

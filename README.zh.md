@@ -14,6 +14,8 @@
 
 <p align="center"><sub>先问显卡，再问旅馆，然后接着问显卡，中间没有任何提示语。左边的两个话题是它自己建的，什么都没点。（示例对话）</sub></p>
 
+<p align="center"><b>QQ 交流群：1080980184</b><br>装不上、分错了、想要什么功能，进群说一声，作者在群里。</p>
+
 ---
 
 你的 DSH 侧边栏里是不是躺着几十个会话？想回到上周那件事，得一个个翻；懒得新建，就在一个会话里什么都聊，结果上下文越聊越乱，压缩一次细节就没了。
@@ -91,7 +93,7 @@
 
 - **提示版本「太新」、装不上：** DSH 默认只安装发布满 24 小时的版本，这是它的安全规则，不是出错。可以等一天再装，也可以改填 GitHub 地址 `https://github.com/YunongDai2005/dsh-theone`，马上就能装。
 - **装完左侧没看到 TheOne：** 重启一下 DSH。
-- **遇到问题：** 在 **话题工作区** 右上角点「反馈问题」，会自动带上版本和诊断信息（不含聊天内容），点「发送」即可，不需要打开 GitHub。也可以发邮件到 [theone@yulid.org](mailto:theone@yulid.org)，有截图更好。
+- **遇到问题：** 在 **话题工作区** 右上角点「反馈问题」，会自动带上版本和诊断信息（不含聊天内容），点「发送」即可，不需要打开 GitHub。也可以进 QQ 群 1080980184 直接问，或者发邮件到 [theone@yulid.org](mailto:theone@yulid.org)，有截图更好。
 - **会不会很费钱：** 每条消息多一次很短的分类调用（不开深度思考）；大约六条里有一条（要开新话题、要问你，或者拿不准）会再开着思考判断一次。「好的」「继续」这类连第一次都省了。用 DeepSeek V4.1 Flash 大约每一千条消息半美元：每天发 100 条，一个月分配话题多花大约 2 美元（十几块钱）。干活本身用的还是你选的模型，和平时一样计费。第一次整理旧会话时，会话多的话会用掉一些额度；不需要可以在设置里关掉「历史整理」。
 </details>
 
@@ -260,4 +262,4 @@ npm test
 
 ---
 
-<p align="center">觉得有用的话，点个 ⭐ 让更多人看到。遇到问题或有想法，欢迎 <a href="https://github.com/YunongDai2005/dsh-theone/issues">提 Issue</a>，打不开 GitHub 就发邮件到 <a href="mailto:theone@yulid.org">theone@yulid.org</a>。</p>
+<p align="center">觉得有用的话，点个 ⭐ 让更多人看到。遇到问题或有想法，欢迎进 QQ 群 1080980184，或者 <a href="https://github.com/YunongDai2005/dsh-theone/issues">提 Issue</a>，打不开 GitHub 就发邮件到 <a href="mailto:theone@yulid.org">theone@yulid.org</a>。</p>

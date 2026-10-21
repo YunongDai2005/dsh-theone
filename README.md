@@ -8,7 +8,7 @@
   <img alt="English / 中文" src="https://img.shields.io/badge/UI-English%20%2F%20中文-4a7fb5">
 </p>
 
-<p align="center"><a href="http://theone.yulid.org/">Website</a> · English | <a href="./README.zh.md">简体中文</a></p>
+<p align="center"><a href="http://theone.yulid.org/">Website</a> · English | <a href="./README.zh.md">简体中文</a> · QQ group 中文交流群: 1080980184</p>
 
 <p align="center"><img src="https://raw.githubusercontent.com/YunongDai2005/dsh-theone/main/docs/images/theone-demo-en.webp" alt="Demo: two unrelated requests in the main chat each get their own topic in the sidebar; going back to the first one continues it in its own topic" width="100%"></p>
 
