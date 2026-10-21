@@ -28,3 +28,18 @@ export declare function topicTerms(text: string, limit?: number): string[];
 export declare function textFeatures(text: string): Set<string>;
 /** Overlap of two feature sets, 0 (nothing shared) to 1 (identical). */
 export declare function similarity(a: Set<string>, b: Set<string>): number;
+export declare const MERGE_SHARED_NAMES = 2;
+export declare const MERGE_TITLE_SIMILARITY = 0.6;
+export declare const MERGE_NAME_MIN_LENGTH = 2;
+export declare const MERGE_ENGLISH_NAME_MIN_LETTERS = 3;
+export interface MergeTopic {
+    title: string;
+    names?: readonly string[];
+    entities?: readonly string[];
+    cwd?: string;
+}
+/** Only whole names count; a shared generic word inside a longer name is not another entity. */
+export declare function mergeSimilarity(a: MergeTopic, b: MergeTopic): {
+    sharedNames: number;
+    titleSimilarity: number;
+} | undefined;

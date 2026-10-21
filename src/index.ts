@@ -29,7 +29,7 @@ import { gatewayCheckpoint } from './gateway-compaction.ts'
 import { ContextStore } from './store.ts'
 import { resolveContext } from './router.ts'
 import { DshRouter, RouterFailure } from './llm-router.ts'
-import { continuesCurrent, newIndependentTopic, redactRoutingText, settleUnclear, similarity, spokenCorrection, textFeatures, topicTerms } from './routing-policy.ts'
+import { continuesCurrent, mergeSimilarity, newIndependentTopic, redactRoutingText, settleUnclear, similarity, spokenCorrection, textFeatures, topicTerms } from './routing-policy.ts'
 import { modelJson } from './model-json.ts'
 import type { RecentMessage, RouterReceipt, RoutingInput, RoutingRouter } from './llm-router.ts'
 import type { ContextDescriptor, Decision, RouteView, StoredContext, SourceRange } from './types.ts'
@@ -75,6 +75,8 @@ interface AgentPresets {
   mount(ctx: Context, id?: string): Promise<{ id: string }>
   composedPreset(ctx: Context): string | undefined
 }
+
+const MERGE_PROMPT_TIMEOUT_MS = 30 * 60 * 1000
 
 export interface Config {
   databasePath?: string
@@ -360,6 +362,10 @@ export default class TheOne extends Service {
   private readonly moving = new Set<string>()
   /** Gateway id → cleanup of a run whose main-chat turn has closed while its Worker winds down. */
   private readonly closing = new Map<string, Promise<void>>()
+  /** Background questions never reserve a turn or hold up routing the user's next message. */
+  private readonly mergePromptTasks = new Map<string, Promise<void>>()
+  private readonly mergePromptTails = new Map<string, Promise<void>>()
+  private readonly mergePromptAbort = new AbortController()
   /** A model the user picked in main chat's own model selector; it answers through the Workers. */
   private pickedModel?: ModelSelection
   private adapter?: { replace(providers: string[]): void }
@@ -415,6 +421,8 @@ export default class TheOne extends Service {
     this.noticeBoard = new NoticeBoard(this.updater.current, config.noticeUrl || NOTICE_URL)
     ctx.effect(() => async () => {
       this.projects.close()
+      this.mergePromptAbort.abort()
+      await Promise.all(this.mergePromptTasks.values())
       try {
         await Promise.all([...this.workers.values()].map(handle => handle.dispose()))
         await Promise.all(this.closing.values())
@@ -1220,16 +1228,14 @@ export default class TheOne extends Service {
       }
       case 'merge': case 'delete': {
         const id = known(row.id)
-        const into = row.action === 'merge' ? known(row.into) : undefined
-        if (into === id) throw new Error('INVALID_INPUT')
+        if (row.action === 'merge') { const into = known(row.into); await this.mergeTopics(id, into); return { id: into } }
         if (this.busy) throw new Error('GATEWAY_BUSY')
         // The removed topic's Worker stops; DSH keeps its conversation.
         const handle = this.workers.get(id)
         this.workers.delete(id); this.workerSelections.delete(id)
         await handle?.dispose()
-        if (into) this.store.mergeTopics(id, into)
-        else this.store.deleteTopic(id)
-        return into ? { id: into } : {}
+        this.store.deleteTopic(id)
+        return {}
       }
       case 'unmerge': {
         // Take a merge apart: the merged topic is back in the directory, with what it had.
@@ -1240,6 +1246,23 @@ export default class TheOne extends Service {
       }
     }
     throw new Error('INVALID_INPUT')
+  }
+
+  /** Both Topic workspaces and merge suggestions stop the removed Worker and respect active work. */
+  private async mergeTopics(sourceId: string, targetId: string, eligible?: () => boolean): Promise<void> {
+    if (sourceId === targetId) throw new Error('INVALID_INPUT')
+    const known = () => [sourceId, targetId].every(id => this.store.contexts().some(topic => topic.id === id))
+    if (!known()) throw new Error('UNKNOWN_CONTEXT')
+    if (eligible && !eligible()) throw new Error('TOPIC_CHANGED')
+    if (this.busy) throw new Error('GATEWAY_BUSY')
+    const handle = this.workers.get(sourceId)
+    this.workers.delete(sourceId); this.workerSelections.delete(sourceId)
+    await handle?.dispose()
+    // Disposing a Worker yields: a user message may have started while it stopped.
+    if (this.busy) throw new Error('GATEWAY_BUSY')
+    if (!known()) throw new Error('UNKNOWN_CONTEXT')
+    if (eligible && !eligible()) throw new Error('TOPIC_CHANGED')
+    this.store.mergeTopics(sourceId, targetId)
   }
 
   private async catalogSessions(): Promise<CatalogSessions> {
@@ -2946,8 +2969,133 @@ export default class TheOne extends Service {
       (other.payload as { sessionId?: string; throughSeq?: number }).sessionId === sessionId &&
       ((other.payload as { throughSeq: number }).throughSeq > throughSeq))) return { result: { skipped: 'SUPERSEDED' } }
     const card = parseCard(candidate, text => redactDescriptor(redactRoutingText(text)))
-    if (card) this.store.applyCard(contextId, card)
+    if (card && this.store.applyCard(contextId, card)) this.queueMergeSuggestion(contextId)
     return { result: { merged: !!card } }
+  }
+
+  /** Check exactly the first successful card of a route-created topic, with no classifier call. */
+  private queueMergeSuggestion(contextId: string): void {
+    const gatewayId = this.store.mergeSuggestionGateway(contextId)
+    if (!gatewayId || this.mergePromptAbort.signal.aborted) return
+    const contexts = this.store.contexts(), topic = contexts.find(item => item.id === contextId)!
+    const unavailable = this.store.unreachable(), names = this.store.names()
+    const activity = new Map(this.store.contextUsage(this.config.gatewayKey).map(item => [item.contextId, item.lastUsedAt]))
+    for (const [id, run] of this.store.latestTopicRuns()) activity.set(id, Math.max(activity.get(id) ?? 0, run.endedAt ?? run.startedAt))
+    const describe = (item: StoredContext) => ({ ...item, names: names.get(item.id), cwd: this.store.origin(item.id)?.cwd })
+    const candidates = contexts.flatMap(other => {
+      if (other.id === contextId || unavailable.has(other.id) || this.store.mergePrompt(contextId, other.id)) return []
+      const match = mergeSimilarity(describe(topic), describe(other))
+      const last = this.ctx.agents.get(SessionId(other.workingSessionId))?.session.snapshotEvents().at(-1)?.time ?? 0
+      return match ? [{ id: other.id, shared: match.sharedNames, at: Math.max(activity.get(other.id) ?? 0, last) }] : []
+    }).sort((a, b) => b.shared - a.shared || b.at - a.at || a.id.localeCompare(b.id))
+    const candidate = candidates[0]
+    if (!candidate) return
+    // Reserve the pair before yielding, including while queued behind another suggestion.
+    this.store.recordMergePrompt(contextId, candidate.id, 'dismissed')
+    const deadline = Date.now() + MERGE_PROMPT_TIMEOUT_MS
+    const previous = this.mergePromptTails.get(gatewayId) ?? Promise.resolve()
+    const task = previous.then(() => this.suggestMerge(contextId, candidate.id, gatewayId, deadline))
+      .catch(() => { /* The reservation remains dismissed on cancellation or an unavailable service. */ })
+      .finally(() => {
+        this.mergePromptTasks.delete(contextId)
+        if (this.mergePromptTails.get(gatewayId) === task) this.mergePromptTails.delete(gatewayId)
+      })
+    this.mergePromptTasks.set(contextId, task)
+    this.mergePromptTails.set(gatewayId, task)
+  }
+
+  private mergeGatewayIdle(gateway: Agent, all = false): boolean {
+    return this.ctx.agents.get(gateway.id) === gateway && gateway.status === 'idle' &&
+      !gateway.inbox.nextTurn.length && !gateway.inbox.nextStep.length && !this.runs.has(gateway.id) &&
+      !this.closing.has(gateway.id) && this.reservedGateway !== gateway.id && (!all || !this.busy)
+  }
+
+  /** A bounded background wait; queued user messages always get their turn first. */
+  private waitForMergeIdle(gateway: Agent, deadline: number, signal: AbortSignal, all = false): Promise<boolean> {
+    return new Promise(resolve => {
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const finish = (ready: boolean) => { clearTimeout(timer); signal.removeEventListener('abort', cancelled); resolve(ready) }
+      const cancelled = () => finish(false)
+      const check = () => {
+        if (signal.aborted || Date.now() >= deadline || this.ctx.agents.get(gateway.id) !== gateway) return finish(false)
+        if (this.mergeGatewayIdle(gateway, all)) return finish(true)
+        timer = setTimeout(check, Math.min(100, deadline - Date.now()))
+        timer.unref()
+      }
+      signal.addEventListener('abort', cancelled, { once: true })
+      check()
+    })
+  }
+
+  private async suggestMerge(contextId: string, otherId: string, gatewayId: string, deadline: number): Promise<void> {
+    const abort = new AbortController(), signal = AbortSignal.any([abort.signal, this.mergePromptAbort.signal])
+    const timer = setTimeout(() => abort.abort(), Math.max(0, deadline - Date.now()))
+    timer.unref()
+    try {
+      let gateway = this.ctx.agents.get(SessionId(gatewayId))
+      if (!gateway) return
+      // A topic may have been routed in a different main chat while its first card was being written.
+      for (;;) {
+        if (!await this.waitForMergeIdle(gateway, deadline, signal)) return
+        const latest = this.store.mergeSuggestionGateway(contextId)
+        if (!latest) return
+        if (latest === gateway.id) break
+        gateway = this.ctx.agents.get(SessionId(latest))
+        if (!gateway) return
+      }
+      const contexts = this.store.contexts(), topic = contexts.find(item => item.id === contextId), other = contexts.find(item => item.id === otherId)
+      if (!topic || !other || this.store.unreachable().has(otherId)) return
+      const names = this.store.names()
+      if (!mergeSimilarity({ ...topic, names: names.get(contextId), cwd: this.store.origin(contextId)?.cwd },
+        { ...other, names: names.get(otherId), cwd: this.store.origin(otherId)?.cwd })) return
+      const english = () => {
+        const last = gateway!.session.snapshotEvents().findLast(event => event.type === 'user/message' && event.data.source.kind === 'user')
+        return last?.type === 'user/message' ? writtenInEnglish(messageText(last.data)) : false
+      }
+      const en = english()
+      const options = this.choiceOptions([
+        { into: otherId, label: en ? `Merge into "${other.title}"` : `合并到「${other.title}」`,
+          description: en ? `Keep "${other.title}" and fold "${topic.title}" into it` : `保留「${other.title}」，把「${topic.title}」并进去` },
+        { into: contextId, label: en ? `Merge into "${topic.title}"` : `合并到「${topic.title}」`,
+          description: en ? `Keep "${topic.title}" and fold "${other.title}" into it` : `保留「${topic.title}」，把「${other.title}」并进去` },
+        { into: undefined, label: en ? 'Not the same' : '不是一回事',
+          description: en ? "Don't ask about these two again" : '以后不再问这两个' },
+      ])
+      // Bound even an answerer that ignores AbortSignal; it must not hold shutdown or the queue open.
+      let cancel!: () => void
+      const cancelled = new Promise<undefined>(resolve => {
+        cancel = () => resolve(undefined)
+        signal.addEventListener('abort', cancel, { once: true })
+        if (signal.aborted) cancel()
+      })
+      const choice = await Promise.race([this.askChoice(gateway, { header: en ? 'Possible duplicate' : '可能重复',
+        question: en ? `"${topic.title}" and "${other.title}" look like the same thing. Merge them?` : `「${topic.title}」和「${other.title}」好像是同一件事，要合并吗？`,
+        detail: en ? 'You can undo a merge from the topic card.' : '合并后可以在话题卡片上撤销。', options }, signal)
+        .finally(() => signal.removeEventListener('abort', cancel)), cancelled])
+      const selected = options.find(option => option.label === choice?.label)
+      if (!selected) return
+      if (!selected.into) { this.store.recordMergePrompt(contextId, otherId, 'declined'); return }
+      // If the user moved or hid the topic while choosing, preserve that explicit arrangement.
+      if (!this.store.mergeSuggestionGateway(contextId) || this.store.unreachable().has(otherId)) return
+      clearTimeout(timer)
+      const mergeSignal = this.mergePromptAbort.signal
+      const mergeDeadline = Date.now() + MERGE_PROMPT_TIMEOUT_MS
+      const eligible = () => !!this.store.mergeSuggestionGateway(contextId) && !this.store.unreachable().has(otherId)
+      const source = selected.into === otherId ? contextId : otherId
+      let merged = false
+      try { await this.mergeTopics(source, selected.into, eligible); merged = true }
+      catch (error) {
+        if (error instanceof Error && error.message === 'GATEWAY_BUSY' && await this.waitForMergeIdle(gateway, mergeDeadline, mergeSignal, true)) {
+          try { await this.mergeTopics(source, selected.into, eligible); merged = true } catch { /* Only one retry. */ }
+        }
+      }
+      this.store.recordMergePrompt(contextId, otherId, merged ? 'merged' : 'dismissed')
+      if (!await this.waitForMergeIdle(gateway, Infinity, mergeSignal)) return
+      const title = selected.into === otherId ? other.title : topic.title
+      const text = merged ? (english() ? `Merged into "${title}". You can undo it from its card.` : `已合并到「${title}」，在它的卡片上可以撤销合并。`)
+        : (english() ? `Couldn't merge "${topic.title}" and "${other.title}" this time; you can merge them in Topic workspaces.` : `「${topic.title}」和「${other.title}」这次没合并成，可以在话题工作区手动合并。`)
+      gateway.followup(createUserMessage({ source: { kind: 'theone-note', form: 'notice' }, content: [{ type: 'text', text }] }))
+    } finally { clearTimeout(timer) }
   }
 
   /**

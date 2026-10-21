@@ -1,3 +1,4 @@
+import { normalize, win32 } from 'node:path'
 import type { ContextDescriptor, Decision } from './types.ts'
 
 /** Keep credentials out of classifier payloads and automatically generated titles. */
@@ -106,4 +107,30 @@ export function similarity(a: Set<string>, b: Set<string>): number {
   let shared = 0
   for (const feature of a) if (b.has(feature)) shared++
   return shared / Math.sqrt(a.size * b.size)
+}
+
+export const MERGE_SHARED_NAMES = 2
+export const MERGE_TITLE_SIMILARITY = 0.6
+export const MERGE_NAME_MIN_LENGTH = 2
+export const MERGE_ENGLISH_NAME_MIN_LETTERS = 3
+
+export interface MergeTopic { title: string; names?: readonly string[]; entities?: readonly string[]; cwd?: string }
+
+/** Only whole names count; a shared generic word inside a longer name is not another entity. */
+export function mergeSimilarity(a: MergeTopic, b: MergeTopic): { sharedNames: number; titleSimilarity: number } | undefined {
+  const folder = (cwd?: string) => {
+    if (!cwd) return ''
+    const windows = /^[a-z]:[\\/]|^[\\/]{2}/i.test(cwd)
+    const normalized = windows ? win32.normalize(cwd) : normalize(cwd)
+    const path = normalized.replace(/[\\/]+$/, '') || normalized
+    return windows || process.platform === 'win32' ? path.toLowerCase() : path
+  }
+  if (folder(a.cwd) !== folder(b.cwd)) return undefined
+  const names = (topic: MergeTopic) => new Set([topic.title, ...topic.names ?? [], ...topic.entities ?? []]
+    .map(name => name.toLowerCase().replace(/^[\p{P}\p{S}\s]+|[\p{P}\p{S}\s]+$/gu, ''))
+    .filter(name => [...name].length >= MERGE_NAME_MIN_LENGTH && (!/^[a-z\s-]+$/.test(name) || (name.match(/[a-z]/g)?.length ?? 0) >= MERGE_ENGLISH_NAME_MIN_LETTERS)))
+  const left = names(a), right = names(b)
+  const sharedNames = [...left].filter(name => right.has(name)).length
+  const titleSimilarity = similarity(textFeatures(a.title), textFeatures(b.title))
+  return sharedNames >= MERGE_SHARED_NAMES || titleSimilarity >= MERGE_TITLE_SIMILARITY ? { sharedNames, titleSimilarity } : undefined
 }

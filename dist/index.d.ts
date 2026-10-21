@@ -121,6 +121,10 @@ export default class TheOne extends Service {
     private readonly moving;
     /** Gateway id → cleanup of a run whose main-chat turn has closed while its Worker winds down. */
     private readonly closing;
+    /** Background questions never reserve a turn or hold up routing the user's next message. */
+    private readonly mergePromptTasks;
+    private readonly mergePromptTails;
+    private readonly mergePromptAbort;
     /** A model the user picked in main chat's own model selector; it answers through the Workers. */
     private pickedModel?;
     private adapter?;
@@ -142,6 +146,8 @@ export default class TheOne extends Service {
     private registerCatalogChannel;
     /** One topic-directory edit. Changes that remove a topic wait until no reply is running. */
     private editTopics;
+    /** Both Topic workspaces and merge suggestions stop the removed Worker and respect active work. */
+    private mergeTopics;
     private catalogSessions;
     /** Existing DSH sessions a topic can take as history: not main chats and not topics' own Workers. */
     private attachableSessions;
@@ -376,6 +382,12 @@ export default class TheOne extends Service {
     private queueCard;
     private queueMemory;
     private runMemory;
+    /** Check exactly the first successful card of a route-created topic, with no classifier call. */
+    private queueMergeSuggestion;
+    private mergeGatewayIdle;
+    /** A bounded background wait; queued user messages always get their turn first. */
+    private waitForMergeIdle;
+    private suggestMerge;
     /**
      * The user moved a message to another topic: remember it, and teach both topics. The right topic
      * gains the message's distinctive terms and the wrong one loses them; `weight` is lower for

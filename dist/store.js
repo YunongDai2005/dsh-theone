@@ -117,6 +117,10 @@ export class ContextStore {
       CREATE TABLE IF NOT EXISTS learned_terms (
         context_id TEXT NOT NULL, term TEXT NOT NULL, weight REAL NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY(context_id, term)
       );
+      CREATE TABLE IF NOT EXISTS merge_prompts (
+        a TEXT NOT NULL, b TEXT NOT NULL, answer TEXT NOT NULL CHECK (answer IN ('merged', 'declined', 'dismissed')),
+        at INTEGER NOT NULL, PRIMARY KEY (a, b), CHECK (a < b)
+      );
       CREATE TABLE IF NOT EXISTS topic_merges (
         source_id TEXT PRIMARY KEY, target_id TEXT NOT NULL, at INTEGER NOT NULL, journal TEXT NOT NULL
       );
@@ -264,8 +268,9 @@ export class ContextStore {
             const context = this.contexts().find(item => item.id === contextId);
             if (!context) {
                 this.db.exec('COMMIT');
-                return;
+                return false;
             }
+            const first = !this.db.prepare('SELECT 1 FROM topic_open WHERE context_id = ?').get(contextId);
             const { workingSessionId: _, ...descriptor } = context;
             for (const name of card.aliases)
                 this.db.prepare(`INSERT INTO topic_names VALUES (?, ?, ?, ?, ?)
@@ -279,11 +284,38 @@ export class ContextStore {
             const compacted = this.summaryUpdates(contextId).length > 0;
             this.db.prepare('UPDATE contexts SET descriptor = ? WHERE id = ?').run(JSON.stringify({ ...descriptor, summary: compacted ? descriptor.summary : card.summary, entities }), contextId);
             this.db.exec('COMMIT');
+            return first;
         }
         catch (error) {
             this.db.exec('ROLLBACK');
             throw error;
         }
+    }
+    /** A route-created topic, never manually moved or already involved in a merge; use its latest main chat. */
+    mergeSuggestionGateway(contextId) {
+        if (!this.contexts().some(topic => topic.id === contextId) || this.unreachable().has(contextId) ||
+            this.hasFlag(`merge-moved:${contextId}`) || this.hasFlag(`merge-handled:${contextId}`))
+            return undefined;
+        const created = this.db.prepare("SELECT 1 FROM routing_events WHERE json_extract(decision, '$.contextId') = ? AND json_extract(decision, '$.action') = 'CREATE' LIMIT 1").get(contextId);
+        if (!created)
+            return undefined;
+        const row = this.db.prepare(`SELECT r.gateway_id FROM routing_events r LEFT JOIN route_details d ON d.message_id = r.message_id
+      WHERE COALESCE(d.corrected_to, json_extract(r.decision, '$.contextId')) = ? ORDER BY r.rowid DESC LIMIT 1`).get(contextId);
+        return row ? String(row.gateway_id) : undefined;
+    }
+    mergePrompt(a, b) {
+        const row = this.db.prepare('SELECT answer, at FROM merge_prompts WHERE a = ? AND b = ?').get(...[a, b].sort());
+        return row ? { answer: row.answer, at: Number(row.at) } : undefined;
+    }
+    /** A dismissed reservation also prevents two background cards (or a restart) asking the same pair. */
+    recordMergePrompt(a, b, answer, now = Date.now()) {
+        if (a === b)
+            return;
+        const known = this.db.prepare('SELECT 1 FROM contexts WHERE id = ? UNION ALL SELECT 1 FROM topic_merges WHERE source_id = ? LIMIT 1');
+        if (!known.get(a, a) || !known.get(b, b))
+            return;
+        this.db.prepare('INSERT INTO merge_prompts VALUES (?, ?, ?, ?) ON CONFLICT(a, b) DO UPDATE SET answer = excluded.answer, at = excluded.at')
+            .run(...[a, b].sort(), answer, now);
     }
     /** Other names cards gave a topic (or every topic), most recently confirmed first. */
     names(contextId) {
@@ -892,6 +924,7 @@ export class ContextStore {
         this.context(contextId);
         if (target === null) {
             this.db.prepare('DELETE FROM topic_group_members WHERE context_id = ?').run(contextId);
+            this.markOnce(`merge-moved:${contextId}`);
             return;
         }
         let groupId;
@@ -909,6 +942,7 @@ export class ContextStore {
             this.db.prepare('INSERT OR IGNORE INTO topic_groups VALUES (?, ?, ?, ?)').run(groupId, title, '', normalized);
         }
         this.db.prepare('INSERT OR REPLACE INTO topic_group_members VALUES (?, ?)').run(contextId, groupId);
+        this.markOnce(`merge-moved:${contextId}`);
     }
     /** Attach a whole existing session to a topic as reviewed history its Worker may search. */
     attachSession(contextId, sessionId) {
@@ -939,6 +973,8 @@ export class ContextStore {
         };
         this.db.exec('BEGIN IMMEDIATE');
         try {
+            this.markOnce(`merge-handled:${sourceId}`);
+            this.markOnce(`merge-handled:${targetId}`);
             const merged = (a, b) => [...new Map([...a, ...b].map(term => [term.toLowerCase(), term])).values()].slice(0, 40);
             const entities = merged(target.entities, source.entities), keywords = merged(target.keywords, source.keywords);
             journal.terms = { entities: entities.filter(term => !target.entities.includes(term)), keywords: keywords.filter(term => !target.keywords.includes(term)) };
@@ -1089,6 +1125,8 @@ export class ContextStore {
             this.markIndex(context.workingSessionId, Number.MAX_SAFE_INTEGER, 'excluded');
             // Topics merged into it can no longer be taken apart from it.
             this.db.prepare('DELETE FROM topic_merges WHERE target_id = ? OR source_id = ?').run(contextId, contextId);
+            this.db.prepare('DELETE FROM merge_prompts WHERE a = ? OR b = ?').run(contextId, contextId);
+            this.db.prepare('DELETE FROM plugin_flags WHERE name IN (?, ?)').run(`merge-moved:${contextId}`, `merge-handled:${contextId}`);
             this.purge(contextId);
             this.db.exec('COMMIT');
         }

@@ -16,6 +16,7 @@ export interface FactWrite {
     /** The version the writer last saw; the write is refused if the fact has moved on since. */
     expectedVersion?: number;
 }
+export type MergePromptAnswer = 'merged' | 'declined' | 'dismissed';
 export type FactOutcome = 'created' | 'updated' | 'unchanged' | 'retracted' | 'rejected';
 export interface FactResult {
     outcome: FactOutcome;
@@ -75,7 +76,15 @@ export declare class ContextStore {
      * placeholder summary, not a compaction summary (written from the whole session); either way
      * routing reads the current settled values and open items beside it (see routingSummary).
      */
-    applyCard(contextId: string, card: TopicCard, now?: number): void;
+    applyCard(contextId: string, card: TopicCard, now?: number): boolean;
+    /** A route-created topic, never manually moved or already involved in a merge; use its latest main chat. */
+    mergeSuggestionGateway(contextId: string): string | undefined;
+    mergePrompt(a: string, b: string): {
+        answer: MergePromptAnswer;
+        at: number;
+    } | undefined;
+    /** A dismissed reservation also prevents two background cards (or a restart) asking the same pair. */
+    recordMergePrompt(a: string, b: string, answer: MergePromptAnswer, now?: number): void;
     /** Other names cards gave a topic (or every topic), most recently confirmed first. */
     names(contextId?: string): Map<string, string[]>;
     /** Values a topic settled on, most recently recorded first, each with the value it replaced. */
