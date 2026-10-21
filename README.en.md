@@ -145,6 +145,8 @@ The conversations are model-written from a script and this version has no assist
 
 ## Recent changes
 
+Version 0.4.0 **reads your earlier chats only after you agree**: a new install reads none of your earlier DSH chats and makes no model call on them until you choose to sort them, and any chat or project folder can be left out, any time. Upgrading changes nothing for existing users. The topic workspace is new too: laid out like DSH's own Plugins page, and a click anywhere on a card continues the topic.
+
 Version 0.3.40 makes mistakes **cheap to notice and undo**: a topic about to change a file, run a command or send something checks with you once when it may have the wrong topic or the wrong project; a misrouted message moves to the other likely topic in one click, and the move can be undone; a merge can be undone. Old and archived topics come back when you mention them, and say where things stood last time instead of treating it as today's state (see [How it works](#how-it-works)).
 
 Version 0.3.39 makes the topics **disappear into the background**: main chat no longer shows topic switches (turn on **Topic notices** in the settings to see where each message went) or asks where a message belongs, a topic that gets a message not its own hands it back before doing anything, and a message that mentions a figure, code or name from another topic gets that topic's words along (see [How it works](#how-it-works)).
