@@ -268,6 +268,10 @@ export default class TheOne extends Service {
     private mirroredCall;
     /** Questions the Worker asks the user (ask_user_question) are answered in the main chat, like approvals. */
     private forwardQuestions;
+    /** Labels are the answer protocol: keep them short and unique even after truncation. */
+    private choiceOptions;
+    /** Ask in main chat, including during pre-step routing; an unavailable answerer keeps the old flow. */
+    private askChoice;
     /** Capability is scoped to the exact owned Worker; the model cannot select another Context. */
     private registerWorkerTools;
     /** Recording facts with evidence, and looking up other topics' confirmed facts (shared facts only). */
@@ -356,6 +360,10 @@ export default class TheOne extends Service {
      * turn stops counting as its own. Once per message, and only for a reply main chat is showing.
      */
     private handBack;
+    /** The shared handoff for a Worker's hand-back and the user's explicit target choice. */
+    private handToTopic;
+    /** Offer candidates only for the unclear correction the user already started. */
+    private correctionChoice;
     /** Route a misrouted message again, never back to the topic it was wrongly given. */
     private reroute;
     /** Learning from corrections in flight; tests and shutdown can wait for it. */

@@ -19,6 +19,7 @@ import type {} from '@deepseek-ai/dsh-agent-default-model'
 import type {} from '@deepseek-ai/dsh-workspace'
 import type { ApprovalOutcome, ApprovalRequestEvent } from '@deepseek-ai/dsh-user-approval/types'
 import type { ApprovalService } from '@deepseek-ai/dsh-user-approval'
+import type { AskUserQuestionItem, UserQuestionService } from '@deepseek-ai/dsh-user-questions'
 import type { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
 import type {} from '@deepseek-ai/dsh-permission-presets'
 import { buildSessionEventSearchDocuments, filterSessionEventDocuments } from '@deepseek-ai/dsh-session-query'
@@ -835,6 +836,8 @@ export default class TheOne extends Service {
         let proposed
         if (previous) {
           proposed = await this.reroute(previous, correction!, signal, receipt)
+          if (proposed.action === 'CLARIFY' && proposed.reason === 'correction-unclear')
+            proposed = await this.correctionChoice(agent, previous, signal, receipt) ?? proposed
         } else if (goalTopic) {
           receipt.mode = 'rules'
           proposed = { action: goalTopic === currentId ? 'KEEP' as const : 'MOUNT' as const, contextId: goalTopic, reason: 'goal-round' }
@@ -1805,13 +1808,56 @@ export default class TheOne extends Service {
       const decision = run && this.store.route(run.inputId)?.decision
       if (!run || decision?.contextId !== contextId || this.store.hasFlag(`target:${run.inputId}`)) return next()
       const doubt = this.targetDoubt(decision, contextId, worker, exec.arguments)
+      if (!doubt) return next()
+      const denied = { kind: 'deny' as const, reason: 'The user did not confirm that this topic should make this change. Do not change anything; say briefly that the message may belong to another topic, which the user can choose in Topic workspaces.' }
+      const contexts = this.store.contexts(), unavailable = this.store.unreachable()
+      const alternatives = [...new Set(decision.alternateIds ?? [])].flatMap(id =>
+        id !== contextId && !unavailable.has(id) ? contexts.find(context => context.id === id) ?? [] : []).slice(0, 3)
+      if (alternatives.length && !this.store.hasFlag(`handback:${run.inputId}`)) {
+        const english = writtenInEnglish(run.request)
+        const title = contexts.find(context => context.id === contextId)?.title ?? ''
+        const [stay, fresh, ...others] = this.choiceOptions([
+          { kind: 'stay', label: english ? `Do it in "${title}"` : `就在「${title}」里做`,
+            description: english ? 'Go ahead; no more asking for this message' : '照常做，不再问' },
+          { kind: 'new', label: english ? 'Start a new topic' : '新开一个话题' },
+          ...alternatives.map(context => ({ kind: 'topic', contextId: context.id,
+            label: english ? `It's about "${context.title}"` : `其实是「${context.title}」的`,
+            description: english ? `Hand it to "${context.title}" to redo; nothing changes here` : `交给「${context.title}」重新处理，这里什么都不改` })),
+        ])
+        const options = [stay, ...others, fresh]
+        const choice = await this.askChoice(run.gateway, {
+          header: english ? 'Which topic' : '放在哪个话题',
+          question: english
+            ? `This message went to "${title}", but it may be about ${alternatives.map(context => `"${context.title}"`).join(' or ')}. Where should it be done?`
+            : `这条消息放在了「${title}」，但也可能是「${alternatives.map(context => context.title).join('」或「')}」的事。在哪里做？`,
+          options,
+        }, exec.signal, worker)
+        const selected = options.find(option => option.label === choice?.label)
+        if (selected?.kind === 'stay') { this.store.markOnce(`target:${run.inputId}`); return next() }
+        if (selected || choice?.custom) {
+          let chosen: Decision | undefined
+          if (selected?.kind === 'new') chosen = newIndependentTopic(run.request, this.store.contexts(), 'correction')
+          else if (selected && 'contextId' in selected && typeof selected.contextId === 'string') chosen = { action: 'MOUNT', contextId: selected.contextId, reason: 'correction' }
+          else if (choice?.custom) {
+            try { chosen = await this.reroute({ id: run.inputId, text: run.request, contextId }, choice.custom, exec.signal, { mode: this.router ? 'llm' : 'rules' }) }
+            catch { exec.signal.throwIfAborted(); return denied }
+          }
+          if (!chosen || chosen.action === 'CLARIFY') return denied
+          const handed = await this.handToTopic(run, contextId, chosen, 'user-choice', exec.signal, exec.callId)
+          if (handed !== undefined) return { kind: 'deny' as const,
+            reason: `The user confirmed that this message belongs to "${handed}" and it has been handed there. Do not change anything, answer this message or call any tool here.` }
+          // As with handBack, a failed transfer leaves this message here and lets it proceed once.
+          this.store.markOnce(`target:${run.inputId}`)
+          return next()
+        }
+      }
       const approval = this.ctx.get('approval') as { request(req: ApprovalRequestEvent): Promise<ApprovalOutcome> } | undefined
-      if (!doubt || !approval) return next()
+      if (!approval) return next()
       const outcome = await approval.request({ agent: run.gateway, toolName: exec.name, reason: doubt.en, displayReason: doubt, signal: exec.signal })
       if (outcome === 'allowed-once') { this.store.markOnce(`target:${run.inputId}`); return next() }
       if (outcome === 'unavailable') return next()
       if (outcome === 'cancelled') return { kind: 'cancel' as const }
-      return { kind: 'deny' as const, reason: 'The user did not confirm that this topic should make this change. Do not change anything; say briefly that the message may belong to another topic, which the user can choose in Topic workspaces.' }
+      return denied
     }, { prepend: true })
   }
 
@@ -1947,6 +1993,41 @@ export default class TheOne extends Service {
       return await this.whileAsking(worker, () => questions.ask({ ...plain, ...named, agent: run.gateway }))
     // Before DSH's own forwarding to the browser, for the same reason as approvals.
     }, { prepend: true })
+  }
+
+  /** Labels are the answer protocol: keep them short and unique even after truncation. */
+  private choiceOptions<T extends { label: string }>(options: T[]): T[] {
+    const used = new Set<string>()
+    return options.map(option => {
+      const characters = [...option.label]
+      let label = '', index = 1
+      do {
+        const suffix = index === 1 ? '' : `（${index}）`
+        const room = 40 - [...suffix].length
+        label = (characters.length > room ? characters.slice(0, room - 1).join('') + '…' : option.label) + suffix
+        index++
+      } while (used.has(label))
+      used.add(label)
+      return { ...option, label }
+    })
+  }
+
+  /** Ask in main chat, including during pre-step routing; an unavailable answerer keeps the old flow. */
+  private async askChoice(gateway: Agent, question: Pick<AskUserQuestionItem, 'header' | 'question' | 'detail'> & { options: { label: string; description?: string }[] },
+    signal: AbortSignal, worker = gateway): Promise<{ label?: string; custom?: string } | undefined> {
+    signal.throwIfAborted()
+    try {
+      const questions = this.ctx.get('userQuestions') as UserQuestionService | undefined
+      if (!questions) return undefined
+      const options = this.choiceOptions(question.options).map(({ label, description }) => ({ label, ...(description === undefined ? {} : { description }) }))
+      const answer = await this.whileAsking(worker, () => questions.ask({ agent: gateway, signal,
+        questions: [{ ...question, options, id: 'theone-route', multiSelect: false }] }))
+      signal.throwIfAborted()
+      const item = answer?.answers?.find(item => item.id === 'theone-route')
+      if (item?.custom?.trim()) return { custom: item.custom.trim() }
+      const label = item?.selected?.[0]
+      return label && options.some(option => option.label === label) ? { label } : undefined
+    } catch { signal.throwIfAborted(); return undefined }
   }
 
   /** Capability is scoped to the exact owned Worker; the model cannot select another Context. */
@@ -2527,14 +2608,14 @@ export default class TheOne extends Service {
    * card and facts leave the turn out and the topic is told once; and say in main chat what that turn
    * already changed, since nothing is undone on its own.
    */
-  private async noteMisroute(messageId: string, wrongId: string, rightId: string): Promise<void> {
+  private async noteMisroute(messageId: string, wrongId: string, rightId: string, blockedSeq?: number): Promise<void> {
     const contexts = this.store.contexts()
     const wrong = contexts.find(context => context.id === wrongId)
     const right = contexts.find(context => context.id === rightId)
     if (!wrong || !right) return
     const live = this.ctx.agents.get(SessionId(wrong.workingSessionId))
     const events = live ? live.session.snapshotEvents() : (await this.ctx.sessionQuery.readSession(SessionId(wrong.workingSessionId))).events
-    const turn = topicTurn(events, messageId)
+    const turn = topicTurn(blockedSeq === undefined ? events : events.filter(event => event.seq !== blockedSeq), messageId)
     if (!turn.found || turn.startSeq === undefined || turn.endSeq === undefined) return
     this.store.recordMisroute({ messageId, contextId: wrong.id, sessionId: wrong.workingSessionId, startSeq: turn.startSeq, endSeq: turn.endSeq,
       movedTo: right.title, request: turn.request })
@@ -2677,9 +2758,24 @@ export default class TheOne extends Service {
     let decision: Decision
     try { decision = await this.reroute({ id: run.inputId, text, contextId }, '', signal, { mode: 'llm' }) } catch { signal.throwIfAborted(); return keep }
     if (decision.action === 'CLARIFY') return keep
+    const title = await this.handToTopic(run, contextId, decision, reason, signal)
+    return title === undefined ? keep : `Handed to "${title}". Stop here: do not answer this message or call any tool.`
+  }
+
+  /** The shared handoff for a Worker's hand-back and the user's explicit target choice. */
+  private async handToTopic(run: WorkerRun, contextId: string, decision: Decision, reason: string, signal: AbortSignal, blockedCallId?: string): Promise<string | undefined> {
+    signal.throwIfAborted()
+    const route = this.store.route(run.inputId)
+    const gateway = run.gateway, worker = run.worker
+    const sent = gateway.session.snapshotEvents().find(event => event.type === 'user/message' && event.data.id === run.inputId)
+    if (this.runs.get(gateway.id) !== run || route?.decision.contextId !== contextId || sent?.type !== 'user/message' || sent.data.source.kind !== 'user') return undefined
+    this.store.markOnce(`handback:${run.inputId}`)
+    if (decision.action !== 'CREATE' && (!decision.contextId || decision.contextId === contextId || this.store.unreachable().has(decision.contextId)
+      || !this.store.contexts().some(context => context.id === decision.contextId))) return undefined
+    const text = messageText(sent.data)
     const { correctionOf: _, ...chosen } = decision
     const moved = this.store.moveRoute(run.inputId, this.config.gatewayKey, { ...chosen, reason: `handback:${reason.slice(0, 80)}` })
-    if (!moved?.contextId) return keep
+    if (!moved?.contextId) return undefined
     let next: WorkerRun
     try {
       next = await this.startRun(gateway, { decision: moved }, sent.data, createUserMessage({ source: { kind: 'user' }, content: sent.data.content }), started => {
@@ -2690,18 +2786,67 @@ export default class TheOne extends Service {
       // The other topic could not start (busy, or gone): put things back and answer here.
       this.handedFrom.delete(gateway.id)
       this.runs.set(gateway.id, run)
-      this.store.moveRoute(run.inputId, this.config.gatewayKey, route!.decision)
+      this.store.moveRoute(run.inputId, this.config.gatewayKey, route.decision)
       if (moved.action === 'CREATE') this.store.deleteTopic(moved.contextId)
       this.store.startTopicRun(run.inputId, contextId, worker.id)
-      return keep
+      signal.throwIfAborted()
+      return undefined
     }
     // The first topic stops after this result; its turn is kept out of its history and memory.
     this.store.markOnce(`misroute:${run.inputId}`)
-    void run.settled.then(() => this.noteMisroute(run.inputId, contextId, moved.contextId!)).catch(() => {}).finally(() => run.dispose())
+    // A target choice denied this exact call before execution; do not report it as work already done.
+    const blockedSeq = blockedCallId === undefined ? undefined : worker.session.snapshotEvents()
+      .findLast(event => event.type === 'tool/call' && event.data.callId === blockedCallId)?.seq
+    void run.settled.then(() => this.noteMisroute(run.inputId, contextId, moved.contextId!, blockedSeq)).catch(() => {}).finally(() => run.dispose())
     void next.settled.catch(() => {})
     this.applyCorrection(run.inputId, moved.contextId, text, 1, false)
-    const title = this.store.contexts().find(context => context.id === moved.contextId)?.title ?? ''
-    return `Handed to "${title}". Stop here: do not answer this message or call any tool.`
+    return this.store.contexts().find(context => context.id === moved.contextId)?.title ?? ''
+  }
+
+  /** Offer candidates only for the unclear correction the user already started. */
+  private async correctionChoice(gateway: Agent, previous: { text: string; contextId: string; id: string }, signal: AbortSignal,
+    receipt: RouterReceipt): Promise<Decision | undefined> {
+    const english = writtenInEnglish(previous.text)
+    const unavailable = this.store.unreachable()
+    const contexts = this.store.contexts().filter(context => context.id !== previous.contextId && !unavailable.has(context.id))
+    const candidates: { contextId: string; label: string; description?: string }[] = []
+    const add = (ids: string[], description?: string) => {
+      for (const id of ids) {
+        const context = contexts.find(context => context.id === id)
+        if (!context || candidates.length === 3 || candidates.some(item => item.contextId === id)) continue
+        candidates.push({ contextId: id, label: context.title, ...(description ? { description } : {}) })
+      }
+    }
+    add(this.store.route(previous.id)?.decision.alternateIds ?? [], english ? 'It was considered at the time' : '当时也考虑过它')
+    if (candidates.length < 3 && this.catalog) {
+      const found = await this.catalog.candidates(previous.text, undefined, signal).catch(() => { signal.throwIfAborted(); return [] })
+      add(found.map(context => context.id))
+    }
+    if (candidates.length < 3) add(this.similarCorrections(previous.text).map(item => item.rightId))
+    if (candidates.length < 3) {
+      const activity = new Map(this.store.contextUsage(this.config.gatewayKey).map(item => [item.contextId, item.lastUsedAt]))
+      for (const [id, run] of this.store.latestTopicRuns()) activity.set(id, Math.max(activity.get(id) ?? 0, run.endedAt ?? run.startedAt))
+      for (const context of contexts) {
+        const last = this.ctx.agents.get(SessionId(context.workingSessionId))?.session.snapshotEvents().at(-1)?.time
+        if (last !== undefined) activity.set(context.id, Math.max(activity.get(context.id) ?? 0, last))
+      }
+      add([...activity].sort((a, b) => b[1] - a[1]).map(([id]) => id), english ? 'Used recently' : '最近用过')
+    }
+    if (!candidates.length) return undefined
+    // Reserve the fixed label first so a topic named "Start a new topic" remains a topic choice.
+    const [fresh, ...topics] = this.choiceOptions([{ label: english ? 'Start a new topic' : '新开一个话题' }, ...candidates])
+    const choice = await this.askChoice(gateway, { header: english ? 'Wrong topic' : '分错了',
+      question: english ? 'Which topic should the last message go to?' : '上一条应该放到哪个话题？', options: [...topics, fresh] }, signal)
+    if (choice?.custom) {
+      try { return await this.reroute(previous, choice.custom, signal, receipt) }
+      catch { signal.throwIfAborted(); return undefined }
+    }
+    if (choice?.label === fresh.label) return { ...newIndependentTopic(previous.text, this.store.contexts(), 'correction'), correctionOf: previous.id }
+    const selected = topics.find(topic => topic.label === choice?.label)
+    const id = selected && 'contextId' in selected ? selected.contextId : undefined
+    // A topic can disappear or become excluded while the question is open.
+    if (!id || this.store.unreachable().has(id) || !this.store.contexts().some(context => context.id === id)) return undefined
+    return { action: 'MOUNT', contextId: id, reason: 'correction', correctionOf: previous.id }
   }
 
   /** Route a misrouted message again, never back to the topic it was wrongly given. */
