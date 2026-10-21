@@ -36,7 +36,7 @@
     "dist",
     "cordis.patch.yml",
     "README.md",
-    "README.zh.md",
+    "README.en.md",
     "docs/persistent-work.md",
     "docs/plugin-v0.1.md",
     "docs/plugin-v0.2.md",

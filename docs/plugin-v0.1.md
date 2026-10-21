@@ -2,7 +2,7 @@
 
 English | [简体中文](./plugin-v0.1.zh.md)
 
-September 30, 2026. This release delivered an installable DSH plugin. AI Box integration remained future work. This report describes v0.1; see the [current README](../README.md) for later changes.
+September 30, 2026. This release delivered an installable DSH plugin. AI Box integration remained future work. This report describes v0.1; see the [current README](../README.en.md) for later changes.
 
 ## Delivery
 

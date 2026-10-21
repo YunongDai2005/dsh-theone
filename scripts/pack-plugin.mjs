@@ -6,7 +6,7 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
-const publicFiles = ['package.json', 'cordis.patch.yml', 'README.md', 'README.zh.md', 'docs/plugin-v0.1.md', 'docs/plugin-v0.1.zh.md', 'docs/plugin-v0.2.md', 'docs/plugin-v0.2.zh.md', 'docs/persistent-work.md']
+const publicFiles = ['package.json', 'cordis.patch.yml', 'README.md', 'README.en.md', 'docs/plugin-v0.1.md', 'docs/plugin-v0.1.zh.md', 'docs/plugin-v0.2.md', 'docs/plugin-v0.2.zh.md', 'docs/persistent-work.md']
 
 export async function packPlugin(target = join(root, '.dsh-test')) {
   await mkdir(target, { recursive: true })

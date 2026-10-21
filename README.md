@@ -1,236 +1,244 @@
 <h1 align="center">TheOne</h1>
 
-<p align="center"><b>One chat for everything you're working on.</b><br>It knows which project each message belongs to, and keeps every project's context separate.</p>
+<p align="center"><b>DSH 会话多到翻不到？以后只在一个对话框里说，它自己接上。</b><br>每句话自动分到对应的那件事，每件事有自己的会话和项目文件夹，隔几天回来也能接着做。</p>
 
 <p align="center">
   <img alt="DSH 0.2.0-rc.2 / 0.2.1-rc.2" src="https://img.shields.io/badge/DSH-0.2.0--rc.2%20%7C%200.2.1--rc.2-a75b1e">
-  <img alt="Node.js 24" src="https://img.shields.io/badge/Node.js-24-3c873a">
-  <img alt="English / 中文" src="https://img.shields.io/badge/UI-English%20%2F%20中文-4a7fb5">
+  <img alt="免费开源 MIT" src="https://img.shields.io/badge/免费开源-MIT-3c873a">
+  <img alt="中文 / English" src="https://img.shields.io/badge/界面-中文%20%2F%20English-4a7fb5">
 </p>
 
-<p align="center"><a href="http://theone.yulid.org/">Website</a> · English | <a href="./README.zh.md">简体中文</a> · QQ group 中文交流群: 1080980184</p>
+<p align="center"><a href="http://theone.yulid.org/">项目主页</a> · 简体中文 | <a href="./README.en.md">English</a></p>
 
-<p align="center"><img src="https://raw.githubusercontent.com/YunongDai2005/dsh-theone/main/docs/images/theone-demo-en.webp" alt="Demo: two unrelated requests in the main chat each get their own topic in the sidebar; going back to the first one continues it in its own topic" width="100%"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/YunongDai2005/dsh-theone/main/docs/images/theone-demo-zh.webp" alt="演示：在主聊天里先后说显卡和旅行两件事，左侧各自出现一个话题；回到显卡那件事时，它接着原来的话题回答" width="100%"></p>
 
-<p align="center"><sub>A GPU question, a hotel question, then the GPU again, with no cues in between. The two topics on the left made themselves; nothing was clicked. (Example conversation.)</sub></p>
+<p align="center"><sub>先问显卡，再问旅馆，然后接着问显卡，中间没有任何提示语。左边的两个话题是它自己建的，什么都没点。（示例对话）</sub></p>
+
+<p align="center"><b>安装：</b>DSH 里打开 <b>插件 → 添加插件</b>，填 <code>dsh-theone</code>，点安装。不用另填 API Key。</p>
+
+<p align="center"><b>QQ 交流群：1080980184</b><br>装不上、分错了、想要什么功能，进群说一声，作者在群里。</p>
 
 ---
 
-How many sessions are sitting in your DSH sidebar? Getting back to last week's work means digging through them. Skip creating a new one and everything piles into a single session, where topics bleed into each other and the details vanish at the next compaction.
+你的 DSH 侧边栏里是不是躺着几十个会话？想回到上周那件事，得一个个翻；懒得新建，就在一个会话里什么都聊，结果上下文越聊越乱，压缩一次细节就没了。
 
-If you've ever said any of these, TheOne was probably written for you:
+如果你也说过下面任何一句，TheOne 大概就是为你写的：
 
-- "Where was that chat again?" Too many conversations, and the old one is nowhere to be found.
-- "Not starting a new chat for this, I'll just ask here." And one chat turns into a mess.
-- "I already told you that!" The AI forgot what you talked about.
+- 「之前聊过的那个在哪来着？」：对话太多，旧会话找不到
+- 「懒得新建了，就在这儿接着问吧」：结果一个会话越聊越杂
+- 「我不是跟你说过了吗？」：AI 忘了之前聊过的内容
 
-**What TheOne does:** you only ever talk in one main chat. In the background it opens a separate session for each thing you're working on and sends every message to the one it belongs to.
+**TheOne 的做法：** 你只在一个主聊天里说话，它在后台替每件事开一个独立的会话，把每句话送到该去的地方。
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/YunongDai2005/dsh-theone/main/docs/images/theone-architecture-en-dark.svg">
-  <img alt="How TheOne works: main chat sends each message through the router to its topic session; answers stream back, and the topic directory keeps progress, constraints and links" src="https://raw.githubusercontent.com/YunongDai2005/dsh-theone/main/docs/images/theone-architecture-en-light.svg" width="100%">
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/YunongDai2005/dsh-theone/main/docs/images/theone-architecture-zh-dark.svg">
+  <img alt="TheOne 的结构：主聊天把每条消息交给分配话题，送到对应的后台会话，结果实时回到主聊天；话题目录保存进展、约束和关联" src="https://raw.githubusercontent.com/YunongDai2005/dsh-theone/main/docs/images/theone-architecture-zh-light.svg" width="100%">
 </picture>
 
-Each project reasons, runs tools and compacts in its own session. What you see is always one ordinary conversation.
+每件事在自己的会话里推理、调用工具、压缩上下文；你看到的始终是一个普通的对话。
 
-## Why try it
+## 为什么值得一试
 
-Version 0.3.40 makes mistakes **cheap to notice and undo**: a topic about to change a file, run a command or send something checks with you once when it may have the wrong topic or the wrong project; a misrouted message moves to the other likely topic in one click, and the move can be undone; a merge can be undone. Old and archived topics come back when you mention them, and say where things stood last time instead of treating it as today's state (see [How it works](#how-it-works)).
-
-Version 0.3.39 makes the topics **disappear into the background**: main chat no longer shows topic switches (turn on **Topic notices** in the settings to see where each message went) or asks where a message belongs, a topic that gets a message not its own hands it back before doing anything, and a message that mentions a figure, code or name from another topic gets that topic's words along (see [How it works](#how-it-works)).
-
-Version 0.3.38 **routes more accurately**: when the quick decision would open a new topic, ask you, or goes against a number, code or name only one topic has mentioned, it takes a second look with thinking on. On our benchmark that lifts accuracy from 90% to 96% when starting from nothing, and one thing is split over fewer topics (see [How well does it route?](#how-well-does-it-route)). It also picks up cleanly after a DSH restart and after "wrong topic". Ongoing tasks (follow a GitHub PR and CI from main chat, since 0.3.36) are described in [implementation and limitations](./docs/persistent-work.md) (Chinese).
-
-| | Usual workflow | With TheOne |
+| | 平时的用法 | 装了 TheOne |
 | --- | --- | --- |
-| Start something new | Create a session, name it | Just say it |
-| Go back to earlier work | Dig through the sidebar | Mention it; TheOne finds it |
-| One session gets cluttered | Topics interfere; compaction drops details | Every project has its own context |
-| Two projects need each other | Copy and paste | The other project's progress comes along |
-| Wrong project | Move it by hand | Say "wrong topic" |
+| 开始一件新事 | 新建会话、起名字 | 直接说 |
+| 回到之前的事 | 在侧边栏里翻 | 直接提，它自己找回来 |
+| 一个会话聊杂了 | 上下文互相干扰，压缩后丢细节 | 每件事一份独立上下文 |
+| 两件事要结合 | 来回复制粘贴 | 自动把另一件事的进展带过来 |
+| 分错了 | 手动挪 | 说一句「分错了」 |
 
-- **Feels native.** Thinking streams in its usual place from the first token, and tool cards, approvals, questions, todo lists, retries and mid-reply steering all work as usual.
-- **Keep talking while it works.** A message sent during a reply that is about that reply joins it, as in any DSH chat; one about something else starts in its own topic right away, in the background, and its answer follows in main chat in the order you sent things. At most three topics work at once.
-- **Works where the work is.** A new topic about one of your projects works in that project's folder; anything else goes to DSH's folder for chats outside any project. Nothing is added to your projects in the sidebar.
-- **Related work connects; unrelated work stays out.** Related topics share progress automatically, and which ones belong together is learned from how you use them. A topic's constraints (say, "budget figures stay out of the paper") are attached verbatim every time, so compaction never drops them.
-- **Learns your words.** Once a topic has replies, a short topic card is written in the background (what it is, what you call it, the people, places and files involved, and the values it has settled on, such as a budget or an order number), and rewritten as the topic goes on, so it is recognised however you phrase it. New names you use are added without forgetting the old ones, and a settled value keeps when it was recorded and what it replaced. Say "wrong topic" and it remembers which terms tie that kind of message to the right one. A topic you haven't touched for months, or whose conversations you archived, is not ruled out: when the message says what it is about ("the deposit from last year"), that topic is picked; time only decides between topics that fit equally, so "that thing just now" means the recent one. Back after three days or more, the topic opens with "last time we noted…" and treats dates, amounts and progress as the last record, not as today's.
-- **Picks up after a restart.** If DSH stopped while a topic was working, the topic's own session tells what happened: finished work is shown as it was given, and work cut off midway lists what it had already changed; say "continue" and the topic checks the current state before carrying on, instead of redoing it. Each topic keeps where it stands as goal / done / next.
-- **Checks before acting on the wrong thing.** Before a topic first changes a file, runs a command or sends something for a message, it asks you once in main chat if the message might have belonged to another topic, or if the change points into a different project than the topic works in. A confident route in the right folder goes ahead without asking.
-- **"Wrong topic" cleans up after itself.** Under **Recent topic routing**, a message that might have belonged elsewhere offers **Move to …** for the likely topics, and a moved message offers **Undo**. The wrong topic forgets that turn (it stays out of its history, card and facts) and is told once; anything the turn already changed is listed for you, since nothing is undone behind your back.
-- **Your old sessions become a topic directory.** After you agree in **Topic workspaces**, it reads your selected existing sessions in the background with the model you chose, turns them into topics and sorts them into topic workspaces (TheOne's own groups, unrelated to the projects in DSH's sidebar), and you pick up where you left off. It only reads: your sessions stay as they are. With many sessions this uses some quota; turn **History catalog** off in the settings if you don't want it.
-- **Nothing extra to configure.** No separate API key: it uses the model you chose in DSH. When TheOne is selected, a layers icon beside the model menu shows and switches which model routes and which does the work.
+- **和原生会话一模一样**：思考从第一个字起就在原位置，工具卡片、授权、提问、待办、重试、回答中途插话，全都照常。
+- **它干活时你可以接着说**：回答进行中发的消息，如果是关于正在做的事，就并进这次回答，和普通 DSH 会话一样；如果是别的事，它的话题马上在后台开始处理，回答按你发送的顺序接在主聊天里。最多三个话题同时干活。
+- **在该干活的地方干活**：新话题如果是你某个项目的事，就在那个项目的文件夹里干活；其他的放在 DSH 给「不属于任何项目的聊天」的文件夹里。不会往你侧边栏的项目里加任何东西。
+- **相关的事会互通，无关的事互不打扰**：相关话题自动共享进展，哪些话题有关联从你的使用中学；话题的约束（比如「预算数字不能写进论文」）每次原样带上，压缩不会丢。
+- **越用越认得你的说法**：每个话题有了回复后，后台会写一张简短的话题卡片（这件事是什么、你会怎么叫它、涉及哪些人名地名和文件，以及已经定下来的数值，比如预算、单号），话题往下推进时还会重写，换个说法也能分对。你换的新叫法会补充进去，旧名字不会忘；定下来的数值会记着什么时候定的、之前是多少。分错了说一句「分错了」，它会记住是哪些词把这类消息连到正确话题。几个月没动、或者原会话已归档的话题，不会因为久远就被排除：消息里说清了是哪件事（「去年那个押金」），就找回那个话题；时间只在几个同样可能的话题之间排先后，所以「刚才那个」指最近的。隔了三天以上回到一个话题，它会先说「上次记录是……」，日期、金额、进度都当作上次的记录，不当成今天仍然成立。
+- **重启后能接上**：DSH 在话题干活时停了，以话题自己的会话为准：已经做完的直接展示给你；做到一半的列出它已经改了什么，你说「继续」时，话题会先检查现状再接着做，不会重复已经做过的改动。每个话题按「目标 / 进度 / 下一步」记着自己做到哪了。
+- **动手前核对对象**：话题为一条消息第一次改文件、跑命令或发东西之前，如果这条消息也可能属于别的话题，或者要改的东西在另一个项目里，会先在主聊天问你一次；路由有把握、文件夹也对得上就直接做，不打扰你。
+- **「分错了」会收拾干净**：在 **最近的话题分配** 里，可能放错的消息旁边有「换到 …」按钮，换过的有「撤销」。分错的那个话题会忘掉那一轮（不进它的历史、卡片和要点），并被提醒一次；那一轮已经做过的改动会列给你，不会在背后悄悄撤销。
+- **旧会话可以整理成话题目录**：你在「话题工作区」同意后，它才在后台用你选的模型读一遍你选择的已有会话，整理成话题，再分进话题工作区（TheOne 自己的分组，和 DSH 侧边栏里的项目无关），点进去就能接着聊。它只读不改，你原来的会话原样留着。会话多时会用掉一些额度；不想整理，可以在设置里关掉「历史整理」。
+- **零额外配置**：不用另填 API Key，用的就是你在 DSH 里选好的模型。选中 TheOne 时，模型按钮旁边有一个图层图标，可以查看和切换分配话题、干活各用哪个模型。
 
-## Install in 30 seconds
+## 30 秒装好
 
-For a local demo using NVIDIA Nemotron 3 Super through Nebius Token Factory, see [Nebius/Nemotron setup](docs/nebius-demo.md).
+1. 在 DSH 中配置好 API，选一个能正常聊天的模型。
+2. 打开 **插件 → 添加插件**，在「包名或地址」里填 `dsh-theone`，点击安装。
+3. 点击左侧 **TheOne · 主聊天**，开始说话。
 
-1. Configure an API in DSH and select a model that can chat.
-2. Open **Plugins → Add plugin**, enter `dsh-theone` under *Package name or address*, and install.
-3. Click **TheOne · Main chat** in the sidebar and start talking.
-
-That's it. Works with DSH `0.2.0-rc.2` and `0.2.1-rc.2`, and Node.js 24; the interface follows DSH's language (English / Simplified Chinese).
+就这三步。兼容 DSH `0.2.0-rc.2`、`0.2.1-rc.2` 与 Node.js 24；界面跟随 DSH 的语言（简体中文 / English）。
 
 <details>
-<summary><b>New to DSH? A step-by-step walkthrough (about 3 minutes)</b></summary>
+<summary><b>第一次用 DSH？手把手来一遍（约 3 分钟）</b></summary>
 
-No coding needed:
+不用懂代码，跟着做就行：
 
-1. **Make sure DSH itself can chat.** Add your model provider's API key (DeepSeek's, for example) in DSH's settings, open an ordinary chat and say "hi". If it answers, you're set. TheOne uses that same model; there is no other key to enter.
-2. **Install TheOne.** Click **Plugins** in the sidebar, then **Add plugin**, and enter:
+1. **先让 DSH 自己能聊天。** 在 DSH 的设置里填好模型服务的 API Key（比如 DeepSeek 的），新建一个普通会话发一句「你好」。能收到回复，说明这一步好了。TheOne 用的就是这个模型，不用再填别的 Key。
+2. **装 TheOne。** 点左侧的 **插件**，再点 **添加插件**，在「包名或地址」一栏输入：
 
    ```
    dsh-theone
    ```
 
-   Click install and wait for it to finish.
-3. **Start.** A new **TheOne · Main chat** appears in the sidebar. Open it and just talk about whatever is on your plate: today's work, the weekend trip, the paper you're writing. No new chats to create, nothing to name.
-4. **Updates.** When a new version is out, a download icon appears next to the TheOne entry. One click installs it, usually without a restart; your topics live in the database and are untouched.
-5. **Changed your mind?** Uninstall it on the Plugins page. Your DSH chats are all still there; TheOne organises them and never deletes them.
+   点安装，等它跑完。
+3. **开始用。** 左侧会多出一个 **TheOne · 主聊天**。点进去，把你手头的事一件件说出来就行：今天的工作、周末的旅行、要写的论文……不用新建会话，也不用起名字。
+4. **以后更新。** 有新版本时，TheOne 入口右边会出现一个下载图标，点一下就装好，一般不用重启；话题都在数据库里，不受影响。
+5. **不想用了？** 在插件页卸载即可。你原来的 DSH 会话都还在，TheOne 只是帮你整理，从来不删它们。
 
-**Small things you may run into**
+**可能遇到的小状况**
 
-- **"Too new" and it won't install:** DSH only installs versions published at least 24 hours ago. That's a safety rule, not an error. Wait a day, or enter the GitHub address `https://github.com/YunongDai2005/dsh-theone` instead, which installs right away.
-- **No TheOne in the sidebar after installing:** restart DSH.
-- **Something wrong?** Click **Report a problem** at the top right of **Topic workspaces**: versions and diagnostics (no chat content) are attached, and Send delivers it without GitHub. Or email [theone@yulid.org](mailto:theone@yulid.org); a screenshot helps.
-- **Will it cost a lot?** Each message adds one short classification call (no deep thinking); about one in six (a new topic, a question, or a doubtful pick) gets a second call with thinking. "ok" or "go on" skips even the first. On DeepSeek V4.1 Flash that is about half a US dollar per thousand messages: at 100 messages a day, routing adds about $2 a month. The work itself runs on the model you chose and costs what it always does. With many old chats, the first pass that organises them uses some of your quota; turn **History catalog** off in the settings if you don't need it.
+- **提示版本「太新」、装不上：** DSH 默认只安装发布满 24 小时的版本，这是它的安全规则，不是出错。可以等一天再装，也可以改填 GitHub 地址 `https://github.com/YunongDai2005/dsh-theone`，马上就能装。
+- **装完左侧没看到 TheOne：** 重启一下 DSH。
+- **遇到问题：** 在 **话题工作区** 右上角点「反馈问题」，会自动带上版本和诊断信息（不含聊天内容），点「发送」即可，不需要打开 GitHub。也可以进 QQ 群 1080980184 直接问，或者发邮件到 [theone@yulid.org](mailto:theone@yulid.org)，有截图更好。
+- **会不会很费钱：** 每条消息多一次很短的分类调用（不开深度思考）；大约六条里有一条（要开新话题、要问你，或者拿不准）会再开着思考判断一次。「好的」「继续」这类连第一次都省了。用 DeepSeek V4.1 Flash 大约每一千条消息半美元：每天发 100 条，一个月分配话题多花大约 2 美元（十几块钱）。干活本身用的还是你选的模型，和平时一样计费。第一次整理旧会话时，会话多的话会用掉一些额度；不需要可以在设置里关掉「历史整理」。
 </details>
 
 <details>
-<summary><b>Command line and other sources</b></summary>
+<summary><b>命令行安装与其他方式</b></summary>
 
-- npm: `dsh plugin --profile web add dsh-theone --ignore-scripts` (use `desktop` instead of `web` for the desktop app)
-- GitHub (always the latest main): `dsh plugin --profile web add github:YunongDai2005/dsh-theone --ignore-scripts`
+- npm：`dsh plugin --profile web add dsh-theone --ignore-scripts`（桌面端把 `web` 换成 `desktop`）
+- GitHub（总是最新的 main）：`dsh plugin --profile web add github:YunongDai2005/dsh-theone --ignore-scripts`
 
-A new version from npm installs once it has been published for 24 hours; when an update is newer than that, the update button explains it and can exempt TheOne alone so it installs right away.
+从 npm 安装的新版本要发布满 24 小时才装得上；遇到这种情况，更新按钮会说明原因，并可以只为 TheOne 放行、立即安装。
+
+想通过 Nebius Token Factory 用 NVIDIA Nemotron 3 Super 运行独立演示，可查看[配置与启动说明（英文）](docs/nebius-demo.md)。
 </details>
 
-> Unofficial community project, maintained independently. It is not affiliated with or endorsed by DeepSeek.
+> 非官方社区项目，由社区成员独立维护，与 DeepSeek 不存在隶属或背书关系。
 
-## From your phone (experimental)
+## 在手机上用（实验功能）
 
-Talk to main chat away from your computer: bind a messaging app in **TheOne Settings**, and what you send from your phone works like typing in main chat. It goes to its topic and runs in the background, and the reply comes back to your phone. Approvals and the AI's questions come too; answer with a number (no answer within 10 minutes declines). Main chat on your computer shows the same conversation. Only you are listened to; nobody else's messages reach main chat.
+不在电脑前也能和主聊天说话：在 **TheOne 设置** 里绑定一个聊天软件，之后在手机上发的消息就和在主聊天里打字一样，照常分到话题、在后台干活，回复发回手机。需要你确认的操作和 AI 给的选项也会发过去，回一个数字就行（10 分钟不回按拒绝）。电脑上打开主聊天，看到的是同一段对话。都只认你本人，别人发的消息不会进主聊天。
 
-| App | How to bind | Notes |
+| 聊天软件 | 怎么绑定 | 说明 |
 | --- | --- | --- |
-| WeChat | **Scan to bind** in Settings, then scan with WeChat on your phone | Uses Tencent's iLink interface (the same as the OpenClaw WeChat plugin), a private Tencent protocol; follow WeChat's terms |
-| Telegram | Make a bot with @BotFather, paste its token in Settings, then scan the code (or send `/start <code>`) to pair | The token stays on your computer |
-| iMessage | Mac only: enter the phone number or Apple ID you text from | Give the app running DSH Full Disk Access, and allow it to control Messages on the first reply |
+| 微信 | 设置里点「扫码绑定」，用手机微信扫码 | 用腾讯 iLink 接口（和 OpenClaw 微信插件同一套），这是腾讯的私有协议，请遵守微信的使用规范 |
+| Telegram | 在 @BotFather 建一个机器人，把 token 填进设置，再扫码（或发 `/start 配对码`）完成配对 | token 只存在这台电脑上 |
+| iMessage | 只限 Mac：填你发消息用的手机号或 Apple ID | 需要给运行 DSH 的程序「完全磁盘访问」权限，第一次回复时允许它控制「信息」 |
 
-Messages arrive only while DSH is running, not while the computer sleeps or DSH is closed. After a network drop or a restart it picks up where it left off, without losing or repeating messages.
+DSH 开着才能收到消息，电脑睡眠或 DSH 退出时收不到。断网、重启后会自动接着收，不丢也不重复。
 
-## How well does it route?
+## 它分得有多准
 
-Claims are cheap, so we built a public benchmark, **InterleaveBench**: one person pushing 3–5 things forward in the same chat at once (a trip, a budget, a paper, a training plan…), half in Chinese and half in English, 50 conversations and 2,466 messages, each labelled in advance with the thing it belongs to. Below, the 40-conversation dev split replayed message by message through TheOne's own routing code with DeepSeek V4.1 Flash, thinking off as TheOne routes (messages even a careful human could not attribute are not scored):
+口说无凭，我们做了一套公开评测 **InterleaveBench**：模拟一个人在同一个对话框里同时推进 3–5 件事（旅行、记账、论文、健身……），中英文各半，共 50 段对话、2466 条消息，每条属于哪件事都事先定好。下面是用 TheOne 自己的路由代码和 DeepSeek V4.1 Flash（和 TheOne 路由时一样关闭思考），在其中 40 段开发集上逐条重放的结果（连人都分不清的消息不计分）：
 
-| Approach | Messages routed correctly |
+| 做法 | 分对的比例 |
 | --- | --- |
-| TheOne 0.3.38, topic list given up front | **98.7%** |
-| TheOne 0.3.38, starting from nothing and creating topics as it goes (your first day) | **96.3%** |
-| TheOne 0.3.37 (one quick decision per message), topic list given up front | 92.9% |
-| TheOne 0.3.37, starting from nothing | 90.1% |
-| Keyword search (BM25), topic list given up front | 73.3% |
-| No routing, everything in one chat | 44.5% |
-| Keyword search, starting from nothing | 39.9% |
-| A new topic for every message | 9.8% |
+| TheOne 0.3.38，事先给好话题列表 | **98.7%** |
+| TheOne 0.3.38，从零开始边聊边建话题（就是你第一次用的样子） | **96.3%** |
+| TheOne 0.3.37（每条消息只做一次快速判断），事先给好话题列表 | 92.9% |
+| TheOne 0.3.37，从零开始 | 90.1% |
+| 关键词检索（BM25），事先给好话题列表 | 73.3% |
+| 什么都不分，全塞进一个会话 | 44.5% |
+| 关键词检索，从零开始 | 39.9% |
+| 每句话都开一个新话题 | 9.8% |
 
-A few numbers worth knowing:
+几个值得一说的数字：
 
-- These numbers were measured on 0.3.38.
-- **On ten conversations kept aside while tuning**, starting from nothing: 97.1% (0.3.37: 90.7%).
-- **One thing is split over 1.47 topics** on average (0.3.37: 1.80), and needless questions back to you dropped from 49 to 9.
-- **A message landing in another thing's topic**, the mistake that hurts context most: 2.8% when starting from nothing. It is 1.5% with thinking on for every message, so this is what we work on next.
-- **Topic cards** are not simulated in the table. With them (as in the plugin), starting from nothing: 96.9%, and 1.9% of messages land in another thing's topic.
-- **What it costs:** about one message in six gets the second look; routing costs about $0.5 per thousand messages (one quick decision only: $0.41; thinking on for every message: $0.55), and topic cards add about $0.16.
-- Data, code and scoring live in [`eval/`](./eval/README.md); reproduce it, or try another model. The full write-up, with confidence intervals, token use and what did not work, is in [`docs/routing-eval.md`](./docs/routing-eval.md) (Chinese).
+- 以上数字是在 0.3.38 上测的。
+- **调参时一直没动过的 10 段对话**，从零开始：97.1%（0.3.37 是 90.7%）。
+- **同一件事平均被拆成 1.47 个话题**（0.3.37 是 1.80），无谓地反问你从 49 次降到 9 次。
+- **把一件事的消息放进另一件事的话题**（最伤上下文的那种错）：从零开始时 2.8%。每条消息都开思考时是 1.5%，这是接下来要改的。
+- **话题卡片**在上表里没有模拟。加上卡片（和插件里一样），从零开始是 96.9%，放进别的话题的降到 1.9%。
+- **成本**：大约六条消息里有一条会再看一次；路由每一千条消息约 0.5 美元（只做一次快速判断是 0.41 美元，每条都开思考是 0.55 美元），话题卡片另加约 0.16 美元。
+- 数据、代码和打分脚本都在 [`eval/`](./eval/README.md)，可以自己复现，换成别的模型也行。完整的评测记录（置信区间、token 消耗、哪些尝试没用）见 [`docs/routing-eval.md`](./docs/routing-eval.md)。
 
-The conversations are model-written from a script and this version has no assistant replies, so it measures whether messages are routed right, not everything about how chatting feels.
+评测数据是模型按剧本生成的，而且这一版还没有助手回复，所以它衡量的是「能不能分对」，不代表真实聊天体验的全部。
 
-## What's next
+## 最近更新
 
-For now, TheOne is being refined on DeepSeek Harness, whose background sessions, tools and compaction can be reused as they are: the right place to get "one chat for everything" solid first.
+0.3.40 让**出错容易发现、容易撤回**：话题要改文件、跑命令或发东西之前，如果它可能接错了话题或项目，会先在主聊天问你一次；分错的消息可以一键换到另一个可能的话题，换过的还能撤销；合并过的话题也能撤销合并。很久没提或已归档的话题，提到时照样能找回，并且说的是「上次记录是……」，不把旧状态当成今天的（见[它是怎么工作的](#它是怎么工作的)）。
 
-In progress:
+0.3.39 让**话题退到幕后**：主聊天不再显示话题切换（想看每条消息去了哪，可以在设置的「话题提示」里打开），也不再问你消息该放哪里；收到不属于自己的消息时，话题会在动手前交回；消息里提到别的话题的数字、编号、名字时，会带上那个话题的原话（见[它是怎么工作的](#它是怎么工作的)）。
 
-- **Better routing**: fewer messages landing in another thing's topic, and looking at a burst of messages together while deciding each one separately.
-- **Confirmed facts shared between topics**: a budget, a date, where a file lives, kept current wherever you need it. It is experimental and will only be turned on by default once it passes its benchmark.
+0.3.38 **分得更准**：快速判断要开新话题、要问你，或者和某个只在一个话题里出现过的数字、编号、名字对不上时，会开着思考再看一次。在我们的评测里，从零开始时的准确率从 90% 提到 96%，同一件事被拆成的话题也更少（见[它分得有多准](#它分得有多准)）。DSH 重启后、说「分错了」之后也都能干净地接上。「持续任务」（0.3.36 起，在主聊天里跟进 GitHub PR / CI）见[持续任务说明](./docs/persistent-work.md)。
 
-Once it is stable, the next step goes beyond DSH:
+更早的版本见 [Releases](https://github.com/YunongDai2005/dsh-theone/releases)。
 
-- **A standalone client**: one interface over different models and providers, opening straight into a single chat;
-- **or adapters for other platforms**: the same automatic topics, inside the chat tools you already use.
+## 接下来
 
-Which comes first depends on what people need more. If you have a view, say so in [Issues](https://github.com/YunongDai2005/dsh-theone/issues) or by email at [theone@yulid.org](mailto:theone@yulid.org).
+TheOne 现在先在 DeepSeek Harness 上打磨：DSH 的后台会话、工具、压缩都能直接复用，适合先把「一个对话框聊所有事」做扎实。
 
-## How it works
+近期在做的：
 
-**Choosing a topic.** Each message is matched to the current topic, an earlier one, or a new one. By default the model you selected makes one short classification (thinking off, at most 2,048 tokens), with candidates recalled through DSH full-text search.
+- **分得更准**：减少消息被放进别的话题；连着发的几句话合在一起看、分开判断。
+- **话题之间互通确认过的要点**：比如预算、日期、文件位置，换了话题也能用上最新的值。目前是实验功能，评测达标后才会默认开启。
 
-- When the quick decision would start a new topic, ask you, or goes against a number, code or name only one topic has mentioned, the same model looks again with thinking on (about one message in six). If that call fails, the first decision stands.
-- It never asks you where a message belongs. With no credible match it starts a new topic; when it cannot tell which of a few topics you mean, the closest one does the work and the others come along as reference; an earlier chat it cannot find continues the current topic, which can search your history itself.
-- When one message draws on several topics, the one doing the work gets it and the others come along as reference.
-- If the topic that gets a message finds it is not its own, it hands it back before doing anything; TheOne routes it again without that topic, and main chat shows the right topic's answer. Once per message.
-- "ok" or "go on" continues the current topic without waiting for a decision, and so does a picture or file sent without words.
-- If the classification call fails, rules decide, staying in the current topic when unsure. Rule-based routing (`THEONE_ROUTER_MODE=rules`) makes no model calls at all.
+等它足够稳定，下一步会走出 DSH：
 
-**Linking topics.** A background session starting work receives a reference briefing, and none when there is nothing new:
+- **一个独立的客户端**：统一接口，背后接不同的模型和服务，打开就是一个对话框；
+- **或者各个平台的适配版本**：把同样的「自动分话题」带到你已经在用的聊天工具里。
 
-- right after a topic switch, the last few turns of main chat, so "use what we just said" carries over;
-- when the message mentions a number, code or name that only another topic has mentioned, what that topic said about it and where it stands, linked or not;
-- what changed in related topics since it last heard: their latest compaction summary (dated) and the progress after it. Topics are related when a message draws on both or one looks the other up; switching between them does not count;
-- each topic's constraints, verbatim, every time.
+两条路先走哪一条，取决于大家更需要哪个。有想法的话，欢迎在 [Issues](https://github.com/YunongDai2005/dsh-theone/issues) 里说一声，或者发邮件到 [theone@yulid.org](mailto:theone@yulid.org)。
 
-The briefing is marked as reference, not instructions. For details, the background session can use `theone_read_topic` and `theone_search_history` (which can also search every topic that shares with it). Linking scope is **Learn automatically** (default), **Same workspace only** or **Off**. In the directory you can link or unlink topics and mark a topic **Do not share**; your choices always win.
+## 它是怎么工作的
 
-**Topic directory.** Each topic shows its latest progress and constraints, the project (DSH workspace) it works in, and its status when that is not plain in progress: **Waiting on you** (it asks you something, or a restart cut its work off), **Set aside** (untouched for longer than you usually come back), or **Done** (you marked it; a new message to it reopens it). Status is kept apart from the topic's record of what it worked on (its latest 20 messages and how each ended), and is worked out from it. **Mark done** / **Reopen** sits next to **Manage**. A new topic files itself in the workspace of a topic it draws on, or of the topics in its project folder; you can move it. Under **Manage** you can rename, edit the summary and constraints, move to another workspace, merge (the target topic then shows **Undo merge**, which brings the merged topic back as it was), delete, or attach an existing DSH session as searchable history; **+ New topic** starts one by hand. **Recent topic routing** lists where each message went, why, with which model and how long it took. With a long history, the first pass takes some time and API quota; set `THEONE_HISTORY_CATALOG=false` to turn it off.
+**分配话题。** 每条消息先判断：接着当前话题、回到某个旧话题，还是开个新的。默认用你选的模型做一次简短分类（关闭深度思考，最多 2048 token），候选话题由 DSH 全文搜索召回。
 
-![TheOne main chat and topic workspaces](https://raw.githubusercontent.com/YunongDai2005/dsh-theone/main/docs/images/theone-topic-workspaces-en.png)
+- 快速判断要开新话题、要问你，或者和某个只在一个话题里出现过的数字、编号、名字对不上时，同一个模型会开着思考再看一次（大约六条消息一次）；这次调用失败就沿用第一次的判断。
+- 它不会问你消息该放哪里。没有匹配就直接开新话题；分不清是哪几件里的哪一件时，交给最接近的那件，其余作为参考带上；提到一段找不到的旧聊天时，接着当前话题，由话题自己去翻历史。
+- 一句话同时用到几件事时，交给真正做事的那件，其余作为参考带上。
+- 收到消息的话题如果发现这不是自己的事，会在动手之前交回；TheOne 去掉这个话题重新分配，主聊天显示的是正确话题的回答。每条消息最多交回一次。
+- 「好的」「继续」直接接着当前话题，不等判断；只发图片或文件也接着当前话题。
+- 分类调用失败时改用规则判断，拿不准就留在当前话题。规则模式（`THEONE_ROUTER_MODE=rules`）完全不调用模型。
+
+**话题联动。** 后台开始工作时会收到一份参考简报，没有新内容就不发：
+
+- 刚切换话题时，附上主聊天最近几轮，「把刚才那个……」能接上；
+- 消息里提到的数字、编号、名字如果只在别的某个话题出现过，带上那个话题说过的原话和它的现状，不管两者有没有关联；
+- 相关话题自上次以来的变化：最近一次压缩摘要（注明截至时间）和之后的进展。一句话同时用到两件事、或者一个话题去查了另一个，才算相关；来回切换不算；
+- 各话题的约束，原样附上，每次都带。
+
+简报标注为参考资料而非指令；需要细节时，后台可以用 `theone_read_topic`、`theone_search_history` 去查（后者也能搜所有允许共享的话题）。联动范围可选「自动学习」（默认）、「仅同一工作区」或「关闭」。在目录里可以手动关联或解除关联、把话题标记为「不共享」，你的设置永远优先。
+
+**话题目录。** 每个话题显示最新进展和约束、它在哪个项目（DSH 工作区）里干活，以及不是普通「进行中」时的状态：**在等你**（它在问你事情，或者重启打断了它的工作）、**搁置**（比你通常回来的间隔还久没动）、**已完成**（你标的；再有消息发给它就重新打开）。状态和话题的执行记录（最近 20 条消息各自怎么结束的）分开保存，由执行记录推出来。**标为完成** / **重新打开** 在 **管理** 旁边。新话题会自动放进它用到的话题所在的工作区，或者同一项目里话题所在的工作区，你可以再移走。点 **管理** 可以重命名、改摘要和约束、移到别的工作区、合并（合并后目标话题上有「撤销合并」，原话题会原样回来）、删除，或把已有的 DSH 会话关联为可检索的历史；**＋ 新话题** 手动新建。**最近的话题分配** 列出每条消息去了哪里、原因、所用模型和耗时。历史较多时，第一次整理需要一些时间和 API 额度；设置 `THEONE_HISTORY_CATALOG=false` 可关闭。
+
+![TheOne 主聊天与话题工作区](https://raw.githubusercontent.com/YunongDai2005/dsh-theone/main/docs/images/theone-topic-workspaces-en.png)
 
 <details>
-<summary><b>Settings</b></summary>
+<summary><b>设置</b></summary>
 
-Right-click the TheOne button in the sidebar and choose **Settings**. Changes apply when saved; only the history catalog settings wait for a DSH restart.
+右键左侧的 TheOne 按钮，选择 **设置**。保存后立即生效，只有历史整理相关的设置需要重启 DSH。
 
-| Setting | What it does |
+| 设置 | 说明 |
 | --- | --- |
-| Topic notices | How main chat shows topic changes: hidden (default; the topic workspace shows where each message went), one line only when the topic changes, or on every message with the reason |
-| Linking scope | Learn automatically (default), same workspace only, or off |
-| Share confirmed facts (experimental) | Off by default. Topics share only facts the user confirmed (a figure, a decision, where a file is), with version and source; a topic that used one is told when it changes or is withdrawn. Applies after a DSH restart |
-| Record facts automatically (experimental) | Off by default. With shared facts on, one small model call after each turn records facts the topic session left out; only user-confirmed ones are shared |
-| Model | Follow DSH (default) or pin the background model from any model configured in DSH; a pinned model takes precedence over main chat's selector |
-| Routing | LLM decision (default) or rule-based |
-| History catalog | On/off and rescan interval |
-| Limits | Topic descriptor length; reply length per background step, thinking included |
-| Manual catalog file | Optional JSON file of hand-written topics, imported when saved |
+| 话题提示 | 主聊天里怎样显示话题切换：隐藏（默认；每条消息去了哪个话题在话题工作区里看）、仅切换时显示一行、每条都显示并注明原因 |
+| 联动范围 | 自动学习（默认）、仅同一工作区、关闭 |
+| 共享已确认的要点（实验） | 默认关闭。话题之间只共享用户亲自确认过的要点（数字、决定、文件位置），带版本和出处；要点改了或撤回了，用到它的话题会收到提示。重启 DSH 后生效 |
+| 自动记录要点（实验） | 默认关闭。开启共享后，每轮结束多用一次小模型调用，补记后台会话没记下的要点；只有用户确认过的才会共享 |
+| 模型 | 跟随 DSH（默认），或从 DSH 已配置的模型中固定后台模型；固定的设置优先于主聊天里的选择 |
+| 路由方式 | LLM 判断（默认）或规则判断 |
+| 历史整理 | 开关与补扫间隔 |
+| 内容限制 | 话题资料长度；后台每一步回复的长度（含思考） |
+| 人工话题目录文件 | 可选的 JSON 话题目录，保存时导入 |
 
-The database location and entry identifier switch TheOne to different data, so they are set only through environment variables: `THEONE_DATABASE_PATH` and `THEONE_GATEWAY_KEY`. Also optional: `THEONE_CONTEXTS_PATH` and `THEONE_WORKER_PROVIDER` / `THEONE_WORKER_MODEL` (set both).
+数据库位置和主入口标识会让 TheOne 换用另一份数据，只能用环境变量 `THEONE_DATABASE_PATH`、`THEONE_GATEWAY_KEY` 设置。另外可选：`THEONE_CONTEXTS_PATH`，以及须一起设置的 `THEONE_WORKER_PROVIDER` / `THEONE_WORKER_MODEL`。
 </details>
 
 <details>
-<summary><b>Data and privacy</b></summary>
+<summary><b>数据与隐私</b></summary>
 
-- Everything stays on your computer. Routing, topic cards and organising old sessions use the model you chose in DSH; requests go straight to that model provider, never through a TheOne server.
-- DSH keeps the original conversations and tool results; TheOne keeps only its catalog, summaries, links and routing records in its own SQLite database (`$DSH_HOME/theone/contexts.db`, `~/.dsh/theone/` by default).
-- Text sent to the router or written into briefings has API keys, passwords and similar secrets removed.
-- A topic marked **Do not share** never appears in other topics' briefings, recent-chat excerpts or lookups.
-- Notices from the author are read from `https://yulid.org/theone/notice.json` with a plain request that sends none of your data; turn them off in Settings.
-- **Report a problem** (top right of Topic workspaces, or **Report a problem** on a message under Recent topic routing) sends only when you press Send, and shows everything it would send first. By default it holds versions, settings and routing error codes and timings, no chat content; for one message, its text and reply are added only if you tick the box. Reports go to `feedback.yulid.org`, are used only to look into problems and are deleted after 90 days; to have one deleted sooner, email theone@yulid.org with its id.
-- When main chat grows long, DSH compacts it through TheOne: frequently used topics keep longer summaries and their latest turns, rarely used ones keep a short status. This makes no model call.
-- Updates are installed by DSH's plugin manager and reload TheOne in place; a DSH without plugin hot reload applies them at the next restart.
+- 所有数据都在你自己的电脑上。分配话题、写话题卡片、整理旧会话，用的都是你在 DSH 里选的模型，请求直接发给那家模型服务商，不经过 TheOne 的服务器。
+- 原始对话和工具结果由 DSH 保存；TheOne 只在自己的 SQLite 数据库（`$DSH_HOME/theone/contexts.db`，默认 `~/.dsh/theone/`）里保存目录、摘要、关联和路由记录。
+- 发给路由和写进参考简报的内容会去掉 API Key、密码等敏感信息。
+- 标记为「不共享」的话题，不会出现在其他话题的简报、最近对话和查阅结果里。
+- 作者发布的公告从 `https://yulid.org/theone/notice.json` 读取，只是一次普通的下载，不发送你的任何数据；可以在设置里关闭。
+- **反馈问题**（话题工作区右上角，或「最近的话题分配」里每条的「报告问题」）只在你点「发送」时才发出，发送前能看到全部内容。默认只含版本、设置、路由的错误码和耗时，不含聊天内容；报告某条回复时，勾选后才附上那条消息和回复的原文。报告发到 `feedback.yulid.org`，只用于排查问题，90 天后自动删除；想删掉已发的报告，写信到 theone@yulid.org 并附上编号。
+- 主聊天变长时，DSH 通过 TheOne 压缩它：常用话题保留较长摘要和最近几轮，不常用的只保留简短状态，不额外调用模型。
+- 更新由 DSH 的插件管理器安装，并就地重新加载 TheOne；不支持插件热加载的 DSH 会在下次启动时生效。
 </details>
 
 <details>
-<summary><b>Known limitations</b></summary>
+<summary><b>已知限制</b></summary>
 
-- Telling whether a message sent during a reply is about that reply needs the routing model; with rules-only routing, every such message joins the reply, as before.
-- A new topic not about any of your projects works in DSH's own folder for chats outside any project (`Documents/deepseek-harness/default-workspace`), or in `~/.dsh/theone/gateway` if you do not have that folder. Topics organised from your existing chats work in those chats' folders.
-- Main chat stores copies of tool calls, so its log grows with use; entry-log rotation is not implemented yet.
-- Only one DSH process should use a database at a time.
-- Image output is not forwarded yet; there is no vector search; a topic cannot be split in two yet (a merge can be undone).
-- The tool cards in main chat only show the tools the topic is using; nothing runs a second time. This relies on TheOne sitting first in DSH's tool pipeline; if another plugin also places itself first, it may see these display-only copies, but each tool still runs once.
+- 判断回答中发的消息是不是关于这次回答，需要路由模型；只用规则路由时，这类消息都会并进当前回答，和以前一样。
+- 和你的项目都无关的新话题，在 DSH 自己用来放「不属于任何项目的聊天」的文件夹（`文稿/deepseek-harness/default-workspace`）里干活；没有这个文件夹时，用 `~/.dsh/theone/gateway`。从你已有会话整理出来的话题，照旧在原来的文件夹里干活。
+- 主聊天保存了工具调用的副本，长期使用记录会变大；入口日志轮换尚未实现。
+- 同一数据库同时只应由一个 DSH 进程使用。
+- 图片输出尚未转发；没有向量检索；还不能把一个话题拆成两个（合并可以撤销）。
+- 主聊天里的工具卡片只是把话题里正在用的工具显示出来，不会再执行一遍。这依赖 TheOne 排在 DSH 工具流程的最前面；如果别的插件也要排最前面，它可能会看到这些显示用的副本，但工具仍然只执行一次。
 </details>
 
 <details>
-<summary><b>Development</b></summary>
+<summary><b>开发</b></summary>
 
 ```sh
 git clone https://github.com/YunongDai2005/dsh-theone.git
@@ -240,9 +248,9 @@ npm run typecheck
 npm test
 ```
 
-Tests use the real DSH runtime (AgentLoop, Session, SQLite, JSONL persistence, compaction) with a simulated model, and call no external API. `npm run pack:plugin` builds the install package; `npm run install:local` and `npm run start:local` run a separate DSH profile in `~/.dsh-theone`.
+测试使用真实的 DSH 运行时（AgentLoop、Session、SQLite、JSONL 持久化、压缩），只模拟模型，不调用外部 API。`npm run pack:plugin` 生成安装包；`npm run install:local` 和 `npm run start:local` 会在 `~/.dsh-theone` 启动一个独立的 DSH profile。
 
-Service API: `ctx.theone.searchHistoryDetailed(contextId, query, limit)` searches a topic's reviewed history; `store.addSource(contextId, sessionId, { startSeq, endSeq })` attaches part of a session. Earlier acceptance records: [v0.1](./docs/plugin-v0.1.md) and [v0.2](./docs/plugin-v0.2.md).
+服务接口：`ctx.theone.searchHistoryDetailed(contextId, query, limit)` 检索话题的已审核历史；`store.addSource(contextId, sessionId, { startSeq, endSeq })` 关联会话的一部分。旧版本验收记录见 [v0.1](./docs/plugin-v0.1.zh.md) 和 [v0.2](./docs/plugin-v0.2.zh.md)。
 </details>
 
 <details>
@@ -250,14 +258,14 @@ Service API: `ctx.theone.searchHistoryDetailed(contextId, query, limit)` searche
 
 <br>
 
-Congratulations, you found the easter egg.
+恭喜，你找到了彩蛋。
 
-In the benchmark, TheOne once made a very human mistake. The user said "the café's autumn menu was due on September 25, let's push it to October 8", and TheOne filed it under the October holiday trip to Yunnan. Both were in October, after all.
+在评测里，TheOne 犯过一个很有人味的错：用户说「咖啡店秋季新品本来定 9 月 25 上，现在想推到 10 月 8 号」，它把这句话放进了「国庆云南六日游」，因为都在十月。
 
-We're still training it. If it ever files something of yours in the wrong place, just say "wrong topic" in the main chat. It will remember, and it won't take it personally.
+我们还在调教它。如果你也被它分错了，在主聊天里说一句「分错了」就行，它会记住，不会生气。
 
 </details>
 
 ---
 
-<p align="center">If TheOne helps, a ⭐ helps others find it. Questions or ideas? <a href="https://github.com/YunongDai2005/dsh-theone/issues">Open an issue</a> or email <a href="mailto:theone@yulid.org">theone@yulid.org</a>.</p>
+<p align="center">觉得有用的话，点个 ⭐ 让更多人看到。遇到问题或有想法，欢迎进 QQ 群 1080980184，或者 <a href="https://github.com/YunongDai2005/dsh-theone/issues">提 Issue</a>，打不开 GitHub 就发邮件到 <a href="mailto:theone@yulid.org">theone@yulid.org</a>。</p>
