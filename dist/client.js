@@ -313,6 +313,7 @@ var zh = {
   "catalog.searchUnavailable": "\u90E8\u5206\u5386\u53F2\u6682\u65F6\u65E0\u6CD5\u68C0\u7D22\uFF0C\u4ECD\u53EF\u4ECE\u8BDD\u9898\u76EE\u5F55\u7EE7\u7EED\u804A\u5929\u3002",
   "catalog.loadError": "\u6682\u65F6\u65E0\u6CD5\u8BFB\u53D6\u8BDD\u9898\uFF0C\u8BF7\u68C0\u67E5 DSH \u8FDE\u63A5\u3002",
   "catalog.continueError": "\u6682\u65F6\u65E0\u6CD5\u7EE7\u7EED\u8FD9\u4E2A\u8BDD\u9898\uFF0C\u8BF7\u7B49\u5F53\u524D\u804A\u5929\u7ED3\u675F\u540E\u91CD\u8BD5\u3002",
+  "catalog.sourceError": "\u539F\u4F1A\u8BDD\u6682\u65F6\u6253\u4E0D\u5F00\uFF0C\u8BF7\u7A0D\u540E\u518D\u8BD5\u3002",
   "catalog.refreshError": "\u6682\u65F6\u65E0\u6CD5\u6574\u7406\u5386\u53F2\uFF0C\u8BF7\u68C0\u67E5 DSH \u6A21\u578B\u914D\u7F6E\u3002",
   "catalog.consentTitle": "\u8981\u4E0D\u8981\u6574\u7406\u4EE5\u524D\u7684\u804A\u5929\uFF1F",
   "catalog.chooseChatsShort": "\u9009\u62E9\u4F1A\u8BDD",
@@ -675,6 +676,7 @@ var en = {
   "catalog.searchUnavailable": "Some history is temporarily unavailable for search. You can still continue from the topic catalog.",
   "catalog.loadError": "Topics could not load. Check your DSH connection.",
   "catalog.continueError": "This topic could not open. Wait for the current conversation to finish, then try again.",
+  "catalog.sourceError": "The original chat could not open. Try again in a moment.",
   "catalog.refreshError": "History could not be organized. Check your DSH model settings.",
   "catalog.consentTitle": "Sort out your earlier chats?",
   "catalog.chooseChatsShort": "Choose chats",
@@ -2659,13 +2661,19 @@ function apply(ctx) {
       if (!prepared.ok) throw new Error("Global gateway preparation failed");
       await ctx.uiWorkspace.unarchiveSession(target);
     },
+    // "Continue chatting" just changed the topic in use: main chat opens in that topic's folder.
     open(id) {
-      if (!lifetime.signal.aborted) ctx.uiWorkspace.openSession(id);
+      if (!lifetime.signal.aborted) {
+        readTopicFolder();
+        ctx.uiWorkspace.openSession(id);
+      }
     },
     beginNavigation() {
       return AbortSignal.any([ctx.layout.beginNavigation(), lifetime.signal]);
     }
   }, window.localStorage, `dsh-theone.gateway.v1:${location.pathname}`, () => crypto.randomUUID());
+  let readTopicFolder = () => {
+  };
   ctx.effect(() => {
     let active = localeSnapshot().active;
     let pending = Promise.resolve();
@@ -4272,6 +4280,17 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
         setBusy(void 0);
       }
     }
+    async function openSource(sessionId) {
+      const navigating = ctx.layout.beginNavigation();
+      setError(void 0);
+      try {
+        const workspaces = ctx.workspaces.list.getSnapshot();
+        if (workspaces.phase === "ready" && workspaces.archivedSessionIds.includes(sessionId)) await ctx.uiWorkspace.unarchiveSession(sessionId);
+        if (!navigating.aborted) ctx.uiWorkspace.openSession(sessionId);
+      } catch {
+        setError("catalog.sourceError");
+      }
+    }
     const post = async (path, body) => {
       setBusy(path);
       setError(void 0);
@@ -4709,8 +4728,7 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
                     key: sessionId,
                     type: "button",
                     onClick: () => {
-                      ctx.layout.beginNavigation();
-                      ctx.uiWorkspace.openSession(sessionId);
+                      void openSource(sessionId);
                     }
                   }, t2("topic.source") + (topic.sourceSessionIds.length > 1 ? " " + (i + 1) : "")))
                 ),
@@ -4795,7 +4813,16 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
   });
   ctx.effect(() => {
     const list = ctx.sessions.list;
-    const original = list.getSnapshot;
+    const original = list.getSnapshot, originalSubscribe = list.subscribe;
+    const listeners = /* @__PURE__ */ new Set();
+    list.subscribe = (listener) => {
+      listeners.add(listener);
+      const unsubscribe2 = originalSubscribe.call(list, listener);
+      return () => {
+        listeners.delete(listener);
+        unsubscribe2();
+      };
+    };
     let folder;
     let base, view, viewFolder, viewId;
     list.getSnapshot = function() {
@@ -4816,17 +4843,23 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
       clearTimeout(timer);
       timer = setTimeout(() => {
         void fetch("/api/theone/gateway", { signal: lifetime.signal, cache: "no-store" }).then((response) => response.ok ? response.json() : void 0).then((value) => {
-          if (value && !lifetime.signal.aborted) folder = value.topicFolder ?? void 0;
+          if (!value || lifetime.signal.aborted || folder === (value.topicFolder ?? void 0)) return;
+          folder = value.topicFolder ?? void 0;
+          for (const listener of [...listeners]) listener();
         }).catch(() => {
         });
       }, 400);
     };
     read();
-    const unsubscribe = ctx.sessions.list.subscribe(read);
+    readTopicFolder = read;
+    const unsubscribe = originalSubscribe.call(list, read);
     return () => {
       unsubscribe();
       clearTimeout(timer);
       list.getSnapshot = original;
+      list.subscribe = originalSubscribe;
+      readTopicFolder = () => {
+      };
     };
   });
   const WorkPanel = createWorkPanel(useText, lifetime.signal, () => ctx.layout.selectPanel(panelId));

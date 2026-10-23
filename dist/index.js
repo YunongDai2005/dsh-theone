@@ -1072,6 +1072,7 @@ export default class TheOne extends Service {
                         await scope.workspaceRegistry.unarchiveSession(id);
                         const locale = 'locale' in value && typeof value.locale === 'string' ? value.locale.slice(0, 16) : 'en';
                         this.welcomeGateway(id, locale);
+                        this.announceMount(id);
                         await this.restoreDefaultModel().catch(error => console.warn('TheOne could not restore DSH\'s default model.', error));
                         return Response.json({ prepared: true, workspaceId: null });
                     } }));
@@ -1276,7 +1277,10 @@ export default class TheOne extends Service {
                         return Response.json({ error: 'TOPIC_HIDDEN' }, { status: 409 });
                     if (this.busy)
                         return Response.json({ error: 'GATEWAY_BUSY' }, { status: 409 });
+                    const before = this.store.current(this.config.gatewayKey);
                     this.store.mount(this.config.gatewayKey, value.contextId);
+                    // Main chat still ends with the last topic's exchange; when it opens, it says which one it continues.
+                    this.mountNotice = before === value.contextId ? undefined : value.contextId;
                     // Opening another topic just after a message went elsewhere hints at where it belonged.
                     const last = this.store.recentRoutes(this.config.gatewayKey, 1)[0];
                     if (last && Date.now() - last.at < 10 * 60000 && !last.correctedTo && last.decision.action !== 'CLARIFY'
@@ -3776,6 +3780,30 @@ export default class TheOne extends Service {
                 return { kind: 'success', text: lines.join('\n') };
             },
         });
+    }
+    /** The topic "Continue chatting" just put in use, until main chat opens and says so. */
+    mountNotice;
+    /**
+     * "Continue chatting" on another topic opens the same main chat, whose last exchange is still the
+     * previous topic's. One line says which topic comes next and where it left off.
+     */
+    announceMount(gatewayId) {
+        const contextId = this.mountNotice;
+        this.mountNotice = undefined;
+        if (!contextId || this.store.current(this.config.gatewayKey) !== contextId)
+            return;
+        const context = this.store.contexts().find(item => item.id === contextId);
+        const agent = this.ctx.agents.get(SessionId(gatewayId));
+        if (!context || !agent || agent.status !== 'idle' || agent.inbox.nextTurn.length || agent.inbox.nextStep.length)
+            return;
+        const zh = !/^en/.test(this.gatewayLocale(gatewayId));
+        // A topic that has not run yet only has placeholders, which say nothing here.
+        const where = [context.lastState, context.summary].map(text => text?.trim().replace(/\s+/g, ' ') ?? '')
+            .find(text => text && text !== '等待首次执行' && text !== '新话题，尚无历史摘要。')?.slice(0, 240).replace(/[\s。.！!？?；;，,、]+$/u, '');
+        const text = zh
+            ? `接下来继续「${context.title}」${where ? `，上次停在：${where}` : ''}。你接下来说的话会交给这个话题。`
+            : `Continuing “${context.title}”${where ? `, where it left off: ${where}` : ''}. What you say next goes to this topic.`;
+        agent.followup(createUserMessage({ source: { kind: 'theone-note', form: 'notice' }, content: [{ type: 'text', text }] }));
     }
     welcomeGateway(id, locale) {
         const agent = this.ctx.agents.get(SessionId(id));

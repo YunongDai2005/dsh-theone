@@ -226,6 +226,7 @@ export declare const zh: {
     readonly 'catalog.searchUnavailable': "部分历史暂时无法检索，仍可从话题目录继续聊天。";
     readonly 'catalog.loadError': "暂时无法读取话题，请检查 DSH 连接。";
     readonly 'catalog.continueError': "暂时无法继续这个话题，请等当前聊天结束后重试。";
+    readonly 'catalog.sourceError': "原会话暂时打不开，请稍后再试。";
     readonly 'catalog.refreshError': "暂时无法整理历史，请检查 DSH 模型配置。";
     readonly "catalog.consentTitle": "要不要整理以前的聊天？";
     readonly "catalog.chooseChatsShort": "选择会话";

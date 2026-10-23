@@ -451,6 +451,13 @@ export default class TheOne extends Service {
      * Registered on main chat alone, it takes the place of DSH's /compact there and nowhere else.
      */
     private gatewayCommands;
+    /** The topic "Continue chatting" just put in use, until main chat opens and says so. */
+    private mountNotice?;
+    /**
+     * "Continue chatting" on another topic opens the same main chat, whose last exchange is still the
+     * previous topic's. One line says which topic comes next and where it left off.
+     */
+    private announceMount;
     welcomeGateway(id: string, locale: string): void;
     /**
      * A message that draws on other topics links them. Switching between topics does not: working on

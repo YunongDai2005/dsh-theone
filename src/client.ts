@@ -78,9 +78,12 @@ export function apply(ctx: Context) {
       // Archiving the underlying session must not strand the fixed entry.
       await ctx.uiWorkspace.unarchiveSession(target)
     },
-    open(id) { if (!lifetime.signal.aborted) ctx.uiWorkspace.openSession(id as SessionId) },
+    // "Continue chatting" just changed the topic in use: main chat opens in that topic's folder.
+    open(id) { if (!lifetime.signal.aborted) { readTopicFolder(); ctx.uiWorkspace.openSession(id as SessionId) } },
     beginNavigation() { return AbortSignal.any([ctx.layout.beginNavigation(),lifetime.signal]) },
   }, window.localStorage, `dsh-theone.gateway.v1:${location.pathname}`, () => crypto.randomUUID())
+  /** Reads main chat's folder (the topic in use's) again; set by the effect that shows it. */
+  let readTopicFolder = () => {}
 
   ctx.effect(() => {
     let active = localeSnapshot().active
@@ -1129,6 +1132,19 @@ export function apply(ctx: Context) {
       } catch { setError('catalog.continueError') }
       finally { setBusy(undefined) }
     }
+    /**
+     * A topic's original chat may be archived: by the user, or by TheOne once the topic went quiet.
+     * DSH shows nothing for an archived chat it is asked to open, so it comes out of the archive first.
+     */
+    async function openSource(sessionId: SessionId) {
+      const navigating = ctx.layout.beginNavigation()
+      setError(undefined)
+      try {
+        const workspaces = ctx.workspaces.list.getSnapshot()
+        if (workspaces.phase === 'ready' && workspaces.archivedSessionIds.includes(sessionId)) await ctx.uiWorkspace.unarchiveSession(sessionId)
+        if (!navigating.aborted) ctx.uiWorkspace.openSession(sessionId)
+      } catch { setError('catalog.sourceError') }
+    }
     /** One directory edit; the directory reloads after it. */
     const post: Post = async (path, body) => {
       setBusy(path); setError(undefined)
@@ -1357,7 +1373,7 @@ export function apply(ctx: Context) {
                     onClick: () => { void post('/api/theone/topics', { action: 'status', id, done: topic.topicStatus !== 'done' }) } },
                     t(topic.topicStatus === 'done' ? 'topic.reopen' : 'topic.markDone')),
                   ...(topic.hidden === 'orphaned' ? [] : topic.sourceSessionIds).slice(0, 3).map((sessionId, i) => h('button', { key: sessionId, type: 'button',
-                    onClick: () => { ctx.layout.beginNavigation(); ctx.uiWorkspace.openSession(sessionId as SessionId) } }, t('topic.source') + (topic.sourceSessionIds.length > 1 ? ' ' + (i + 1) : '')))),
+                    onClick: () => { void openSource(sessionId as SessionId) } }, t('topic.source') + (topic.sourceSessionIds.length > 1 ? ' ' + (i + 1) : '')))),
                 linkRow(id),
                 h(TopicManager, { key: `${id}:${topic.title}:${topic.summary}:${constraints}`, topic, constraints, groups: snapshot!.groups, contexts: snapshot!.contexts, post, busy: !!busy })) : null)]
           })))
@@ -1427,8 +1443,15 @@ export function apply(ctx: Context) {
   // is the folder of the topic in use. Only main chat's row in this browser's list changes; the
   // session, and every other session, stay as they are.
   ctx.effect(() => {
-    const list = ctx.sessions.list as unknown as { getSnapshot(): SessionListState }
-    const original = list.getSnapshot
+    const list = ctx.sessions.list as unknown as { getSnapshot(): SessionListState; subscribe(listener: () => void): () => void }
+    const original = list.getSnapshot, originalSubscribe = list.subscribe
+    // A new folder changes no session, so the list would not say so by itself.
+    const listeners = new Set<() => void>()
+    list.subscribe = (listener: () => void) => {
+      listeners.add(listener)
+      const unsubscribe = originalSubscribe.call(list, listener)
+      return () => { listeners.delete(listener); unsubscribe() }
+    }
     let folder: string | undefined
     let base: SessionListState | undefined, view: SessionListState | undefined, viewFolder: string | undefined, viewId: string | undefined
     list.getSnapshot = function (this: unknown) {
@@ -1449,13 +1472,18 @@ export function apply(ctx: Context) {
       timer = setTimeout(() => {
         void fetch('/api/theone/gateway', { signal: lifetime.signal, cache: 'no-store' })
           .then(response => response.ok ? response.json() as Promise<{ topicFolder?: string | null }> : undefined)
-          .then(value => { if (value && !lifetime.signal.aborted) folder = value.topicFolder ?? undefined }).catch(() => {})
+          .then(value => {
+            if (!value || lifetime.signal.aborted || folder === (value.topicFolder ?? undefined)) return
+            folder = value.topicFolder ?? undefined
+            for (const listener of [...listeners]) listener()
+          }).catch(() => {})
       }, 400)
     }
     read()
+    readTopicFolder = read
     // A routed message changes main chat's list entry; the topic in use may have changed with it.
-    const unsubscribe = ctx.sessions.list.subscribe(read)
-    return () => { unsubscribe(); clearTimeout(timer); list.getSnapshot = original }
+    const unsubscribe = originalSubscribe.call(list, read)
+    return () => { unsubscribe(); clearTimeout(timer); list.getSnapshot = original; list.subscribe = originalSubscribe; readTopicFolder = () => {} }
   })
 
   // Wait for the owning plugins' declarations; retain their normal browser and chat.
