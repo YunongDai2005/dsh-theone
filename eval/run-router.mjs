@@ -12,17 +12,30 @@
 //   --decide joint|each    a burst gets one decision for all its messages (joint), or is sent in one call
 //                          that decides each message separately (each); a malformed answer falls back
 //                          to routing its messages one by one
+//   --recheck         ask again with thinking on when TheOne would: a new topic, a question, or a decision
+//                     against a strong clue
+//   --cards           open mode: write topic cards when TheOne would (its prompt, checks, schedule and
+//                     summary from dist/; the card sees the user's side only)
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
-import { ROUTING_PROMPT, routingPayload, validateRoutingDecision, redactRoutingText } from '../dist/llm-router.js'
+import { ROUTING_PROMPT, routingPrompt, routingPayload, validateRoutingDecision, redactRoutingText } from '../dist/llm-router.js'
 import { continuesCurrent, topicTerms } from '../dist/routing-policy.js'
 import { resolveContext } from '../dist/router.js'
+import * as memory from '../dist/topic-memory.js'
 import { createClient } from './lib/llm.mjs'
 import { groupUnits, planArrivals } from './lib/bursts.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
+// The second look (and the clues it uses) exists from 0.3.38 on; older builds run without it.
+const looks = await import('../dist/routing-evidence.js').catch(() => undefined)
+// Builds before the card schedule and summary were shared fall back to what those builds did.
+const cardDue = memory.cardDue ?? (replies => memory.CARD_AFTER_REPLIES.includes(replies))
+// Builds before settled values were kept apart fold the card into the summary as they did.
+const settleCard = memory.mergeSettled && memory.routingSummary
+  ? (topic, card) => { topic.settled = memory.mergeSettled(topic.settled ?? [], card.settled, topic.texts.length); topic.summary = memory.routingSummary(topic.base ?? card.summary, topic.settled, card.open) }
+  : (topic, card) => { topic.summary = (memory.cardSummary ?? (c => [c.summary, c.open.length ? `待定：${c.open.join('；')}` : ''].filter(Boolean).join(' ').slice(0, 600)))(card) }
 
 /** Added to the routing prompt when a burst's messages are decided one by one in a single call. */
 export const BATCH_PROMPT = `
@@ -52,14 +65,35 @@ export function batchDecisions(value, texts, contexts, currentId) {
 export const readSessions = file => readFileSync(file, 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line))
 
 /** Route every message of one session in order; returns one prediction per message. */
-export async function routeSession(session, { mode, policy, client, merge = 'none', decide = 'joint', bursts = {} }) {
+export async function routeSession(session, { mode, policy, client, merge = 'none', decide = 'joint', bursts = {}, cards = false, recheck: withRecheck = false }) {
   // Topics the router can choose from. Closed: the session's threads, described as a catalog would.
   // Open: only what the router itself created, described by the messages it put there.
   const topics = mode === 'closed'
-    ? session.threads.map(thread => ({ id: thread.id, title: thread.title, summary: thread.description, entities: [], keywords: [], lastState: '', texts: [] }))
+    ? session.threads.map(thread => ({ id: thread.id, title: thread.title, summary: thread.description, entities: [], keywords: [], lastState: '', texts: [], replies: 0 }))
     : []
+  // A card's other names come first, as TheOne merges them into a topic's keywords; then the words of its messages.
   const describe = topic => ({ id: topic.id, title: topic.title, summary: topic.summary, entities: topic.entities,
-    keywords: [...new Set(topic.texts.flatMap(text => topicTerms(text)))].slice(-24), lastState: topic.texts.at(-1)?.slice(0, 400) ?? topic.lastState })
+    keywords: [...new Set([...topic.keywords, ...[...new Set(topic.texts.flatMap(text => topicTerms(text)))].slice(-24)])].slice(0, 24),
+    lastState: topic.texts.at(-1)?.slice(0, 400) ?? topic.lastState })
+  /** A topic card, applied as TheOne's store applies one: summary (with what is settled and open), other names, entities. */
+  const writeCard = async topic => {
+    const payload = memory.cardPayload(topic, topic.texts.map(text => ({ speaker: 'user', text: redactRoutingText(text) })))
+    if (!payload) return
+    try {
+      const answer = await client.complete({ system: memory.CARD_PROMPT, user: JSON.stringify(payload), maxTokens: 1024, json: true, details: true,
+        tag: `card:${session.session_id}:${topic.id}:${topic.texts.length}:${policy}` })
+      const card = memory.parseCard(answer.value, redactRoutingText)
+      if (!card) return usageOf(answer)
+      const merge = (first, then, max) => [...new Set([...first, ...then])].filter(Boolean).slice(0, max)
+      // As TheOne keeps them: the card's summary as the topic's base, its settled values beside it,
+      // other names added with the newest first, entities newest first.
+      topic.base = card.summary
+      settleCard(topic, card)
+      topic.keywords = merge(card.aliases, topic.keywords, 80)
+      topic.entities = merge(card.entities, topic.entities, 48)
+      return usageOf(answer)
+    } catch { /* no card: the topic keeps what it had, as in TheOne */ }
+  }
   const recent = []
   const out = []
   let current, created = 0
@@ -69,38 +103,60 @@ export async function routeSession(session, { mode, policy, client, merge = 'non
   const apply = (decision, members, text, batchIds) => {
     let pred = 'ERROR'
     if (decision?.action === 'CREATE') {
-      const topic = { id: `${mode === 'closed' ? 'n' : 'p'}${++created}`, title: decision.title, summary: text.slice(0, 200), entities: [], keywords: [], lastState: '', texts: [] }
+      const topic = { id: `${mode === 'closed' ? 'n' : 'p'}${++created}`, title: decision.title, summary: text.slice(0, 200), entities: [], keywords: [], lastState: '', texts: [], replies: 0 }
       topics.push(topic); pred = topic.id
     } else if (decision?.action === 'CLARIFY') pred = 'CLARIFY'
     else if (decision?.contextId) pred = batchIds?.get(decision.contextId) ?? decision.contextId
     const topic = topics.find(item => item.id === pred)
-    if (topic) { topic.texts.push(...members.map(turn => turn.text)); current = topic.id }
+    if (topic) {
+      topic.texts.push(...members.map(turn => turn.text)); current = topic.id
+      if (cards && mode === 'open' && cardDue(++topic.replies)) carding.push(writeCard(topic))
+    }
     recent.push(...members.map(turn => ({ role: 'user', text: turn.text })))
     return pred
   }
+  // Cards are written after the reply; the next message is routed once they are in.
+  const carding = []
   /** Route `members` as one request with one decision, as TheOne does today. */
   const routeJoint = async (members, tag) => {
     // A burst is one request: its messages, in order, as the user sent them.
     const text = members.map(turn => turn.text).join('\n')
     const contexts = topics.map(describe)
+    // Clues are looked up in everything a topic holds, as TheOne looks in its routed messages and catalog entry.
+    const clues = withRecheck && looks ? looks.routingEvidence(text, topics.map(topic => ({ id: topic.id,
+      texts: [topic.title, topic.summary, ...topic.entities, ...topic.keywords, ...topic.texts] }))) : []
     const input = { text, contexts, currentId: current, recent: recent.slice(-12) }
-    let decision, usage, error, via = 'llm'
+    let decision, usage, error, via = 'llm', rechecked
     if (policy === 'theone' && current && continuesCurrent(text)) { decision = { action: 'KEEP', contextId: current, reason: 'fast path' }; via = 'fast' }
     else {
       try {
         const payload = routingPayload(input)
         // Calls run concurrently, so each call's tokens come from its own response, not the running total.
-        const answer = await client.complete({ system: ROUTING_PROMPT, user: JSON.stringify(payload), maxTokens: 2048, json: true, details: true, tag })
+        const answer = await client.complete({ system: routingPrompt(payload), user: JSON.stringify(payload), maxTokens: 2048, json: true, details: true, tag })
         usage = usageOf(answer)
         if (answer.cached) via = 'cache'
         decision = validateRoutingDecision(answer.value, input)
+        const look = withRecheck && looks ? looks.secondLook(decision, clues) : undefined
+        if (look) {
+          const again = { ...input, recheck: look }
+          const repeat = routingPayload(again)
+          try {
+            const second = await client.complete({ system: routingPrompt(repeat), user: JSON.stringify(repeat), maxTokens: 8192, json: true, details: true,
+              tag: `${tag}:recheck`, override: { reasoning_effort: null, thinking: null } })
+            const first = decision
+            decision = validateRoutingDecision(second.value, again)
+            rechecked = { from: first.contextId ?? first.action, to: decision.contextId ?? decision.action }
+            const extra = usageOf(second)
+            if (usage && extra) usage = Object.fromEntries(Object.keys(usage).map(key => [key, usage[key] + (extra[key] ?? 0)]))
+          } catch { /* the first decision stands, as in TheOne */ }
+        }
       } catch (failure) {
         error = String(failure.code ?? failure.message).slice(0, 120)
         if (policy === 'theone') { decision = resolveContext(text, contexts, current); via = 'rules' }
       }
     }
     const pred = apply(decision, members, text)
-    return members.map(() => ({ pred, decision, via, usage, error }))
+    return members.map(() => ({ pred, decision, via, usage, error, rechecked }))
   }
   /** Route a burst in one call that decides each message; malformed answers fall back to one by one. */
   const routeEach = async (members, tag) => {
@@ -139,13 +195,17 @@ export async function routeSession(session, { mode, policy, client, merge = 'non
     const tag = `route:${session.session_id}:${members.length > 1 ? unit.turns.join('+') : members[0].i}:${mode}:${policy}`
     const results = members.length > 1 && decide === 'each' ? await routeEach(members, tag) : await routeJoint(members, tag)
     const elapsed = Math.round(performance.now() - started)
+    // A card's tokens are counted on the message whose reply it follows.
+    const cardUsage = (await Promise.all(carding.splice(0))).filter(Boolean)
     // The call's tokens are counted once, on the first message.
     // `mixed` (gold labels, for reporting only) marks a burst that spanned more than one thread.
     const mixed = new Set(members.map(turn => turn.gold.thread ?? 'none')).size > 1
     members.forEach((turn, k) => {
-      const { pred, decision, via, usage, error } = results[k]
+      const { pred, decision, via, usage, error, rechecked } = results[k]
       out.push({ session_id: session.session_id, i: turn.i, mode, policy, pred, action: decision?.action ?? null, refs: decision?.relatedIds ?? [],
+        ...(decision?.action === 'CREATE' ? { title: decision.title, reason: decision.reason } : {}), ...(rechecked ? { rechecked } : {}),
         via, ...(usage && (k === 0 || decide === 'each') ? { usage } : {}), elapsed_ms: elapsed, ...(error ? { error } : {}),
+        ...(k === members.length - 1 && cardUsage.length ? { card_usage: cardUsage } : {}),
         ...(merge !== 'none' ? { merge, decide, burst: members.length, waited: unit.waited, ...(mixed ? { mixed } : {}) } : {}) })
     })
   }
@@ -157,7 +217,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     data: { type: 'string', default: join(here, 'data', 'interleave-v0', 'sessions.jsonl') },
     mode: { type: 'string', default: 'closed' }, policy: { type: 'string', default: 'llm' }, split: { type: 'string', default: 'dev' },
     model: { type: 'string' }, out: { type: 'string' }, 'dry-run': { type: 'boolean', default: false }, limit: { type: 'string' },
-    merge: { type: 'string', default: 'none' }, decide: { type: 'string', default: 'joint' }, same: { type: 'string', default: '0.35' }, cross: { type: 'string', default: '0.05' }, 'burst-seed': { type: 'string', default: '1' } } })
+    merge: { type: 'string', default: 'none' }, decide: { type: 'string', default: 'joint' }, same: { type: 'string', default: '0.35' }, cross: { type: 'string', default: '0.05' }, 'burst-seed': { type: 'string', default: '1' }, cards: { type: 'boolean', default: false }, recheck: { type: 'boolean', default: false } } })
   if (!['closed', 'open'].includes(values.mode) || !['llm', 'theone'].includes(values.policy)) throw new Error('--mode closed|open, --policy llm|theone')
   if (!['none', 'all', 'adaptive'].includes(values.merge)) throw new Error('--merge none|all|adaptive')
   if (!['joint', 'each'].includes(values.decide)) throw new Error('--decide joint|each')
@@ -166,11 +226,12 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const client = await createClient({ model: values.model, cacheDir: join(here, '.cache', dry ? 'fake' : 'llm'), fake: dry ? join(here, 'test', 'fake-model.mjs') : undefined })
   let sessions = readSessions(values.data).filter(session => values.split === 'all' || session.split === values.split)
   if (values.limit) sessions = sessions.slice(0, Number(values.limit))
-  const name = `${values.mode}-${values.policy}${values.merge === 'none' ? '' : `-${values.merge}${values.decide === 'each' ? '-each' : ''}-s${values.same}-c${values.cross}`}-${client.model.replace(/[^\w.-]+/g, '_')}`
+  if (values.recheck && !looks) throw new Error('--recheck needs a build with dist/routing-evidence.js (npm run build)')
+  const name = `${values.mode}-${values.policy}${values.cards ? '-cards' : ''}${values.recheck ? '-recheck' : ''}${values.merge === 'none' ? '' : `-${values.merge}${values.decide === 'each' ? '-each' : ''}-s${values.same}-c${values.cross}`}-${client.model.replace(/[^\w.-]+/g, '_')}`
   const out = values.out ?? join(dirname(values.data), 'predictions', `${name}.jsonl`)
   const timer = setInterval(() => console.error(`… ${client.usage}`), 15000)
   try {
-    const rows = (await Promise.all(sessions.map(session => routeSession(session, { mode: values.mode, policy: values.policy, client, merge: values.merge, decide: values.decide, bursts })))).flat()
+    const rows = (await Promise.all(sessions.map(session => routeSession(session, { mode: values.mode, policy: values.policy, client, merge: values.merge, decide: values.decide, bursts, cards: values.cards, recheck: values.recheck })))).flat()
     mkdirSync(dirname(out), { recursive: true })
     writeFileSync(out, rows.map(row => JSON.stringify(row)).join('\n') + '\n')
     console.log(`Routed ${rows.length} messages from ${sessions.length} sessions → ${out}`)

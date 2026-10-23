@@ -4,7 +4,7 @@ const normalize = (value) => value.toLowerCase().replace(/[\s/_-]+/g, '');
 export function resolveContext(text, contexts, currentId) {
     const current = contexts.find(context => context.id === currentId);
     const input = text.trim();
-    const newTopic = input.match(/^(?:新话题[：:]\s*|我想开始|开始一个新项目[：:]?\s*)(.+)/);
+    const newTopic = input.match(/^(?:新话题[：:]\s*|我想开始|开始一个新项目[：:]?\s*|new topic\s*[:：]\s*)(.+)/i);
     if (newTopic)
         return { action: 'CREATE', title: newTopic[1].trim().slice(0, 80), reason: 'explicit-new-topic' };
     // Negated/deferred clauses don't nominate a Context. A later explicit resumption
@@ -26,7 +26,7 @@ export function resolveContext(text, contexts, currentId) {
         return { action: primary.id === current?.id ? 'KEEP' : current ? 'SWAP' : 'MOUNT', contextId: primary.id, reason: 'combined-contexts', relatedIds };
     }
     if (candidates.length > 1) {
-        return { action: 'CLARIFY', reason: 'multiple-contexts', question: '这句话涉及多个话题，请指定先处理哪个。' };
+        return { action: 'CLARIFY', reason: 'multiple-contexts', question: '这句话涉及多个话题，请指定先处理哪个。', relatedIds: candidates.map(context => context.id) };
     }
     // Corrections to details inside the selected topic are ordinary continuations.
     if (candidates.length === 1) {
@@ -35,7 +35,7 @@ export function resolveContext(text, contexts, currentId) {
         if (current && context.id !== current.id && !explicitEntity && !/回到|切换|换到|先.*(?:处理|修|聊)|谈谈|聊聊/.test(input)) {
             if (!referencesHistory(input))
                 return newIndependentTopic(input, contexts, 'weak-keyword-match');
-            return { action: 'CLARIFY', reason: 'keyword-only-switch', question: `你是在继续“${current.title}”，还是切换到“${context.title}”？` };
+            return { action: 'CLARIFY', reason: 'keyword-only-switch', question: `你是在继续“${current.title}”，还是切换到“${context.title}”？`, relatedIds: [current.id, context.id] };
         }
         return { action: current?.id === context.id ? 'KEEP' : current ? 'SWAP' : 'MOUNT', contextId: context.id, reason: 'entity-or-keyword' };
     }

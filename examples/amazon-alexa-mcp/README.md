@@ -2,6 +2,14 @@
 
 An experimental, self-hosted Streamable HTTP server for the Amazon **Alexa+** track. It turns TheOne's topic organization into six host-callable tools, with persistent per-topic notes, safe retry receipts and version-checked correction of misfiled work. It is a local single-owner prototype. It does not connect to an Alexa device, claim Amazon certification or use AWS services.
 
+## Submission version: TheOne 0.4.1
+
+On October 23, this competition branch incorporated the exact TheOne `v0.4.1` release (`5e6f4e9b190c7773d080885bcdcbe02e033e2ffe`). The root package and plugin are version **0.4.1**. The separate MCP example keeps its own **0.1.0** version; these are different components, not competing labels for one executable.
+
+The desktop plugin now offers choices before an ambiguous action, topic correction and merge suggestions, and corrected navigation when continuing or opening an archived topic. Run the plugin through its root instructions to see those features. This MCP example imports the current deterministic router from the same 0.4.1 source tree, but its SQLite notes and browser demonstration remain independent of DSH's live sessions. It does not expose the desktop UI or automatically share the desktop conversation database. A combined video must label which component is being shown.
+
+The linked 90-second MCP video below was recorded on October 11 with the older 0.3.31 base. It remains evidence of that demonstration, not a recording of the 0.4.1 desktop interface. A replacement video must be attached to the existing Amazon submission before its deadline; editing this repository alone does not replace the video judges see.
+
 ## Run
 
 Use Node.js **24+**. From this repository:
@@ -55,6 +63,6 @@ Public 90-second demonstration: https://youtu.be/mgPtqg8H8tk . Actual browser sc
 
 ## Existing code and event work
 
-The base TheOne repository history starts on September 30, 2026, within the event submission window. This extension reuses that plugin. This branch starts from the public build-fix commit `5e5e395`. The existing rule router is reused unchanged. The new HTTP entry point, tool schemas, independent SQLite memory, retry/correction workflow, official-client demos, browser host and HTTP verification were built on October 11, 2026, within the event's submission window. Codex assisted with implementation, tests, demonstration capture and documentation. This source is covered by the repository's MIT license; third-party SDK dependencies retain their own licenses.
+The base TheOne repository history starts on September 30, 2026, within the event submission window. This extension reuses that plugin. The original branch started from the public build-fix commit `5e5e395`; the October 23 update incorporates the published `v0.4.1` tree and reuses its deterministic rule router. The HTTP entry point, tool schemas, independent SQLite memory, retry/correction workflow, official-client demos, browser host and HTTP verification were built on October 11, 2026, within the event's submission window. The 0.4.1 main-product improvements are shared product work, not claimed as exclusive Amazon features. Codex assisted with implementation, tests, demonstration capture and documentation. This source is covered by the repository's MIT license; third-party SDK dependencies retain their own licenses.
 
 Official sources: [Amazon rules](https://amazonappdev2026.devpost.com/rules), [MCP TypeScript SDK v1 branch](https://github.com/modelcontextprotocol/typescript-sdk/tree/v1.x).

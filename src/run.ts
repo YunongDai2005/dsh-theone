@@ -73,9 +73,6 @@ export class WorkerRun {
     }))
   }
 
-  /** Related topics whose news this run's briefing carried, and those the Worker then looked up. */
-  briefed: string[] = []
-  readonly lookedUp = new Set<string>()
   /** The Worker recorded facts itself this run, so no extraction is needed afterwards. */
   recordedFacts = false
 
@@ -133,6 +130,12 @@ export class WorkerRun {
 
   cancel(): void { if (this.worker.status !== 'idle') this.worker.cancel({ kind: 'parent' }) }
   dispose(): void { for (const dispose of this.disposers.splice(0)) dispose() }
+
+  /** Whether one of this Worker's steps made tool call `callId` (main chat may ask after a hand-back moved on). */
+  owns(callId: string): boolean {
+    return this.results.has(callId) || this.steps.some(step => step.attempt.chunks.some(chunk =>
+      chunk.type === 'block-end' && chunk.block.type === 'tool-call' && chunk.block.id === callId))
+  }
 
   /** The Worker's own outcome for one of its tool calls, shown as the main chat's result. */
   async toolResult(callId: string, signal: AbortSignal): Promise<ToolExecutionResult> {

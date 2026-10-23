@@ -46,11 +46,11 @@ test('Web model selection routes an ordinary session into TheOne and can switch 
       sessionId: SessionId(randomUUID()), agentOptions: { provider: 'fixture', model: 'fixture' },
       setup: agentCtx => { installModelSelection(agentCtx, selection) },
     })
+    // Nothing matches and no topic is open: a new topic starts rather than asking which one.
     const result = await ask(handle.agent, '继续昨天那个')
     assert.equal(result.end?.data.reason.kind, 'completed')
-    assert.match(result.output, /哪个话题/)
-    assert.equal(app.ctx.theone.store.route(result.input.id)?.decision.action, 'CLARIFY')
-    assert.equal(app.model.requests.length, 0)
+    assert.equal(app.ctx.theone.store.route(result.input.id)?.decision.action, 'CREATE')
+    assert.equal(app.ctx.theone.store.route(result.input.id)?.decision.reason, 'unclear-new')
     selection.current = { provider: 'fixture', model: 'fixture' }
     app.model.behavior = async function* () { yield* textResponse('ordinary model response') }
     const ordinary = await ask(handle.agent, '普通会话')
@@ -59,22 +59,22 @@ test('Web model selection routes an ordinary session into TheOne and can switch 
   } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
 })
 
-test('unclear input asks for clarification without a worker; CREATE survives reopen', { timeout: 30000 }, async () => {
+test('unclear input with no open topic starts one instead of asking; CREATE survives reopen', { timeout: 30000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'theone-create-'))
   let app = await harness(root)
   try {
     const unclear = await ask(app.gateway, '继续昨天那个')
-    assert.match(unclear.output, /哪个话题/)
-    assert.equal(app.model.requests.length, 0)
-    assert.equal(app.ctx.theone.store.contexts().length, 2)
+    assert.equal(unclear.end?.data.reason.kind, 'completed')
+    assert.equal(app.ctx.theone.store.route(unclear.input.id)?.decision.reason, 'unclear-new')
+    assert.equal(app.ctx.theone.store.contexts().length, 3)
     const created = await ask(app.gateway, '新话题：学习日语')
     assert.equal(created.end?.data.reason.kind, 'completed')
     const record = app.ctx.theone.store.route(created.input.id)!
     assert.equal(record.decision.action, 'CREATE')
-    assert.equal(app.ctx.theone.store.contexts().length, 3)
+    assert.equal(app.ctx.theone.store.contexts().length, 4)
     await app.close()
     app = await harness(root)
-    assert.equal(app.ctx.theone.store.contexts().length, 3)
+    assert.equal(app.ctx.theone.store.contexts().length, 4)
     assert.equal(app.ctx.theone.store.route(created.input.id)?.status, 'completed')
     assert.throws(() => app.ctx.theone.store.claim(created.input.id), /already started/)
     const continued = await ask(app.gateway, '继续')

@@ -8,7 +8,7 @@ import { ContextStore, TERM_HALF_LIFE_MS } from '../src/store.ts'
 import { HistoryCatalog } from '../src/history-catalog.ts'
 import { ROUTING_PROMPT, routingPayload } from '../src/llm-router.ts'
 import { similarity, textFeatures } from '../src/routing-policy.ts'
-import { harness, ask, FixtureModel, textResponse } from './harness.ts'
+import { harness, ask, FixtureModel, textResponse, peered } from './harness.ts'
 
 const topic = (id: string, title: string, keywords: string[] = []) => ({ id, title, summary: title, entities: [], keywords, lastState: '进行中' })
 
@@ -58,7 +58,7 @@ test('corrections teach terms the model picks from the message, examples are cho
   const payloads: ReturnType<typeof routingPayload>[] = []
   const model = new FixtureModel()
   model.behavior = async function* (options) {
-    if (options.system === ROUTING_PROMPT) {
+    if (options.system?.startsWith(ROUTING_PROMPT)) {
       payloads.push(JSON.parse((options.messages[0] as unknown as { content: { text: string }[] }).content[0].text))
       yield* textResponse(JSON.stringify({ action: 'EXISTING', contextId: 'ctx_qwen_9070xt', title: null, question: null, reason: '提到 Qwen' }))
       return
@@ -74,7 +74,7 @@ test('corrections teach terms the model picks from the message, examples are cho
   const app = await harness(root, model, { routerMode: 'llm' })
   try {
     const connection = new HostConnectionService(app.ctx, [], undefined as never)
-    const handler = connection.createSharedFetchHandler('/api')
+    const handler = peered(connection)
     await new Promise<void>(resolve => setImmediate(resolve))
     const post = (path: string, body: unknown) => handler.fetch(new Request(`http://dsh.internal/api/theone/${path}`, {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }))
@@ -97,23 +97,22 @@ test('corrections teach terms the model picks from the message, examples are cho
   } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
 })
 
-test('opening another topic right after a message went elsewhere is a weak hint, not a correction', { timeout: 30000 }, async () => {
+test('opening another topic right after a message went elsewhere teaches that topic the terms, without counting as a correction', { timeout: 30000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'theone-route-hint-'))
   const app = await harness(root)
   try {
     const connection = new HostConnectionService(app.ctx, [], undefined as never)
-    const handler = connection.createSharedFetchHandler('/api')
+    const handler = peered(connection)
     await new Promise<void>(resolve => setImmediate(resolve))
     const routed = await ask(app.gateway, 'Qwen 的显存设置')
     const response = await handler.fetch(new Request('http://dsh.internal/api/theone/context/mount', {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ contextId: 'ctx_thesis' }) }))
     assert.equal(response.status, 200)
     await app.ctx.theone.learning
-    // Half a confirmation: recorded, but below the threshold until it happens again.
-    assert.equal(app.ctx.theone.store.learnedTerms().get('ctx_thesis'), undefined)
-    assert.equal(app.ctx.theone.store.recentRoutes('test-gateway').find(route => route.messageId === routed.input.id)?.correctedTo, undefined)
-    app.ctx.theone.store.learnTerms('ctx_thesis', ['显存设置'], 0.5)
+    // A weaker signal than "wrong topic": the terms count (until they fade, unless it happens again), the route stays as it was.
     assert.deepEqual(app.ctx.theone.store.learnedTerms().get('ctx_thesis'), ['显存设置'])
+    assert.equal(app.ctx.theone.store.recentRoutes('test-gateway').find(route => route.messageId === routed.input.id)?.correctedTo, undefined)
+    assert.equal(app.ctx.theone.store.learnedTerms().get('ctx_qwen_9070xt'), undefined, 'the first topic is not taught against them')
   } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
 })
 
@@ -131,4 +130,32 @@ test('candidate recall finds a topic by the words of its description, Chinese in
     const plain = await catalog.candidates('我们这个项目进行中', undefined, undefined, {})
     assert.equal(plain.length, 16)
   } finally { store.close() }
+})
+
+test('moving a message in the topic workspace can be undone: the route, what it taught and the first topic\'s turn all go back', { timeout: 30000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'theone-route-undo-'))
+  const app = await harness(root)
+  try {
+    const handler = peered(new HostConnectionService(app.ctx, [], undefined as never))
+    await new Promise<void>(resolve => setImmediate(resolve))
+    const post = (body: unknown) => handler.fetch(new Request('http://dsh.internal/api/theone/routes', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }))
+    const store = app.ctx.theone.store
+    const routed = await ask(app.gateway, 'Qwen 的显存设置')
+    assert.equal((await post({ messageId: routed.input.id, contextId: 'ctx_thesis' })).status, 200)
+    await app.ctx.theone.learning
+    const deadline = Date.now() + 5000
+    while (!store.misroutes('ctx_qwen_9070xt').length && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 10))
+    const moved = () => store.recentRoutes('test-gateway').find(route => route.messageId === routed.input.id)?.correctedTo
+    assert.equal(moved(), 'ctx_thesis')
+    assert.deepEqual(store.learnedTerms().get('ctx_thesis'), ['显存设置'])
+    assert.equal(store.current('test-gateway'), 'ctx_thesis')
+    const undone = await post({ messageId: routed.input.id, undo: true })
+    assert.equal(undone.status, 200)
+    assert.equal(moved(), undefined)
+    assert.equal(store.learnedTerms().get('ctx_thesis'), undefined)
+    assert.deepEqual(store.misroutes('ctx_qwen_9070xt'), [])
+    assert.equal(store.current('test-gateway'), 'ctx_qwen_9070xt')
+    assert.equal((await post({ messageId: routed.input.id, undo: true })).status, 409, 'nothing left to undo')
+  } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
 })

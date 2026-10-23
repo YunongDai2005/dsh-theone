@@ -1,3 +1,4 @@
+import type { TopicStatus } from './topic-memory.ts';
 import type { ContextDescriptor } from './types.ts';
 export interface TopicGroup {
     id: string;
@@ -6,14 +7,23 @@ export interface TopicGroup {
     contextIds: string[];
 }
 /** Every conversation a topic draws on is gone from disk (`orphaned`) or archived in DSH (`archived`). */
-export type HiddenReason = 'orphaned' | 'archived';
+export type HiddenReason = 'orphaned' | 'archived' | 'excluded';
 /** `hidden` says why routing and briefings skip this topic; the directory still lists it. */
 export interface CatalogContext extends ContextDescriptor {
     workingSessionId: string;
     sourceSessionIds: string[];
     hidden?: HiddenReason;
+    /** The DSH project (workspace) the topic works in; none for DSH's default workspace. */
+    projectInfo?: {
+        name: string;
+        path: string;
+    };
+    topicStatus?: TopicStatus;
 }
 export interface CatalogStatus {
+    consent?: 'ask' | 'declined' | 'granted';
+    waiting?: number;
+    excluded?: number;
     running: boolean;
     scanned: number;
     indexed: number;
@@ -39,11 +49,19 @@ export interface LinkageSnapshot {
         related: TopicLinkView[];
     }>;
 }
+/** A topic merged into another, which can still be taken apart. */
+export interface MergeView {
+    sourceId: string;
+    targetId: string;
+    title: string;
+    at: number;
+}
 export interface CatalogSnapshot {
     groups: TopicGroup[];
     contexts: CatalogContext[];
     status: CatalogStatus;
     linkage?: LinkageSnapshot;
+    merges?: MergeView[];
 }
 export interface HistoryPart {
     seq: number;
@@ -62,4 +80,19 @@ export interface ExtractedTopic {
     groupId: string | null;
     groupTitle: string | null;
     groupSummary: string;
+}
+/** Header/title metadata only; choosing chats never loads their conversation contents. */
+export interface CatalogSessions {
+    folders: {
+        path: string;
+        name: string;
+        excluded: boolean;
+    }[];
+    sessions: {
+        id: string;
+        title: string;
+        folder: string | null;
+        createdAt: number;
+        excluded: boolean;
+    }[];
 }
