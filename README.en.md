@@ -145,6 +145,8 @@ The conversations are model-written from a script and this version has no assist
 
 ## Recent changes
 
+Version 0.4.1 **offers choices when a topic is unsure**: when a topic is about to act on a message that may belong elsewhere, when you say "wrong topic" without saying where, or when a new topic closely matches an existing one, main chat gives you a few options to click. It also fixes **Continue chatting** looking like it opened the wrong topic, and archived original chats opening as an empty page.
+
 Version 0.4.0 **reads your earlier chats only after you agree**: a new install reads none of your earlier DSH chats and makes no model call on them until you choose to sort them, and any chat or project folder can be left out, any time. Upgrading changes nothing for existing users. The topic workspace is new too: laid out like DSH's own Plugins page, and a click anywhere on a card continues the topic.
 
 Version 0.3.40 makes mistakes **cheap to notice and undo**: a topic about to change a file, run a command or send something checks with you once when it may have the wrong topic or the wrong project; a misrouted message moves to the other likely topic in one click, and the move can be undone; a merge can be undone. Old and archived topics come back when you mention them, and say where things stood last time instead of treating it as today's state (see [How it works](#how-it-works)).
