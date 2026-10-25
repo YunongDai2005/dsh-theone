@@ -89,7 +89,7 @@ test('the update endpoint installs, then switches the bundle off and on so DSH l
   const { tmpdir } = await import('node:os')
   const { join } = await import('node:path')
   const { HostConnectionService } = await import('@deepseek-ai/dsh-client-connection')
-  const { harness } = await import('./harness.ts')
+  const { harness, peered } = await import('./harness.ts')
   const root = await mkdtemp(join(tmpdir(), 'theone-update-'))
   const previousFetch = globalThis.fetch
   const app = await harness(root)
@@ -104,7 +104,7 @@ test('the update endpoint installs, then switches the bundle off and on so DSH l
     // This copy reports itself as installed from GitHub, one version behind.
     Object.defineProperty(app.ctx.theone, 'updater', { value: new Updater('0.0.1', () => 'github:YunongDai2005/dsh-theone', github('9.9.9')) })
     const connection = new HostConnectionService(app.ctx, [], undefined as never)
-    const handler = connection.createSharedFetchHandler('/api')
+    const handler = peered(connection)
     await new Promise<void>(resolve => setImmediate(resolve))
     const checked = await (await handler.fetch(new Request('http://dsh.internal/api/theone/update'))).json() as { available: boolean }
     assert.equal(checked.available, true)

@@ -1,12 +1,25 @@
+/** A topic's goal, what is done so far, and the next step. */
+export interface Progress {
+    goal: string;
+    done: string;
+    next: string;
+}
 export interface ContextDescriptor {
     id: string;
     title: string;
     summary: string;
     entities: string[];
     keywords: string[];
+    /** Where the topic stands, in words; written from `progress` when the topic keeps one. */
     lastState: string;
+    /** Where the topic stands in three parts, kept by the topic itself (theone_update_state). */
+    progress?: Progress;
     /** Routing only, never stored: when the topic was last active ("3 小时前", "已搁置（12 天未动）"). */
     activity?: string;
+    /** Routing only, never stored: the name of the project (DSH workspace) the topic works in. */
+    project?: string;
+    /** Routing only, never stored: the user said it is done, or it waits on the user. */
+    status?: 'done' | 'waiting';
 }
 export interface StoredContext extends ContextDescriptor {
     workingSessionId: string;
@@ -28,6 +41,8 @@ export interface Decision {
     historyIndependent?: boolean;
     /** Other topics this request also draws on; the routed topic does the work. */
     relatedIds?: string[];
+    /** Topics the message may have meant instead (an unclear pick, or a first pick the second look changed): reference only, never learned as related. */
+    alternateIds?: string[];
     /** Confirmed facts of other topics this request uses (ids from the offered candidates). */
     imports?: string[];
     /** The user said message `correctionOf` went to the wrong topic; this route redoes it here. */

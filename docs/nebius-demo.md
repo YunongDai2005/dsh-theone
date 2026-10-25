@@ -2,15 +2,21 @@
 
 This demo uses NVIDIA Nemotron 3 Super (`nvidia/nemotron-3-super-120b-a12b`) through the Nebius Token Factory inference API. TheOne calls the model at runtime for both topic routing and each topic's independent background worker. The interface runs locally in DeepSeek Harness; no GPU or Nebius compute deployment is required.
 
+## Source and demonstration versions
+
+The existing contest branch was updated on October 25 to TheOne **0.4.1**, based on release commit `5e6f4e9b190c7773d080885bcdcbe02e033e2ffe`. The original Nebius launcher and separate local profile are retained. The 95-second submitted demonstration and October 10 live integration evidence were recorded with **0.3.31**; they do not demonstrate the new 0.4.1 topic-choice controls. The updated source passes 416 offline plugin tests, type checking and plugin packaging. The isolated DSH 0.2.1-rc.2 CLI successfully resolves the Nebius/plugin configuration with `--dump-config`; that check starts no chat or model call. This source update does not replace the existing video or assert a new model run. Codex assisted the merge, compatibility checks and documentation.
+
 ## Setup
 
 Use Node.js 24 or newer and a Nebius Token Factory API key with available inference credits. From this repository:
 
 ```sh
 npm ci --ignore-scripts
-npm install --ignore-scripts --no-save @deepseek-ai/dsh@0.2.0-rc.2
+npm install --prefix .dsh-test/nebius-runtime --ignore-scripts --save-exact @deepseek-ai/dsh@0.2.1-rc.2
 npm run build
 ```
+
+The CLI is installed separately so npm does not re-resolve the plugin's locked DSH development dependencies. The launcher first uses this isolated CLI, then falls back to an existing root installation.
 
 Set `OPENAI_API_KEY` to your Nebius key using your shell or secret manager. Do not commit it. Then start:
 

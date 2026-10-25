@@ -19,11 +19,11 @@ test('a short continuation of the mounted topic answers without a routing call',
   const app = await harness(root, undefined, { routerMode: 'llm' })
   try {
     app.model.behavior = async function* (options) {
-      if (options.system === ROUTING_PROMPT)
+      if (options.system?.startsWith(ROUTING_PROMPT))
         yield* textResponse(JSON.stringify({ action: 'EXISTING', contextId: 'ctx_qwen_9070xt', title: null, question: null, reason: '继续配置' }))
       else yield* textResponse('Worker 回答')
     }
-    const routed = () => app.model.requests.filter(request => request.system === ROUTING_PROMPT).length
+    const routed = () => app.model.requests.filter(request => request.system?.startsWith(ROUTING_PROMPT)).length
     const first = await ask(app.gateway, '继续 Qwen 配置')
     assert.equal(first.output, 'Worker 回答')
     assert.equal(routed(), 1)
@@ -48,7 +48,7 @@ test('catalog review pages are classified concurrently with the same in-order re
     let calls = 0, inFlight = 0, peak = 0
     const allReviewsStarted = Promise.withResolvers<void>()
     app.model.behavior = async function* (options) {
-      if (options.system !== ROUTING_PROMPT) { yield* textResponse('新事项已处理'); return }
+      if (!options.system?.startsWith(ROUTING_PROMPT)) { yield* textResponse('新事项已处理'); return }
       const call = ++calls
       if (call > 1) {
         inFlight++; peak = Math.max(peak, inFlight)

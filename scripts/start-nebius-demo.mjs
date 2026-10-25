@@ -6,9 +6,12 @@ import { spawn } from 'node:child_process'
 
 if (Number(process.versions.node.split('.')[0]) < 24) throw new Error('Use Node.js 24 or newer.')
 const root = fileURLToPath(new URL('../', import.meta.url))
-const cli = join(root, 'node_modules/@deepseek-ai/dsh/lib/bin.js')
+const cli = [
+  join(root, '.dsh-test/nebius-runtime/node_modules/@deepseek-ai/dsh/lib/bin.js'),
+  join(root, 'node_modules/@deepseek-ai/dsh/lib/bin.js'),
+].find(candidate => existsSync(candidate))
 const entry = join(root, 'dist/index.js')
-if (!existsSync(cli)) throw new Error('Install @deepseek-ai/dsh@0.2.0-rc.2 locally first; see docs/nebius-demo.md.')
+if (!cli) throw new Error('Install the isolated @deepseek-ai/dsh@0.2.1-rc.2 CLI first; see docs/nebius-demo.md.')
 if (!existsSync(entry)) throw new Error('Run npm run build first.')
 const extra = process.argv.slice(2)
 const dumping = extra.includes('--dump-config')

@@ -1,5 +1,9 @@
-/** Learning signals, in units of relatedness. A pair counts as related from 0.6. */
-export const LINK_SIGNAL = { mention: 0.5, switch: 0.2, lookup: 0.4, unused: -0.05 };
+/**
+ * Learning signals, in units of relatedness. A pair counts as related from 0.6. Switching between
+ * topics and briefed news the Worker did not look up are not signals: alternating between unrelated
+ * work is ordinary, and a Worker uses briefed news without looking anything up.
+ */
+export const LINK_SIGNAL = { mention: 0.5, lookup: 0.4 };
 const THRESHOLD = 0.6;
 const normalize = (term) => term.toLowerCase().replace(/[\s/_-]+/g, '');
 /**
@@ -109,6 +113,10 @@ export function topicDigest(store, context, summaryChars, updates = 3) {
         lines.push(`压缩摘要（截至 ${stamp(digest.at)}）：${clip(digest.summary, summaryChars)}`);
     else
         lines.push(`摘要：${clip(context.summary, Math.min(summaryChars, 400))}`);
+    // Each value with when it was recorded, and what it replaced, so an old value is never read as today's.
+    const settled = store.settled(context.id).slice(0, 6);
+    if (settled.length)
+        lines.push(`已定（记录时间）：${settled.map(item => `${item.value === item.label ? item.label : `${item.label} ${item.value}`}（${stamp(item.since)}${item.previous ? `；之前是 ${item.previous}` : ''}）`).join('；')}`);
     for (const state of states)
         lines.push(`进展（${stamp(sqlTime(state.createdAt))}）：${clip(state.state, 300)}`);
     if (!states.length && !digest && context.lastState)
@@ -138,6 +146,19 @@ export function buildBriefing(store, input) {
     }
     if (input.facts?.length) {
         parts.push(['本轮用到的其他话题要点（引用资料，是用户确认过的值）：', ...input.facts].join('\n'));
+        worthSending = true;
+    }
+    // What this message itself refers to comes before what is merely related, so the budget keeps it.
+    for (const item of input.recall ?? []) {
+        const context = store.contexts().find(other => other.id === item.topicId);
+        if (!context)
+            continue;
+        const lines = [`本轮消息提到的「${item.terms.join('」「')}」出现在【${context.title}】（topicId: ${item.topicId}）里，这条消息可能要用到那边的信息：`,
+            ...item.lines.map(line => `- 那边说过：${clip(line, 200)}`), ...topicDigest(store, context, 300, 1)];
+        const rules = store.constraints(item.topicId);
+        if (rules)
+            lines.push(`约束（必须遵守）：${rules.text}`);
+        parts.push(lines.join('\n'));
         worthSending = true;
     }
     if (input.recent.length) {

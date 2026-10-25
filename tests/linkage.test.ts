@@ -9,7 +9,7 @@ import { ContextStore } from '../src/store.ts'
 import { relatedTopics } from '../src/linkage.ts'
 import { validateRoutingDecision } from '../src/llm-router.ts'
 import { validateSettings } from '../src/settings.ts'
-import { harness, ask, textResponse } from './harness.ts'
+import { harness, ask, textResponse, peered } from './harness.ts'
 
 const QWEN = 'ctx_qwen_9070xt', THESIS = 'ctx_thesis'
 let calls = 0
@@ -169,18 +169,20 @@ test('a Worker can search a related topic’s history but not its own copies of 
   } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
 })
 
-test('switching back and forth and naming topics together teach links; nothing is learned when linking is off', { timeout: 30000 }, async () => {
+test('naming topics together teaches a link, switching between them does not; nothing is learned when linking is off', { timeout: 30000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'theone-link-learn-'))
   const app = await harness(root)
   try {
     const store = app.ctx.theone.store
     app.model.behavior = async function* () { yield* textResponse('好') }
+    // Working on two unrelated things in turn is what TheOne is for: no link.
     await ask(app.gateway, 'Qwen 那个')
     await ask(app.gateway, '论文那个')
-    const afterSwitch = store.links(QWEN)[0]?.weight ?? 0
-    assert.ok(afterSwitch > 0)
+    await ask(app.gateway, 'Qwen 那个')
+    await ask(app.gateway, '论文那个')
+    assert.equal(store.links(QWEN)[0]?.weight ?? 0, 0)
     await ask(app.gateway, '这个跟 Qwen 结合一下')
-    assert.ok((store.links(QWEN)[0]?.weight ?? 0) > afterSwitch)
+    assert.ok((store.links(QWEN)[0]?.weight ?? 0) > 0)
   } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
   const offRoot = await mkdtemp(join(tmpdir(), 'theone-link-off-'))
   const off = await harness(offRoot, undefined, { theoneConfig: { linkScope: 'off' } })
@@ -221,7 +223,7 @@ test('settings saved before linking existed keep working with the new defaults',
     maxDescriptorChars: 4000, maxResponseChars: 100000, routerBaseUrl: 'https://api.deepseek.com', routerModel: 'deepseek-flash', routerApiKeyEnv: 'THEONE_ROUTER_API_KEY' }
   const values = validateSettings(old)
   assert.equal(values.linkScope, 'auto')
-  assert.equal(values.routeNotice, 'switch')
+  assert.equal(values.routeNotice, 'hidden')
   assert.throws(() => validateSettings({ ...old, linkScope: 'everything' }))
 })
 
@@ -229,7 +231,7 @@ test('the topic directory shows links with reasons and saves the user’s correc
   const root = await mkdtemp(join(tmpdir(), 'theone-link-api-'))
   const app = await harness(root)
   try {
-    const handler = new HostConnectionService(app.ctx, [], undefined as never).createSharedFetchHandler('/api')
+    const handler = peered(new HostConnectionService(app.ctx, [], undefined as never))
     await new Promise(resolve => setTimeout(resolve, 10))
     const call = async (path: string, body?: object) => (await handler.fetch(new Request(`http://dsh.internal/api/theone/${path}`,
       body ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : {}))).json()
@@ -244,5 +246,41 @@ test('the topic directory shows links with reasons and saves the user’s correc
     assert.equal(catalog.linkage.scope, 'auto')
     assert.ok(catalog.linkage.topics[QWEN])
     assert.equal((await handler.fetch(new Request('http://dsh.internal/api/theone/links', { method: 'POST', body: JSON.stringify({ action: 'link', a: QWEN, b: QWEN }) }))).status, 400)
+  } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
+})
+
+test('a number another topic mentioned brings its words into the briefing, even unlinked; a private topic stays out', { timeout: 30000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'theone-recall-'))
+  const app = await harness(root)
+  try {
+    const briefingOf = (request: GenerateOptions) => request.messages.filter(message => 'source' in message && message.source?.kind === 'theone-links')
+      .map(message => 'content' in message && Array.isArray(message.content) ? message.content.map(block => block.type === 'text' ? block.text : '').join('') : '').join('\n')
+    await ask(app.gateway, 'Qwen 显卡这边 batch 定成 2048 了')
+    const store = app.ctx.theone.store
+    assert.equal(store.links('ctx_thesis').length, 0, 'the two topics are not linked')
+    await ask(app.gateway, '论文里要不要写 2048 这个设置')
+    const briefing = briefingOf(app.model.requests.at(-1)!)
+    assert.match(briefing, /本轮消息提到的「2048」出现在【Qwen \/ RX 9070 XT】/)
+    assert.match(briefing, /那边说过：Qwen 显卡这边 batch 定成 2048 了/)
+    // Marked private, the GPU topic is never brought in (the topic's history still holds the earlier briefing).
+    const recalls = (request: GenerateOptions) => briefingOf(request).split('2048」出现在').length - 1
+    const before = recalls(app.model.requests.at(-1)!)
+    store.setPrivate('ctx_qwen_9070xt', true)
+    await ask(app.gateway, '论文里 2048 那段再改改')
+    assert.equal(recalls(app.model.requests.at(-1)!), before)
+  } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
+})
+
+test('a topic can search every topic that shares with it, not only linked ones; private topics stay out', { timeout: 30000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'theone-search-everywhere-'))
+  const app = await harness(root)
+  try {
+    await ask(app.gateway, 'Qwen 显卡这边 batch 定成 2048 了')
+    const theone = app.ctx.theone as unknown as { searchEverywhere(reader: string, worker: unknown, query: string, limit: number, signal: AbortSignal): Promise<{ topics: { topicId: string; excerpts: { text: string }[] }[] }> }
+    const found = await theone.searchEverywhere('ctx_thesis', app.gateway, '2048', 3, new AbortController().signal)
+    assert.equal(found.topics[0]?.topicId, 'ctx_qwen_9070xt')
+    assert.ok(found.topics[0].excerpts.some(excerpt => excerpt.text.includes('2048')))
+    app.ctx.theone.store.setPrivate('ctx_qwen_9070xt', true)
+    assert.deepEqual((await theone.searchEverywhere('ctx_thesis', app.gateway, '2048', 3, new AbortController().signal)).topics, [])
   } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
 })

@@ -9,13 +9,20 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import Tools from '@deepseek-ai/dsh-tools'
-import Persistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+import * as Persistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import SessionQuery from '@deepseek-ai/dsh-session-query-sqlite'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { randomUUID } from 'node:crypto'
+import type { HostConnectionService } from '@deepseek-ai/dsh-client-connection'
 import TheOne from '../src/index.ts'
 import type { Config } from '../src/index.ts'
+
+/** The shared /api handler, called as the owner (the browser Peer), as DSH's own UI calls it. */
+export function peered(connection: HostConnectionService) {
+  const handler = connection.createSharedFetchHandler('/api')
+  return { requestBodyMode: handler.requestBodyMode.bind(handler), fetch: (request: Request) => handler.fetch(request, connection.browserPeer) }
+}
 
 export const contextsPath = fileURLToPath(new URL('../fixtures/contexts.json', import.meta.url))
 
@@ -42,7 +49,7 @@ export class FixtureModel extends LlmAdapter {
   }
 }
 
-export async function harness(root: string, model = new FixtureModel(), options: { databasePath?: string | null; descriptorPath?: string; compression?: 'none' | 'zstd'; queryPath?: string; routerMode?: 'rules' | 'llm'; autoModel?: boolean; defaultProvider?: string; historyCatalog?: boolean; theoneConfig?: Partial<Config> } = {}) {
+export async function harness(root: string, model = new FixtureModel(), options: { databasePath?: string | null; descriptorPath?: string; compression?: 'none' | 'zstd'; queryPath?: string; routerMode?: 'rules' | 'llm'; autoModel?: boolean; defaultProvider?: string; historyCatalog?: boolean; cwd?: string; theoneConfig?: Partial<Config> } = {}) {
   const ctx = new Context()
   try {
     await ctx.plugin(LlmRuntime)
@@ -67,6 +74,7 @@ export async function harness(root: string, model = new FixtureModel(), options:
     })
     const gateway = (await ctx.agents.create({
       sessionId: SessionId(randomUUID()), agentOptions: { provider: 'theone', model: 'gateway' },
+      ...(options.cwd ? { meta: { cwd: options.cwd } } : {}),
     })).agent
     return { ctx, gateway, model, close: () => ctx.fiber.dispose() }
   } catch (error) { await ctx.fiber.dispose(); throw error }

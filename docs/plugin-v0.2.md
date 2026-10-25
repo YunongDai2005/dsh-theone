@@ -2,7 +2,7 @@
 
 English | [简体中文](./plugin-v0.2.zh.md)
 
-September 30, 2026. This release added a browser client to the CLI implementation accepted in v0.1. This is a historical report; see the [current README](../README.md) for later behavior.
+September 30, 2026. This release added a browser client to the CLI implementation accepted in v0.1. This is a historical report; see the [current README](../README.en.md) for later behavior.
 
 ## v0.2.1 installation fix — October 1, 2026
 

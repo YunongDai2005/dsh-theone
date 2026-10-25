@@ -23,7 +23,7 @@ const finished=(kind:string,status?:number):Chunk=>({type:'finish',reason:kind==
 /** The model's own text worker reply; routing requests answer through `route`. */
 function routed(route:(payload:ReturnType<typeof routingPayload>,signal?:AbortSignal)=>Promise<unknown>){
  return async function*(options:import('@deepseek-ai/dsh-llm').GenerateOptions):AsyncIterable<Chunk>{
-  if(options.system===ROUTING_PROMPT){
+  if(options.system?.startsWith(ROUTING_PROMPT)){
    const text=(options.messages[0] as unknown as {content:{text:string}[]}).content[0].text
    yield* textResponse(JSON.stringify(await route(JSON.parse(text),options.signal)));return
   }
@@ -71,9 +71,18 @@ test('unavailable routes cool down, probe again, and reset after success',async(
  time+=60000;status=200
  assert.equal((await client.decide(input)).decision.action,'KEEP')
  status=500
+ // Failures together (within two seconds) count once; three in a row pause the router briefly.
  for(let i=0;i<3;i++)await assert.rejects(client.decide(input),RouterFailure)
- await assert.rejects(client.decide(input),error=>error instanceof RouterFailure && error.code==='ROUTER_CIRCUIT_OPEN')
  assert.equal(model.state.calls,5)
+ for(let i=0;i<2;i++){time+=3000;await assert.rejects(client.decide(input),RouterFailure)}
+ await assert.rejects(client.decide(input),error=>error instanceof RouterFailure && error.code==='ROUTER_CIRCUIT_OPEN' && error.meta?.retryAfterMs===30000)
+ assert.equal(model.state.calls,7)
+ // A rate limit pauses only briefly.
+ time+=30000;status=200
+ await client.decide(input)
+ status=429
+ await assert.rejects(client.decide(input),RouterFailure)
+ await assert.rejects(client.decide(input),error=>error instanceof RouterFailure && error.code==='ROUTER_CIRCUIT_OPEN' && error.meta?.retryAfterMs===15000)
 })
 test('caller cancellation does not mark the model unavailable',async()=>{
  const controller=new AbortController()
@@ -194,4 +203,20 @@ test('reasoning a model writes before its answer (<think>…</think>) does not h
  // Some chat templates open the block in the prompt, so only its end reaches the answer.
  const closing=service(function*(){yield* textResponse(`想一想……</think>\n\n\`\`\`json\n${JSON.stringify(decision)}\n\`\`\``)}).router()
  assert.equal((await closing.decide(input)).decision.action,'KEEP')
+})
+
+test('a request too large for the classifier is cut down, keeping the current topic, instead of failing', () => {
+ const topic = (i: number) => ({ id: `ctx_${i}`, title: `话题 ${i}`, summary: '摘'.repeat(600), entities: Array.from({ length: 24 }, (_, k) => `实体${k}`),
+  keywords: Array.from({ length: 24 }, (_, k) => `关键词${k}`), lastState: '状'.repeat(400) })
+ const recent = Array.from({ length: 12 }, (_, k) => ({ role: k % 2 ? 'assistant' as const : 'user' as const, text: (k % 2 ? '答' : '问').repeat(k % 2 ? 700 : 60) }))
+ const contexts = Array.from({ length: 16 }, (_, i) => topic(i))
+ const payload = routingPayload({ text: '你好', contexts, currentId: 'ctx_15', recent })
+ assert.ok(JSON.stringify(payload).length <= 24000)
+ assert.equal(payload.currentId, 'ctx_15')
+ assert.ok(payload.recent!.length < 12 || payload.recent!.some(message => message.role === 'assistant' && message.text.length < 700), 'replies are shortened first')
+ // Far too many candidates: the current topic stays, the last-ranked ones go.
+ const many = routingPayload({ text: '你好', contexts: Array.from({ length: 60 }, (_, i) => topic(i)), currentId: 'ctx_59', recent })
+ assert.ok(many.contexts.some(context => context.id === 'ctx_59') && many.contexts.some(context => context.id === 'ctx_0'))
+ assert.ok(many.contexts.length < 60)
+ assert.throws(() => routingPayload({ text: '   ', contexts, recent }), RouterFailure)
 })

@@ -46,7 +46,8 @@ test('the thinking effort chosen in main chat is the one the Worker uses', { tim
 test('picking another model in main chat makes the Workers use it; main chat still routes through TheOne', { timeout: 30000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'theone-controls-picker-'))
   // A model fixed in TheOne's settings would take precedence; this follows DSH's selection.
-  const app = await harness(root, undefined, { autoModel: true })
+  // The route notice is shown here to confirm main chat routed through TheOne.
+  const app = await harness(root, undefined, { autoModel: true, theoneConfig: { routeNotice: 'switch' } })
   try {
     app.model.behavior = async function* () { yield* textResponse('换了模型也照常路由') }
     const picked = (await app.ctx.agents.create({ sessionId: SessionId(randomUUID()),
@@ -99,6 +100,8 @@ test("the Worker takes main chat's permission mode before each reply", { timeout
     await ask(app.gateway, 'Qwen 那个')
     const workerId = app.ctx.theone.store.contexts().find(c => c.id === 'ctx_qwen_9070xt')!.workingSessionId
     assert.equal(modes.get(workerId), 'danger-full-access')
+    // This reduced fixture has no sandbox/approval services to resolve custom knobs.
+    // The real-service custom-permission cases live in permissions.test.ts.
     modes.set(app.gateway.id, 'custom')
     await ask(app.gateway, '继续')
     assert.equal(modes.get(workerId), 'danger-full-access')
@@ -145,7 +148,7 @@ test('the TheOne menu has one entry; older "TheOne · <model>" selections still 
   const root = await mkdtemp(join(tmpdir(), 'theone-controls-via-'))
   const model = new ListedModel()
   model.behavior = async function* (options) {
-    yield* textResponse(options.system === ROUTING_PROMPT
+    yield* textResponse(options.system?.startsWith(ROUTING_PROMPT)
       ? JSON.stringify({ action: 'EXISTING', contextId: 'ctx_qwen_9070xt', title: null, question: null, reason: '测试' }) : '好')
   }
   const app = await harness(root, model, { routerMode: 'llm', autoModel: true })
