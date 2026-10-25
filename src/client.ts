@@ -1,4 +1,4 @@
-import { createElement as h, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { createElement as h, Fragment, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
@@ -11,13 +11,19 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { MainPanelId, PanelInfo } from '@deepseek-ai/dsh-client-ui-layout/client'
-import type { CatalogContext, CatalogSnapshot, LinkageSnapshot, TopicGroup } from './catalog-types.ts'
+import type { CatalogContext, CatalogSessions, CatalogSnapshot, LinkageSnapshot, TopicGroup } from './catalog-types.ts'
 import type { RouteView } from './types.ts'
 import type { UpdateStatus } from './update.ts'
 import type { Notice } from './notices.ts'
 import { EDITABLE_SETTINGS_KEYS, type EditableSettings, type SettingsSnapshot } from './settings-types.ts'
 import { GatewayNavigation } from './client-navigation.ts'
 import { zh, en, type TheOneLocaleKey } from './client-locales.ts'
+import type { WeixinStatus } from './weixin-link.ts'
+import type { TelegramStatus } from './telegram-bot.ts'
+import type { IMessageStatus } from './imessage-db.ts'
+import type { LinkStatus } from './remote-link.ts'
+import qrcode from 'qrcode-generator'
+import { createWorkPanel, workCss } from './client-work.ts'
 
 // ui-workspace retains the selected conversation with this public source label.
 declare module '@deepseek-ai/dsh-api-session-controller/client' {
@@ -28,6 +34,7 @@ export const inject = ['slots', 'locale', 'sessions', 'workspaces', 'layout', 'u
 const panelId = 'theone-gateway' as MainPanelId
 const catalogPanelId = 'theone-catalog' as MainPanelId
 const settingsPanelId = 'theone-settings' as MainPanelId
+const tasksPanelId = 'theone-tasks' as MainPanelId
 
 export function apply(ctx: Context) {
   const lifetime = new AbortController()
@@ -71,9 +78,12 @@ export function apply(ctx: Context) {
       // Archiving the underlying session must not strand the fixed entry.
       await ctx.uiWorkspace.unarchiveSession(target)
     },
-    open(id) { if (!lifetime.signal.aborted) ctx.uiWorkspace.openSession(id as SessionId) },
+    // "Continue chatting" just changed the topic in use: main chat opens in that topic's folder.
+    open(id) { if (!lifetime.signal.aborted) { readTopicFolder(); ctx.uiWorkspace.openSession(id as SessionId) } },
     beginNavigation() { return AbortSignal.any([ctx.layout.beginNavigation(),lifetime.signal]) },
   }, window.localStorage, `dsh-theone.gateway.v1:${location.pathname}`, () => crypto.randomUUID())
+  /** Reads main chat's folder (the topic in use's) again; set by the effect that shows it. */
+  let readTopicFolder = () => {}
 
   ctx.effect(() => {
     let active = localeSnapshot().active
@@ -99,7 +109,7 @@ export function apply(ctx: Context) {
   /** Shared update status: checked when the sidebar mounts and every six hours after. */
   let update: UpdateStatus | undefined
   const updateListeners = new Set<() => void>()
-  const setUpdate = (value: UpdateStatus) => { update = value; for (const listener of updateListeners) listener() }
+  const setUpdate = (value: UpdateStatus) => { if (lifetime.signal.aborted) return; update = value; for (const listener of updateListeners) listener() }
   const subscribeUpdate = (listener: () => void) => { updateListeners.add(listener); return () => { updateListeners.delete(listener) } }
   const readUpdate = async (method: 'GET' | 'POST' = 'GET', body?: Record<string, unknown>, force = false): Promise<boolean> => {
     try {
@@ -133,16 +143,38 @@ export function apply(ctx: Context) {
       : status.installable ? t('update.hint', { current: status.current, latest: status.latest ?? '' })
       : t('update.manualHint', { current: status.current, latest: status.latest ?? '' })
   }
-  /** TheOne restarts itself with the new version; once it answers again, the page loads the new interface. */
+  let reloadPending = false
+  /**
+   * DSH's client-hmr owns interface replacement. Reloading the page as soon as
+   * the backend answers races its module graph and can fail the desktop boot
+   * audit. Only refresh status here; disposal must also stop the old poller.
+   */
   async function awaitReload(previous: string) {
-    for (const started = Date.now(); Date.now() - started < 120000;) {
-      await new Promise(resolve => setTimeout(resolve, 1500))
-      try {
-        const response = await fetch('/api/theone/update', { cache: 'no-store' })
-        if (response.ok && (await response.json() as UpdateStatus).current !== previous) { window.location.reload(); return }
-      } catch { /* Still reloading. */ }
+    if (reloadPending || lifetime.signal.aborted) return
+    reloadPending = true
+    // Bound stalled requests as well as the interval between attempts.
+    const signal = AbortSignal.any([lifetime.signal, AbortSignal.timeout(120000)])
+    try {
+      while (!signal.aborted) {
+        await new Promise<void>(resolve => {
+          const finish = () => { clearTimeout(timer); signal.removeEventListener('abort', finish); resolve() }
+          const timer = setTimeout(finish, 1500)
+          signal.addEventListener('abort', finish, { once: true })
+        })
+        if (signal.aborted) break
+        try {
+          const response = await fetch('/api/theone/update', { cache: 'no-store', signal })
+          if (response.ok) {
+            const status = await response.json() as UpdateStatus
+            if (signal.aborted) break
+            if (status.current !== previous) { setUpdate(status); return }
+          }
+        } catch { /* Still reloading. */ }
+      }
+      if (update) setUpdate({ ...update, state: 'restart' })
+    } finally {
+      reloadPending = false
     }
-    if (update) setUpdate({ ...update, state: 'restart' })
   }
   ctx.effect(() => {
     void readUpdate()
@@ -283,6 +315,8 @@ export function apply(ctx: Context) {
   /** Line icons (24-unit grid), drawn inline so host styles cannot reshape them; the text lives in title and aria-label. */
   const ICONS = {
     download: ['M12 4v11', 'M7 10l5 5 5-5', 'M5 20h14'],
+    check: ['M5 12.5l4.5 4.5L19 7.5'],
+    more: ['M5.5 12h.01', 'M12 12h.01', 'M18.5 12h.01'],
     restart: ['M20 12a8 8 0 1 1-2.34-5.66L20 8.5', 'M20 4v4.5h-4.5'],
     alert: ['M3 12a9 9 0 1 0 18 0a9 9 0 1 0-18 0', 'M12 7.5v5.5', 'M12 16.5h.01'],
     notice: ['M4 10v4h3l6 4V6L7 10H4z', 'M16.5 9a4 4 0 0 1 0 6', 'M19 6.5a7.5 7.5 0 0 1 0 11'],
@@ -659,6 +693,149 @@ export function apply(ctx: Context) {
           onClick: () => { if (status) startUpdate(status) } }, t(status?.state === 'installing' ? 'update.installing' : status?.state === 'reloading' ? 'update.reloading' : 'settings.updateInstall'))))
   }
 
+  /**
+   * One messaging app's status from TheOne, polled quickly while a sign-in is under way; `act` sends
+   * an action and keeps the error code of a refused one for the section to explain.
+   */
+  function useRemote<T extends LinkStatus>(name: string, fast: (status: T | undefined) => boolean) {
+    const [status, setStatus] = useState<T>()
+    const [failed, setFailed] = useState(false)
+    const [busy, setBusy] = useState(false)
+    const [error, setError] = useState<string>()
+    const call = async (body?: Record<string, unknown>) => {
+      try {
+        const response = await fetch(`/api/theone/${name}`, { signal: lifetime.signal, cache: 'no-store',
+          ...(body ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : {}) })
+        const value = await response.json().catch(() => ({})) as T & { error?: string }
+        if (!response.ok) { if (body && value.error) { setError(value.error); return } throw new Error('Status unavailable') }
+        setStatus(value); setFailed(false); if (body) setError(undefined)
+      } catch { if (!lifetime.signal.aborted) setFailed(true) }
+    }
+    const act = async (body: Record<string, unknown>) => { setBusy(true); try { await call(body) } finally { setBusy(false) } }
+    const quick = fast(status)
+    useEffect(() => {
+      void call()
+      const timer = setInterval(() => { void call() }, quick ? 1500 : 15000)
+      return () => clearInterval(timer)
+    }, [quick])
+    return { status, failed, busy, error, act }
+  }
+
+  /** A QR code for `url`, to scan with the phone. */
+  function qrImage(url: string, alt: string) {
+    const qr = qrcode(0, 'M'); qr.addData(url); qr.make()
+    return h('img', { className: 'theone-weixin-qr', src: qr.createDataURL(6, 3), alt, width: 220, height: 220 })
+  }
+
+  /** What every app shows: where it stands, the last error, and pause / resume / log out once signed in. */
+  function remoteState(t: (key: TheOneLocaleKey, params?: Record<string, unknown>) => string, remote: { status?: LinkStatus; failed: boolean },
+    expiredKey: TheOneLocaleKey, explain: (code: string) => string = code => code) {
+    const { status, failed } = remote
+    const account = status?.account ?? ''
+    const line = !status ? (failed ? t('settings.remoteError') : t('settings.loading'))
+      : status.state === 'online' ? t('settings.remoteOnline', { account })
+      : status.state === 'connecting' ? t('settings.remoteConnecting', { account })
+      : status.state === 'paused' ? t('settings.remotePaused', { account, minutes: Math.max(1, Math.ceil(((status.pausedUntil ?? Date.now()) - Date.now()) / 60000)) })
+      : status.state === 'expired' ? t(expiredKey)
+      : account ? t('settings.remoteOff', { account }) : ''
+    return [line ? h('p', { role: 'status', key: 'line' }, line) : null,
+      status?.lastError && status.state !== 'off' ? h('p', { className: 'theone-settings-update-version', key: 'error' }, t('settings.remoteLastError', { error: explain(status.lastError) })) : null]
+  }
+
+  function remoteButton(t: (key: TheOneLocaleKey) => string, busy: boolean, act: (body: Record<string, unknown>) => void, label: TheOneLocaleKey, body: Record<string, unknown>, primary = false) {
+    return h('button', { type: 'button', key: label, disabled: busy, className: primary ? 'theone-settings-save' : undefined, onClick: () => act(body) }, t(label))
+  }
+
+  /** Pause or resume, and log out, for a signed-in app. */
+  function remoteControls(t: (key: TheOneLocaleKey) => string, remote: { status?: LinkStatus; busy: boolean; act: (body: Record<string, unknown>) => void }) {
+    const { status, busy, act } = remote
+    if (!status?.account || status.state === 'expired') return []
+    return [status.state === 'off' ? remoteButton(t, busy, act, 'settings.remoteResume', { action: 'enable' }, true) : remoteButton(t, busy, act, 'settings.remotePause', { action: 'disable' }),
+      remoteButton(t, busy, act, 'settings.remoteLogout', { action: 'logout' })]
+  }
+
+  /** Bind WeChat by scanning a code, and pause, resume or log out; applies at once, outside the form below. */
+  function WeixinSection() {
+    const t = useText()
+    const remote = useRemote<WeixinStatus>('weixin', status => !!status?.login && status.login.step !== 'failed')
+    const { status, busy } = remote
+    const act = (body: Record<string, unknown>) => { void remote.act(body) }
+    const [code, setCode] = useState('')
+    const login = status?.login
+    const waiting = !!login && login.step !== 'failed'
+    const button = (label: TheOneLocaleKey, body: Record<string, unknown>, primary = false) => remoteButton(t, busy, act, label, body, primary)
+    return h('section', { className: 'theone-settings-group theone-settings-update theone-weixin' },
+      h('h2', null, t('settings.weixin')),
+      h('p', null, t('settings.weixinIntro')),
+      ...remoteState(t, remote, 'settings.weixinExpired'),
+      login?.step === 'qr' ? h('div', { className: 'theone-weixin-login' }, qrImage(login.url, t('settings.weixinScan')), h('p', null, t('settings.weixinScan'))) : null,
+      login?.step === 'scanned' ? h('p', { role: 'status' }, t('settings.weixinScanned')) : null,
+      login?.step === 'verify' ? h('form', { className: 'theone-settings-update-actions', onSubmit: (event: React.FormEvent<HTMLFormElement>) => {
+        event.preventDefault(); if (code.trim()) { act({ action: 'verify', code }); setCode('') } } },
+        h('label', { htmlFor: 'theone-weixin-code' }, t('settings.weixinVerify')),
+        h('input', { id: 'theone-weixin-code', value: code, maxLength: 16, autoComplete: 'one-time-code', onChange: (event: React.ChangeEvent<HTMLInputElement>) => setCode(event.target.value) }),
+        h('button', { type: 'submit', disabled: busy || !code.trim() }, t('settings.weixinVerifySubmit'))) : null,
+      login?.step === 'failed' ? h('p', { role: 'alert' }, t('settings.weixinFailed', { reason: login.reason })) : null,
+      h('div', { className: 'theone-settings-update-actions' },
+        waiting ? button('settings.weixinCancel', { action: 'cancel' })
+          : !status?.account ? button('settings.weixinBind', { action: 'login' }, true)
+          : status.state === 'expired' ? button('settings.weixinRescan', { action: 'login' }, true) : null,
+        ...waiting ? [] : remoteControls(t, { ...remote, act })),
+      h('p', { className: 'theone-settings-update-version' }, t('settings.weixinNote')))
+  }
+
+  /** Bind a Telegram bot: paste its token, then send it the pairing code (or scan the code that opens it). */
+  function TelegramSection() {
+    const t = useText()
+    const remote = useRemote<TelegramStatus>('telegram', status => !!status?.pairing)
+    const { status, busy, error } = remote
+    const act = (body: Record<string, unknown>) => { void remote.act(body) }
+    const [token, setToken] = useState('')
+    const pairing = status?.pairing
+    const asking = !status?.account || status.state === 'expired'
+    return h('section', { className: 'theone-settings-group theone-settings-update theone-weixin' },
+      h('h2', null, t('settings.telegram')),
+      h('p', null, t('settings.telegramIntro')),
+      ...pairing ? [h('p', { role: 'status', key: 'line' }, t('settings.telegramWaiting', { account: `@${pairing.bot}` }))] : remoteState(t, remote, 'settings.telegramExpired'),
+      pairing ? h('div', { className: 'theone-weixin-login' }, qrImage(`https://t.me/${pairing.bot}?start=${pairing.code}`, t('settings.telegramPairScan')),
+        h('p', null, t('settings.telegramPair', { bot: `@${pairing.bot}`, code: pairing.code }))) : null,
+      asking ? h('form', { className: 'theone-settings-update-actions', onSubmit: (event: React.FormEvent<HTMLFormElement>) => {
+        event.preventDefault(); if (token.trim()) { act({ action: 'connect', token }); setToken('') } } },
+        h('label', { htmlFor: 'theone-telegram-token' }, t('settings.telegramToken')),
+        h('input', { id: 'theone-telegram-token', type: 'password', value: token, maxLength: 200, autoComplete: 'off', spellCheck: false,
+          placeholder: '123456789:AA…', onChange: (event: React.ChangeEvent<HTMLInputElement>) => setToken(event.target.value) }),
+        h('button', { type: 'submit', className: 'theone-settings-save', disabled: busy || !token.trim() }, t('settings.remoteConnect'))) : null,
+      error ? h('p', { role: 'alert' }, t(error === 'TELEGRAM_TOKEN_INVALID' ? 'settings.telegramTokenInvalid' : 'settings.telegramUnreachable')) : null,
+      h('div', { className: 'theone-settings-update-actions' }, ...remoteControls(t, { ...remote, act })),
+      h('p', { className: 'theone-settings-update-version' }, t('settings.telegramNote')))
+  }
+
+  /** Bind iMessage on a Mac: name the phone number or Apple ID the user texts from. */
+  function IMessageSection() {
+    const t = useText()
+    const remote = useRemote<IMessageStatus>('imessage', () => false)
+    const { status, busy, error } = remote
+    const act = (body: Record<string, unknown>) => { void remote.act(body) }
+    const [handle, setHandle] = useState('')
+    const explain = (code: string) => code === 'IMESSAGE_NO_ACCESS' ? t('settings.imessageNoAccess') : code
+    const asking = status?.supported && !status.account
+    return h('section', { className: 'theone-settings-group theone-settings-update theone-weixin' },
+      h('h2', null, t('settings.imessage')),
+      h('p', null, t('settings.imessageIntro')),
+      status && !status.supported && !status.account ? h('p', { role: 'status' }, t('settings.imessageUnsupported')) : null,
+      ...remoteState(t, remote, 'settings.imessageNoAccess', explain),
+      asking ? h('form', { className: 'theone-settings-update-actions', onSubmit: (event: React.FormEvent<HTMLFormElement>) => {
+        event.preventDefault(); if (handle.trim()) act({ action: 'connect', handle }) } },
+        h('label', { htmlFor: 'theone-imessage-handle' }, t('settings.imessageHandle')),
+        h('input', { id: 'theone-imessage-handle', value: handle, maxLength: 200, autoComplete: 'off', placeholder: '+86 138 0000 0000',
+          onChange: (event: React.ChangeEvent<HTMLInputElement>) => setHandle(event.target.value) }),
+        h('button', { type: 'submit', className: 'theone-settings-save', disabled: busy || !handle.trim() }, t('settings.remoteConnect'))) : null,
+      error ? h('p', { role: 'alert' }, error === 'IMESSAGE_NO_ACCESS' ? t('settings.imessageNoAccess')
+        : t(error === 'IMESSAGE_HANDLE_INVALID' ? 'settings.imessageHandleInvalid' : 'settings.imessageUnsupported')) : null,
+      h('div', { className: 'theone-settings-update-actions' }, ...remoteControls(t, { ...remote, act })),
+      status?.supported ? h('p', { className: 'theone-settings-update-version' }, t('settings.imessageNote')) : null)
+  }
+
   function SettingsPanel() {
     const t = useText()
     const heading = useRef<HTMLHeadingElement>(null)
@@ -768,6 +945,9 @@ export function apply(ctx: Context) {
         h('button', { type: 'button', disabled: saving, onClick: () => ctx.layout.selectPanel(panelId) }, t('settings.back'))),
       h('p', { className: 'theone-settings-notice' }, t('settings.readOnly')),
       h(UpdateSection),
+      h(WeixinSection),
+      h(TelegramSection),
+      h(IMessageSection),
       !snapshot && !error ? h('p', { role: 'status' }, t('settings.loading')) : null,
       error ? h('p', { role: 'alert' }, t('settings.error'), ' ', h('button', { type: 'button', onClick: () => setAttempt(n => n + 1) }, t('retry'))) : null,
       snapshot && draft && h('form', { onSubmit: (event: React.FormEvent<HTMLFormElement>) => { event.preventDefault(); void save() } },
@@ -795,10 +975,10 @@ export function apply(ctx: Context) {
 
   type Post = (path: string, body: Record<string, unknown>) => Promise<boolean>
   const ROUTE_REASONS = new Set(['steering', 'short-continuation', 'attachment-only', 'correction', 'correction-unclear', 'explicit-new-topic',
-    'no-history-evidence', 'entity-or-keyword', 'keyword-only-switch', 'current-reference', 'combined-contexts', 'insufficient-evidence',
+    'no-history-evidence', 'unclear-settled', 'unclear-new', 'entity-or-keyword', 'keyword-only-switch', 'current-reference', 'combined-contexts', 'insufficient-evidence',
     'multiple-contexts', 'weak-keyword-match', 'no-history-match', 'CATALOG_NOT_READY', 'CATALOG_REVIEW_LIMIT', 'HISTORY_SEARCH_UNAVAILABLE'])
   const routeReason = (reason: string) => ROUTE_REASONS.has(reason) ? t(`route.reason.${reason}` as TheOneLocaleKey)
-    : reason.startsWith('router-fallback:') ? t('route.reason.router-fallback') : reason
+    : reason.startsWith('router-fallback:') ? t('route.reason.router-fallback') : reason.startsWith('handback:') ? t('route.reason.handback') : reason
 
   /** Rename, describe, constrain, move, merge, attach history to or delete one topic. */
   function TopicManager({ topic, constraints, groups, contexts, post, busy }: {
@@ -886,10 +1066,15 @@ export function apply(ctx: Context) {
             h('small', null, details)),
           h('div', { className: 'theone-route-actions' },
             h('button', { type: 'button', className: 'theone-quiet', onClick: () => openFeedbackDialog(route.messageId) }, t('routes.report')),
-            route.correctedTo ? h('span', { className: 'theone-route-fixed' }, t('routes.corrected', { title: titleOf(route.correctedTo) }))
-              : h('select', { value: '', disabled: busy, 'aria-label': t('routes.move'),
-                onChange: (event: React.ChangeEvent<HTMLSelectElement>) => { if (event.target.value) void post('/api/theone/routes', { messageId: route.messageId, contextId: event.target.value }) } },
-                h('option', { value: '' }, t('routes.move')), ...contexts.filter(context => context.id !== target).map(context => h('option', { key: context.id, value: context.id }, context.title)))))
+            route.correctedTo ? h('span', { className: 'theone-route-fixed' }, t('routes.corrected', { title: titleOf(route.correctedTo) }), ' ',
+              h('button', { type: 'button', className: 'theone-quiet', disabled: busy, onClick: () => void post('/api/theone/routes', { messageId: route.messageId, undo: true }) }, t('routes.undo')))
+              : h(Fragment, null,
+                // The topics routing hesitated between come first: one click, nothing to remember.
+                ...(route.decision.alternateIds ?? []).filter(id => id !== target && contexts.some(context => context.id === id)).slice(0, 2).map(id =>
+                  h('button', { key: id, type: 'button', className: 'theone-quiet', disabled: busy, onClick: () => void post('/api/theone/routes', { messageId: route.messageId, contextId: id }) }, t('routes.moveTo', { title: titleOf(id) }))),
+                h('select', { value: '', disabled: busy, 'aria-label': t('routes.move'),
+                  onChange: (event: React.ChangeEvent<HTMLSelectElement>) => { if (event.target.value) void post('/api/theone/routes', { messageId: route.messageId, contextId: event.target.value }) } },
+                  h('option', { value: '' }, t('routes.move')), ...contexts.filter(context => context.id !== target).map(context => h('option', { key: context.id, value: context.id }, context.title))))))
       })) : h('p', { className: 'theone-links-empty' }, t('routes.empty')))
   }
 
@@ -901,8 +1086,13 @@ export function apply(ctx: Context) {
     const [routes, setRoutes] = useState<RouteView[]>([])
     const [routeStats, setRouteStats] = useState<RouteStats>()
     const [managing, setManaging] = useState<string>()
+    const [folded, setFolded] = useState<ReadonlySet<string>>(new Set())
     const [creating, setCreating] = useState(false)
     const [newTitle, setNewTitle] = useState('')
+    const [choosing, setChoosing] = useState(false)
+    const [choices, setChoices] = useState<CatalogSessions>()
+    const [reconsidering, setReconsidering] = useState(false)
+    const choosingRef = useRef(false)
     const reload = useRef<() => Promise<void>>(async () => {})
     useEffect(() => {
       const controller = new AbortController()
@@ -916,6 +1106,12 @@ export function apply(ctx: Context) {
           if (!response.ok) throw new Error('Catalog unavailable')
           const value = await response.json() as CatalogSnapshot
           if (!signal.aborted) { setSnapshot(value); setError(current => current === 'catalog.loadError' ? undefined : current) }
+          if (choosingRef.current) {
+            const selected = await fetch('/api/theone/catalog/sessions', { signal, cache: 'no-store' })
+            if (!selected.ok) throw new Error('Chat choices unavailable')
+            const chats = await selected.json() as CatalogSessions
+            if (!signal.aborted) setChoices(chats)
+          }
           const recent = await fetch('/api/theone/routes', { signal, cache: 'no-store' }).then(r => r.ok ? r.json() as Promise<{ routes: RouteView[]; stats?: RouteStats }> : undefined).catch(() => undefined)
           if (recent && !signal.aborted) { setRoutes(recent.routes); setRouteStats(recent.stats) }
         } catch { if (!signal.aborted) setError('catalog.loadError') }
@@ -936,6 +1132,19 @@ export function apply(ctx: Context) {
       } catch { setError('catalog.continueError') }
       finally { setBusy(undefined) }
     }
+    /**
+     * A topic's original chat may be archived: by the user, or by TheOne once the topic went quiet.
+     * DSH shows nothing for an archived chat it is asked to open, so it comes out of the archive first.
+     */
+    async function openSource(sessionId: SessionId) {
+      const navigating = ctx.layout.beginNavigation()
+      setError(undefined)
+      try {
+        const workspaces = ctx.workspaces.list.getSnapshot()
+        if (workspaces.phase === 'ready' && workspaces.archivedSessionIds.includes(sessionId)) await ctx.uiWorkspace.unarchiveSession(sessionId)
+        if (!navigating.aborted) ctx.uiWorkspace.openSession(sessionId)
+      } catch { setError('catalog.sourceError') }
+    }
     /** One directory edit; the directory reloads after it. */
     const post: Post = async (path, body) => {
       setBusy(path); setError(undefined)
@@ -954,6 +1163,64 @@ export function apply(ctx: Context) {
         return true
       } catch { setError('manage.error'); return false }
       finally { setBusy(undefined) }
+    }
+    async function chooseChats() {
+      setBusy('choices'); setError(undefined)
+      try {
+        const response = await fetch('/api/theone/catalog/sessions', { signal: lifetime.signal, cache: 'no-store' })
+        if (!response.ok) throw new Error('Chat choices unavailable')
+        setChoices(await response.json() as CatalogSessions)
+        choosingRef.current = true; setChoosing(true)
+      } catch { setError('manage.error') }
+      finally { setBusy(undefined) }
+    }
+    async function consent(value: boolean) {
+      if (await post('/api/theone/catalog/consent', { consent: value })) {
+        setReconsidering(false); choosingRef.current = false; setChoosing(false)
+      }
+    }
+    function closeChoices() { choosingRef.current = false; setChoosing(false) }
+    /** One tick in the chat list. It shows at once; the answer from DSH then settles it. */
+    async function toggleChoice(kind: 'session' | 'folder', value: string, excluded: boolean) {
+      setError(undefined)
+      setChoices(current => current && {
+        folders: current.folders.map(folder => kind === 'folder' && folder.path === value ? { ...folder, excluded } : folder),
+        sessions: current.sessions.map(session => (kind === 'session' ? session.id === value : session.folder === value) ? { ...session, excluded } : session),
+      })
+      try {
+        const response = await fetch('/api/theone/catalog/sessions', { method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ kind, value, excluded }), signal: lifetime.signal, cache: 'no-store' })
+        if (!response.ok) throw new Error('Choice not saved')
+        setChoices(await response.json() as CatalogSessions)
+        void reload.current()
+      } catch { setError('manage.error'); void reload.current() }
+    }
+    /** Earlier chats grouped by project folder, each ticked when it will be read. */
+    function chatPicker() {
+      if (!choices) return h('p', { className: 'theone-picker-hint' }, t('catalog.pickerLoading'))
+      const groups = [...choices.folders.map(folder => ({ ...folder, key: folder.path as string | null })), { path: null, name: t('catalog.otherChats'), excluded: false, key: null }]
+        .map(folder => ({ folder, sessions: choices.sessions.filter(session => session.folder === folder.key) }))
+        .filter(group => group.sessions.length)
+      return h('div', { className: 'theone-picker' },
+        h('p', { className: 'theone-picker-hint' }, t('catalog.chooseHint')),
+        h('div', { className: 'theone-picker-list' }, ...groups.map(({ folder, sessions }) =>
+          h('section', { key: folder.path ?? 'other', className: 'theone-picker-group' },
+            h('header', null,
+              h('span', { className: 'theone-picker-folder', title: folder.path ?? undefined }, folder.name),
+              h('span', { className: 'theone-picker-count' }, `${sessions.filter(session => !session.excluded).length}/${sessions.length}`),
+              folder.path ? h('label', { className: 'theone-picker-whole' },
+                h('input', { type: 'checkbox', checked: !folder.excluded,
+                  onChange: (event: React.ChangeEvent<HTMLInputElement>) => void toggleChoice('folder', folder.path!, !event.target.checked) }),
+                t('catalog.wholeFolder')) : null),
+            h('ul', null, ...sessions.map(session => {
+              const title = session.title || t('catalog.untitledChat')
+              return h('li', { key: session.id, className: session.excluded ? 'theone-picker-off' : undefined },
+                h('label', null,
+                  h('input', { type: 'checkbox', checked: !session.excluded, disabled: folder.excluded,
+                    onChange: (event: React.ChangeEvent<HTMLInputElement>) => void toggleChoice('session', session.id, !event.target.checked) }),
+                  h('span', { className: 'theone-picker-title', title }, title),
+                  h('time', { dateTime: new Date(session.createdAt).toISOString() }, new Date(session.createdAt).toLocaleDateString(localeSnapshot().active))))
+            }))))))
     }
     async function editLinks(body: Record<string, unknown>) {
       setBusy('links'); setError(undefined)
@@ -1002,7 +1269,11 @@ export function apply(ctx: Context) {
     const assigned = new Set(snapshot?.groups.flatMap(group => group.contextIds) ?? [])
     const groups = [...snapshot?.groups ?? [], ...(snapshot?.contexts.some(c => !assigned.has(c.id)) ? [{ id: 'pending', title: t('catalog.unassigned'), summary: t('catalog.unassignedSummary'), contextIds: snapshot.contexts.filter(c => !assigned.has(c.id)).map(c => c.id) }] : [])]
     const status = snapshot?.status
-    const kept = routeStats?.total ? Math.round(100 * (routeStats.total - routeStats.corrected) / routeStats.total) : undefined
+    const asking = status?.consent === 'ask' || (status?.consent === 'declined' && reconsidering)
+    const unconsented = status?.consent === 'ask' || status?.consent === 'declined'
+    // Before the list is open, the scan's counts stand in for it.
+    const total = choices ? choices.sessions.length : (status?.waiting ?? 0) + (status?.excluded ?? 0)
+    const included = choices ? choices.sessions.filter(session => !session.excluded).length : status?.waiting ?? 0
     const figure = (value: string | number, name: string) => h('div', { key: name }, h('dd', null, value), h('dt', null, name))
     return h('section', { className: 'theone-catalog', translate: 'no' },
       h('header', { className: 'theone-catalog-header' },
@@ -1010,20 +1281,43 @@ export function apply(ctx: Context) {
           h('p', { className: 'theone-overline' }, 'TheOne'),
           h('h1', null, t('catalog.title')),
           h('p', { className: 'theone-catalog-lede' }, t('catalog.subtitle'))),
-        snapshot ? h('dl', { className: 'theone-figures' },
-          figure(snapshot.contexts.length, t('catalog.figTopics')),
-          figure(snapshot.groups.length, t('catalog.figGroups')),
-          kept !== undefined ? figure(`${kept}%`, t('catalog.figKept')) : null) : null),
+        // One number is enough here; how often routing was right lives with the routing list.
+        snapshot?.contexts.length ? h('dl', { className: 'theone-figures' }, figure(snapshot.contexts.length, t('catalog.figTopics'))) : null),
       h('div', { className: 'theone-toolbar' },
+        // Only work in progress is worth a line; "up to date" is the normal state.
         h('p', { className: 'theone-catalog-status', role: 'status' }, snapshot
-          ? (status?.running ? t('catalog.indexing') : status?.pending ? t('catalog.pending', { count: status.pending, sessionSuffix: status.pending === 1 ? '' : 's' }) : t('catalog.updated'))
+          ? (unconsented ? '' : status?.running ? t('catalog.indexing') : status?.pending ? t('catalog.pending', { count: status.pending, sessionSuffix: status.pending === 1 ? '' : 's' }) : '')
           : t('catalog.reading')),
         h('div', { className: 'theone-catalog-tools' },
           h('button', { type: 'button', className: 'theone-primary', disabled: !!busy, onClick: () => setCreating(open => !open) }, t('manage.create')),
-          h('button', { type: 'button', onClick: refresh, disabled: !!busy || status?.running }, t('catalog.refresh')),
+          // Before consent there is no history to refresh, so the button would only confuse.
+          unconsented ? null : h('button', { type: 'button', onClick: refresh, disabled: !!busy || status?.running }, t('catalog.refresh')),
+          status?.consent === 'granted' ? h('button', { type: 'button', className: 'theone-quiet', disabled: !!busy, 'aria-expanded': choosing,
+            onClick: () => choosing ? closeChoices() : void chooseChats() }, t('catalog.chooseChatsShort')) : null,
           snapshot?.linkage && snapshot.linkage.scope !== 'off' ? h('button', { type: 'button', className: 'theone-quiet', disabled: !!busy, title: t('link.clearLearnedHint'),
             onClick: () => { void editLinks({ action: 'clearLearned' }) } }, t('link.clearLearned')) : null,
           h('button', { type: 'button', className: 'theone-quiet', onClick: () => openFeedbackDialog() }, t('feedback.open')))),
+      // One card from question to choice: the list opens inside it and the button counts what will be read.
+      asking ? h('section', { className: 'theone-consent', 'aria-labelledby': 'theone-consent-title' },
+        h('h2', { id: 'theone-consent-title' }, t('catalog.consentTitle')),
+        h('p', { className: 'theone-consent-body' }, t('catalog.consentBody', { count: total, sessionSuffix: total === 1 ? '' : 's' })),
+        h('ul', { className: 'theone-consent-points' }, ...(['catalog.consentKeep', 'catalog.consentQuota', 'catalog.consentChoose'] as const)
+          .map(key => h('li', { key }, icon('check', 14), h('span', null, t(key))))),
+        choosing ? chatPicker() : null,
+        h('div', { className: 'theone-consent-actions' },
+          h('button', { type: 'button', className: 'theone-primary', disabled: !!busy || !included, onClick: () => void consent(true) },
+            t('catalog.startCount', { count: included, sessionSuffix: included === 1 ? '' : 's' })),
+          h('button', { type: 'button', disabled: !!busy, 'aria-expanded': choosing, onClick: () => choosing ? closeChoices() : void chooseChats() },
+            t(choosing ? 'catalog.doneChoosing' : 'catalog.chooseFirst')),
+          h('button', { type: 'button', className: 'theone-quiet', disabled: !!busy, onClick: () => void consent(false) }, t('catalog.notNow')))) : null,
+      status?.consent === 'declined' && !reconsidering ? h('div', { className: 'theone-consent-strip' },
+        h('span', null, t('catalog.declined')),
+        h('button', { type: 'button', className: 'theone-quiet', disabled: !!busy, onClick: () => setReconsidering(true) }, t('catalog.reconsider'))) : null,
+      status?.consent === 'granted' && choosing ? h('section', { className: 'theone-consent', 'aria-labelledby': 'theone-choose-title' },
+        h('h2', { id: 'theone-choose-title' }, t('catalog.chooseChats')),
+        chatPicker(),
+        h('div', { className: 'theone-consent-actions' },
+          h('button', { type: 'button', onClick: closeChoices }, t('catalog.doneChoosing')))) : null,
       creating ? h('form', { className: 'theone-manage theone-create', onSubmit: (event: React.FormEvent<HTMLFormElement>) => { event.preventDefault(); void post('/api/theone/topics', { action: 'create', title: newTitle }) } },
         h('input', { value: newTitle, maxLength: 80, autoFocus: true, placeholder: t('manage.title'), disabled: !!busy, onChange: (event: React.ChangeEvent<HTMLInputElement>) => setNewTitle(event.target.value) }),
         h('button', { type: 'submit', className: 'theone-primary', disabled: !!busy || !newTitle.trim() }, t('manage.createButton')),
@@ -1033,38 +1327,57 @@ export function apply(ctx: Context) {
       status?.searchUnavailable ? h('p', { className: 'theone-catalog-warning' }, t('catalog.searchUnavailable')) : null,
       error ? h('p', { role: 'alert', className: 'theone-catalog-warning' }, t(error)) : null,
       snapshot ? h(RouteList, { routes, stats: routeStats, contexts: snapshot.contexts, post, busy: !!busy }) : null,
-      snapshot && !snapshot.contexts.length ? h('p', { className: 'theone-catalog-empty' }, t(status?.running ? 'catalog.emptyIndexing' : 'catalog.empty')) : null,
-      h('div', { className: 'theone-catalog-groups' }, ...groups.map((group, index) =>
-        h('section', { key: group.id, className: 'theone-topic-group' },
-          h('header', { className: 'theone-group-head' },
-            h('span', { className: 'theone-group-index' }, String(index + 1).padStart(2, '0')),
-            h('h2', null, group.title, h('span', null, group.contextIds.length)),
-            group.summary ? h('p', { className: 'theone-group-summary' }, group.summary) : null),
-          h('ol', { className: 'theone-topic-list' }, ...group.contextIds.flatMap(id => {
+      snapshot && !snapshot.contexts.length && !unconsented ? h('p', { className: 'theone-catalog-empty' }, t(status?.running ? 'catalog.emptyIndexing' : 'catalog.empty')) : null,
+      // Laid out like DSH's built-in plugins: foldable groups of two-column cards; a card opens to full width.
+      h('div', { className: 'theone-catalog-groups' }, ...groups.map(group => {
+        const shut = folded.has(group.id)
+        return h('section', { key: group.id, className: 'theone-topic-group' },
+          h('div', { className: 'theone-group-head' },
+            h('button', { type: 'button', className: 'theone-group-toggle', 'aria-expanded': !shut,
+              onClick: () => setFolded(current => { const next = new Set(current); if (!next.delete(group.id)) next.add(group.id); return next }) },
+              icon('chevron', 12), h('h2', null, group.title), h('span', { className: 'theone-group-count' }, group.contextIds.length))),
+          group.summary ? h('p', { className: 'theone-group-summary' }, group.summary) : null,
+          shut ? null : h('ol', { className: 'theone-topic-list' }, ...group.contextIds.flatMap(id => {
             const topic = snapshot?.contexts.find(c => c.id === id)
             if (!topic) return []
             const constraints = snapshot?.linkage?.topics[id]?.constraints ?? ''
             const open = managing === id
-            const links = linkRow(id)
-            return [h('li', { key: id, className: `theone-topic-card${open ? ' theone-open' : ''}${topic.hidden ? ' theone-hidden' : ''}` },
+            const summary = topic.summary && topic.summary.trim() !== topic.title.trim() ? topic.summary : ''
+            // A topic whose conversations are gone has nothing left to continue; an archived one does.
+            const stuck = topic.hidden === 'orphaned' || topic.hidden === 'excluded'
+            return [h('li', { key: id, 'data-open': open, className: `theone-topic-card${open ? ' theone-open' : ''}${stuck ? ' theone-hidden' : ''}` },
               h('div', { className: 'theone-topic-main' },
-                h('h3', null, topic.title),
-                topic.summary && topic.summary.trim() !== topic.title.trim() ? h('p', { className: 'theone-topic-summary' }, topic.summary) : null,
-                topic.hidden ? h('p', { className: 'theone-topic-warning' }, t(topic.hidden === 'archived' ? 'topic.hiddenArchived' : 'topic.hiddenOrphaned')) : null,
-                topic.lastState || constraints || (links && !open) ? h('dl', { className: 'theone-topic-meta' },
-                  topic.lastState ? [h('dt', { key: 's' }, label(t('topic.state'))), h('dd', { key: 'sv' }, topic.lastState)] : null,
-                  constraints ? [h('dt', { key: 'c' }, label(t('topic.constraints'))), h('dd', { key: 'cv' }, constraints)] : null,
-                  open ? null : links) : null),
-              h('div', { className: 'theone-topic-actions' },
-                // A hidden topic has nothing left to continue: its conversations are gone or archived.
-                h('button', { type: 'button', className: 'theone-continue', disabled: !!busy || !!topic.hidden, title: topic.hidden ? t('topic.continueHidden') : undefined,
-                  onClick: () => { void continueTopic(id) } }, t(busy === id ? 'topic.opening' : 'topic.continue'), h('span', { 'aria-hidden': true }, ' →')),
-                h('button', { type: 'button', className: 'theone-quiet', 'aria-expanded': open, onClick: () => setManaging(current => current === id ? undefined : id) }, t(open ? 'manage.close' : 'manage.open')),
-                ...(topic.hidden === 'orphaned' ? [] : topic.sourceSessionIds).slice(0, 3).map((sessionId, i) => h('button', { key: sessionId, type: 'button', className: 'theone-quiet',
-                  onClick: () => { ctx.layout.beginNavigation(); ctx.uiWorkspace.openSession(sessionId as SessionId) } }, t('topic.source') + (topic.sourceSessionIds.length > 1 ? ' ' + (i + 1) : '')))),
-              open ? h('div', { className: 'theone-topic-edit' }, links,
+                h('div', { className: 'theone-topic-row' },
+                  h('h3', { title: topic.title }, topic.title),
+                  topic.topicStatus && topic.topicStatus !== 'active'
+                    ? h('span', { className: `theone-tag theone-status-${topic.topicStatus}` }, t(`topic.status.${topic.topicStatus}` as TheOneLocaleKey)) : null,
+                  h('button', { type: 'button', className: 'theone-topic-more', 'aria-expanded': open, 'aria-label': t(open ? 'manage.close' : 'manage.open'), title: t(open ? 'manage.close' : 'manage.open'),
+                    onClick: () => setManaging(current => current === id ? undefined : id) }, icon('more', 16))),
+                // Closed, a card answers one question, where it left off; open, it shows everything.
+                open ? [summary ? h('p', { key: 's', className: 'theone-topic-summary' }, summary) : null,
+                  topic.lastState ? h('p', { key: 'l', className: 'theone-topic-state' }, h('span', null, label(t('topic.state'))), topic.lastState) : null]
+                  : topic.lastState || summary ? h('p', { className: 'theone-topic-summary' }, topic.lastState || summary) : null,
+                topic.hidden ? h('p', { className: 'theone-topic-warning' }, t(topic.hidden === 'excluded' ? 'topic.hiddenExcluded' : topic.hidden === 'archived' ? 'topic.hiddenArchived' : 'topic.hiddenOrphaned')) : null,
+                // Topics merged into this one, each of which can be taken apart again.
+                ...(snapshot?.merges ?? []).filter(merge => merge.targetId === id).map(merge => h('p', { key: `merge:${merge.sourceId}`, className: 'theone-topic-merged' },
+                  t('topic.mergedFrom', { title: merge.title }), ' ',
+                  h('button', { type: 'button', className: 'theone-quiet', disabled: !!busy, onClick: () => { void post('/api/theone/topics', { action: 'unmerge', id: merge.sourceId }) } }, t('topic.unmerge'))))),
+              stuck && !topic.projectInfo ? null : h('div', { className: 'theone-topic-foot' },
+                topic.projectInfo ? h('code', { className: 'theone-topic-chip', title: topic.projectInfo.path }, topic.projectInfo.name) : null,
+                // The whole closed card is this button's target: the most common click needs no aiming.
+                stuck ? null : h('button', { type: 'button', className: `theone-continue${open ? '' : ' theone-stretch'}`, disabled: !!busy,
+                  onClick: () => { void continueTopic(id) } }, t(busy === id ? 'topic.opening' : 'topic.continue'), h('span', { 'aria-hidden': true }, '→'))),
+              open ? h('div', { className: 'theone-topic-edit' },
+                h('div', { className: 'theone-topic-quick' },
+                  topic.hidden ? null : h('button', { type: 'button', disabled: !!busy,
+                    onClick: () => { void post('/api/theone/topics', { action: 'status', id, done: topic.topicStatus !== 'done' }) } },
+                    t(topic.topicStatus === 'done' ? 'topic.reopen' : 'topic.markDone')),
+                  ...(topic.hidden === 'orphaned' ? [] : topic.sourceSessionIds).slice(0, 3).map((sessionId, i) => h('button', { key: sessionId, type: 'button',
+                    onClick: () => { void openSource(sessionId as SessionId) } }, t('topic.source') + (topic.sourceSessionIds.length > 1 ? ' ' + (i + 1) : '')))),
+                linkRow(id),
                 h(TopicManager, { key: `${id}:${topic.title}:${topic.summary}:${constraints}`, topic, constraints, groups: snapshot!.groups, contexts: snapshot!.contexts, post, busy: !!busy })) : null)]
-          })))))
+          })))
+      }))
     )
   }
 
@@ -1130,8 +1443,15 @@ export function apply(ctx: Context) {
   // is the folder of the topic in use. Only main chat's row in this browser's list changes; the
   // session, and every other session, stay as they are.
   ctx.effect(() => {
-    const list = ctx.sessions.list as unknown as { getSnapshot(): SessionListState }
-    const original = list.getSnapshot
+    const list = ctx.sessions.list as unknown as { getSnapshot(): SessionListState; subscribe(listener: () => void): () => void }
+    const original = list.getSnapshot, originalSubscribe = list.subscribe
+    // A new folder changes no session, so the list would not say so by itself.
+    const listeners = new Set<() => void>()
+    list.subscribe = (listener: () => void) => {
+      listeners.add(listener)
+      const unsubscribe = originalSubscribe.call(list, listener)
+      return () => { listeners.delete(listener); unsubscribe() }
+    }
     let folder: string | undefined
     let base: SessionListState | undefined, view: SessionListState | undefined, viewFolder: string | undefined, viewId: string | undefined
     list.getSnapshot = function (this: unknown) {
@@ -1152,22 +1472,33 @@ export function apply(ctx: Context) {
       timer = setTimeout(() => {
         void fetch('/api/theone/gateway', { signal: lifetime.signal, cache: 'no-store' })
           .then(response => response.ok ? response.json() as Promise<{ topicFolder?: string | null }> : undefined)
-          .then(value => { if (value && !lifetime.signal.aborted) folder = value.topicFolder ?? undefined }).catch(() => {})
+          .then(value => {
+            if (!value || lifetime.signal.aborted || folder === (value.topicFolder ?? undefined)) return
+            folder = value.topicFolder ?? undefined
+            for (const listener of [...listeners]) listener()
+          }).catch(() => {})
       }, 400)
     }
     read()
+    readTopicFolder = read
     // A routed message changes main chat's list entry; the topic in use may have changed with it.
-    const unsubscribe = ctx.sessions.list.subscribe(read)
-    return () => { unsubscribe(); clearTimeout(timer); list.getSnapshot = original }
+    const unsubscribe = originalSubscribe.call(list, read)
+    return () => { unsubscribe(); clearTimeout(timer); list.getSnapshot = original; list.subscribe = originalSubscribe; readTopicFolder = () => {} }
   })
 
   // Wait for the owning plugins' declarations; retain their normal browser and chat.
+  const WorkPanel = createWorkPanel(useText, lifetime.signal, () => ctx.layout.selectPanel(panelId))
   ctx.slots.inject('main', () => [
+    ctx.slots.register({name:'main',key:tasksPanelId},WorkPanel),
     ctx.slots.register({name:'main',key:panelId},GatewayPanel),
     ctx.slots.register({name:'main',key:catalogPanelId},CatalogPanel),
     ctx.slots.register({name:'main',key:settingsPanelId},SettingsPanel),
   ])
   ctx.slots.inject('sidebar.panellist', () => [
+    ctx.slots.register({name:'sidebar.panellist',id:tasksPanelId,order:-998,label:()=>t('tasks.title')}, ({size}: PropsRuntime<'sidebar.panellist'>) => {
+      const t = useText()
+      return h('span',{className:'theone-catalog-entry',translate:'no'},icon('grid',16),size === 16 ? h('span',null,t('tasks.title')) : null)
+    }),
     ctx.slots.register({name:'sidebar.panellist',id:panelId,order:-1000,label:()=>t('gateway.title')},SidebarEntry),
     ctx.slots.register({name:'sidebar.panellist',id:catalogPanelId,order:-999,label:()=>t('catalog.title')}, ({size}: PropsRuntime<'sidebar.panellist'>) => {
       const t = useText()
@@ -1177,7 +1508,7 @@ export function apply(ctx: Context) {
 }
 
 /** Target only the row containing our own slot marker; no generated DSH class names. */
-const sidebarCss = `
+const sidebarCss = workCss + `
 button:has(.theone-nav){--one-accent:#a75b1e;--one-tint:#fff5ec;--one-line:#eed3bb;--one-heat:#ff78002b;--one-glow:0 0 22px 4px #ff6b0024,0 4px 32px 6px #ff76000d;border:1px solid var(--one-line);background:var(--one-tint);box-shadow:var(--one-glow);overflow:visible;border-radius:12px;color:var(--dsw-alias-label-primary);flex:none;position:relative;isolation:isolate}
 [data-ds-dark-theme] button:has(.theone-nav){--one-accent:#93c8f3;--one-tint:#1d2a37;--one-line:#344d64;--one-heat:#80caff30;--one-glow:0 0 22px 4px #80bae924}
 button:has(.theone-nav)::after{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;background:radial-gradient(85px circle at var(--one-pointer-x,50%) var(--one-pointer-y,50%),var(--one-heat),transparent 100%);opacity:0;transition:opacity 180ms ease;z-index:0}
@@ -1209,9 +1540,9 @@ button:has(.theone-nav[data-wide=true])>span:has(.theone-nav){flex:1;min-width:0
 .theone-dialog-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:16px}
 .theone-dialog-actions button{padding:8px 14px;border:1px solid var(--dsw-alias-border-l2,#ffffff1f);border-radius:9px;background:transparent;color:inherit;font:inherit;cursor:pointer}
 .theone-dialog-actions button:hover{background:var(--dsw-alias-interactive-bg-hover,#ffffff12)}
-.theone-dialog-actions .theone-dialog-primary{border-color:transparent;background:#3b6fb0;color:#fff}
-.theone-dialog-actions .theone-dialog-primary:hover{background:#4a7fc0}
-.theone-dialog-actions button:focus-visible{outline:2px solid #4a7fc0;outline-offset:2px}
+.theone-dialog-actions .theone-dialog-primary{border-color:transparent;background:var(--one-accent);color:var(--one-on-accent)}
+.theone-dialog-actions .theone-dialog-primary:hover{background:var(--one-accent-hover)}
+.theone-dialog-actions button:focus-visible{outline:2px solid var(--one-accent);outline-offset:2px}
 .theone-dialog .theone-dialog-body{white-space:pre-wrap;color:var(--dsw-alias-label-primary,#e8e8ea)}
 .theone-feedback{width:min(560px,100%);max-height:calc(100vh - 32px);overflow:auto}
 .theone-feedback textarea,.theone-feedback input:not([type=checkbox]){display:block;width:100%;box-sizing:border-box;margin:0 0 10px;padding:8px 10px;border:1px solid var(--dsw-alias-border-l2,#ffffff1f);border-radius:9px;background:transparent;color:inherit;font:inherit;resize:vertical}
@@ -1220,12 +1551,12 @@ button:has(.theone-nav[data-wide=true])>span:has(.theone-nav){flex:1;min-width:0
 .theone-feedback-preview summary{cursor:pointer;color:var(--dsw-alias-label-secondary,#a0a0a6)}
 .theone-feedback-preview pre{max-height:220px;overflow:auto;margin:6px 0 0;padding:8px 10px;border-radius:9px;background:#0000001f;font-size:12px;line-height:1.5;white-space:pre-wrap;word-break:break-word}
 .theone-notice{display:flex;align-items:center;gap:8px;margin:6px 4px 0;padding:6px 8px 6px 10px;border:1px solid var(--dsw-alias-border-l2,#ffffff1f);border-radius:10px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary,#a0a0a6);min-width:0}
-.theone-notice-tag{flex:none;display:inline-flex;padding:3px;border-radius:6px;background:#3b6fb033;color:#7fa9dd}
+.theone-notice-tag{flex:none;display:inline-flex;padding:3px;border-radius:6px;background:var(--one-tint);box-shadow:inset 0 0 0 .5px var(--one-line);color:var(--one-accent)}
 .theone-notice-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .theone-notice-text strong{color:var(--dsw-alias-label-primary,#e8e8ea);font-weight:500}
 .theone-notice button{flex:none;display:inline-flex;border:0;background:transparent;color:inherit;font:inherit;cursor:pointer;padding:4px;border-radius:6px}
 .theone-notice button:hover{background:var(--dsw-alias-interactive-bg-hover,#ffffff12)}
-.theone-notice-link{color:#7fa9dd!important}
+.theone-notice-link{color:var(--one-accent)!important}
 .theone-update-spin{width:12px;height:12px;border-radius:50%;border:1.5px solid currentColor;border-right-color:transparent;animation:theone-spin 800ms linear infinite}
 @keyframes theone-spin{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){.theone-update-spin{animation:none}}
@@ -1243,93 +1574,149 @@ button:has(.theone-nav[data-wide=true])>span:has(.theone-nav){flex:1;min-width:0
 
 const catalogCss = `
 button:has(.theone-catalog-entry)>span:not(:has(.theone-catalog-entry)){display:none}
-.theone-catalog{--t-fg:var(--dsw-alias-label-primary,#18181b);--t-muted:var(--dsw-alias-label-secondary,#6b6b72);--t-rule:var(--dsw-alias-border-l2,#18181b1f);--t-accent:#b4531c;--t-warn:#c2410c;--t-field:#18181b0a;
-  container-type:inline-size;box-sizing:border-box;height:100%;overflow:auto;padding:48px 56px 96px;color:var(--t-fg);font-feature-settings:"tnum" 1}
-[data-ds-dark-theme] .theone-catalog{--t-accent:#8cc2ef;--t-warn:#fb923c;--t-field:#ffffff0d}
-.theone-catalog>*{max-width:1120px;margin-left:auto;margin-right:auto}
-.theone-catalog button{font:inherit;font-size:13px;line-height:1.4;color:inherit;background:transparent;border:1px solid var(--t-rule);border-radius:6px;padding:6px 12px;cursor:pointer;white-space:nowrap}
-.theone-catalog button:hover:not(:disabled){border-color:var(--t-fg)}
-.theone-catalog button:disabled{opacity:.4;cursor:default}
+body{--one-accent:#a75b1e;--one-accent-hover:#8c4a15;--one-on-accent:#fff;--one-tint:#fff5ec;--one-line:#eed3bb;--one-soft:#a75b1e14}
+body[data-ds-dark-theme]{--one-accent:#93c8f3;--one-accent-hover:#b6dbf8;--one-on-accent:#0e1a24;--one-tint:#1d2a37;--one-line:#344d64;--one-soft:#93c8f31a}
+.theone-catalog{--t-fg:var(--dsw-alias-label-primary,#18181b);--t-muted:var(--dsw-alias-label-secondary,#5c6370);--t-caption:var(--dsw-alias-label-caption,#9aa0aa);--t-rule:var(--dsw-alias-border-l2,#0000001a);--t-line:var(--dsw-alias-border-l3,#0000001f);--t-hover:var(--dsw-alias-interactive-bg-hover,#26314810);--t-base:var(--dsw-alias-bg-base,#fff);--t-accent:var(--one-accent);--t-warn:var(--dsw-alias-state-error-primary,#d9480f);--t-field:var(--t-hover);
+  container-type:inline-size;box-sizing:border-box;height:100%;overflow:auto;padding:0 clamp(24px,4vw,48px) 64px;color:var(--t-fg);font-family:var(--dsw-font-family,inherit);font-size:14px;line-height:22px}
+.theone-catalog>*{max-width:960px;margin-left:auto;margin-right:auto}
+.theone-catalog button{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;gap:4px;height:28px;padding:0 10px;border:.5px solid var(--t-line);border-radius:var(--dsw-radius-sm,8px);background:transparent;color:inherit;font:inherit;font-size:12px;line-height:18px;font-weight:400;cursor:pointer;white-space:nowrap}
+.theone-catalog button:hover:not(:disabled){background:var(--t-hover)}
+.theone-catalog button:disabled{opacity:.4;cursor:not-allowed}
 .theone-catalog button:focus-visible{outline:2px solid var(--t-accent);outline-offset:2px}
-.theone-catalog .theone-primary{background:var(--t-fg);border-color:var(--t-fg);color:var(--dsw-alias-bg-primary,#fff)}
-[data-ds-dark-theme] .theone-catalog .theone-primary{color:#111}
-.theone-catalog .theone-quiet{border-color:transparent;color:var(--t-muted);padding-left:6px;padding-right:6px}
-.theone-catalog .theone-quiet:hover:not(:disabled){border-color:transparent;color:var(--t-fg);text-decoration:underline;text-underline-offset:3px}
-.theone-catalog .theone-continue{border-color:transparent;color:var(--t-accent);font-weight:600;padding-left:0;padding-right:6px}
-.theone-catalog .theone-continue:hover:not(:disabled){border-color:transparent;text-decoration:underline;text-underline-offset:3px}
-.theone-catalog-header{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:24px 48px;padding-bottom:28px;border-bottom:2px solid var(--t-fg)}
-.theone-overline{margin:0 0 14px;font-size:12px;font-weight:600;letter-spacing:.06em;color:var(--t-accent)}
-.theone-catalog h1{margin:0;font-size:44px;line-height:1.05;font-weight:700;letter-spacing:-.02em}
-.theone-catalog-lede{margin:14px 0 0;max-width:34em;font-size:15px;line-height:1.6;color:var(--t-muted)}
-.theone-figures{display:flex;gap:40px;margin:0}
-.theone-figures>div{display:flex;flex-direction:column-reverse;gap:6px;min-width:64px}
-.theone-figures dd{margin:0;font-size:40px;line-height:1;font-weight:600;letter-spacing:-.02em}
-.theone-figures dt{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--t-muted)}
-.theone-toolbar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px 24px;padding:14px 0 40px}
-.theone-catalog-status{margin:0;font-size:13px;color:var(--t-muted)}
-.theone-catalog-tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
-.theone-catalog-note,.theone-catalog-empty{color:var(--t-muted);font-size:14px;line-height:1.7}
-.theone-catalog-empty{padding:48px 0}
-.theone-catalog-warning{margin:0 0 24px;padding:10px 0 10px 14px;border-left:2px solid var(--t-warn);font-size:13px;line-height:1.6}
+.theone-catalog .theone-primary{border-color:transparent;background:var(--one-accent);color:var(--one-on-accent)}
+.theone-catalog .theone-primary:hover:not(:disabled){background:var(--one-accent-hover)}
+.theone-catalog .theone-quiet{border-color:transparent;color:var(--t-muted)}
+.theone-catalog .theone-quiet:hover:not(:disabled){color:var(--t-fg)}
+.theone-catalog-header{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:8px 24px;padding-top:28px}
+.theone-catalog-header .theone-overline{display:none}
+.theone-overline{margin:0 0 4px;font-size:12px;line-height:18px;font-weight:500;color:var(--t-accent)}
+.theone-catalog h1{margin:0;font-size:20px;line-height:28px;font-weight:600}
+.theone-catalog-lede{margin:4px 0 0;font-size:13px;line-height:20px;color:var(--t-muted)}
+.theone-figures{display:flex;gap:16px;margin:0;padding-top:4px}
+.theone-figures>div{display:flex;align-items:baseline;gap:4px}
+.theone-figures dd{margin:0;font-size:13px;line-height:20px;font-weight:500;font-variant-numeric:tabular-nums}
+.theone-figures dt{font-size:13px;line-height:20px;color:var(--t-muted)}
+.theone-toolbar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px;padding:20px 0 24px}
+.theone-catalog-status{margin:0;font-size:13px;line-height:20px;color:var(--dsw-alias-label-tertiary,var(--t-muted))}
+.theone-catalog-status:empty{display:none}
+.theone-catalog-tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-left:auto}
+.theone-catalog .theone-catalog-tools .theone-primary{border-color:var(--t-line);background:transparent;color:inherit}
+.theone-catalog .theone-catalog-tools .theone-primary:hover:not(:disabled){background:var(--t-hover)}
+.theone-catalog-note,.theone-catalog-empty{margin:0 0 24px;color:var(--t-muted);font-size:13px;line-height:20px}
+.theone-catalog-empty{padding:40px 0;text-align:center}
+.theone-consent{box-sizing:border-box;margin:0 auto 32px;padding:20px 24px;border:1px solid var(--one-line);border-radius:var(--dsw-radius-lg,16px);background:var(--one-tint)}
+.theone-consent .theone-overline{display:flex;align-items:center;gap:6px}
+.theone-consent .theone-overline::before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor}
+.theone-consent h2{margin:0;font-size:16px;line-height:24px;font-weight:600}
+.theone-consent-body{margin:4px 0 0;max-width:640px;font-size:14px;line-height:22px;color:var(--t-muted)}
+.theone-consent-points{list-style:none;margin:10px 0 0;padding:0;display:flex;flex-wrap:wrap;gap:4px 16px;font-size:12px;line-height:18px;color:var(--t-muted)}
+.theone-consent-points li{display:flex;gap:6px;align-items:center}
+.theone-consent-points .theone-icon{flex:none;color:var(--t-accent)}
+.theone-consent-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:20px}
+.theone-catalog .theone-consent-actions button{height:32px;padding:0 14px;font-size:13px}
+.theone-catalog .theone-consent-actions button:not(.theone-primary):not(.theone-quiet){background:var(--t-base)}
+.theone-consent-strip{box-sizing:border-box;display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px;margin:0 auto 32px;padding:8px 8px 8px 16px;border:1px solid var(--one-line);border-radius:var(--dsw-radius-md,12px);font-size:13px;line-height:20px;color:var(--t-muted)}
+.theone-consent-strip>span{display:flex;align-items:center;gap:8px}
+.theone-consent-strip>span::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--t-accent)}
+.theone-catalog .theone-consent-strip button{margin-left:auto;color:var(--t-accent)}
+.theone-picker{margin-top:16px}
+.theone-picker-hint{margin:0 0 8px;font-size:13px;line-height:20px;color:var(--t-muted)}
+.theone-picker-list{max-height:min(400px,55vh);overflow:auto;border:.5px solid var(--t-line);border-radius:var(--dsw-radius-md,12px);background:var(--t-base)}
+.theone-picker-group+.theone-picker-group{border-top:.5px solid var(--t-line)}
+.theone-picker-group>header{position:sticky;top:0;z-index:1;display:flex;align-items:center;gap:8px;height:36px;padding:0 12px 0 16px;border-bottom:.5px solid var(--t-rule);background:var(--t-base);font-size:12px;line-height:18px}
+.theone-picker-folder{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
+.theone-picker-count{color:var(--t-caption);font-variant-numeric:tabular-nums}
+.theone-picker-whole{margin-left:auto;display:flex;align-items:center;gap:6px;color:var(--t-muted);white-space:nowrap;cursor:pointer}
+.theone-picker-group ul{list-style:none;margin:0;padding:4px}
+.theone-picker-group li label{display:flex;align-items:center;gap:10px;height:36px;padding:0 12px;border-radius:var(--dsw-radius-sm,8px);font-size:13px;cursor:pointer}
+.theone-picker-group li label:hover{background:var(--t-hover)}
+.theone-picker input,.theone-catalog input[type=checkbox]{flex:none;width:14px;height:14px;margin:0;accent-color:var(--one-accent);cursor:pointer}
+.theone-picker input:disabled{cursor:not-allowed}
+.theone-picker-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.theone-picker-off .theone-picker-title{color:var(--t-caption)}
+.theone-picker time{color:var(--t-caption);font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}
+@container (max-width:560px){.theone-consent{padding:16px}.theone-picker time{display:none}}
+.theone-catalog-warning{box-sizing:border-box;margin:0 auto 24px;padding:10px 16px;border:.5px solid color-mix(in srgb,var(--t-warn) 40%,transparent);border-radius:var(--dsw-radius-md,12px);background:color-mix(in srgb,var(--t-warn) 6%,transparent);font-size:13px;line-height:20px}
 .theone-catalog-entry{display:flex;align-items:center;gap:10px;font-size:14px}
-.theone-routes{margin-bottom:56px;border-top:1px solid var(--t-rule);border-bottom:1px solid var(--t-rule)}
-.theone-routes summary{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;padding:14px 0;cursor:pointer;font-size:13px;font-weight:600;letter-spacing:.04em;list-style:none}
+.theone-routes{box-sizing:border-box;margin:0 auto 32px;padding:0 16px;border:.5px solid var(--t-line);border-radius:var(--dsw-radius-md,12px)}
+.theone-routes summary{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;min-height:44px;cursor:pointer;font-size:14px;line-height:22px;font-weight:500;list-style:none}
 .theone-routes summary::-webkit-details-marker{display:none}
-.theone-routes summary::before{content:"+";display:inline-block;width:14px;color:var(--t-muted);font-weight:400}
-.theone-routes[open] summary::before{content:"−"}
-.theone-routes summary>span{color:var(--t-muted);font-weight:400}
-.theone-route-stats{font-weight:400;color:var(--t-muted);font-size:12px}
-.theone-routes .theone-manage-hint{margin:0 0 12px 26px;max-width:46em}
+.theone-routes summary::before{content:'';width:6px;height:6px;margin:0 4px 0 2px;border-right:1.5px solid var(--t-muted);border-bottom:1.5px solid var(--t-muted);transform:rotate(-45deg);transition:transform 150ms ease}
+.theone-routes[open] summary::before{transform:rotate(45deg) translate(-2px,-1px)}
+.theone-routes summary>span{color:var(--t-caption);font-weight:400}
+.theone-route-stats{font-weight:400;color:var(--t-caption);font-size:13px}
+.theone-routes .theone-manage-hint{margin:0 0 8px 20px;max-width:46em}
 .theone-routes ol{list-style:none;margin:0;padding:0 0 8px}
-.theone-routes li{display:grid;grid-template-columns:52px minmax(0,1.3fr) minmax(0,1fr) auto;gap:4px 20px;align-items:baseline;padding:10px 0;border-top:1px solid var(--t-rule);font-size:13px}
-.theone-routes time{color:var(--t-muted)}
+.theone-routes li{display:grid;grid-template-columns:48px minmax(0,1fr) minmax(0,1fr) 248px;gap:4px 16px;align-items:center;min-height:44px;padding:6px 0;border-top:.5px solid var(--t-rule);font-size:13px;line-height:20px}
+.theone-routes time{color:var(--t-caption);font-variant-numeric:tabular-nums}
 .theone-routes q{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;quotes:none}
-.theone-route-target{display:flex;flex-direction:column;gap:2px;min-width:0}
-.theone-route-target strong{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.theone-route-target small{color:var(--t-muted);font-size:12px}
+.theone-route-target{display:flex;flex-direction:column;min-width:0}
+.theone-route-target strong{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.theone-route-target small{color:var(--t-caption);font-size:12px;line-height:18px}
 .theone-route-actions{display:flex;gap:8px;align-items:center;justify-content:flex-end}
-.theone-route-fixed{color:var(--t-muted);font-size:12px}
-.theone-routes select{width:auto;max-width:150px;padding-top:4px;padding-bottom:4px;font-size:12px}
-.theone-catalog-groups{display:flex;flex-direction:column;gap:56px}
-.theone-topic-group{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,9fr);gap:0 40px;border-top:2px solid var(--t-fg);padding-top:16px}
-.theone-group-head{position:sticky;top:0;align-self:start}
-.theone-group-index{display:block;margin-bottom:10px;font-size:13px;font-weight:600;color:var(--t-accent)}
-.theone-topic-group h2{margin:0;font-size:22px;line-height:1.2;font-weight:700;letter-spacing:-.01em}
-.theone-topic-group h2 span{margin-left:8px;font-size:13px;font-weight:400;color:var(--t-muted)}
-.theone-group-summary{margin:10px 0 0;font-size:13px;line-height:1.6;color:var(--t-muted)}
-.theone-topic-list{list-style:none;margin:0;padding:0}
-.theone-topic-card{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 32px;padding:18px 0 20px;border-top:1px solid var(--t-rule)}
-.theone-topic-card:first-child{border-top:0;padding-top:4px}
-.theone-topic-card.theone-hidden .theone-topic-main{opacity:.6}
-.theone-topic-card h3{margin:0;font-size:16px;line-height:1.4;font-weight:600}
-.theone-topic-summary{margin:6px 0 0;max-width:42em;font-size:14px;line-height:1.6;color:var(--t-muted);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.theone-topic-meta{display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 16px;margin:14px 0 0;max-width:46em;font-size:13px;line-height:1.55}
-.theone-topic-meta dt{color:var(--t-muted);font-size:12px;white-space:nowrap}
-.theone-topic-meta dd{margin:0}
-.theone-tag{display:inline-block;margin-left:8px;padding:0 6px;border:1px solid var(--t-rule);border-radius:4px;font-size:11px;color:var(--t-muted)}
-.theone-topic-warning{margin:10px 0 0;padding-left:12px;border-left:2px solid var(--t-warn);font-size:12px;line-height:1.6}
-.theone-topic-actions{display:flex;flex-direction:column;align-items:flex-end;gap:0}.theone-topic-actions button{padding-top:3px;padding-bottom:3px}
-.theone-topic-edit{grid-column:1/-1;margin-top:12px;padding:4px 0 4px 20px;border-left:2px solid var(--t-accent)}
+.theone-route-fixed{color:var(--t-caption);font-size:12px}
+.theone-routes select{width:auto;width:132px;height:28px;min-height:28px;padding-top:0;padding-bottom:0;font-size:12px}
+.theone-catalog-groups{display:flex;flex-direction:column;gap:14px}
+.theone-topic-group{display:flex;flex-direction:column;gap:10px}
+.theone-topic-group+.theone-topic-group{padding-top:14px;border-top:.5px solid var(--t-rule)}
+.theone-group-head{display:flex;align-items:center;min-height:36px}
+.theone-catalog .theone-group-toggle{height:auto;gap:8px;padding:0;border:0;background:none;font-size:14px;line-height:22px}
+.theone-catalog .theone-group-toggle:hover:not(:disabled){background:none}
+.theone-group-toggle .theone-icon{color:var(--t-caption);transform:rotate(90deg);transition:transform 150ms ease}
+.theone-group-toggle[aria-expanded=true] .theone-icon{transform:rotate(180deg)}
+.theone-topic-group h2{margin:0;font-size:14px;line-height:22px;font-weight:400}
+.theone-group-count{color:var(--t-caption);font-variant-numeric:tabular-nums}
+.theone-group-summary{margin:-6px 0 0 20px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary,var(--t-muted))}
+.theone-topic-list{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.theone-topic-card{position:relative;display:flex;flex-direction:column;min-width:0;overflow:hidden;border:.5px solid var(--dsw-alias-settings-card-stroke,var(--dsw-alias-border-l4,#00000029));border-radius:var(--dsw-radius-xl,20px);background:var(--dsw-alias-settings-card-fill,var(--t-base));transition:background 120ms ease}
+.theone-topic-card[data-open=true]{grid-column:1/-1;border-color:var(--t-line)}
+.theone-topic-card:not(.theone-hidden):hover{background-image:linear-gradient(var(--t-hover),var(--t-hover))}
+.theone-topic-card:not(.theone-hidden):hover .theone-continue{background:var(--one-soft)}
+.theone-catalog .theone-stretch::after{content:'';position:absolute;inset:0;border-radius:inherit}
+.theone-catalog .theone-stretch:focus-visible{outline:none}
+.theone-catalog .theone-stretch:focus-visible::after{outline:2px solid var(--t-accent);outline-offset:-2px}
+.theone-topic-main{display:flex;flex-direction:column;gap:2px;padding:12px 14px 0}
+.theone-topic-main:last-child{padding-bottom:14px}
+.theone-topic-card.theone-hidden .theone-topic-main{opacity:.55}
+.theone-topic-row{display:flex;align-items:center;gap:12px;min-width:0}
+.theone-topic-card h3{flex:1;min-width:0;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;line-height:20px;font-weight:500}
+.theone-topic-summary{margin:0;font-size:13px;line-height:20px;color:var(--t-muted);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;text-wrap:pretty}
+.theone-topic-card[data-open=true] .theone-topic-summary{display:block}
+.theone-topic-state{margin:4px 0 0;font-size:13px;line-height:20px;color:var(--t-muted)}
+.theone-topic-state>span{margin-right:6px;color:var(--t-caption)}
+.theone-topic-foot{display:flex;align-items:center;gap:8px;min-height:28px;margin-top:auto;padding:8px 8px 10px 14px}
+.theone-topic-chip{min-width:0;max-width:50%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:1px 6px;border-radius:var(--dsw-radius-xs,4px);background:var(--dsw-alias-bg-module-platform,#f2f3f5);color:var(--t-muted);font-family:var(--ds-font-family-code,ui-monospace,SFMono-Regular,Consolas,monospace);font-size:12px;line-height:18px}
+.theone-tag{flex:none;display:inline-flex;align-items:center;height:18px;padding:0 7px;border-radius:999px;background:var(--dsw-alias-bg-module-platform,#f2f3f5);font-size:10px;line-height:1;font-weight:400;color:var(--t-muted)}
+.theone-status-waiting{color:var(--t-warn);background:color-mix(in srgb,var(--t-warn) 10%,transparent)}
+.theone-status-done{color:var(--t-accent);background:var(--one-soft)}
+.theone-topic-warning{margin:6px 0 0;padding-left:8px;border-left:2px solid var(--t-warn);font-size:12px;line-height:18px;color:var(--t-muted)}
+.theone-topic-merged{margin:4px 0 0;font-size:12px;line-height:18px;color:var(--t-muted)}
+.theone-catalog .theone-topic-merged .theone-quiet{height:22px;padding:0 6px;color:var(--t-accent)}
+.theone-catalog .theone-continue{margin-left:auto;height:26px;gap:6px;border-color:transparent;color:var(--t-accent);font-weight:500}
+.theone-catalog .theone-topic-more{position:relative;z-index:1;flex:none;width:26px;height:26px;margin:-3px -6px -3px 0;padding:0;border-color:transparent;color:var(--t-caption)}
+.theone-catalog .theone-topic-more:hover:not(:disabled),.theone-catalog .theone-topic-more[aria-expanded=true]{color:var(--t-fg);background:var(--t-hover)}
+.theone-topic-merged button{position:relative;z-index:1}
+.theone-topic-edit{display:flex;flex-direction:column;gap:14px;margin:2px 14px 14px;padding-top:14px;border-top:.5px solid var(--t-rule)}
+.theone-topic-quick{display:flex;flex-wrap:wrap;gap:8px}
 .theone-topic-links{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin:0 0 16px;font-size:13px}
 .theone-links-label,.theone-links-empty{color:var(--t-muted)}
-.theone-link-chip{display:inline-flex;align-items:center;gap:2px;padding:2px 2px 2px 10px;border:1px solid var(--t-rule);border-radius:4px}
-.theone-catalog .theone-link-chip button{border:0;padding:0 6px;font-size:14px;line-height:1;color:var(--t-muted)}
+.theone-link-chip{display:inline-flex;align-items:center;gap:2px;height:24px;padding:0 2px 0 10px;border:.5px solid var(--t-line);border-radius:999px;font-size:12px}
+.theone-catalog .theone-link-chip button{height:20px;border:0;padding:0 6px;font-size:14px;line-height:1;color:var(--t-muted);border-radius:999px}
 .theone-link-private{display:inline-flex;align-items:center;gap:6px;color:var(--t-muted);cursor:pointer}
-.theone-catalog input:not([type=checkbox]),.theone-catalog textarea,.theone-catalog select{font:inherit;font-size:13px;color:inherit;background:var(--t-field);border:1px solid transparent;border-bottom-color:var(--t-rule);border-radius:4px 4px 0 0;padding:7px 10px;box-sizing:border-box;min-width:0}
-.theone-catalog input:not([type=checkbox]):focus,.theone-catalog textarea:focus,.theone-catalog select:focus{outline:none;border-bottom-color:var(--t-accent)}
+.theone-catalog input:not([type=checkbox]),.theone-catalog textarea,.theone-catalog select{box-sizing:border-box;min-width:0;min-height:32px;padding:5px 10px;border:.5px solid var(--t-line);border-radius:var(--dsw-radius-sm,8px);background:var(--t-base);color:inherit;font:inherit;font-size:13px;line-height:20px}
+.theone-catalog input:not([type=checkbox]):focus,.theone-catalog textarea:focus,.theone-catalog select:focus{outline:none;border-color:var(--t-accent);box-shadow:0 0 0 3px var(--one-soft)}
 .theone-manage{display:flex;flex-direction:column;gap:14px;font-size:13px}
-.theone-create{flex-direction:row;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 40px;padding:16px 0;border-top:1px solid var(--t-rule);border-bottom:1px solid var(--t-rule)}
+.theone-create{box-sizing:border-box;flex-direction:row;flex-wrap:wrap;align-items:center;gap:8px;margin:0 auto 32px;padding:12px;border:.5px solid var(--t-line);border-radius:var(--dsw-radius-md,12px)}
 .theone-create input{flex:1;min-width:200px}
 .theone-manage-field{display:flex;flex-direction:column;gap:6px}
-.theone-manage-field>span{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--t-muted)}
+.theone-manage-field>span{font-size:12px;line-height:18px;color:var(--t-muted)}
 .theone-manage textarea{resize:vertical;width:100%}
 .theone-manage-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .theone-manage-row select,.theone-manage-row input{flex:1;min-width:160px}
-.theone-manage-hint{margin:0;font-size:12px;line-height:1.6;color:var(--t-muted)}
-.theone-catalog .theone-danger{color:var(--t-warn);border-color:var(--t-warn)}
-@container (max-width:860px){.theone-topic-group{grid-template-columns:1fr}.theone-group-head{position:static;margin-bottom:20px}.theone-catalog-header{grid-template-columns:1fr}.theone-figures{gap:32px}}
-@container (max-width:640px){.theone-catalog h1{font-size:32px}.theone-figures dd{font-size:30px}.theone-topic-card{grid-template-columns:1fr}.theone-topic-actions{flex-direction:row;flex-wrap:wrap;align-items:center}.theone-routes li{grid-template-columns:44px minmax(0,1fr)}.theone-route-target,.theone-route-actions{grid-column:2}.theone-route-actions{justify-content:flex-start}}
-@media(max-width:640px){.theone-catalog{padding:28px 16px 64px}}
+.theone-manage-hint{margin:0;font-size:12px;line-height:18px;color:var(--t-muted)}
+.theone-catalog .theone-danger{color:var(--t-warn);border-color:color-mix(in srgb,var(--t-warn) 40%,transparent)}
+@container (max-width:640px){.theone-catalog-tools{margin-left:0}.theone-topic-list{grid-template-columns:1fr}.theone-routes li{grid-template-columns:40px minmax(0,1fr)}.theone-route-target,.theone-route-actions{grid-column:2}.theone-route-actions{justify-content:flex-start}}
+@media(max-width:640px){.theone-catalog{padding:0 16px 48px}}
 `
 
 const composerCss = `
@@ -1366,7 +1753,7 @@ const settingsCss = `
 .theone-settings-header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.theone-settings h1{font-size:26px;margin:0 0 8px;outline:none}.theone-settings h2{font-size:17px;margin:0 0 16px}.theone-settings-header p,.theone-settings-help{color:var(--dsw-alias-label-secondary);line-height:1.6;margin:0 0 18px}
 .theone-settings button{border:1px solid var(--dsw-alias-border-l2);border-radius:9px;padding:9px 14px;background:var(--dsw-alias-interactive-bg-hover);color:inherit;font:inherit;cursor:pointer;white-space:nowrap}.theone-settings button:focus-visible{outline:2px solid var(--dsw-focus-ring-color);outline-offset:2px}
 .theone-settings-notice{padding:13px 16px;border:1px solid #ed9b412a;background:#f3940710;border-radius:12px;font-size:13px;line-height:1.7;margin:0 0 22px}
-.theone-settings-update p{margin:0 0 10px;line-height:1.7}.theone-settings-update-version{color:var(--dsw-alias-label-secondary);font-size:13px}.theone-settings-update-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:6px}
+.theone-weixin-login{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin:6px 0 12px}.theone-weixin-qr{background:#fff;border-radius:12px;padding:6px;image-rendering:pixelated}.theone-weixin input{min-width:8em}.theone-weixin .theone-settings-update-actions+p{margin-top:12px}.theone-settings-update p{margin:0 0 10px;line-height:1.7}.theone-settings-update-version{color:var(--dsw-alias-label-secondary);font-size:13px}.theone-settings-update-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:6px}
 .theone-settings-summary,.theone-settings-group{border:1px solid var(--dsw-alias-border-l2);border-radius:16px;padding:22px;margin-bottom:20px}.theone-settings-summary{background:#88804}.theone-settings-summary dl{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px}.theone-settings dl{margin:0}.theone-settings-summary dt{font-size:12px;color:var(--dsw-alias-label-secondary);margin-bottom:8px}.theone-settings dd{margin:0;overflow-wrap:anywhere;line-height:1.6}.theone-settings-summary dd{font-size:15px}.theone-settings-summary p{font-size:13px;line-height:1.7;color:var(--dsw-alias-label-secondary);margin:16px 0 0}
 .theone-settings-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(160px,42%);gap:24px;padding:16px 0;border-top:1px solid var(--dsw-alias-border-l2)}.theone-settings-row:first-child{border-top:0;padding-top:0}.theone-settings-row:last-child{padding-bottom:0}.theone-settings-row strong{font-size:14px;font-weight:500}.theone-settings-row p{font-size:13px;line-height:1.6;color:var(--dsw-alias-label-secondary);margin:6px 0}.theone-settings-row code{font-size:11px;color:var(--dsw-alias-label-secondary)}.theone-settings-row dd{font-size:13px;padding-top:1px}.theone-settings-row[data-inactive=true]{opacity:.6}
 @media(max-width:640px){.theone-settings{padding:20px 16px}.theone-settings-header{flex-wrap:wrap}.theone-settings-summary,.theone-settings-group{padding:18px}.theone-settings-summary dl{grid-template-columns:1fr}.theone-settings-row{grid-template-columns:1fr;gap:10px}}

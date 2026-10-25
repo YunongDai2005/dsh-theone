@@ -8,7 +8,7 @@ import { join } from 'node:path'
 import { HostConnectionService } from '@deepseek-ai/dsh-client-connection'
 import { compareReplies, finalReport, routeDigest, scrub, sendReport } from '../src/feedback.ts'
 import type { RouteView } from '../src/types.ts'
-import { harness, ask, FixtureModel, textResponse } from './harness.ts'
+import { harness, ask, FixtureModel, textResponse, peered } from './harness.ts'
 
 const route = (reason: string, extra: Partial<RouteView> = {}): RouteView => ({ messageId: 'm1', decision: { action: 'SWAP', contextId: 'ctx_a', reason },
   status: 'completed', at: 1_000_000, excerpt: '我的银行卡号是 6222 0000', receipt: { mode: 'llm', model: 'deepseek-v4', elapsedMs: 820 }, ...extra })
@@ -74,7 +74,7 @@ test('the feedback endpoint drafts without message text unless asked, compares t
   model.behavior = async function* () { yield* textResponse('显卡驱动装好了，密钥 sk-abcdefghijklmnopqrstu 别外传') }
   const app = await harness(root, model, { theoneConfig: { feedbackUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1/reports` } })
   try {
-    const handler = new HostConnectionService(app.ctx, [], undefined as never).createSharedFetchHandler('/api')
+    const handler = peered(new HostConnectionService(app.ctx, [], undefined as never))
     await new Promise<void>(resolve => setImmediate(resolve))
     const post = async (body: unknown) => {
       const response = await handler.fetch(new Request('http://dsh.internal/api/theone/feedback', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }))

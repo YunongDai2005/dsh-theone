@@ -136,5 +136,10 @@ export default async function answer({ user, tag }) {
     if (payload.currentId) return decide({ action: 'EXISTING', contextId: payload.currentId, title: null, question: null, reason: 'continues', historyIndependent: null, candidateIds: [], relatedIds: [] })
     return decide({ action: 'CREATE', contextId: null, title: payload.text.slice(0, 30) || 'New', question: null, reason: 'new', historyIndependent: true, candidateIds: [], relatedIds: [] })
   }
+  if (step === 'card') {
+    // A topic card from its title and the user's first words.
+    const first = payload.conversation.find(turn => turn.role === 'user')?.text ?? ''
+    return JSON.stringify({ summary: `${payload.title}: ${first.slice(0, 60)}`, aliases: [first.split(/\s+/)[0] ?? payload.title], entities: [], open: [] })
+  }
   throw new Error(`fake model: unknown step ${step}`)
 }

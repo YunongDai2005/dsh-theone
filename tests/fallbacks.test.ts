@@ -46,7 +46,7 @@ test('when the classifier fails, rules route the message and stay with the curre
   const app = await harness(root, undefined, { routerMode: 'llm' })
   try {
     app.model.behavior = async function* (options) {
-      if (options.system === ROUTING_PROMPT) { yield { type: 'finish', reason: { kind: 'error', failure: { code: 'HTTP', message: 'down', status: 500 } } }; return }
+      if (options.system?.startsWith(ROUTING_PROMPT)) { yield { type: 'finish', reason: { kind: 'error', failure: { code: 'HTTP', message: 'down', status: 500 } } }; return }
       yield* textResponse('继续处理')
     }
     // A clear rule match is taken even without the classifier.
@@ -70,7 +70,7 @@ test('a model picked in main chat classifies the very message it was picked for'
   const app = await harness(root, undefined, { routerMode: 'llm', autoModel: true })
   try {
     app.model.behavior = async function* (options) {
-      if (options.system === ROUTING_PROMPT) {
+      if (options.system?.startsWith(ROUTING_PROMPT)) {
         yield* textResponse(JSON.stringify({ action: 'EXISTING', contextId: 'ctx_qwen_9070xt', title: null, question: null, reason: '测试' }))
         return
       }

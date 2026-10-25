@@ -4,8 +4,9 @@ import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { randomUUID, createHash } from 'node:crypto'
 import type { ExtractedTopic, HiddenReason, HistoryPart, TopicGroup } from './catalog-types.ts'
-import type { ContextDescriptor, ContextUsage, Decision, RouteRecord, RouteView, StoredContext, SourceRange, TopicLink } from './types.ts'
+import type { ContextDescriptor, ContextUsage, Decision, Progress, RouteRecord, RouteView, StoredContext, SourceRange, TopicLink } from './types.ts'
 import { FACT_KINDS, FACT_LIMITS, factKey, safe, type FactEvidence, type FactKind, type FactStatus, type FactView } from './facts.ts'
+import { mergeSettled, type Settled, type TopicCard } from './topic-memory.ts'
 
 /** A write to a topic's facts, after its evidence was checked against the session. */
 export interface FactWrite {
@@ -20,6 +21,8 @@ export interface FactWrite {
   /** The version the writer last saw; the write is refused if the fact has moved on since. */
   expectedVersion?: number
 }
+
+export type MergePromptAnswer = 'merged' | 'declined' | 'dismissed'
 
 export type FactOutcome = 'created' | 'updated' | 'unchanged' | 'retracted' | 'rejected'
 export interface FactResult {
@@ -37,7 +40,51 @@ export const TERM_HALF_LIFE_MS = 30 * 86400000
 /** A whole session attached by hand counts as reviewed from its first event to its last. */
 export const WHOLE_SESSION = { startSeq: 0, endSeq: Number.MAX_SAFE_INTEGER }
 
+/** Tables keyed by topic that removing a topic clears. */
+const PURGED_TABLES = ['topic_group_members', 'history_turns', 'context_origins', 'context_sources', 'context_source_ranges',
+  'gateway_state', 'context_state_updates', 'context_summary_updates', 'topic_flags', 'compaction_digests', 'learned_terms',
+  'topic_runs', 'topic_status', 'topic_names', 'topic_settled', 'topic_open', 'correction_terms']
+
+/** What a merge did, so it can be taken apart: rows moved or added (by rowid), and the source as it was. */
+interface MergeJournal {
+  at: number
+  moved: Record<string, number[]>
+  added: Record<string, number[]>
+  purged: Record<string, Record<string, unknown>[]>
+  terms: { entities: string[]; keywords: string[] }
+  corrected: string[]
+  facts: { id: string; key: string; label: string; mergedFrom: string | null }[]
+  removedDependencies: Record<string, unknown>[]
+  links: { a: string; b: string; row: Record<string, unknown> | null }[]
+  constraints?: { before: string | null; after: string }
+  index?: { sessionId: string; row: Record<string, unknown> | null }
+}
+
+/** A topic's progress as one note: the three parts with labels in the language they were written in. */
+export function progressText(progress: Progress): string {
+  const english = !/[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/.test(progress.goal + progress.done + progress.next)
+  const labels = english ? ['Goal', 'Done', 'Next'] : ['目标', '进度', '下一步']
+  return [progress.goal, progress.done, progress.next].flatMap((part, index) => part ? [`${labels[index]}${english ? ': ' : '：'}${part}`] : []).join('\n')
+}
+
 /** Stores descriptors and routing metadata. Original conversation stays in DSH. */
+/** Run records a topic keeps; older ones are dropped as new ones start. */
+export const RUNS_KEPT = 20
+
+/** One message a topic worked on, and how that ended. */
+export interface TopicRun {
+  messageId: string
+  contextId: string
+  sessionId: string
+  outcome: 'running' | 'completed' | 'failed' | 'stopped' | 'interrupted' | 'moved'
+  startedAt: number
+  endedAt?: number
+}
+
+const runOf = (row: Record<string, unknown>): TopicRun => ({ messageId: String(row.message_id), contextId: String(row.context_id),
+  sessionId: String(row.session_id), outcome: String(row.outcome) as TopicRun['outcome'], startedAt: Number(row.started_at),
+  ...(row.ended_at == null ? {} : { endedAt: Number(row.ended_at) }) })
+
 export class ContextStore {
   private readonly db: DatabaseSync
 
@@ -51,6 +98,13 @@ export class ContextStore {
       );
       CREATE TABLE IF NOT EXISTS topic_group_members (
         context_id TEXT PRIMARY KEY REFERENCES contexts(id), group_id TEXT NOT NULL REFERENCES topic_groups(id)
+      );
+      CREATE TABLE IF NOT EXISTS catalog_consent (
+        id INTEGER PRIMARY KEY CHECK (id = 1), consent TEXT NOT NULL CHECK (consent IN ('granted','declined')), at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS catalog_exclusions (
+        kind TEXT NOT NULL CHECK (kind IN ('session','folder')), value TEXT NOT NULL, at INTEGER NOT NULL,
+        PRIMARY KEY (kind, value)
       );
       CREATE TABLE IF NOT EXISTS history_index (
         session_id TEXT PRIMARY KEY, through_seq INTEGER NOT NULL, status TEXT NOT NULL, error_code TEXT
@@ -124,12 +178,43 @@ export class ContextStore {
       CREATE TABLE IF NOT EXISTS learned_terms (
         context_id TEXT NOT NULL, term TEXT NOT NULL, weight REAL NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY(context_id, term)
       );
+      CREATE TABLE IF NOT EXISTS merge_prompts (
+        a TEXT NOT NULL, b TEXT NOT NULL, answer TEXT NOT NULL CHECK (answer IN ('merged', 'declined', 'dismissed')),
+        at INTEGER NOT NULL, PRIMARY KEY (a, b), CHECK (a < b)
+      );
+      CREATE TABLE IF NOT EXISTS topic_merges (
+        source_id TEXT PRIMARY KEY, target_id TEXT NOT NULL, at INTEGER NOT NULL, journal TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS correction_terms (
+        message_id TEXT NOT NULL, context_id TEXT NOT NULL, term TEXT NOT NULL, delta REAL NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS topic_runs (
+        message_id TEXT PRIMARY KEY, context_id TEXT NOT NULL, session_id TEXT NOT NULL,
+        outcome TEXT NOT NULL CHECK (outcome IN ('running', 'completed', 'failed', 'stopped', 'interrupted', 'moved')),
+        started_at INTEGER NOT NULL, ended_at INTEGER
+      );
+      CREATE INDEX IF NOT EXISTS topic_runs_by_topic ON topic_runs(context_id, started_at);
+      CREATE TABLE IF NOT EXISTS topic_status (context_id TEXT PRIMARY KEY, declared TEXT NOT NULL CHECK (declared IN ('done')), declared_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS change_links (
         gateway_id TEXT NOT NULL, seq INTEGER NOT NULL, session_id TEXT NOT NULL, source_seq INTEGER NOT NULL, turn INTEGER NOT NULL, PRIMARY KEY(gateway_id, seq)
       );
       CREATE TABLE IF NOT EXISTS dismissed_notices (id TEXT PRIMARY KEY, dismissed_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS plugin_flags (name TEXT PRIMARY KEY, set_at INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS remote_links (channel TEXT PRIMARY KEY, state TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS misrouted_turns (
+        message_id TEXT PRIMARY KEY, context_id TEXT NOT NULL, session_id TEXT NOT NULL, start_seq INTEGER NOT NULL, end_seq INTEGER NOT NULL,
+        moved_to TEXT NOT NULL, request TEXT NOT NULL, at INTEGER NOT NULL
+      );
       CREATE TABLE IF NOT EXISTS stowed_sessions (session_id TEXT PRIMARY KEY, stowed_at INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS topic_names (
+        context_id TEXT NOT NULL, name_key TEXT NOT NULL, name TEXT NOT NULL, first_at INTEGER NOT NULL, last_at INTEGER NOT NULL,
+        PRIMARY KEY (context_id, name_key)
+      );
+      CREATE TABLE IF NOT EXISTS topic_settled (
+        context_id TEXT NOT NULL, label_key TEXT NOT NULL, label TEXT NOT NULL, value TEXT NOT NULL, since INTEGER NOT NULL,
+        previous TEXT, previous_since INTEGER, PRIMARY KEY (context_id, label_key)
+      );
+      CREATE TABLE IF NOT EXISTS topic_open (context_id TEXT PRIMARY KEY, items TEXT NOT NULL, at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS route_details (
         message_id TEXT PRIMARY KEY, excerpt TEXT NOT NULL, receipt TEXT, corrected_to TEXT, corrected_at INTEGER
       );
@@ -238,25 +323,78 @@ export class ContextStore {
   }
 
   /**
-   * A topic's routing card: other names and entities join its keywords, and its summary is replaced
-   * unless a compaction summary (written from the whole session) already took its place.
+   * A topic's routing card. Other names are added, never pushed out by newer ones; settled values
+   * keep the value they replaced and when; what is open is replaced. The card's summary replaces a
+   * placeholder summary, not a compaction summary (written from the whole session); either way
+   * routing reads the current settled values and open items beside it (see routingSummary).
    */
-  applyCard(contextId: string, card: { summary: string; aliases: string[]; entities: string[]; open: string[] }): void {
+  applyCard(contextId: string, card: TopicCard, now = Date.now()): boolean {
     this.db.exec('BEGIN IMMEDIATE')
     try {
       const context = this.contexts().find(item => item.id === contextId)
-      if (!context) { this.db.exec('COMMIT'); return }
+      if (!context) { this.db.exec('COMMIT'); return false }
+      const first = !this.db.prepare('SELECT 1 FROM topic_open WHERE context_id = ?').get(contextId)
       const { workingSessionId: _, ...descriptor } = context
-      const merge = (first: string[], then: string[]) => {
-        const seen = new Set<string>()
-        return [...first, ...then].filter(term => { const key = term.toLowerCase(); return term && !seen.has(key) && seen.add(key) }).slice(0, 24)
-      }
+      for (const name of card.aliases) this.db.prepare(`INSERT INTO topic_names VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(context_id, name_key) DO UPDATE SET last_at = excluded.last_at`).run(contextId, name.toLowerCase(), name, now, now)
+      for (const item of mergeSettled(this.settled(contextId), card.settled, now))
+        this.db.prepare(`INSERT OR REPLACE INTO topic_settled VALUES (?, ?, ?, ?, ?, ?, ?)`)
+          .run(contextId, item.label.toLowerCase(), item.label, item.value, item.since, item.previous ?? null, item.previousSince ?? null)
+      this.db.prepare('INSERT OR REPLACE INTO topic_open VALUES (?, ?, ?)').run(contextId, JSON.stringify(card.open), now)
+      const seen = new Set<string>()
+      const entities = [...card.entities, ...descriptor.entities].filter(term => { const key = term.toLowerCase(); return term && !seen.has(key) && seen.add(key) }).slice(0, 48)
       const compacted = this.summaryUpdates(contextId).length > 0
-      const summary = compacted ? descriptor.summary : [card.summary, card.open.length ? `待定：${card.open.join('；')}` : ''].filter(Boolean).join(' ').slice(0, 600)
-      this.db.prepare('UPDATE contexts SET descriptor = ? WHERE id = ?').run(JSON.stringify({ ...descriptor, summary,
-        keywords: merge(descriptor.keywords, card.aliases), entities: merge(card.entities, descriptor.entities) }), contextId)
+      this.db.prepare('UPDATE contexts SET descriptor = ? WHERE id = ?').run(JSON.stringify({ ...descriptor, summary: compacted ? descriptor.summary : card.summary, entities }), contextId)
       this.db.exec('COMMIT')
+      return first
     } catch (error) { this.db.exec('ROLLBACK'); throw error }
+  }
+
+  /** A route-created topic, never manually moved or already involved in a merge; use its latest main chat. */
+  mergeSuggestionGateway(contextId: string): string | undefined {
+    if (!this.contexts().some(topic => topic.id === contextId) || this.unreachable().has(contextId) ||
+      this.hasFlag(`merge-moved:${contextId}`) || this.hasFlag(`merge-handled:${contextId}`)) return undefined
+    const created = this.db.prepare("SELECT 1 FROM routing_events WHERE json_extract(decision, '$.contextId') = ? AND json_extract(decision, '$.action') = 'CREATE' LIMIT 1").get(contextId)
+    if (!created) return undefined
+    const row = this.db.prepare(`SELECT r.gateway_id FROM routing_events r LEFT JOIN route_details d ON d.message_id = r.message_id
+      WHERE COALESCE(d.corrected_to, json_extract(r.decision, '$.contextId')) = ? ORDER BY r.rowid DESC LIMIT 1`).get(contextId)
+    return row ? String(row.gateway_id) : undefined
+  }
+
+  mergePrompt(a: string, b: string): { answer: MergePromptAnswer; at: number } | undefined {
+    const row = this.db.prepare('SELECT answer, at FROM merge_prompts WHERE a = ? AND b = ?').get(...[a, b].sort())
+    return row ? { answer: row.answer as MergePromptAnswer, at: Number(row.at) } : undefined
+  }
+
+  /** A dismissed reservation also prevents two background cards (or a restart) asking the same pair. */
+  recordMergePrompt(a: string, b: string, answer: MergePromptAnswer, now = Date.now()): void {
+    if (a === b) return
+    const known = this.db.prepare('SELECT 1 FROM contexts WHERE id = ? UNION ALL SELECT 1 FROM topic_merges WHERE source_id = ? LIMIT 1')
+    if (!known.get(a, a) || !known.get(b, b)) return
+    this.db.prepare('INSERT INTO merge_prompts VALUES (?, ?, ?, ?) ON CONFLICT(a, b) DO UPDATE SET answer = excluded.answer, at = excluded.at')
+      .run(...[a, b].sort(), answer, now)
+  }
+
+  /** Other names cards gave a topic (or every topic), most recently confirmed first. */
+  names(contextId?: string): Map<string, string[]> {
+    const rows = (contextId === undefined ? this.db.prepare('SELECT context_id, name FROM topic_names ORDER BY last_at DESC, rowid ASC').all()
+      : this.db.prepare('SELECT context_id, name FROM topic_names WHERE context_id = ? ORDER BY last_at DESC, rowid ASC').all(contextId))
+    const out = new Map<string, string[]>()
+    for (const row of rows) out.set(String(row.context_id), [...out.get(String(row.context_id)) ?? [], String(row.name)])
+    return out
+  }
+
+  /** Values a topic settled on, most recently recorded first, each with the value it replaced. */
+  settled(contextId: string): Settled[] {
+    return this.db.prepare('SELECT * FROM topic_settled WHERE context_id = ? ORDER BY since DESC, rowid ASC').all(contextId).map(row => ({
+      label: String(row.label), value: String(row.value), since: Number(row.since),
+      ...(row.previous == null ? {} : { previous: String(row.previous), previousSince: Number(row.previous_since) }) }))
+  }
+
+  /** What the topic's latest card says is still open. */
+  openItems(contextId: string): string[] {
+    const row = this.db.prepare('SELECT items FROM topic_open WHERE context_id = ?').get(contextId)
+    return row ? JSON.parse(String(row.items)) as string[] : []
   }
 
   groups(): TopicGroup[] {
@@ -302,6 +440,31 @@ export class ContextStore {
     return row ? { sessionId: String(row.session_id), ...(row.cwd ? { cwd: String(row.cwd) } : {}) } : undefined
   }
 
+  catalogConsent(): 'granted' | 'declined' | undefined {
+    return this.db.prepare('SELECT consent FROM catalog_consent WHERE id = 1').get()?.consent as 'granted' | 'declined' | undefined
+  }
+
+  setCatalogConsent(value: 'granted' | 'declined'): void {
+    this.db.prepare('INSERT OR REPLACE INTO catalog_consent VALUES (1, ?, ?)').run(value, Date.now())
+  }
+
+  catalogExclusions(): { sessions: Set<string>; folders: string[] } {
+    const rows = this.db.prepare('SELECT kind, value FROM catalog_exclusions ORDER BY value').all()
+    return { sessions: new Set(rows.filter(row => row.kind === 'session').map(row => String(row.value))),
+      folders: rows.filter(row => row.kind === 'folder').map(row => String(row.value)) }
+  }
+
+  setCatalogExcluded(kind: 'session' | 'folder', value: string, excluded: boolean): void {
+    if (excluded) this.db.prepare('INSERT OR REPLACE INTO catalog_exclusions VALUES (?, ?, ?)').run(kind, value, Date.now())
+    else this.db.prepare('DELETE FROM catalog_exclusions WHERE kind = ? AND value = ?').run(kind, value)
+  }
+
+  /** An earlier chat of the user's was catalogued: TheOne's own sessions are indexed without asking. */
+  hasIndexedHistory(): boolean {
+    return !!this.db.prepare(`SELECT 1 FROM history_index WHERE status = 'ready'
+      AND session_id NOT IN (SELECT gateway_id FROM pinned_gateways UNION SELECT working_session_id FROM contexts) LIMIT 1`).get()
+  }
+
   indexState(sessionId: string): { throughSeq: number; status: string } | undefined {
     const row = this.db.prepare('SELECT * FROM history_index WHERE session_id = ?').get(sessionId)
     return row ? { throughSeq: Number(row.through_seq), status: String(row.status) } : undefined
@@ -335,7 +498,7 @@ export class ContextStore {
         const summarized = existing && this.db.prepare('SELECT 1 FROM context_summary_updates WHERE context_id = ? LIMIT 1').get(id)
         const descriptor: ContextDescriptor = { id, title: existing?.title ?? topic.title,
           summary: summarized ? existing.summary : topic.summary, entities: topic.entities, keywords: topic.keywords,
-          lastState: stated ? existing.lastState : topic.lastState }
+          lastState: stated ? existing.lastState : topic.lastState, ...(stated && existing.progress ? { progress: existing.progress } : {}) }
         if (existing) this.db.prepare('UPDATE contexts SET descriptor = ? WHERE id = ?').run(JSON.stringify(descriptor), id)
         else {
           this.seed([descriptor])
@@ -372,18 +535,27 @@ export class ContextStore {
     return this.contexts().filter(context => wanted.has(context.workingSessionId) || this.sources(context.id).some(id => wanted.has(id))).map(context => context.id)
   }
 
-  /** Model-maintained progress is bounded and auditable; stable project identity remains unchanged. */
-  updateState(contextId: string, state: string, sessionId: string, throughSeq: number): void {
+  /**
+   * Model-maintained progress is bounded and auditable; stable project identity remains unchanged.
+   * Given in three parts, it is kept as such and `lastState` is written from it; a free note replaces both.
+   */
+  updateState(contextId: string, state: string | Progress, sessionId: string, throughSeq: number): void {
     const context = this.contexts().find(item => item.id === contextId)
     if (!context || context.workingSessionId !== sessionId) throw new Error('State requires the owned Worker')
-    if (!state.trim() || state.length > 800 || !Number.isSafeInteger(throughSeq) || throughSeq < 0) throw new Error('Invalid project state')
-    if (/\bsk-[a-zA-Z0-9_-]{16,}|\bBearer\s+\S+|(?:api[_ -]?key|password|密码|密钥)\s*[:=：]\s*\S+/i.test(state)) throw new Error('Project state must not contain credentials')
-    const { workingSessionId: _, ...descriptor } = context
+    let progress: Progress | undefined
+    if (typeof state !== 'string') {
+      progress = { goal: state.goal.trim(), done: state.done.trim(), next: state.next.trim() }
+      if (!progress.goal && !progress.done && !progress.next || [progress.goal, progress.done, progress.next].some(part => part.length > 300)) throw new Error('Invalid project state')
+    }
+    const text = progress ? progressText(progress) : (state as string).trim()
+    if (!text || (!progress && text.length > 800) || !Number.isSafeInteger(throughSeq) || throughSeq < 0) throw new Error('Invalid project state')
+    if (/\bsk-[a-zA-Z0-9_-]{16,}|\bBearer\s+\S+|(?:api[_ -]?key|password|密码|密钥)\s*[:=：]\s*\S+/i.test(text)) throw new Error('Project state must not contain credentials')
+    const { workingSessionId: _, progress: __, ...descriptor } = context
     this.db.exec('BEGIN IMMEDIATE')
     try {
-      this.db.prepare('UPDATE contexts SET descriptor = ? WHERE id = ?').run(JSON.stringify({ ...descriptor, lastState: state.trim() }), contextId)
+      this.db.prepare('UPDATE contexts SET descriptor = ? WHERE id = ?').run(JSON.stringify({ ...descriptor, lastState: text, ...(progress ? { progress } : {}) }), contextId)
       this.db.prepare('INSERT INTO context_state_updates(context_id, session_id, through_seq, state) VALUES (?, ?, ?, ?)')
-        .run(contextId, sessionId, throughSeq, state.trim())
+        .run(contextId, sessionId, throughSeq, text)
       this.db.exec('COMMIT')
     } catch (error) { this.db.exec('ROLLBACK'); throw error }
   }
@@ -540,20 +712,7 @@ export class ContextStore {
         this.db.exec('COMMIT')
         return existing
       }
-      let decision = { ...proposed }
-      if (decision.action === 'CREATE') {
-        const context: ContextDescriptor = {
-          id: randomUUID(), title: decision.title!, summary: '新话题，尚无历史摘要。',
-          entities: [], keywords: [decision.title!], lastState: '等待首次执行',
-        }
-        this.seed([context])
-        decision = { ...decision, contextId: context.id }
-        // A new topic about one of the user's projects works in that project's folder.
-        if (decision.folder) {
-          const working = this.db.prepare('SELECT working_session_id FROM contexts WHERE id = ?').get(context.id)
-          this.db.prepare('INSERT OR IGNORE INTO context_origins VALUES (?, ?, ?)').run(context.id, String(working?.working_session_id), decision.folder)
-        }
-      }
+      const decision = this.topicFor(proposed)
       if (decision.contextId && mount) {
         this.db.prepare('INSERT INTO gateway_state VALUES (?, ?) ON CONFLICT(gateway_key) DO UPDATE SET context_id = excluded.context_id')
           .run(gatewayKey, decision.contextId)
@@ -563,6 +722,61 @@ export class ContextStore {
       this.db.prepare('INSERT OR IGNORE INTO gateway_sessions VALUES (?, ?)').run(gatewayKey, gatewayId)
       this.db.exec('COMMIT')
       return { messageId, gatewayId, decision, status: 'planned' }
+    } catch (error) {
+      this.db.exec('ROLLBACK')
+      throw error
+    }
+  }
+
+  /** A decision with its topic: a CREATE makes the topic (in its project's folder, when it has one). */
+  private topicFor(proposed: Decision): Decision {
+    if (proposed.action !== 'CREATE') return { ...proposed }
+    const context: ContextDescriptor = {
+      id: randomUUID(), title: proposed.title!, summary: '新话题，尚无历史摘要。',
+      entities: [], keywords: [proposed.title!], lastState: '等待首次执行',
+    }
+    this.seed([context])
+    // A new topic about one of the user's projects works in that project's folder.
+    if (proposed.folder) {
+      const working = this.db.prepare('SELECT working_session_id FROM contexts WHERE id = ?').get(context.id)
+      this.db.prepare('INSERT OR IGNORE INTO context_origins VALUES (?, ?, ?)').run(context.id, String(working?.working_session_id), proposed.folder)
+    }
+    const group = this.groupForNew(proposed)
+    if (group) this.db.prepare('INSERT OR IGNORE INTO topic_group_members VALUES (?, ?)').run(context.id, group)
+    return { ...proposed, contextId: context.id }
+  }
+
+  /**
+   * The topic workspace a new topic joins by itself, so the user need not file it: that of a topic it
+   * draws on, else the one most topics in its project folder are in. Only a placement; the user can
+   * move it, and nothing is merged.
+   */
+  private groupForNew(proposed: Decision): string | undefined {
+    const groupOf = (id: string) => this.db.prepare('SELECT group_id FROM topic_group_members WHERE context_id = ?').get(id)?.group_id
+    for (const id of proposed.relatedIds ?? []) {
+      const group = groupOf(id)
+      if (group) return String(group)
+    }
+    if (!proposed.folder) return undefined
+    const row = this.db.prepare(`SELECT m.group_id, COUNT(*) AS n FROM context_origins o JOIN topic_group_members m ON m.context_id = o.context_id
+      WHERE o.cwd = ? GROUP BY m.group_id ORDER BY n DESC, m.group_id LIMIT 1`).get(proposed.folder)
+    return row ? String(row.group_id) : undefined
+  }
+
+  /**
+   * Give a message being answered to another topic (its first topic handed it back), and make that
+   * topic the one in use. Returns the decision it now has, or undefined when the message has no route.
+   */
+  moveRoute(messageId: string, gatewayKey: string, proposed: Decision): Decision | undefined {
+    this.db.exec('BEGIN IMMEDIATE')
+    try {
+      if (!this.route(messageId)) { this.db.exec('COMMIT'); return undefined }
+      const decision = this.topicFor(proposed)
+      this.db.prepare('UPDATE routing_events SET decision = ? WHERE message_id = ?').run(JSON.stringify(decision), messageId)
+      if (decision.contextId) this.db.prepare('INSERT INTO gateway_state VALUES (?, ?) ON CONFLICT(gateway_key) DO UPDATE SET context_id = excluded.context_id')
+        .run(gatewayKey, decision.contextId)
+      this.db.exec('COMMIT')
+      return decision
     } catch (error) {
       this.db.exec('ROLLBACK')
       throw error
@@ -619,6 +833,22 @@ export class ContextStore {
   /** What a route was decided from: a short redacted excerpt and the classifier's receipt. */
   recordRouteDetail(messageId: string, excerpt: string, receipt: unknown): void {
     this.db.prepare('INSERT OR IGNORE INTO route_details(message_id, excerpt, receipt) VALUES (?, ?, ?)').run(messageId, excerpt, JSON.stringify(receipt))
+  }
+
+  /** What each topic has been sent in this entry: the newest excerpts of the messages routed to it (after corrections). */
+  routedExcerpts(gatewayKey: string, perTopic = 200): Map<string, string[]> {
+    const rows = this.db.prepare(`SELECT COALESCE(d.corrected_to, json_extract(r.decision, '$.contextId')) AS context_id, d.excerpt
+      FROM routing_events r JOIN gateway_sessions gs ON gs.gateway_id = r.gateway_id
+      JOIN route_details d ON d.message_id = r.message_id
+      WHERE gs.gateway_key = ? AND r.status = 'completed' AND json_extract(r.decision, '$.action') != 'CLARIFY' AND d.excerpt != ''
+      ORDER BY r.rowid DESC`).all(gatewayKey)
+    const out = new Map<string, string[]>()
+    for (const row of rows) {
+      if (row.context_id == null) continue
+      const list = out.get(String(row.context_id)) ?? []
+      if (list.length < perTopic) out.set(String(row.context_id), [...list, String(row.excerpt)])
+    }
+    return out
   }
 
   /** This entry's latest routes, newest first. */
@@ -754,7 +984,7 @@ export class ContextStore {
   /** Put a topic in another topic workspace, or a new one named `title`; null leaves it unassigned. */
   moveTopic(contextId: string, target: { groupId: string } | { title: string } | null): void {
     this.context(contextId)
-    if (target === null) { this.db.prepare('DELETE FROM topic_group_members WHERE context_id = ?').run(contextId); return }
+    if (target === null) { this.db.prepare('DELETE FROM topic_group_members WHERE context_id = ?').run(contextId); this.markOnce(`merge-moved:${contextId}`); return }
     let groupId: string
     if ('groupId' in target) {
       if (!this.db.prepare('SELECT 1 FROM topic_groups WHERE id = ?').get(target.groupId)) throw new Error('Unknown topic workspace')
@@ -767,6 +997,7 @@ export class ContextStore {
       this.db.prepare('INSERT OR IGNORE INTO topic_groups VALUES (?, ?, ?, ?)').run(groupId, title, '', normalized)
     }
     this.db.prepare('INSERT OR REPLACE INTO topic_group_members VALUES (?, ?)').run(contextId, groupId)
+    this.markOnce(`merge-moved:${contextId}`)
   }
 
   /** Attach a whole existing session to a topic as reviewed history its Worker may search. */
@@ -776,36 +1007,145 @@ export class ContextStore {
 
   /**
    * Fold `sourceId` into `targetId`: its history, progress, summaries and links move over, and its
-   * own Worker session becomes searchable history of the target. The source topic is removed.
+   * own Worker session becomes searchable history of the target. The source topic leaves the
+   * directory, but everything the merge did is written down so `unmergeTopic` can take it apart.
    */
-  mergeTopics(sourceId: string, targetId: string): void {
+  mergeTopics(sourceId: string, targetId: string, now = Date.now()): void {
     if (sourceId === targetId) throw new Error('Cannot merge a topic into itself')
     const source = this.context(sourceId), target = this.context(targetId)
+    const journal: MergeJournal = { at: now, moved: {}, added: {}, purged: {}, terms: { entities: [], keywords: [] }, corrected: [], facts: [], removedDependencies: [], links: [] }
+    const rowids = (table: string, where: string, ...params: string[]) => this.db.prepare(`SELECT rowid AS id FROM ${table} WHERE ${where}`).all(...params).map(row => Number(row.id))
+    // Rows that move to the target keep their rowid; rows copied into it are new ones.
+    const move = (table: string, ignore = false) => {
+      const before = rowids(table, 'context_id = ?', sourceId)
+      this.db.prepare(`UPDATE ${ignore ? 'OR IGNORE ' : ''}${table} SET context_id = ? WHERE context_id = ?`).run(targetId, sourceId)
+      const moved = new Set(rowids(table, 'context_id = ?', targetId))
+      journal.moved[table] = before.filter(id => moved.has(id))
+    }
+    const copy = (table: string, sql: string, ...params: string[]) => {
+      const before = new Set(rowids(table, 'context_id = ?', targetId))
+      this.db.prepare(sql).run(...params)
+      journal.added[table] = rowids(table, 'context_id = ?', targetId).filter(id => !before.has(id))
+    }
     this.db.exec('BEGIN IMMEDIATE')
     try {
+      this.markOnce(`merge-handled:${sourceId}`); this.markOnce(`merge-handled:${targetId}`)
       const merged = (a: string[], b: string[]) => [...new Map([...a, ...b].map(term => [term.toLowerCase(), term])).values()].slice(0, 40)
-      this.writeDescriptor({ ...target, entities: merged(target.entities, source.entities), keywords: merged(target.keywords, source.keywords) })
-      this.db.prepare('INSERT OR IGNORE INTO context_source_ranges SELECT ?, session_id, start_seq, end_seq FROM context_source_ranges WHERE context_id = ?').run(targetId, sourceId)
+      const entities = merged(target.entities, source.entities), keywords = merged(target.keywords, source.keywords)
+      journal.terms = { entities: entities.filter(term => !target.entities.includes(term)), keywords: keywords.filter(term => !target.keywords.includes(term)) }
+      this.writeDescriptor({ ...target, entities, keywords })
+      copy('context_source_ranges', 'INSERT OR IGNORE INTO context_source_ranges SELECT ?, session_id, start_seq, end_seq FROM context_source_ranges WHERE context_id = ?', targetId, sourceId)
       // The source's own Worker conversation is now reviewed history of the target, not a new catalog source.
+      journal.index = { sessionId: source.workingSessionId, row: this.db.prepare('SELECT * FROM history_index WHERE session_id = ?').get(source.workingSessionId) ?? null }
       this.markIndex(source.workingSessionId, Number.MAX_SAFE_INTEGER, 'excluded')
+      const ranges = new Set(rowids('context_source_ranges', 'context_id = ?', targetId))
       this.db.prepare('INSERT OR IGNORE INTO context_source_ranges VALUES (?, ?, ?, ?)').run(targetId, source.workingSessionId, WHOLE_SESSION.startSeq, WHOLE_SESSION.endSeq)
-      for (const table of ['history_turns', 'context_state_updates']) this.db.prepare(`UPDATE ${table} SET context_id = ? WHERE context_id = ?`).run(targetId, sourceId)
-      this.db.prepare('UPDATE OR IGNORE context_summary_updates SET context_id = ? WHERE context_id = ?').run(targetId, sourceId)
+      journal.added.context_source_ranges.push(...rowids('context_source_ranges', 'context_id = ?', targetId).filter(id => !ranges.has(id)))
+      for (const table of ['history_turns', 'context_state_updates', 'topic_runs', 'correction_terms']) move(table)
+      move('context_summary_updates', true)
       this.db.prepare('UPDATE gateway_state SET context_id = ? WHERE context_id = ?').run(targetId, sourceId)
+      journal.corrected = this.db.prepare('SELECT message_id FROM route_details WHERE corrected_to = ?').all(sourceId).map(row => String(row.message_id))
       this.db.prepare('UPDATE route_details SET corrected_to = ? WHERE corrected_to = ?').run(targetId, sourceId)
-      this.db.prepare('INSERT OR IGNORE INTO learned_terms SELECT ?, term, weight, updated_at FROM learned_terms WHERE context_id = ?').run(targetId, sourceId)
-      const rules = [this.constraints(targetId)?.text, this.constraints(sourceId)?.text].filter(Boolean)
-      if (rules.length) this.setConstraints(targetId, rules.join('\n').slice(0, 400))
+      copy('learned_terms', 'INSERT OR IGNORE INTO learned_terms SELECT ?, term, weight, updated_at FROM learned_terms WHERE context_id = ?', targetId, sourceId)
+      // The merged topic keeps both topics' names; its own settled values win over the source's.
+      copy('topic_names', 'INSERT OR IGNORE INTO topic_names SELECT ?, name_key, name, first_at, last_at FROM topic_names WHERE context_id = ?', targetId, sourceId)
+      copy('topic_settled', 'INSERT OR IGNORE INTO topic_settled SELECT ?, label_key, label, value, since, previous, previous_since FROM topic_settled WHERE context_id = ?', targetId, sourceId)
+      const before = this.constraints(targetId)?.text
+      const rules = [before, this.constraints(sourceId)?.text].filter(Boolean)
+      if (rules.length) {
+        const joined = rules.join('\n').slice(0, 400)
+        if (joined !== before) { journal.constraints = { before: before ?? null, after: joined }; this.setConstraints(targetId, joined) }
+      }
       for (const link of this.links(sourceId)) {
         const other = link.a === sourceId ? link.b : link.a
         if (other === targetId) continue
+        const [a, b] = targetId < other ? [targetId, other] : [other, targetId]
+        journal.links.push({ a, b, row: this.db.prepare('SELECT * FROM topic_links WHERE a = ? AND b = ?').get(a, b) ?? null })
         if (link.manual) this.setManualLink(targetId, other, link.manual)
         if (link.weight > 0) this.learnLink(targetId, other, link.weight)
       }
-      this.mergeFacts(sourceId, targetId, source.title)
+      this.mergeFacts(sourceId, targetId, source.title, journal)
+      // What is left of the source is kept in the journal before it goes.
+      journal.purged = { ...this.snapshot(sourceId), fact_dependencies: journal.purged.fact_dependencies ?? [] }
       this.purge(sourceId)
+      this.db.prepare('INSERT OR REPLACE INTO topic_merges VALUES (?, ?, ?, ?)').run(sourceId, targetId, now, JSON.stringify(journal))
       this.db.exec('COMMIT')
     } catch (error) { this.db.exec('ROLLBACK'); throw error }
+  }
+
+  /** Topics merged into others that can still be taken apart, newest first. */
+  merges(): { sourceId: string; targetId: string; title: string; at: number }[] {
+    const live = new Set(this.contexts().map(context => context.id))
+    return this.db.prepare('SELECT * FROM topic_merges ORDER BY at DESC, rowid DESC').all().flatMap(row => {
+      const journal = JSON.parse(String(row.journal)) as MergeJournal
+      const descriptor = journal.purged.contexts?.[0]?.descriptor
+      const title = descriptor ? (JSON.parse(String(descriptor)) as ContextDescriptor).title : String(row.source_id)
+      return live.has(String(row.target_id)) && !live.has(String(row.source_id))
+        ? [{ sourceId: String(row.source_id), targetId: String(row.target_id), title, at: Number(row.at) }] : []
+    })
+  }
+
+  /**
+   * Take a merge apart: the source topic comes back with what it had, and what came from it leaves
+   * the target. What either topic did since stays where it happened.
+   */
+  unmergeTopic(sourceId: string): string {
+    const row = this.db.prepare('SELECT * FROM topic_merges WHERE source_id = ?').get(sourceId)
+    if (!row) throw new Error('Not a merged topic')
+    const targetId = String(row.target_id)
+    if (!this.contexts().some(context => context.id === targetId)) throw new Error('The topic it was merged into is gone')
+    if (this.contexts().some(context => context.id === sourceId)) throw new Error('The topic is already back')
+    const journal = JSON.parse(String(row.journal)) as MergeJournal
+    const target = this.context(targetId)
+    const insert = (table: string, rows: readonly Record<string, unknown>[] = []) => {
+      for (const item of rows) {
+        const columns = Object.keys(item)
+        this.db.prepare(`INSERT OR IGNORE INTO ${table} (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`).run(...columns.map(column => item[column] as never))
+      }
+    }
+    const ids = (list: readonly number[]) => list.length ? list.join(', ') : 'NULL'
+    this.db.exec('BEGIN IMMEDIATE')
+    try {
+      insert('contexts', journal.purged.contexts)
+      for (const [table, rows] of Object.entries(journal.purged)) if (table !== 'contexts') insert(table, rows)
+      for (const [table, list] of Object.entries(journal.moved))
+        this.db.prepare(`UPDATE OR IGNORE ${table} SET context_id = ? WHERE context_id = ? AND rowid IN (${ids(list)})`).run(sourceId, targetId)
+      for (const [table, list] of Object.entries(journal.added)) this.db.prepare(`DELETE FROM ${table} WHERE context_id = ? AND rowid IN (${ids(list)})`).run(targetId)
+      const added = new Set(journal.added.fact_dependencies ?? [])
+      insert('fact_dependencies', journal.removedDependencies.filter(item => !added.has(Number(item.rowid))).map(({ rowid: _, ...item }) => item))
+      for (const fact of journal.facts)
+        this.db.prepare('UPDATE OR IGNORE facts SET context_id = ?, key = ?, label = ?, merged_from = ? WHERE id = ? AND context_id = ?').run(sourceId, fact.key, fact.label, fact.mergedFrom, fact.id, targetId)
+      const drop = (list: string[], gone: string[]) => list.filter(term => !gone.includes(term))
+      this.writeDescriptor({ ...target, entities: drop(target.entities, journal.terms.entities), keywords: drop(target.keywords, journal.terms.keywords) })
+      for (const messageId of journal.corrected) this.db.prepare('UPDATE route_details SET corrected_to = ? WHERE message_id = ? AND corrected_to = ?').run(sourceId, messageId, targetId)
+      if (journal.constraints && this.constraints(targetId)?.text === journal.constraints.after) this.setConstraints(targetId, journal.constraints.before)
+      for (const link of journal.links) {
+        this.db.prepare('DELETE FROM topic_links WHERE a = ? AND b = ?').run(link.a, link.b)
+        if (link.row) insert('topic_links', [link.row])
+      }
+      if (journal.index) {
+        this.db.prepare('DELETE FROM history_index WHERE session_id = ?').run(journal.index.sessionId)
+        if (journal.index.row) insert('history_index', [journal.index.row])
+      }
+      this.db.prepare('DELETE FROM topic_merges WHERE source_id = ?').run(sourceId)
+      this.db.exec('COMMIT')
+    } catch (error) { this.db.exec('ROLLBACK'); throw error }
+    return targetId
+  }
+
+  /** Every row TheOne keeps about a topic, by table, as `purge` would remove them. */
+  private snapshot(contextId: string): Record<string, Record<string, unknown>[]> {
+    const rows = (table: string, where: string, ...params: string[]) => this.db.prepare(`SELECT * FROM ${table} WHERE ${where}`).all(...params) as Record<string, unknown>[]
+    const out: Record<string, Record<string, unknown>[]> = { contexts: rows('contexts', 'id = ?', contextId) }
+    for (const table of PURGED_TABLES) out[table] = rows(table, 'context_id = ?', contextId)
+    out.topic_links = rows('topic_links', 'a = ? OR b = ?', contextId, contextId)
+    out.hidden_contexts = rows('hidden_contexts', 'context_id = ?', contextId)
+    out.briefing_seen = rows('briefing_seen', 'reader = ? OR source = ?', contextId, contextId)
+    out.facts = rows('facts', 'context_id = ?', contextId)
+    out.fact_versions = rows('fact_versions', 'fact_id IN (SELECT id FROM facts WHERE context_id = ?)', contextId)
+    out.fact_dependencies = rows('fact_dependencies', 'context_id = ?', contextId)
+    out.fact_deliveries = rows('fact_deliveries', 'context_id = ?', contextId).map(({ id: _, ...item }) => item)
+    return out
   }
 
   /** Remove a topic and everything TheOne kept about it. DSH keeps the conversations themselves. */
@@ -816,14 +1156,17 @@ export class ContextStore {
       // The catalog would otherwise find the same conversation again and bring the topic back.
       this.db.prepare('INSERT OR REPLACE INTO dismissed_turns SELECT session_id, user_seq, fingerprint FROM history_turns WHERE context_id = ?').run(contextId)
       this.markIndex(context.workingSessionId, Number.MAX_SAFE_INTEGER, 'excluded')
+      // Topics merged into it can no longer be taken apart from it.
+      this.db.prepare('DELETE FROM topic_merges WHERE target_id = ? OR source_id = ?').run(contextId, contextId)
+      this.db.prepare('DELETE FROM merge_prompts WHERE a = ? OR b = ?').run(contextId, contextId)
+      this.db.prepare('DELETE FROM plugin_flags WHERE name IN (?, ?)').run(`merge-moved:${contextId}`, `merge-handled:${contextId}`)
       this.purge(contextId); this.db.exec('COMMIT')
     }
     catch (error) { this.db.exec('ROLLBACK'); throw error }
   }
 
   private purge(contextId: string): void {
-    for (const table of ['topic_group_members', 'history_turns', 'context_origins', 'context_sources', 'context_source_ranges',
-      'gateway_state', 'context_state_updates', 'context_summary_updates', 'topic_flags', 'compaction_digests', 'learned_terms'])
+    for (const table of PURGED_TABLES)
       this.db.prepare(`DELETE FROM ${table} WHERE context_id = ?`).run(contextId)
     this.db.prepare('DELETE FROM topic_links WHERE a = ? OR b = ?').run(contextId, contextId)
     this.db.prepare('DELETE FROM hidden_contexts WHERE context_id = ?').run(contextId)
@@ -983,8 +1326,9 @@ export class ContextStore {
    * Facts of a merged topic move with their identity, so whoever depends on them keeps doing so. A name
    * both topics use stays two facts: the incoming one is renamed after its topic; values never merge.
    */
-  private mergeFacts(sourceId: string, targetId: string, sourceTitle: string): void {
-    for (const fact of this.db.prepare('SELECT id, key, label FROM facts WHERE context_id = ? AND deleted_at IS NULL').all(sourceId)) {
+  private mergeFacts(sourceId: string, targetId: string, sourceTitle: string, journal: MergeJournal): void {
+    for (const fact of this.db.prepare('SELECT id, key, label, merged_from FROM facts WHERE context_id = ? AND deleted_at IS NULL').all(sourceId)) {
+      journal.facts.push({ id: String(fact.id), key: String(fact.key), label: String(fact.label), mergedFrom: fact.merged_from == null ? null : String(fact.merged_from) })
       let key = String(fact.key), label = String(fact.label)
       if (this.db.prepare('SELECT 1 FROM facts WHERE context_id = ? AND key = ?').get(targetId, key)) {
         label = `${label}（来自 ${sourceTitle}）`.slice(0, FACT_LIMITS.label + 30)
@@ -993,10 +1337,16 @@ export class ContextStore {
       }
       this.db.prepare('UPDATE facts SET context_id = ?, key = ?, label = ?, merged_from = ? WHERE id = ?').run(targetId, key, label, sourceId, String(fact.id))
     }
+    const rowids = (where: string, ...params: string[]) => this.db.prepare(`SELECT rowid AS id FROM fact_dependencies WHERE ${where}`).all(...params).map(row => Number(row.id))
+    const before = new Set(rowids('context_id = ?', targetId))
     this.db.prepare('INSERT OR IGNORE INTO fact_dependencies SELECT ?, fact_id, version_seen, first_at, last_at FROM fact_dependencies WHERE context_id = ?').run(targetId, sourceId)
+    journal.added.fact_dependencies = rowids('context_id = ?', targetId).filter(id => !before.has(id))
+    journal.purged.fact_dependencies = this.db.prepare('SELECT * FROM fact_dependencies WHERE context_id = ?').all(sourceId) as Record<string, unknown>[]
     this.db.prepare('DELETE FROM fact_dependencies WHERE context_id = ?').run(sourceId)
     // A topic does not depend on its own facts.
+    journal.removedDependencies = this.db.prepare('SELECT rowid, * FROM fact_dependencies WHERE context_id = ? AND fact_id IN (SELECT id FROM facts WHERE context_id = ?)').all(targetId, targetId) as Record<string, unknown>[]
     this.db.prepare('DELETE FROM fact_dependencies WHERE context_id = ? AND fact_id IN (SELECT id FROM facts WHERE context_id = ?)').run(targetId, targetId)
+    journal.moved.fact_deliveries = this.db.prepare('SELECT rowid AS id FROM fact_deliveries WHERE context_id = ?').all(sourceId).map(row => Number(row.id))
     this.db.prepare('UPDATE fact_deliveries SET context_id = ? WHERE context_id = ?').run(targetId, sourceId)
   }
 
@@ -1009,6 +1359,64 @@ export class ContextStore {
     this.db.prepare("UPDATE facts SET deleted_at = ?, aliases = '[]', current_version = 0 WHERE context_id = ? AND deleted_at IS NULL").run(now, contextId)
     this.db.prepare('DELETE FROM fact_dependencies WHERE context_id = ?').run(contextId)
     this.db.prepare('DELETE FROM fact_deliveries WHERE context_id = ?').run(contextId)
+  }
+
+  /** A topic took up a message (one per message); a topic keeps its latest RUNS_KEPT records. */
+  startTopicRun(messageId: string, contextId: string, sessionId: string, now = Date.now()): void {
+    this.db.prepare("INSERT OR REPLACE INTO topic_runs VALUES (?, ?, ?, 'running', ?, NULL)").run(messageId, contextId, sessionId, now)
+    this.db.prepare(`DELETE FROM topic_runs WHERE context_id = ? AND message_id NOT IN
+      (SELECT message_id FROM topic_runs WHERE context_id = ? ORDER BY started_at DESC, rowid DESC LIMIT ${RUNS_KEPT})`).run(contextId, contextId)
+  }
+
+  /** How the topic's work on a message ended. A record already settled keeps its outcome, except a move. */
+  endTopicRun(messageId: string, outcome: Exclude<TopicRun['outcome'], 'running'>, now = Date.now()): void {
+    this.db.prepare(`UPDATE topic_runs SET outcome = ?, ended_at = ? WHERE message_id = ? AND (outcome = 'running' OR ? = 'moved')`)
+      .run(outcome, now, messageId, outcome)
+  }
+
+  /** A run marked interrupted at startup turned out to have finished before the restart. */
+  recoverTopicRun(messageId: string, now = Date.now()): void {
+    this.db.prepare("UPDATE topic_runs SET outcome = 'completed', ended_at = ? WHERE message_id = ? AND outcome = 'interrupted'").run(now, messageId)
+  }
+
+  /** Work never shown (the message was deleted from main chat's queue) leaves no record. */
+  dropTopicRun(messageId: string): void {
+    this.db.prepare('DELETE FROM topic_runs WHERE message_id = ?').run(messageId)
+  }
+
+  /** Work that was running when TheOne stopped (a restart) did not finish: it is interrupted. */
+  interruptTopicRuns(now = Date.now()): string[] {
+    const rows = this.db.prepare("SELECT message_id FROM topic_runs WHERE outcome = 'running'").all().map(row => String(row.message_id))
+    this.db.prepare("UPDATE topic_runs SET outcome = 'interrupted', ended_at = ? WHERE outcome = 'running'").run(now)
+    return rows
+  }
+
+  topicRun(messageId: string): TopicRun | undefined {
+    const row = this.db.prepare('SELECT * FROM topic_runs WHERE message_id = ?').get(messageId)
+    return row ? runOf(row) : undefined
+  }
+
+  /** The topic's runs, newest first. */
+  topicRuns(contextId: string, limit = RUNS_KEPT): TopicRun[] {
+    return this.db.prepare('SELECT * FROM topic_runs WHERE context_id = ? ORDER BY started_at DESC, rowid DESC LIMIT ?').all(contextId, limit).map(runOf)
+  }
+
+  /** The newest run of every topic. */
+  latestTopicRuns(): Map<string, TopicRun> {
+    const rows = this.db.prepare(`SELECT * FROM topic_runs r WHERE rowid = (SELECT rowid FROM topic_runs WHERE context_id = r.context_id
+      ORDER BY started_at DESC, rowid DESC LIMIT 1)`).all()
+    return new Map(rows.map(row => [String(row.context_id), runOf(row)]))
+  }
+
+  /** The user said the topic's matter is done (`undefined` reopens it). */
+  declareTopic(contextId: string, declared: 'done' | undefined, now = Date.now()): void {
+    this.context(contextId)
+    if (declared) this.db.prepare('INSERT OR REPLACE INTO topic_status VALUES (?, ?, ?)').run(contextId, declared, now)
+    else this.db.prepare('DELETE FROM topic_status WHERE context_id = ?').run(contextId)
+  }
+
+  declaredTopics(): Map<string, { declared: 'done'; at: number }> {
+    return new Map(this.db.prepare('SELECT * FROM topic_status').all().map(row => [String(row.context_id), { declared: 'done' as const, at: Number(row.declared_at) }]))
   }
 
   /** A changed-files card in main chat (`gatewayId`, `seq`) reads the topic's record (`sessionId`, `seq`). */
@@ -1031,6 +1439,66 @@ export class ContextStore {
     return this.db.prepare('INSERT OR IGNORE INTO plugin_flags VALUES (?, ?)').run(name, now).changes === 1
   }
 
+  /** A messaging app bound to main chat (its login, cursor and switch), or undefined when none is. */
+  remoteLink<T>(channel: string): T | undefined {
+    const row = this.db.prepare('SELECT state FROM remote_links WHERE channel = ?').get(channel)
+    return row ? JSON.parse(String(row.state)) as T : undefined
+  }
+
+  saveRemoteLink(channel: string, state: unknown): void {
+    if (state === undefined) this.db.prepare('DELETE FROM remote_links WHERE channel = ?').run(channel)
+    else this.db.prepare('INSERT INTO remote_links VALUES (?, ?) ON CONFLICT(channel) DO UPDATE SET state = excluded.state').run(channel, JSON.stringify(state))
+  }
+
+  /** What a correction of `messageId` taught, so undoing it can take exactly that back. */
+  recordCorrectionTerms(messageId: string, contextId: string, terms: string[], delta: number): void {
+    for (const term of terms) this.db.prepare('INSERT INTO correction_terms VALUES (?, ?, ?, ?)').run(messageId, contextId, term, delta)
+  }
+
+  /**
+   * Undo the user's move of a message: it belongs where it was first routed again, the terms the move
+   * taught are taken back, and the first topic's turn counts as its own again. Returns the topic the
+   * message was moved to, or undefined when it was not moved.
+   */
+  uncorrectRoute(messageId: string, now = Date.now()): string | undefined {
+    const row = this.db.prepare('SELECT corrected_to FROM route_details WHERE message_id = ?').get(messageId)
+    if (!row?.corrected_to) return undefined
+    this.db.exec('BEGIN IMMEDIATE')
+    try {
+      this.db.prepare('UPDATE route_details SET corrected_to = NULL, corrected_at = NULL WHERE message_id = ?').run(messageId)
+      for (const taught of this.db.prepare('SELECT context_id, term, delta FROM correction_terms WHERE message_id = ?').all(messageId))
+        this.learnTerms(String(taught.context_id), [String(taught.term)], -Number(taught.delta), now)
+      this.db.prepare('DELETE FROM correction_terms WHERE message_id = ?').run(messageId)
+      this.db.prepare('DELETE FROM misrouted_turns WHERE message_id = ?').run(messageId)
+      this.db.prepare("UPDATE topic_runs SET outcome = 'completed' WHERE message_id = ? AND outcome = 'moved'").run(messageId)
+      this.db.exec('COMMIT')
+      return String(row.corrected_to)
+    } catch (error) { this.db.exec('ROLLBACK'); throw error }
+  }
+
+  /** A topic's turn for a message that was not its own: later reads of its history leave it out. */
+  recordMisroute(turn: { messageId: string; contextId: string; sessionId: string; startSeq: number; endSeq: number; movedTo: string; request: string }, now = Date.now()): void {
+    this.db.prepare('INSERT OR REPLACE INTO misrouted_turns VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(turn.messageId, turn.contextId, turn.sessionId, turn.startSeq, turn.endSeq, turn.movedTo, turn.request.slice(0, 600), now)
+  }
+
+  /** Event ranges of a session that belong to other topics' messages. */
+  excludedRanges(sessionId: string): { startSeq: number; endSeq: number }[] {
+    return this.db.prepare('SELECT start_seq, end_seq FROM misrouted_turns WHERE session_id = ?').all(sessionId)
+      .map(row => ({ startSeq: Number(row.start_seq), endSeq: Number(row.end_seq) }))
+  }
+
+  /** Messages that reached a topic by mistake, oldest first. */
+  misroutes(contextId: string): { messageId: string; movedTo: string; request: string }[] {
+    return this.db.prepare('SELECT message_id, moved_to, request FROM misrouted_turns WHERE context_id = ? ORDER BY at, rowid').all(contextId)
+      .map(row => ({ messageId: String(row.message_id), movedTo: String(row.moved_to), request: String(row.request) }))
+  }
+
+  /** `name` was marked with `markOnce`. */
+  hasFlag(name: string): boolean {
+    return !!this.db.prepare('SELECT 1 FROM plugin_flags WHERE name = ?').get(name)
+  }
+
   dismissedNotices(): Set<string> {
     return new Set(this.db.prepare('SELECT id FROM dismissed_notices').all().map(row => String(row.id)))
   }
@@ -1043,6 +1511,14 @@ export class ContextStore {
   hiddenReasons(): Map<string, HiddenReason> {
     return new Map(this.db.prepare('SELECT context_id, reason FROM hidden_contexts').all()
       .map(row => [String(row.context_id), String(row.reason) as HiddenReason] as const))
+  }
+
+  /**
+   * Topics with nothing left to read (every conversation gone from disk). An archived topic is only
+   * put away: it still answers when the user comes back to it.
+   */
+  unreachable(): Set<string> {
+    return new Set([...this.hiddenReasons()].filter(([, reason]) => (reason === 'orphaned' || reason === 'excluded')).map(([id]) => id))
   }
 
   /** Replace the hidden set in one write, so a scan never leaves a stale entry behind. */

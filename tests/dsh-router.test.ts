@@ -12,7 +12,7 @@ const context = { id: 'ctx_qwen_9070xt', title: 'Qwen', summary: '配置', entit
 const input = { text: '继续配置', contexts: [context] }
 const decision = { action: 'EXISTING', contextId: context.id, title: null, question: null, reason: '继续配置' }
 
-test('DSH router uses its configured adapter without a separate key or session/tools', async () => {
+test('DSH router uses its configured adapter with transport identity but no conversation replay or tools', async () => {
   const root = await mkdtemp(join(tmpdir(), 'theone-dsh-native-'))
   const app = await harness(root)
   try {
@@ -20,7 +20,8 @@ test('DSH router uses its configured adapter without a separate key or session/t
       assert.equal(options.provider, 'fixture')
       assert.equal(options.model, 'custom-model')
       assert.equal(options.tools, undefined)
-      assert.equal(options.sessionId, undefined)
+      assert.ok(options.sessionId)
+      assert.notEqual(options.sessionId, app.gateway.id)
       assert.equal(options.system, ROUTING_PROMPT)
       assert.equal(options.messages.length, 1)
       assert.ok(!JSON.stringify(options.messages).includes('sk-syntheticsecret012345678901'))
@@ -44,7 +45,7 @@ test('routing disables supported deep thinking without changing Worker or provid
   const root = await mkdtemp(join(tmpdir(),'theone-router-thinking-'))
   const model = new ReasoningModel()
   model.behavior = async function* (options) {
-    if (options.system === ROUTING_PROMPT) {
+    if (options.system?.startsWith(ROUTING_PROMPT)) {
       assert.equal(options.reasoningEffort,'off')
       assert.equal(options.maxTokens,2048)
       yield* textResponse(JSON.stringify(decision))
@@ -64,7 +65,7 @@ test('native routing and Worker share DSH model; gateway selection persists thro
   const root = await mkdtemp(join(tmpdir(), 'theone-dsh-selection-'))
   const model = new FixtureModel()
   model.behavior = async function* (options) {
-    yield* textResponse(options.system === ROUTING_PROMPT ? JSON.stringify(decision) : '工作继续')
+    yield* textResponse(options.system?.startsWith(ROUTING_PROMPT) ? JSON.stringify(decision) : '工作继续')
   }
   let app = await harness(root, model, { routerMode: 'llm', autoModel: true })
   const setDefault = (value: ReturnType<typeof app.ctx.agentDefaultModel.currentSelection>) => {
@@ -78,6 +79,8 @@ test('native routing and Worker share DSH model; gateway selection persists thro
     assert.equal(first.output, '工作继续', JSON.stringify(first.end))
     assert.equal(app.ctx.theone.store.route(first.input.id)?.decision.action, 'MOUNT')
     assert.deepEqual(model.requests.map(r => [r.provider, r.model]), [['fixture', 'user-configured-model'], ['fixture', 'user-configured-model']])
+    assert.equal(model.requests[0].sessionId, app.gateway.id)
+    assert.notEqual(model.requests[1].sessionId, app.gateway.id)
     assert.equal(app.ctx.theone.store.rememberedModel('test-gateway')?.model, 'user-configured-model')
     await app.close()
     model.requests = []

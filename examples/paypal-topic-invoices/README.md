@@ -4,6 +4,10 @@
 
 This is a standalone experiment inspired by TheOne's topic workflow, built October 11, 2026. It does not mount the original DSH workers, read DSH logs or modify the main plugin. The existing TheOne repository began September 30; this adaptation reuses its MIT repository infrastructure, not previous competition demos as PayPal evidence. Codex assisted implementation, tests and documentation. No company, revenue, customer usage, award or measured production routing accuracy is claimed.
 
+## Source and demonstration versions
+
+On October 25 the repository's base plugin was upgraded to TheOne **0.4.1**, using release commit `5e6f4e9b190c7773d080885bcdcbe02e033e2ffe`. Invoice Desk remains the standalone Sandbox application described here; it does not acquire the DSH plugin's new topic-choice controls through this merge. Its invoice implementation and October 11 evidence are unchanged. The existing 96-second video was made before this upgrade and is not a 0.4.1 plugin demonstration. Local verification for this update uses mocked provider responses, with no new live invoice or model call.
+
 ## Run
 
 Node.js **24+**, no npm dependencies or installation scripts:

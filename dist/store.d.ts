@@ -1,7 +1,8 @@
 import type { ModelSelection } from '@deepseek-ai/dsh-agent';
 import type { ExtractedTopic, HiddenReason, HistoryPart, TopicGroup } from './catalog-types.ts';
-import type { ContextDescriptor, ContextUsage, Decision, RouteRecord, RouteView, StoredContext, SourceRange, TopicLink } from './types.ts';
+import type { ContextDescriptor, ContextUsage, Decision, Progress, RouteRecord, RouteView, StoredContext, SourceRange, TopicLink } from './types.ts';
 import { type FactEvidence, type FactKind, type FactView } from './facts.ts';
+import { type Settled, type TopicCard } from './topic-memory.ts';
 /** A write to a topic's facts, after its evidence was checked against the session. */
 export interface FactWrite {
     factId?: string;
@@ -15,6 +16,7 @@ export interface FactWrite {
     /** The version the writer last saw; the write is refused if the fact has moved on since. */
     expectedVersion?: number;
 }
+export type MergePromptAnswer = 'merged' | 'declined' | 'dismissed';
 export type FactOutcome = 'created' | 'updated' | 'unchanged' | 'retracted' | 'rejected';
 export interface FactResult {
     outcome: FactOutcome;
@@ -31,7 +33,20 @@ export declare const WHOLE_SESSION: {
     startSeq: number;
     endSeq: number;
 };
+/** A topic's progress as one note: the three parts with labels in the language they were written in. */
+export declare function progressText(progress: Progress): string;
 /** Stores descriptors and routing metadata. Original conversation stays in DSH. */
+/** Run records a topic keeps; older ones are dropped as new ones start. */
+export declare const RUNS_KEPT = 20;
+/** One message a topic worked on, and how that ended. */
+export interface TopicRun {
+    messageId: string;
+    contextId: string;
+    sessionId: string;
+    outcome: 'running' | 'completed' | 'failed' | 'stopped' | 'interrupted' | 'moved';
+    startedAt: number;
+    endedAt?: number;
+}
 export declare class ContextStore {
     private readonly db;
     constructor(path: string);
@@ -56,15 +71,26 @@ export declare class ContextStore {
         at: number;
     }[];
     /**
-     * A topic's routing card: other names and entities join its keywords, and its summary is replaced
-     * unless a compaction summary (written from the whole session) already took its place.
+     * A topic's routing card. Other names are added, never pushed out by newer ones; settled values
+     * keep the value they replaced and when; what is open is replaced. The card's summary replaces a
+     * placeholder summary, not a compaction summary (written from the whole session); either way
+     * routing reads the current settled values and open items beside it (see routingSummary).
      */
-    applyCard(contextId: string, card: {
-        summary: string;
-        aliases: string[];
-        entities: string[];
-        open: string[];
-    }): void;
+    applyCard(contextId: string, card: TopicCard, now?: number): boolean;
+    /** A route-created topic, never manually moved or already involved in a merge; use its latest main chat. */
+    mergeSuggestionGateway(contextId: string): string | undefined;
+    mergePrompt(a: string, b: string): {
+        answer: MergePromptAnswer;
+        at: number;
+    } | undefined;
+    /** A dismissed reservation also prevents two background cards (or a restart) asking the same pair. */
+    recordMergePrompt(a: string, b: string, answer: MergePromptAnswer, now?: number): void;
+    /** Other names cards gave a topic (or every topic), most recently confirmed first. */
+    names(contextId?: string): Map<string, string[]>;
+    /** Values a topic settled on, most recently recorded first, each with the value it replaced. */
+    settled(contextId: string): Settled[];
+    /** What the topic's latest card says is still open. */
+    openItems(contextId: string): string[];
     groups(): TopicGroup[];
     isGateway(sessionId: string): boolean;
     /** Record the fixed "TheOne · Main chat" entry; other sessions may also use TheOne and switch away. */
@@ -82,6 +108,15 @@ export declare class ContextStore {
         sessionId: string;
         cwd?: string;
     } | undefined;
+    catalogConsent(): 'granted' | 'declined' | undefined;
+    setCatalogConsent(value: 'granted' | 'declined'): void;
+    catalogExclusions(): {
+        sessions: Set<string>;
+        folders: string[];
+    };
+    setCatalogExcluded(kind: 'session' | 'folder', value: string, excluded: boolean): void;
+    /** An earlier chat of the user's was catalogued: TheOne's own sessions are indexed without asking. */
+    hasIndexedHistory(): boolean;
     indexState(sessionId: string): {
         throughSeq: number;
         status: string;
@@ -97,8 +132,11 @@ export declare class ContextStore {
     importTopics(sessionId: string, cwd: string | undefined, parts: HistoryPart[], topics: ExtractedTopic[]): void;
     mount(gatewayKey: string, contextId: string): void;
     contextsForSessions(sessionIds: string[]): string[];
-    /** Model-maintained progress is bounded and auditable; stable project identity remains unchanged. */
-    updateState(contextId: string, state: string, sessionId: string, throughSeq: number): void;
+    /**
+     * Model-maintained progress is bounded and auditable; stable project identity remains unchanged.
+     * Given in three parts, it is kept as such and `lastState` is written from it; a free note replaces both.
+     */
+    updateState(contextId: string, state: string | Progress, sessionId: string, throughSeq: number): void;
     stateUpdates(contextId: string): Record<string, import("node:sqlite").SQLOutputValue>[];
     /** Reuse a completed DSH compaction checkpoint once, without another model call. */
     updateSummary(contextId: string, summary: string, sessionId: string, summarySeq: number, endSeq: number): void;
@@ -144,6 +182,19 @@ export declare class ContextStore {
      * reply runs (`mount` false) leaves the topic in use as it is until main chat gets to it.
      */
     plan(messageId: string, gatewayId: string, gatewayKey: string, proposed: Decision, mount?: boolean): RouteRecord;
+    /** A decision with its topic: a CREATE makes the topic (in its project's folder, when it has one). */
+    private topicFor;
+    /**
+     * The topic workspace a new topic joins by itself, so the user need not file it: that of a topic it
+     * draws on, else the one most topics in its project folder are in. Only a placement; the user can
+     * move it, and nothing is merged.
+     */
+    private groupForNew;
+    /**
+     * Give a message being answered to another topic (its first topic handed it back), and make that
+     * topic the one in use. Returns the decision it now has, or undefined when the message has no route.
+     */
+    moveRoute(messageId: string, gatewayKey: string, proposed: Decision): Decision | undefined;
     /** Only a planned route may execute. Ambiguous interrupted work is never replayed automatically. */
     claim(messageId: string): void;
     /** Drop the route of a message main chat never got to (the user deleted it from the queue). */
@@ -159,6 +210,8 @@ export declare class ContextStore {
     sources(contextId: string): string[];
     /** What a route was decided from: a short redacted excerpt and the classifier's receipt. */
     recordRouteDetail(messageId: string, excerpt: string, receipt: unknown): void;
+    /** What each topic has been sent in this entry: the newest excerpts of the messages routed to it (after corrections). */
+    routedExcerpts(gatewayKey: string, perTopic?: number): Map<string, string[]>;
     /** This entry's latest routes, newest first. */
     recentRoutes(gatewayKey: string, limit?: number): RouteView[];
     /** Record that a message belonged to another topic; later routing learns from it. */
@@ -209,9 +262,24 @@ export declare class ContextStore {
     attachSession(contextId: string, sessionId: string): void;
     /**
      * Fold `sourceId` into `targetId`: its history, progress, summaries and links move over, and its
-     * own Worker session becomes searchable history of the target. The source topic is removed.
+     * own Worker session becomes searchable history of the target. The source topic leaves the
+     * directory, but everything the merge did is written down so `unmergeTopic` can take it apart.
      */
-    mergeTopics(sourceId: string, targetId: string): void;
+    mergeTopics(sourceId: string, targetId: string, now?: number): void;
+    /** Topics merged into others that can still be taken apart, newest first. */
+    merges(): {
+        sourceId: string;
+        targetId: string;
+        title: string;
+        at: number;
+    }[];
+    /**
+     * Take a merge apart: the source topic comes back with what it had, and what came from it leaves
+     * the target. What either topic did since stays where it happened.
+     */
+    unmergeTopic(sourceId: string): string;
+    /** Every row TheOne keeps about a topic, by table, as `purge` would remove them. */
+    private snapshot;
     /** Remove a topic and everything TheOne kept about it. DSH keeps the conversations themselves. */
     deleteTopic(contextId: string): void;
     private purge;
@@ -268,6 +336,27 @@ export declare class ContextStore {
      * topics which used them can be told once that they are gone. What the topic itself received goes.
      */
     private purgeFacts;
+    /** A topic took up a message (one per message); a topic keeps its latest RUNS_KEPT records. */
+    startTopicRun(messageId: string, contextId: string, sessionId: string, now?: number): void;
+    /** How the topic's work on a message ended. A record already settled keeps its outcome, except a move. */
+    endTopicRun(messageId: string, outcome: Exclude<TopicRun['outcome'], 'running'>, now?: number): void;
+    /** A run marked interrupted at startup turned out to have finished before the restart. */
+    recoverTopicRun(messageId: string, now?: number): void;
+    /** Work never shown (the message was deleted from main chat's queue) leaves no record. */
+    dropTopicRun(messageId: string): void;
+    /** Work that was running when TheOne stopped (a restart) did not finish: it is interrupted. */
+    interruptTopicRuns(now?: number): string[];
+    topicRun(messageId: string): TopicRun | undefined;
+    /** The topic's runs, newest first. */
+    topicRuns(contextId: string, limit?: number): TopicRun[];
+    /** The newest run of every topic. */
+    latestTopicRuns(): Map<string, TopicRun>;
+    /** The user said the topic's matter is done (`undefined` reopens it). */
+    declareTopic(contextId: string, declared: 'done' | undefined, now?: number): void;
+    declaredTopics(): Map<string, {
+        declared: 'done';
+        at: number;
+    }>;
     /** A changed-files card in main chat (`gatewayId`, `seq`) reads the topic's record (`sessionId`, `seq`). */
     linkChange(gatewayId: string, seq: number, source: {
         sessionId: string;
@@ -283,6 +372,40 @@ export declare class ContextStore {
     dismissNotice(id: string, now?: number): void;
     /** True the first time `name` is marked, false ever after: for one-time repairs. */
     markOnce(name: string, now?: number): boolean;
+    /** A messaging app bound to main chat (its login, cursor and switch), or undefined when none is. */
+    remoteLink<T>(channel: string): T | undefined;
+    saveRemoteLink(channel: string, state: unknown): void;
+    /** What a correction of `messageId` taught, so undoing it can take exactly that back. */
+    recordCorrectionTerms(messageId: string, contextId: string, terms: string[], delta: number): void;
+    /**
+     * Undo the user's move of a message: it belongs where it was first routed again, the terms the move
+     * taught are taken back, and the first topic's turn counts as its own again. Returns the topic the
+     * message was moved to, or undefined when it was not moved.
+     */
+    uncorrectRoute(messageId: string, now?: number): string | undefined;
+    /** A topic's turn for a message that was not its own: later reads of its history leave it out. */
+    recordMisroute(turn: {
+        messageId: string;
+        contextId: string;
+        sessionId: string;
+        startSeq: number;
+        endSeq: number;
+        movedTo: string;
+        request: string;
+    }, now?: number): void;
+    /** Event ranges of a session that belong to other topics' messages. */
+    excludedRanges(sessionId: string): {
+        startSeq: number;
+        endSeq: number;
+    }[];
+    /** Messages that reached a topic by mistake, oldest first. */
+    misroutes(contextId: string): {
+        messageId: string;
+        movedTo: string;
+        request: string;
+    }[];
+    /** `name` was marked with `markOnce`. */
+    hasFlag(name: string): boolean;
     dismissedNotices(): Set<string>;
     /**
      * Topics kept in the directory but hidden from routing and briefings: every conversation they can
@@ -290,6 +413,11 @@ export declare class ContextStore {
      * recomputes this set, so restoring a conversation or unarchiving it brings the topic back.
      */
     hiddenReasons(): Map<string, HiddenReason>;
+    /**
+     * Topics with nothing left to read (every conversation gone from disk). An archived topic is only
+     * put away: it still answers when the user comes back to it.
+     */
+    unreachable(): Set<string>;
     /** Replace the hidden set in one write, so a scan never leaves a stale entry behind. */
     replaceHidden(entries: readonly {
         id: string;

@@ -12,6 +12,10 @@ import { type LinkScope } from './linkage.ts';
 import { Updater } from './update.ts';
 import { NoticeBoard } from './notices.ts';
 import { type FeedbackDraft } from './feedback.ts';
+import { WeixinBridge } from './weixin.ts';
+import { TelegramApp } from './telegram.ts';
+import { IMessageApp } from './imessage.ts';
+import { PersistentWork } from './persistent-work.ts';
 export interface Config {
     databasePath?: string;
     contextsPath?: string;
@@ -77,6 +81,7 @@ declare module '@deepseek-ai/dsh-llm' {
         'theone-note': {
             kind: 'theone-note';
             form: 'notice';
+            noticeId?: string;
         };
     }
 }
@@ -87,6 +92,8 @@ export default class TheOne extends Service {
     static inject: string[];
     static Config: z<Config>;
     readonly store: ContextStore;
+    readonly work: PersistentWork;
+    private readonly projects;
     readonly catalog?: HistoryCatalog;
     private readonly workers;
     private router?;
@@ -101,6 +108,8 @@ export default class TheOne extends Service {
      * matter, sent while a reply was running. Main chat shows that work when it gets to the message.
      */
     private readonly background;
+    /** Main chat id → the run a reply left when its topic handed the message back; main chat may still collect that call's result. */
+    private readonly handedFrom;
     /** "<main chat id>:<seq>" of a changed-files record shown in main chat → the topic's own record. */
     /** Main-chat message id → its classification, made while a reply was running. */
     /** Background topics being started: message id → topic id; they count toward the limit. */
@@ -112,21 +121,34 @@ export default class TheOne extends Service {
     private readonly moving;
     /** Gateway id → cleanup of a run whose main-chat turn has closed while its Worker winds down. */
     private readonly closing;
+    /** Background questions never reserve a turn or hold up routing the user's next message. */
+    private readonly mergePromptTasks;
+    private readonly mergePromptTails;
+    private readonly mergePromptAbort;
     /** A model the user picked in main chat's own model selector; it answers through the Workers. */
     private pickedModel?;
     private adapter?;
     /** Update checks and one-click install through DSH's plugin manager. */
     readonly updater: Updater;
     readonly noticeBoard: NoticeBoard;
+    /** Messaging apps as second input boxes for main chat; each is off until the user signs it in under Settings. */
+    readonly weixin: WeixinBridge;
+    readonly telegram: TelegramApp;
+    readonly imessage: IMessageApp;
     /** Goal id → the topic its rounds work in (the topic in use when the goal was set). */
     private readonly goalTopics;
     /** Sessions whose current step answers through TheOne; only these refuse to run tools themselves. */
     private readonly throughTheOne;
     constructor(ctx: Context, config: Config);
+    private workTasks;
+    private deliverWorkNotice;
     /** DSH Connection protects plugin routes inside its authenticated /api fence. */
     private registerCatalogChannel;
     /** One topic-directory edit. Changes that remove a topic wait until no reply is running. */
     private editTopics;
+    /** Both Topic workspaces and merge suggestions stop the removed Worker and respect active work. */
+    private mergeTopics;
+    private catalogSessions;
     /** Existing DSH sessions a topic can take as history: not main chats and not topics' own Workers. */
     private attachableSessions;
     /**
@@ -225,6 +247,15 @@ export default class TheOne extends Service {
     private ownFacts;
     private briefingFor;
     /**
+     * Before a topic changes something for a message (edits a file, runs a command, sends something),
+     * check that it is the right topic for it: when routing hesitated, or when the target belongs to
+     * another project, ask once in main chat. Reading and answering never wait; a confident route with
+     * a target in its own project goes ahead.
+     */
+    private checkTargets;
+    /** Why a change for this message may be in the wrong topic, in both languages, or undefined. */
+    private targetDoubt;
+    /**
      * No one views a Worker session, so its approval questions would fail closed. Ask in the
      * main chat whose turn the Worker is answering instead, naming the exact call being approved.
      */
@@ -233,11 +264,20 @@ export default class TheOne extends Service {
      * A topic another topic's Worker may read: never private or kept apart by the user, and within
      * the linking scope. Reading it is evidence the two are related.
      */
+    /**
+     * Search the topics that share with `reader` for `query`: those whose routed messages or entry name
+     * it, then the most recently used, five at most (each search reads that topic's sessions).
+     */
+    private searchEverywhere;
     private readableTopic;
     /** Wait briefly for the main chat to log its mirror of a Worker tool call. */
     private mirroredCall;
     /** Questions the Worker asks the user (ask_user_question) are answered in the main chat, like approvals. */
     private forwardQuestions;
+    /** Labels are the answer protocol: keep them short and unique even after truncation. */
+    private choiceOptions;
+    /** Ask in main chat, including during pre-step routing; an unavailable answerer keeps the old flow. */
+    private askChoice;
     /** Capability is scoped to the exact owned Worker; the model cannot select another Context. */
     private registerWorkerTools;
     /** Recording facts with evidence, and looking up other topics' confirmed facts (shared facts only). */
@@ -250,6 +290,13 @@ export default class TheOne extends Service {
      * still being written when the message was sent.
      */
     private classify;
+    /**
+     * Other topics this message refers to by a number, code or name only they have mentioned: the lines
+     * there that mention it. Topics kept apart from this one (private, unlinked) stay out.
+     */
+    private recallFor;
+    /** Routing evidence for `text` from each topic's routed messages and what its catalog entry and card know. */
+    private routingEvidence;
     /** The user's project folders: DSH workspaces that exist, other than DSH's default one and TheOne's own. */
     private projectFolders;
     /**
@@ -276,6 +323,32 @@ export default class TheOne extends Service {
      * restart (its work is gone then, so main chat just shows what it says).
      */
     private isRelay;
+    /** The topic's turn for a message, read from its session (live, or as DSH saved it). */
+    private turnOf;
+    /**
+     * Main chat's answer to a message a topic began on before a restart cut it off. A topic that
+     * finished has its reply shown as it gave it; one cut off mid-way is described, with what it had
+     * already done, and is not redone on its own: the user sees where it went and can say "continue".
+     */
+    private realign;
+    /**
+     * A message went to the wrong topic and was moved: record that topic's turn for it, so its history,
+     * card and facts leave the turn out and the topic is told once; and say in main chat what that turn
+     * already changed, since nothing is undone on its own.
+     */
+    private noteMisroute;
+    /** Messages that reached this topic by mistake, told to it once, the next time it works. */
+    private misrouteFor;
+    /**
+     * The topic's last run was cut off by a restart (in the background or in front): tell it once, the
+     * next time it works, what it had done, so it checks before carrying on instead of repeating.
+     */
+    private resumeFor;
+    /**
+     * When a topic last did anything before `inputId`: its last routed message, or the last thing in
+     * its own session (the user may have worked in the topic directly).
+     */
+    private lastActive;
     /** Move an interjection to the queue, after what is already queued: it is answered as its own turn. */
     private requeue;
     /** Stop background work on a message main chat will not show (deleted, or answered with other input). */
@@ -283,23 +356,38 @@ export default class TheOne extends Service {
     /** A reply or background work is under way. */
     private get busy();
     /** Start the routed topic working on `input`; `register` sees the run before the Worker starts. */
+    /** `takeOver`: the run handing this message over still holds the project; waiting for it would wait on ourselves. */
     private startRun;
     /** The message answered just before `inputId` in this main chat, with the topic it went to. */
     private previousRoute;
+    /**
+     * The topic answering main chat's message says it is not its own. Route it again without that
+     * topic and let main chat follow the right topic's answer from its next step; the first topic's
+     * turn stops counting as its own. Once per message, and only for a reply main chat is showing.
+     */
+    private handBack;
+    /** The shared handoff for a Worker's hand-back and the user's explicit target choice. */
+    private handToTopic;
+    /** Offer candidates only for the unclear correction the user already started. */
+    private correctionChoice;
     /** Route a misrouted message again, never back to the topic it was wrongly given. */
     private reroute;
     /** Learning from corrections in flight; tests and shutdown can wait for it. */
     learning: Promise<void>;
-    /** Fact extractions in flight, one queue per topic so they commit in turn order. */
-    private readonly extractions;
-    /** All extractions in flight; tests and shutdown can wait for it. */
+    /** Drain due memory jobs; persisted retries remain scheduled across shutdown. */
     get extracting(): Promise<void>;
     /** Queue an extraction of the turn that just ended in `worker`'s topic. */
     private queueExtraction;
     /** Queue a routing card for this topic, after any extraction already queued for it. */
     private queueCard;
-    private writeCard;
-    private extractFacts;
+    private queueMemory;
+    private runMemory;
+    /** Check exactly the first successful card of a route-created topic, with no classifier call. */
+    private queueMergeSuggestion;
+    private mergeGatewayIdle;
+    /** A bounded background wait; queued user messages always get their turn first. */
+    private waitForMergeIdle;
+    private suggestMerge;
     /**
      * The user moved a message to another topic: remember it, and teach both topics. The right topic
      * gains the message's distinctive terms and the wrong one loses them; `weight` is lower for
@@ -308,6 +396,19 @@ export default class TheOne extends Service {
     private applyCorrection;
     /** Ask the selected model, thinking off, for the few terms that tie a message to its topic. */
     private pickTerms;
+    /** Work a topic's session is asking the user about (approvals, questions) counts as waiting on the user. */
+    private readonly asking;
+    private whileAsking;
+    /**
+     * The project a folder belongs to: the user's DSH workspace that holds it (the innermost one).
+     * DSH's default workspace and TheOne's own folder belong to no project.
+     */
+    private projectOf;
+    /**
+     * Each topic's project and status. Status is kept apart from the topic's run records and derived
+     * from the newest one, what the user said, and how long the topic has been left.
+     */
+    private topicStates;
     /**
      * Topics as routing sees them: with the terms corrections taught them, and when each was last
      * active. Topics set aside (untouched for longer than this user usually comes back) go last.
@@ -350,9 +451,18 @@ export default class TheOne extends Service {
      * Registered on main chat alone, it takes the place of DSH's /compact there and nowhere else.
      */
     private gatewayCommands;
+    /** The topic "Continue chatting" just put in use, until main chat opens and says so. */
+    private mountNotice?;
+    /**
+     * "Continue chatting" on another topic opens the same main chat, whose last exchange is still the
+     * previous topic's. One line says which topic comes next and where it left off.
+     */
+    private announceMount;
     welcomeGateway(id: string, locale: string): void;
-    /** Topic → when main chat last answered in it; quick alternation between two topics links them. */
-    private lastRoute?;
+    /**
+     * A message that draws on other topics links them. Switching between topics does not: working on
+     * several unrelated things at once is what TheOne is for.
+     */
     private learnFromRoute;
     /**
      * Settle a run when the main chat turn closes: record the outcome and free the gateway once the

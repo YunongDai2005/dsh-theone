@@ -8,8 +8,12 @@ export type LinkReason = 'manual' | 'workspace' | 'project' | 'entities' | 'lear
 
 export interface RelatedTopic { id: string; title: string; score: number; reasons: LinkReason[] }
 
-/** Learning signals, in units of relatedness. A pair counts as related from 0.6. */
-export const LINK_SIGNAL = { mention: 0.5, switch: 0.2, lookup: 0.4, unused: -0.05 } as const
+/**
+ * Learning signals, in units of relatedness. A pair counts as related from 0.6. Switching between
+ * topics and briefed news the Worker did not look up are not signals: alternating between unrelated
+ * work is ordinary, and a Worker uses briefed news without looking anything up.
+ */
+export const LINK_SIGNAL = { mention: 0.5, lookup: 0.4 } as const
 const THRESHOLD = 0.6
 
 const normalize = (term: string) => term.toLowerCase().replace(/[\s/_-]+/g, '')
@@ -94,6 +98,9 @@ export function topicDigest(store: ContextStore, context: StoredContext, summary
     .filter(state => !digest || sqlTime(state.createdAt) > digest.at).slice(-updates)
   if (digest) lines.push(`压缩摘要（截至 ${stamp(digest.at)}）：${clip(digest.summary, summaryChars)}`)
   else lines.push(`摘要：${clip(context.summary, Math.min(summaryChars, 400))}`)
+  // Each value with when it was recorded, and what it replaced, so an old value is never read as today's.
+  const settled = store.settled(context.id).slice(0, 6)
+  if (settled.length) lines.push(`已定（记录时间）：${settled.map(item => `${item.value === item.label ? item.label : `${item.label} ${item.value}`}（${stamp(item.since)}${item.previous ? `；之前是 ${item.previous}` : ''}）`).join('；')}`)
   for (const state of states) lines.push(`进展（${stamp(sqlTime(state.createdAt))}）：${clip(state.state, 300)}`)
   if (!states.length && !digest && context.lastState) lines.push(`最新状态：${clip(context.lastState, 300)}`)
   return lines
@@ -110,6 +117,8 @@ export function buildBriefing(store: ContextStore, input: {
   context: StoredContext; related: RelatedTopic[]; recent: RecentMessage[]; now?: number; budget?: number
   /** Changes to facts this topic used before, and confirmed facts this request uses (shared facts only). */
   notices?: string[]; facts?: string[]
+  /** Other topics holding a number, code or name this message mentions: where it was said, and where that topic stands. */
+  recall?: { topicId: string; terms: string[]; lines: string[] }[]
 }): Briefing | undefined {
   const now = input.now ?? Date.now()
   const budget = input.budget ?? 6000
@@ -121,6 +130,17 @@ export function buildBriefing(store: ContextStore, input: {
   if (own) { parts.push(`本话题的约束（必须遵守）：${own.text}`); worthSending = true }
   if (input.notices?.length) { parts.push(['你之前用到的其他话题要点有变化，以此为准：', ...input.notices].join('\n')); worthSending = true }
   if (input.facts?.length) { parts.push(['本轮用到的其他话题要点（引用资料，是用户确认过的值）：', ...input.facts].join('\n')); worthSending = true }
+  // What this message itself refers to comes before what is merely related, so the budget keeps it.
+  for (const item of input.recall ?? []) {
+    const context = store.contexts().find(other => other.id === item.topicId)
+    if (!context) continue
+    const lines = [`本轮消息提到的「${item.terms.join('」「')}」出现在【${context.title}】（topicId: ${item.topicId}）里，这条消息可能要用到那边的信息：`,
+      ...item.lines.map(line => `- 那边说过：${clip(line, 200)}`), ...topicDigest(store, context, 300, 1)]
+    const rules = store.constraints(item.topicId)
+    if (rules) lines.push(`约束（必须遵守）：${rules.text}`)
+    parts.push(lines.join('\n'))
+    worthSending = true
+  }
   if (input.recent.length) {
     let room = 1500
     const lines: string[] = []
