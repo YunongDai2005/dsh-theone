@@ -11,6 +11,9 @@ export declare function historyParts(events: readonly SessionEvent[]): {
     summaries: string[];
 };
 export declare function validateCatalog(value: unknown, parts: HistoryPart[], contextIds: string[], groupIds: string[], ownedContextId?: string): ExtractedTopic[];
+/** Compare directory boundaries, including Windows paths on non-Windows hosts. */
+export declare function withinCatalogFolder(cwd: string | undefined, folder: string): boolean;
+export declare function catalogSessionExcluded(id: string, cwd: string | undefined, exclusions: ReturnType<ContextStore['catalogExclusions']>): boolean;
 /** Incremental descriptor index. Original messages remain solely in DSH. */
 export declare class HistoryCatalog {
     private readonly ctx;
@@ -18,14 +21,17 @@ export declare class HistoryCatalog {
     private readonly selection;
     private readonly intervalMs;
     private readonly batchBudget;
+    private readonly askFirst;
     private readonly abort;
     private run?;
     private timer?;
     private dirty;
+    private activeRequest?;
     private status;
     /** Sessions the last finished scan could not index; a scan in progress doesn't make the catalog incomplete. */
     private settledPending?;
-    constructor(ctx: Context, store: ContextStore, selection: () => ModelSelection, intervalMs?: number, batchBudget?: number);
+    constructor(ctx: Context, store: ContextStore, selection: () => ModelSelection, intervalMs?: number, batchBudget?: number, askFirst?: boolean);
+    private get allowed();
     start(): void;
     private schedule;
     requestRefresh(): void;

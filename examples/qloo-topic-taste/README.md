@@ -1,10 +1,12 @@
 # TheOne Topic Taste — Qloo adaptation in progress
 
+**Hosting checkpoint, October 25:** the Cloudflare site is deployed at https://theone-topic-taste.yuriddaaii.workers.dev . Static assets and isolated SQLite storage were verified; provider calls remain disabled, with no Qloo/Nebius secrets uploaded and caps 0/0. Actual free allowance and hosted recommendation verification remain pending. The older local integration and video evidence below do not prove hosted recommendations work.
+
 One chat for different plans, with separate confirmed favorites for each topic. A family weekend's taste should not silently become a solo movie night's taste.
 
 **Status, October 15, 2026:** the event API key has arrived and the real cloud integration gate passes: two exact favorite searches, two nonempty recommendations with separate topic signals, and two genuine Nemotron plans for existing/new topics. The passing gate made four Qloo calls and two model calls; see `evidence/cloud-integration.json`. The real browser also completed search, confirmation and recommendation for two synthetic topics: Arrival informed book picks, while Spirited Away informed the family movie picks. A separate HTTP client saw an empty workspace and could not access either topic. An initial live search revealed that Search uses `types`, while Insights uses `subtype`; the client now validates both explicit category shapes. All thirteen offline tests pass, including that regression. These development scenarios are not held-out accuracy measurements. An [85-second recorded-state walkthrough](https://github.com/YunongDai2005/dsh-theone/releases/tag/qloo-topic-taste-prototype-20261015) is now public. It uses two actual October13 browser captures with generated narration; it is not a continuous screen recording or a fresh live run. Creating the video made zero new Qloo/model requests. The cloud/browser results above are from October13. A hosted judge demo and final Qloo submission remain unverified. Offline tests use invented upstream responses and are not cloud results.
 
-This is a standalone Node.js adaptation of TheOne's one-chat/per-topic design. It does not require DSH and does not claim to run the original DSH routing implementation. The original plugin remains unchanged on this branch. New Qloo-specific work started October 12, during the official September 30–October 30 build period. The existing MIT project and Codex assistance must be disclosed in the entry.
+This is a standalone Node.js adaptation of TheOne's one-chat/per-topic design. It does not require DSH and does not claim to run the original DSH routing implementation. The repository base was upgraded on October 25 to TheOne **0.4.1**, release commit `5e6f4e9b190c7773d080885bcdcbe02e033e2ffe`. This merge does not add DSH plugin behavior to the standalone taste app. The deployed Worker code remains the October 21 checkpoint `675f2b8`; this source/documentation update does not redeploy it or enable providers. The October 13 local evidence and October 15 video predate the base upgrade. New Qloo-specific work started October 12, during the official September 30–October 30 build period. The existing MIT project and Codex assistance must be disclosed in the entry.
 
 ## What the implementation does
 
@@ -41,7 +43,7 @@ This makes at most three real model requests using synthetic topic titles and in
 
 During debugging, arbitrary JSON mode produced missing plan fields and some reasoning-enabled requests reached the token limit. A later structured response still confused a performer with a book. The final request supplies the schema both to constrained decoding and in the system prompt, defines category meanings, prioritizes favorite resolution, and rejects truncated or mixed-operation output. The three saved calls then passed. Keep broader live checks before claiming a reliable product; these examples do not establish accuracy or a successful Qloo integration.
 
-## Verify the real service after the key arrives
+## Reproduce the local integration with legitimately issued keys
 
 ```sh
 node --env-file=.env verify-live.mjs
@@ -49,11 +51,11 @@ node --env-file=.env verify-live.mjs
 
 This makes bounded real Qloo search/recommendation requests for two synthetic-use-case topics and real model routing calls. It requires exact title matches, nonempty recommendations, correct per-topic request signals and a new-vs-existing route. It fails if any dependency is missing; it never swaps in fixtures. Standard output contains only validation summaries, not Qloo response dumps or credentials. Save detailed private evidence outside Git if needed.
 
-The script is a cloud integration gate, not a routing accuracy benchmark. Before a contest video, also validate a real browser search/confirmation/recommendation journey, service errors and an alternate browser's isolation. Keep the demo accessible through November 16 judging, not just during recording.
+The script is a cloud integration gate, not a routing accuracy benchmark. Before a contest video, also validate a real browser search/confirmation/recommendation journey, service errors and an alternate browser's isolation. Recheck the current official judging period before entry and ensure the working demo remains accessible throughout it. The finite approved provider allowance does not establish unrestricted judging access.
 
 ## Hosting preparation
 
-The Dockerfile runs the same Node server on port 7860 with no external package install. Deployment is **not done**. Choose a free, legitimate hosting service and confirm its actual terms and secret-storage permission at deployment time. Use HTTPS and a trusted proxy that supplies `X-Forwarded-Proto`; expose no database files or provider keys. A host without a persistent disk can reset favorites on cold restarts; disclose that limitation rather than promise durable storage. Do not set an unaffordable/unbounded API budget.
+The Dockerfile runs the reference Node server on port 7860 with no external package install. This Node/Docker hosting option was **not deployed**. The actual Cloudflare deployment is described below; any alternative host requires its own applicable terms and secret-storage scope. Use HTTPS and a trusted proxy that supplies `X-Forwarded-Proto`; expose no database files or provider keys. A host without a persistent disk can reset favorites on cold restarts; disclose that limitation rather than promise durable storage. Do not set an unaffordable/unbounded API budget.
 
 ### Free Node hosting candidate
 
@@ -84,11 +86,11 @@ The mirror's `openapi-schema.json` at that revision is a generic OpenAPI schema 
 
 Original project: TheOne, existing before this contest. New work: standalone taste workflow, Qloo client, constrained model planner, preference confirmation, topic/browser isolation, SQLite and browser UI. Codex assisted code, tests and documentation under the author's direction. MIT license remains at repository root.
 
-Remaining: free public deployment and verified judge access; sponsor qualification and actual final-rule approval; one final entry and its receipt. The public recorded-state video is supporting material, not proof of a currently hosted application. Free hosting must still disclose sleep/reset behavior and have provider-level usage limits before public traffic. Registration alone is not submission, award or shortlist.
+Remaining: verified free provider allowance, enabled hosted recommendations and working judge access; sponsor qualification and actual final-rule approval; one final entry and its receipt. The public recorded-state video is supporting material, not proof of a currently hosted application. Storage disclosure must match the deployed host: the Worker uses SQLite Durable Objects, whereas the unused Render plan has ephemeral local storage. Confirm provider-level free allowance before public calls. Registration alone is not submission, award or shortlist.
 
 
-### Workers port (local validation only)
+### Workers deployment (provider calls disabled)
 
 `worker.mjs` and `wrangler.jsonc` prepare a SQLite Durable Object host. Provider caps default to zero and no secrets are included. The port is deployed at https://theone-topic-taste.yuriddaaii.workers.dev with both provider caps zero and no provider keys. Public static assets and isolated topic storage were verified; hosted recommendations are not yet enabled or verified. `npm install` followed by `npm run test:worker` runs a real local workerd instance with intercepted synthetic upstream responses; it verifies ownership, bounded requests, restart persistence, candidate confirmations, global request caps and redirect rejection. It does not call real Qloo or a real model, establish production performance, or prove a public deployment. Public static asset bytes were checked against the source files. `npm test` retains the Node tests.
 
-Keep the single `global-v1` object identity: changing it or deleting storage resets persisted counters. This is a capped demo, not a multi-region scale claim. Public traffic, secret storage and provider allowances must be configured explicitly before deployment.
+Keep the single `global-v1` object identity: changing it or deleting storage resets persisted counters. This is a capped demo, not a multi-region scale claim. The existing sole-Worker secret scope and maximum 200 Qloo / 100 model attempts are approved subject to verified free allowance. Neither secret upload nor public provider activation has been performed. Preserve the object identity and counters; do not increase or reset the approved budget.

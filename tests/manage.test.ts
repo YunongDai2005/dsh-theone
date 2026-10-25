@@ -10,11 +10,11 @@ import { ContextStore, WHOLE_SESSION } from '../src/store.ts'
 import { ROUTING_PROMPT, routingPayload } from '../src/llm-router.ts'
 import { spokenCorrection, topicTerms } from '../src/routing-policy.ts'
 import type { RouteView } from '../src/types.ts'
-import { harness, ask, FixtureModel, textResponse } from './harness.ts'
+import { harness, ask, FixtureModel, textResponse, peered } from './harness.ts'
 
 async function api(app: Awaited<ReturnType<typeof harness>>) {
   const connection = new HostConnectionService(app.ctx, [], undefined as never)
-  const handler = connection.createSharedFetchHandler('/api')
+  const handler = peered(connection)
   await new Promise<void>(resolve => setImmediate(resolve))
   return {
     get: async (path: string) => (await handler.fetch(new Request(`http://dsh.internal/api/theone/${path}`))).json(),
@@ -70,7 +70,7 @@ test('the directory lists routes, moves a misrouted message, and the classifier 
   const payloads: ReturnType<typeof routingPayload>[] = []
   const model = new FixtureModel()
   model.behavior = async function* (options) {
-    if (options.system === ROUTING_PROMPT) {
+    if (options.system?.startsWith(ROUTING_PROMPT)) {
       payloads.push(JSON.parse((options.messages[0] as unknown as { content: { text: string }[] }).content[0].text))
       yield* textResponse(JSON.stringify({ action: 'EXISTING', contextId: 'ctx_qwen_9070xt', title: null, question: null, reason: '提到 Qwen' }))
       return
@@ -144,6 +144,14 @@ test('topics can be created, edited, moved, given sessions, merged and deleted f
     assert.match(store.constraints(id)!.text, /预算只用于订酒店\n显卡型号保密/)
     assert.ok(store.sourceRanges(id).some(range => range.sessionId === qwenWorker))
     assert.equal(store.indexState(qwenWorker)?.status, 'excluded')
+    // The merge can be taken apart from the target topic's card, and made again.
+    const merges = (await client.get('catalog') as { merges: { sourceId: string; targetId: string; title: string }[] }).merges
+    assert.deepEqual(merges.map(merge => [merge.sourceId, merge.targetId]), [['ctx_qwen_9070xt', id]])
+    assert.equal((await client.post('topics', { action: 'unmerge', id: 'ctx_qwen_9070xt' })).status, 200)
+    assert.ok(store.contexts().some(context => context.id === 'ctx_qwen_9070xt'))
+    assert.equal(store.constraints('ctx_qwen_9070xt')?.text, '显卡型号保密')
+    assert.equal((await client.post('topics', { action: 'unmerge', id: 'ctx_qwen_9070xt' })).status, 400)
+    assert.equal((await client.post('topics', { action: 'merge', id: 'ctx_qwen_9070xt', into: id })).status, 200)
     assert.equal((await ask(app.gateway, '京都旅行的酒店')).output, `模拟回答：${id}`)
 
     assert.equal((await client.post('topics', { action: 'delete', id })).status, 200)

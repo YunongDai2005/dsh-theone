@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { referencesHistory } from '../src/routing-policy.ts'
+import { referencesHistory, settleUnclear, textFeatures, topicTerms } from '../src/routing-policy.ts'
 import { resolveContext } from '../src/router.ts'
 import { validateRoutingDecision, ROUTING_PROMPT, RouterFailure } from '../src/llm-router.ts'
 import { harness, textResponse, ask } from './harness.ts'
@@ -60,14 +60,14 @@ test('new-topic fallback avoids colliding titles and ignores recent assistant sp
   assert.doesNotMatch(sensitive.title!,/syntheticsecret|syntheticprivate/)
 })
 
-test('native gateway dispatches unsupported clarification as CREATE during partial indexing and search failure', {timeout:30000}, async () => {
+test('native gateway never asks back: unsupported clarification becomes CREATE, and an unfound old reference continues the current topic', {timeout:30000}, async () => {
   const root = await mkdtemp(join(tmpdir(),'theone-less-clarification-'))
   const app = await harness(root,undefined,{routerMode:'llm',historyCatalog:true})
   try {
     app.ctx.theone.store.seed(Array.from({length:70},(_,i)=>({...contexts[0],id:`unrelated-${i}`,title:`无关项目 ${i}`})))
     app.ctx.theone.catalog!.candidates = async () => app.ctx.theone.store.contexts().slice(0,16)
     app.model.behavior = async function* (options) {
-      yield* textResponse(options.system === ROUTING_PROMPT ? JSON.stringify(clarify) : '由聊天模型正常处理新问题')
+      yield* textResponse(options.system?.startsWith(ROUTING_PROMPT) ? JSON.stringify(clarify) : '由聊天模型正常处理新问题')
     }
     const first = await ask(app.gateway,'余俊豪是安徽人吗？')
     assert.equal(first.output,'由聊天模型正常处理新问题')
@@ -78,9 +78,32 @@ test('native gateway dispatches unsupported clarification as CREATE during parti
     const second = await ask(app.gateway,'Is Jordan Lee from California?')
     assert.equal(second.output,'由聊天模型正常处理新问题')
     assert.equal(app.ctx.theone.store.route(second.input.id)?.decision.action,'CREATE')
-    const count = app.model.requests.length
+    const current = app.ctx.theone.store.route(second.input.id)!.decision.contextId
     const unresolved = await ask(app.gateway,'用之前的链接下载')
-    assert.equal(app.ctx.theone.store.route(unresolved.input.id)?.decision.action,'CLARIFY')
-    assert.equal(app.model.requests.length,count)
+    assert.equal(unresolved.output,'由聊天模型正常处理新问题')
+    assert.equal(app.ctx.theone.store.route(unresolved.input.id)?.decision.action,'KEEP')
+    assert.equal(app.ctx.theone.store.route(unresolved.input.id)?.decision.contextId,current)
   } finally {await app.close();await rm(root,{recursive:true,force:true})}
+})
+
+test('an unclear decision settles without asking: the current topic among the candidates, else the first, else stay, else new', () => {
+  const topics = [{ id: 'a', title: 'A', summary: '', entities: [], keywords: [], lastState: '' }, { id: 'b', title: 'B', summary: '', entities: [], keywords: [], lastState: '' }]
+  const unclear = (relatedIds?: string[]) => ({ action: 'CLARIFY' as const, reason: 'x', question: '哪个？', ...(relatedIds ? { relatedIds } : {}) })
+  assert.deepEqual(settleUnclear(unclear(['a', 'b']), '那个', topics, 'b'), { action: 'KEEP', contextId: 'b', reason: 'unclear-settled', alternateIds: ['a'] })
+  assert.deepEqual(settleUnclear(unclear(['a', 'b']), '那个', topics), { action: 'MOUNT', contextId: 'a', reason: 'unclear-settled', alternateIds: ['b'] })
+  assert.deepEqual(settleUnclear(unclear(['b']), '那个', topics, 'a'), { action: 'SWAP', contextId: 'b', reason: 'unclear-settled' })
+  assert.deepEqual(settleUnclear(unclear(), '继续上次那个', topics, 'a'), { action: 'KEEP', contextId: 'a', reason: 'unclear-settled' })
+  assert.equal(settleUnclear(unclear(), '继续上次那个', topics).action, 'CREATE')
+  // A missing model and an unclear correction the user started still ask; other decisions pass through.
+  assert.equal(settleUnclear({ action: 'CLARIFY', reason: 'ROUTER_MODEL_MISSING', question: 'x' }, 'hi', topics).action, 'CLARIFY')
+  assert.equal(settleUnclear({ action: 'CLARIFY', reason: 'correction-unclear', question: 'x' }, '分错了', topics).action, 'CLARIFY')
+  assert.deepEqual(settleUnclear({ action: 'KEEP', contextId: 'a', reason: 'y' }, 'x', topics, 'a'), { action: 'KEEP', contextId: 'a', reason: 'y' })
+})
+
+test('terms come from every script, and "new topic:" works in English too', () => {
+  assert.deepEqual(topicTerms('继续 Qwen 配置的FP8测试'), ['继续', 'Qwen', '配置', 'FP8', '测试'])
+  assert.deepEqual(topicTerms('café recipe für München'), ['café', 'recipe', 'für', 'München'])
+  assert.deepEqual(topicTerms('서울 여행 계획'), ['서울', '여행', '계획'])
+  assert.ok(textFeatures('東京の旅行').has('旅行') && textFeatures('Привет бюджет').has('бюджет'))
+  assert.deepEqual(resolveContext('New topic: learn Japanese', []), { action: 'CREATE', title: 'learn Japanese', reason: 'explicit-new-topic' })
 })

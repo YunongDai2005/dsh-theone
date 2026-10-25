@@ -1,3 +1,4 @@
+import { normalize, win32 } from 'node:path';
 /** Keep credentials out of classifier payloads and automatically generated titles. */
 export function redactRoutingText(text) {
     return text.replace(/\bsk-[A-Za-z0-9_-]{12,}\b/g, '[REDACTED_KEY]')
@@ -19,6 +20,23 @@ export function referencesHistory(text) {
         || /\b(?:last time|previous (?:chat|conversation|session)|earlier (?:chat|conversation)|(?:link|file|plan|project|task) (?:from |we discussed )?(?:yesterday|before)|(?:you|we) (?:mentioned|discussed|said|sent)|(?:continue|resume) (?:the |our )?(?:previous|last|earlier)|remember when)\b/i.test(input)
         || /\b(?:previous|earlier|last|that) (?:link|file|plan|project|task|conversation|session)\b/i.test(input)
         || /^(?:continue|resume|go on|do that|that one|it)\s*[.!?]*$/i.test(input);
+}
+/**
+ * TheOne does not ask the user where a message belongs. An unclear decision settles on the topic the
+ * classifier leaned to (the current one when it is among the candidates), with the other candidates
+ * along as reference; with no candidate it stays in the current topic, or starts a new one. Only a
+ * missing model and an unclear "wrong topic" (a correction the user started) still ask.
+ */
+export function settleUnclear(decision, text, contexts, currentId) {
+    if (decision.action !== 'CLARIFY' || decision.reason === 'ROUTER_MODEL_MISSING' || decision.reason === 'correction-unclear')
+        return decision;
+    const known = (id) => !!id && contexts.some(context => context.id === id);
+    const candidates = [...new Set(decision.relatedIds ?? [])].filter(known);
+    const chosen = currentId && candidates.includes(currentId) ? currentId : candidates[0] ?? (known(currentId) ? currentId : undefined);
+    if (!chosen)
+        return newIndependentTopic(text, [...contexts], 'unclear-new');
+    const alternateIds = candidates.filter(id => id !== chosen).slice(0, 3);
+    return { action: chosen === currentId ? 'KEEP' : currentId ? 'SWAP' : 'MOUNT', contextId: chosen, reason: 'unclear-settled', ...(alternateIds.length ? { alternateIds } : {}) };
 }
 export function newIndependentTopic(text, contexts, reason) {
     const base = redactRoutingText(text).trim().replace(/\s+/g, ' ').slice(0, 80) || 'New topic';
@@ -42,20 +60,31 @@ export function spokenCorrection(text) {
     return match ? text.slice(match[0].length).trim() : undefined;
 }
 const FILLER = new Set(['这个', '那个', '一下', '帮我', '可以', '什么', '怎么', '我们', '你们', '现在', '然后', '还有', '这是', '那是', '是不是', 'the', 'and', 'for', 'with', 'this', 'that']);
+/** Scripts written without spaces between words (Chinese, Japanese): split into runs and pairs, not words. */
+const DENSE = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]+/gu;
+/** Words of the other scripts (Latin with accents, Cyrillic, Korean, …), and digits. */
+const WORD = /[\p{L}\p{N}][\p{L}\p{M}\p{N}_.+#-]+/gu; // applied after dense runs are blanked out
+/** Runs of dense-script text and the words of every other script. */
+function scriptTerms(text) {
+    return { dense: text.match(DENSE) ?? [], words: text.replace(DENSE, ' ').match(WORD) ?? [] };
+}
+/** Search terms in the order they appear: dense-script runs of 2–8 characters, and words starting with a letter. */
+export const SEARCH_TERM = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]{2,8}|(?![\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}])\p{L}(?:(?![\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}])[\p{L}\p{M}\p{N}_.+#-]){1,40}/gu;
 /** A few distinctive terms of a message, used to teach a topic what belongs to it. */
 export function topicTerms(text, limit = 6) {
     // Common particles split Chinese runs into the words around them.
     const words = redactRoutingText(text).replace(/[的了和与及把在是吗呢吧也就都还要给让被]/g, ' ');
-    const terms = words.match(/[A-Za-z][A-Za-z0-9_.+#-]{2,}|[\u4e00-\u9fff]{2,8}/g) ?? [];
+    // Short ASCII words are mostly noise ("to", "an"); two letters of another script often make a word.
+    const terms = (words.match(SEARCH_TERM) ?? []).filter(term => term.length >= 3 || /[^\x00-\x7f]/.test(term));
     return [...new Set(terms.filter(term => !FILLER.has(term.toLowerCase()) && !term.startsWith('REDACTED')))].slice(0, limit);
 }
 /** Word and character-pair features of a short message, for cheap similarity without a model call. */
 export function textFeatures(text) {
-    const lower = redactRoutingText(text).toLowerCase();
+    const { dense, words } = scriptTerms(redactRoutingText(text).toLowerCase());
     const features = new Set();
-    for (const word of lower.match(/[a-z0-9][a-z0-9_.+#-]+/g) ?? [])
+    for (const word of words)
         features.add(word);
-    for (const run of lower.match(/[\u4e00-\u9fff]+/g) ?? []) {
+    for (const run of dense) {
         if (run.length === 1)
             features.add(run);
         for (let index = 0; index + 1 < run.length; index++)
@@ -72,4 +101,28 @@ export function similarity(a, b) {
         if (b.has(feature))
             shared++;
     return shared / Math.sqrt(a.size * b.size);
+}
+export const MERGE_SHARED_NAMES = 2;
+export const MERGE_TITLE_SIMILARITY = 0.6;
+export const MERGE_NAME_MIN_LENGTH = 2;
+export const MERGE_ENGLISH_NAME_MIN_LETTERS = 3;
+/** Only whole names count; a shared generic word inside a longer name is not another entity. */
+export function mergeSimilarity(a, b) {
+    const folder = (cwd) => {
+        if (!cwd)
+            return '';
+        const windows = /^[a-z]:[\\/]|^[\\/]{2}/i.test(cwd);
+        const normalized = windows ? win32.normalize(cwd) : normalize(cwd);
+        const path = normalized.replace(/[\\/]+$/, '') || normalized;
+        return windows || process.platform === 'win32' ? path.toLowerCase() : path;
+    };
+    if (folder(a.cwd) !== folder(b.cwd))
+        return undefined;
+    const names = (topic) => new Set([topic.title, ...topic.names ?? [], ...topic.entities ?? []]
+        .map(name => name.toLowerCase().replace(/^[\p{P}\p{S}\s]+|[\p{P}\p{S}\s]+$/gu, ''))
+        .filter(name => [...name].length >= MERGE_NAME_MIN_LENGTH && (!/^[a-z\s-]+$/.test(name) || (name.match(/[a-z]/g)?.length ?? 0) >= MERGE_ENGLISH_NAME_MIN_LETTERS)));
+    const left = names(a), right = names(b);
+    const sharedNames = [...left].filter(name => right.has(name)).length;
+    const titleSimilarity = similarity(textFeatures(a.title), textFeatures(b.title));
+    return sharedNames >= MERGE_SHARED_NAMES || titleSimilarity >= MERGE_TITLE_SIMILARITY ? { sharedNames, titleSimilarity } : undefined;
 }

@@ -5,4 +5,4 @@ export const RESTART_SETTINGS_KEYS = ['historyCatalog', 'catalogIntervalMs', 'fa
 /** Settings of the removed direct router; forms saved by older versions may still carry them. */
 export const RETIRED_SETTINGS_KEYS = ['routerTransport', 'routerBaseUrl', 'routerModel', 'routerApiKeyEnv'];
 /** Added after the first release; settings saved before them take their defaults. */
-export const SETTINGS_DEFAULTS = { linkScope: 'auto', routeNotice: 'switch', notices: true, factLinks: false, factExtraction: false };
+export const SETTINGS_DEFAULTS = { linkScope: 'auto', routeNotice: 'hidden', notices: true, factLinks: false, factExtraction: false };

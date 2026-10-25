@@ -4,7 +4,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { HostConnectionService } from '@deepseek-ai/dsh-client-connection'
-import { FixtureModel, ask, harness } from './harness.ts'
+import { FixtureModel, ask, harness, peered } from './harness.ts'
 import type { SettingsSnapshot } from '../src/settings-types.ts'
 
 class CapacityModel extends FixtureModel {
@@ -27,7 +27,7 @@ test('settings expose all public runtime options without credentials, writes or 
     routerTransport: 'legacy', routerBaseUrl: `https://username:${secret}@example.com/v1`, routerApiKeyEnv: 'THEONE_SETTINGS_SECRET_TEST' } })
   try {
     const connection = new HostConnectionService(app.ctx, [], undefined as never)
-    const handler = connection.createSharedFetchHandler('/api')
+    const handler = peered(connection)
     await new Promise<void>(resolve => setImmediate(resolve))
     const before = app.gateway.session.snapshotEvents()
     const request = () => handler.fetch(new Request('http://dsh.internal/api/theone/settings'))
@@ -81,7 +81,7 @@ test('settings save atomically, reject stale or invalid forms, and apply when sa
   let app = await harness(root, model)
   const connect = async () => {
     const connection = new HostConnectionService(app.ctx, [], undefined as never)
-    const handler = connection.createSharedFetchHandler('/api')
+    const handler = peered(connection)
     await new Promise<void>(resolve => setImmediate(resolve))
     return (values: unknown, revision: number) => handler.fetch(new Request('http://dsh.internal/api/theone/settings', {
       method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ values, revision }),
@@ -170,7 +170,7 @@ test('pinning the background model tells DSH to re-read main chat\'s model detai
     const on = app.ctx.on.bind(app.ctx) as unknown as (name: string, listener: () => void) => void
     on('llm/adapters-updated', () => { updates++ })
     const connection = new HostConnectionService(app.ctx, [], undefined as never)
-    const handler = connection.createSharedFetchHandler('/api')
+    const handler = peered(connection)
     await new Promise<void>(resolve => setImmediate(resolve))
     const put = async (values: unknown, revision: number) => handler.fetch(new Request('http://dsh.internal/api/theone/settings', {
       method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ values, revision }) }))

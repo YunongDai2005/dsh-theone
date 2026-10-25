@@ -1,8 +1,11 @@
 import type LlmRuntime from '@deepseek-ai/dsh-llm'
+import { randomUUID } from 'node:crypto'
+import { SessionId } from '@deepseek-ai/dsh-session'
 import type { ModelSelection } from '@deepseek-ai/dsh-agent'
 import type { ContextDescriptor, Decision } from './types.ts'
 import { newIndependentTopic, referencesHistory, redactRoutingText } from './routing-policy.ts'
 import { FACT_LIMITS, type FactCandidate } from './facts.ts'
+import { EVIDENCE_LIMITS, RECHECK_PROMPT, type Recheck } from './routing-evidence.ts'
 export { redactRoutingText } from './routing-policy.ts'
 
 export interface RecentMessage { role: 'user' | 'assistant'; text: string }
@@ -20,6 +23,8 @@ export interface RoutingInput {
   running?: { topicId: string; request: string; progress: string }
   /** The user's project folders (DSH workspaces) a new topic may work in; only names are sent. */
   projects?: { id: string; name: string }[]
+  /** Asked again, with thinking on: what the quick decision was and the clue it went against, if any. */
+  recheck?: Recheck
 }
 export interface RouterUsage { prompt_tokens: number; completion_tokens: number; total_tokens: number; prompt_cache_hit_tokens?: number; prompt_cache_miss_tokens?: number }
 export interface RoutingResult { decision: Decision; model: string; elapsedMs: number; usage?: RouterUsage }
@@ -42,11 +47,12 @@ corrections（可能没有）是用户亲自纠正过的路由：那条 text 属
 CREATE 时还要判断 historyIndependent：本轮输入给足目标和必要信息，无需尚未找到的旧聊天即可执行时为 true，例如提供完整链接要求下载音频、给出材料要求写作、明确提出新的学习计划。它不表示整个历史库已检索完，也不要求用户说“新话题”。“继续昨天那个”“用之前那个链接”等依赖缺失历史的信息为 false，应优先找到旧话题或澄清。近期助手说“还在整理”是系统状态，不是用户的任务目标，不要因此拦住后续信息完整的请求。
 区分“路由缺少历史信息”和“回答问题缺少事实信息”：陌生人名、事实不知道、人物可能重名、目标还需补充细节，都由 Worker 处理，不能因此 CLARIFY，也不能因此把 historyIndependent 设为 false。“余俊豪是安徽人吗？”在目录无可信匹配时应 CREATE，historyIndependent=true；不要编造“之前提到过”。明确命名的人物/地点/产品通常已经足够路由到新话题。
 一句话要同时用到多个已有话题（结合、对比、把 A 的结果用到 B）时，不要 CLARIFY：选实际要做事的话题（EXISTING，或新事项 CREATE），把其余用到的目录 ID 放进 relatedIds（最多 3 个），由程序把它们作为参考资料一起带上。
-目录中的 activity（可能没有）是该话题最近一次活跃的时间。标为「已搁置」的话题用户很久没提，只有明确相关证据时才选它，但有证据时照常选，不要因此改成 CREATE。
+目录中的 activity（可能没有）是该话题最近一次活跃的时间，只用来在内容上同样可能的话题之间排先后：「刚才那个」「继续」这类只靠时间的指代，优先最近活跃的话题；text 里有事情本身、名字、数字等内容线索（如「去年那个押金」）时以内容为准。「已搁置」「已归档」只表示用户很久没提或把它收起来了，不是排除理由，不要因为久远就改选别的话题或 CREATE。
+目录中的 project（可能没有）是该话题工作所在的项目文件夹名。消息明确提到某个项目或其中的文件时，优先选同一项目的话题；不同项目里名字相近的话题不是同一件事。status 为 done 表示用户说过这件事已经做完：新消息明显是它的后续时照常选它（话题会重新打开），只是泛泛相似时不要选它。status 为 waiting 表示该话题正等用户回应（授权、提问，或中断后等用户说继续）。
 CLARIFY 仅限：用户明确引用缺失旧聊天（如“继续上次那个”“用之前的链接”）；或者用户只指一个话题，但有两个以上确实相关的旧话题都可能是它，选错会改变后续处理且近期消息无法判断。第二种必须在 candidateIds 列出至少两个相关目录 ID。弱相关候选不构成澄清理由。多件独立任务可在一个新会话交给 Worker 处理，不因任务多而追问。
 只判断语义选择：EXISTING 选择一个已有话题；CREATE 创建新话题；CLARIFY 请求澄清。已有话题的KEEP、MOUNT、SWAP由程序根据挂载状态计算，你不要输出这三个机械动作。currentId为null表示尚未挂载话题，近期对话不代表已经挂载。
 输出 JSON：{"action":"EXISTING|CREATE|CLARIFY","contextId":"已有目录ID或null","title":"CREATE时的新话题标题，否则null","question":"CLARIFY时的简短澄清问题，否则null","reason":"不超过120字的判断依据","historyIndependent":"CREATE时为boolean，其他为null","candidateIds":"CLARIFY时真正难以选择的多个目录ID数组，否则空数组","relatedIds":"EXISTING或CREATE时本轮同时用到的其他目录ID数组，否则空数组"}。
-不得编造目录ID。CREATE和CLARIFY的contextId必须为null。`
+不得编造目录ID。CREATE和CLARIFY的contextId必须为null。title、question、reason 用本轮 text 的语言书写。`
 
 /** Added to the routing prompt only when facts are offered, so routing is unchanged otherwise. */
 export const FACTS_PROMPT = `
@@ -64,21 +70,55 @@ projects（可能没有）是用户电脑上的项目文件夹（只有名字）
 export const routingPrompt = (payload: object) => {
   const facts = 'symbols' in payload && Array.isArray(payload.symbols) && payload.symbols.length ? FACTS_PROMPT : ''
   const projects = 'projects' in payload && Array.isArray(payload.projects) && payload.projects.length ? PROJECTS_PROMPT : ''
-  return ROUTING_PROMPT + facts + projects + ('running' in payload && payload.running ? RUNNING_PROMPT : '')
+  const recheck = 'recheck' in payload && payload.recheck ? RECHECK_PROMPT : ''
+  return ROUTING_PROMPT + facts + projects + ('running' in payload && payload.running ? RUNNING_PROMPT : '') + recheck
 }
 
+/** How much of each field a routing request carries; the later steps apply only when a request would not fit. */
+const PAYLOAD_STEPS = [
+  { summary: 600, lastState: 400, terms: 24, recent: 12, reply: 700 },
+  { summary: 600, lastState: 400, terms: 24, recent: 12, reply: 300 },
+  { summary: 600, lastState: 400, terms: 24, recent: 6, reply: 300 },
+  { summary: 300, lastState: 200, terms: 12, recent: 6, reply: 300 },
+] as const
+const PAYLOAD_MAX = 24000
+
+/**
+ * The classifier's input. A request that would be too large is cut down step by step (shorter
+ * replies, fewer recent messages, shorter topic descriptions, then the last-ranked candidates)
+ * rather than failing, which would quietly hand the message to the rules.
+ */
 export function routingPayload(input: RoutingInput): Omit<RoutingInput, 'currentId'> & {currentId:string|null} {
   const text = redactRoutingText(input.text).slice(0, 2000)
-  const contexts = input.contexts.map(context => ({
+  if (!text.trim()) throw new RouterFailure('ROUTER_INPUT_INVALID')
+  for (const step of PAYLOAD_STEPS) {
+    const payload = buildPayload(input, text, input.contexts, step)
+    if (JSON.stringify(payload).length <= PAYLOAD_MAX) return payload
+  }
+  // Still too large: keep the current topic and the best-ranked candidates that fit.
+  const step = PAYLOAD_STEPS.at(-1)!
+  const current = input.contexts.filter(context => context.id === input.currentId)
+  const others = input.contexts.filter(context => context.id !== input.currentId)
+  for (let keep = others.length - 1; keep >= 0; keep--) {
+    const payload = buildPayload(input, text, [...current, ...others.slice(0, keep)], step)
+    if (JSON.stringify(payload).length <= PAYLOAD_MAX) return payload
+  }
+  throw new RouterFailure('ROUTER_INPUT_INVALID')
+}
+
+function buildPayload(input: RoutingInput, text: string, offeredContexts: readonly ContextDescriptor[], step: typeof PAYLOAD_STEPS[number]) {
+  const contexts = offeredContexts.map(context => ({
     id: context.id, title: redactRoutingText(context.title).slice(0, 120),
-    summary: redactRoutingText(context.summary).slice(0, 600),
-    entities: context.entities.slice(0, 24).map(redactRoutingText),
-    keywords: context.keywords.slice(0, 24).map(redactRoutingText),
-    lastState: redactRoutingText(context.lastState).slice(0, 400),
+    summary: redactRoutingText(context.summary).slice(0, step.summary),
+    entities: context.entities.slice(0, step.terms).map(redactRoutingText),
+    keywords: context.keywords.slice(0, step.terms).map(redactRoutingText),
+    lastState: redactRoutingText(context.lastState).slice(0, step.lastState),
     ...(context.activity ? { activity: context.activity.slice(0, 40) } : {}),
+    ...(context.project ? { project: redactRoutingText(context.project).slice(0, 80) } : {}),
+    ...(context.status ? { status: context.status } : {}),
   }))
-  const recent = (input.recent ?? []).slice(-12).map(message => ({role:message.role,text:redactRoutingText(message.text).slice(0, 700)}))
-  const offered = new Set(input.contexts.map(context => context.id))
+  const recent = (input.recent ?? []).slice(-step.recent).map(message => ({role:message.role,text:redactRoutingText(message.text).slice(0, message.role === 'user' ? 700 : step.reply)}))
+  const offered = new Set(offeredContexts.map(context => context.id))
   const corrections = (input.corrections ?? []).filter(item => offered.has(item.rightId)).slice(0, 5)
     .map(item => ({ text: redactRoutingText(item.text).slice(0, 200), rightId: item.rightId, ...(item.wrongId && offered.has(item.wrongId) ? { wrongId: item.wrongId } : {}) }))
   // Candidates arrive within their size budget; names are cleaned again here, as everything sent is.
@@ -87,9 +127,10 @@ export function routingPayload(input: RoutingInput): Omit<RoutingInput, 'current
   const running = input.running && offered.has(input.running.topicId) ? { running: { topicId: input.running.topicId,
     request: redactRoutingText(input.running.request).slice(0, 600), progress: redactRoutingText(input.running.progress).slice(-600) } } : {}
   const projects = (input.projects ?? []).slice(0, 40).map(project => ({ id: project.id, name: redactRoutingText(project.name).slice(0, 80) }))
-  const payload = {text, contexts, currentId: mounted(input, contexts), recent, historyIncomplete: input.historyIncomplete ?? false, ...(corrections.length ? { corrections } : {}), ...(symbols.length ? { symbols } : {}), ...running, ...(projects.length ? { projects } : {})}
-  if (!text.trim() || JSON.stringify(payload).length > 24000) throw new RouterFailure('ROUTER_INPUT_INVALID')
-  return payload
+  const clue = input.recheck?.contextId && offered.has(input.recheck.contextId) ? { contextId: input.recheck.contextId,
+    terms: (input.recheck.terms ?? []).slice(0, EVIDENCE_LIMITS.terms).map(term => redactRoutingText(term).slice(0, 40)) } : {}
+  const recheck = input.recheck ? { recheck: { previous: input.recheck.previous.slice(0, 80), ...clue } } : {}
+  return {text, contexts, currentId: mounted(input, contexts), recent, historyIncomplete: input.historyIncomplete ?? false, ...(corrections.length ? { corrections } : {}), ...(symbols.length ? { symbols } : {}), ...running, ...(projects.length ? { projects } : {}), ...recheck}
 }
 
 /**
@@ -146,13 +187,13 @@ export function validateRoutingDecision(value: unknown, input: RoutingInput): De
     // No history evidence: don't let answer uncertainty block an ordinary new question.
     if (!referencesHistory(input.text) && candidates.size < 2)
       return newIndependentTopic(input.text, input.contexts, 'no-history-evidence')
-    return {action:'CLARIFY',question:row.question,reason}
+    return {action:'CLARIFY',question:row.question,reason,...(candidates.size ? { relatedIds: [...candidates] } : {})}
   }
   return fail()
 }
 
 export interface RoutingRouter {
-  decide(input: RoutingInput, signal?: AbortSignal): Promise<RoutingResult>
+  decide(input: RoutingInput, signal?: AbortSignal, sessionId?: SessionId, options?: { think?: boolean }): Promise<RoutingResult>
 }
 
 /** Uses the host's configured adapter; credentials never enter this plugin. */
@@ -169,12 +210,14 @@ export function answerJson(output: string): string {
 
 export class DshRouter implements RoutingRouter {
   private failures = 0
+  private lastFailureAt = -Infinity
   private blockedUntil = 0
   constructor(private readonly llm: Pick<LlmRuntime, 'prepareCall' | 'resolveModelInfo'>,
     private readonly selection: () => ModelSelection,
     private readonly timeoutMs = 30000, private readonly now: () => number = Date.now) {}
 
-  async decide(input: RoutingInput, signal?: AbortSignal): Promise<RoutingResult> {
+  /** With `think`, the model's own default reasoning is kept, for a decision asked again. */
+  async decide(input: RoutingInput, signal?: AbortSignal, sessionId?: SessionId, options: { think?: boolean } = {}): Promise<RoutingResult> {
     signal?.throwIfAborted()
     const payload = routingPayload(input)
     const retryAfterMs = this.blockedUntil - this.now()
@@ -190,11 +233,11 @@ export class DshRouter implements RoutingRouter {
       const offEffort = info.reasoning?.efforts.find(effort => effort.id === 'off')?.id
       // Classification doesn't need the host chat's default deep thinking, which
       // can consume the entire small output budget before emitting routing JSON.
-      const call = await this.llm.prepareCall({ ...selection, maxTokens: 2048,
-        ...(offEffort ? { reasoningEffort: offEffort } : {}) }, bounded)
+      const call = await this.llm.prepareCall({ ...selection, maxTokens: options.think ? 8192 : 2048,
+        ...(offEffort && !options.think ? { reasoningEffort: offEffort } : {}) }, bounded)
       bounded.throwIfAborted()
       let output = '', stopped = false
-      for await (const chunk of call.stream({ ...call.config, system: routingPrompt(payload),
+      for await (const chunk of call.stream({ ...call.config, system: routingPrompt(payload), sessionId: sessionId ?? SessionId(randomUUID()),
         messages: [{ role: 'user', content: [{ type: 'text', text: JSON.stringify(payload) }] }], signal: bounded })) {
         bounded.throwIfAborted()
         if (stopped) throw new RouterFailure('ROUTER_RESPONSE_INCOMPLETE')
@@ -222,8 +265,14 @@ export class DshRouter implements RoutingRouter {
     } catch (error) {
       signal?.throwIfAborted()
       const failure = error instanceof RouterFailure ? error : new RouterFailure('ROUTER_REQUEST_FAILED')
-      this.failures++
-      if ([401, 403, 429].includes(failure.meta?.httpStatus ?? 0) || this.failures >= 3) this.blockedUntil = this.now() + 60000
+      // Calls made together (catalog review pages) that fail together count as one failure.
+      const now = this.now()
+      if (now - this.lastFailureAt > 2000) this.failures++
+      this.lastFailureAt = now
+      // A key the provider refuses waits a minute; a rate limit or repeated failures only briefly.
+      const status = failure.meta?.httpStatus ?? 0
+      const wait = [401, 403].includes(status) ? 60000 : status === 429 ? 15000 : this.failures >= 3 ? 30000 : 0
+      if (wait) this.blockedUntil = Math.max(this.blockedUntil, now + wait)
       throw new RouterFailure(failure.code, { elapsedMs: Math.round(performance.now() - start), usage, ...failure.meta,
         ...(this.blockedUntil > this.now() ? { retryAfterMs: this.blockedUntil - this.now() } : {}) })
     }

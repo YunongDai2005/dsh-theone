@@ -10,7 +10,7 @@ import * as StorageDomain from '@deepseek-ai/dsh-storage-domain'
 import WorkspaceRegistry from '@deepseek-ai/dsh-workspace'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { HostConnectionService } from '@deepseek-ai/dsh-client-connection'
-import { harness } from './harness.ts'
+import { harness, peered } from './harness.ts'
 
 async function setup(root: string) {
   const app = await harness(root)
@@ -19,7 +19,7 @@ async function setup(root: string) {
   await app.ctx.plugin(StorageDomain, { backend: 'json' })
   await app.ctx.plugin(WorkspaceRegistry)
   const connection = new HostConnectionService(app.ctx, [], undefined as never)
-  const handler = connection.createSharedFetchHandler('/api')
+  const handler = peered(connection)
   await new Promise<void>(resolve => setImmediate(resolve))
   const prepare = (sessionId: string) => handler.fetch(new Request('http://dsh.internal/api/theone/gateway/prepare', {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sessionId }),

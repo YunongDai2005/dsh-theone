@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+import { SessionId } from '@deepseek-ai/dsh-session';
 import { RouterFailure, answerJson } from "./llm-router.js";
 /** Small, tool-free analysis through the host runtime, with no session history replay. */
 export async function modelJson(llm, selection, system, payload, signal, options = {}) {
@@ -14,7 +16,7 @@ export async function modelJson(llm, selection, system, payload, signal, options
             ...(options.reasoningEffort ? { reasoningEffort: options.reasoningEffort } : {}) }, bounded);
         bounded.throwIfAborted();
         let output = '', finished = false;
-        for await (const chunk of call.stream({ ...call.config, system,
+        for await (const chunk of call.stream({ ...call.config, system, sessionId: options.sessionId ?? SessionId(randomUUID()),
             messages: [{ role: 'user', content: [{ type: 'text', text }] }], signal: bounded })) {
             bounded.throwIfAborted();
             if (finished)

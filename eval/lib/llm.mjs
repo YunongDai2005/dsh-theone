@@ -3,6 +3,7 @@
 //   DeepSeek's Anthropic-compatible API, the one DSH itself uses:  DEEPSEEK_API_KEY (+ DEEPSEEK_BASE_URL)
 //   any OpenAI-compatible API (/chat/completions):                OPENAI_API_KEY + OPENAI_BASE_URL + --model
 // EVAL_EXTRA_BODY='{"…": …}' adds provider-specific fields to every request.
+// EVAL_RPM=28 spaces requests evenly to stay under a provider's calls-per-minute limit.
 import { createHash } from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
@@ -57,12 +58,14 @@ export async function createClient({ model = process.env.EVAL_MODEL ?? 'deepseek
    * One completion. Returns the text; JSON is parsed when json is true (a fenced block is accepted).
    * @param request - { system, user, maxTokens, temperature, json, tag }
    */
-  async function complete({ system, user, maxTokens = 2048, temperature, json = false, tag = '', details = false }) {
+  /** @param request.override - fields merged over EVAL_EXTRA_BODY for this call; null removes one (e.g. to keep thinking on). */
+  async function complete({ system, user, maxTokens = 2048, temperature, json = false, tag = '', details = false, override }) {
     // No temperature means the provider's default, as TheOne's own calls do.
     const sampling = { model, max_tokens: maxTokens, ...(temperature === undefined ? {} : { temperature }) }
+    const fields = Object.fromEntries(Object.entries({ ...extra, ...override }).filter(([, value]) => value !== null))
     const body = openai
-      ? { ...sampling, messages: [{ role: 'system', content: system }, { role: 'user', content: user }], ...extra }
-      : { ...sampling, system, messages: [{ role: 'user', content: user }], thinking: { type: 'disabled' }, ...extra }
+      ? { ...sampling, messages: [{ role: 'system', content: system }, { role: 'user', content: user }], ...fields }
+      : { ...sampling, system, messages: [{ role: 'user', content: user }], ...(override?.thinking === null ? {} : { thinking: { type: 'disabled' } }), ...fields }
     // Reasoning some models write before the answer (<think>…</think>, or only its end) is set aside, as TheOne does.
     const answer = text => text.includes('</think>') ? text.slice(text.lastIndexOf('</think>') + '</think>'.length) : text
     const parse = text => JSON.parse(answer(text).trim().replace(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/, '$1').trim())
@@ -106,9 +109,20 @@ export async function createClient({ model = process.env.EVAL_MODEL ?? 'deepseek
     }
   }
 
+  // Each request (retries included) takes the next free start time, so a per-minute limit is never hit.
+  const spacing = Number(process.env.EVAL_RPM) > 0 ? 60000 / Number(process.env.EVAL_RPM) : 0
+  let nextStart = 0
+  const paced = async () => {
+    if (!spacing) return
+    const at = Math.max(Date.now(), nextStart)
+    nextStart = at + spacing
+    if (at > Date.now()) await new Promise(resolve => setTimeout(resolve, at - Date.now()))
+  }
+
   async function send(body) {
     for (let attempt = 0; ; attempt++) {
       let status = 0
+      await paced()
       try {
         const response = await fetch(openai ? `${base}/chat/completions` : `${base}/v1/messages`, { method: 'POST', signal: AbortSignal.timeout(120000),
           headers: openai ? { 'content-type': 'application/json', authorization: `Bearer ${key}` }
@@ -117,11 +131,12 @@ export async function createClient({ model = process.env.EVAL_MODEL ?? 'deepseek
         status = response.status
         if (response.ok) return await response.json()
         const detail = (await response.text()).slice(0, 300)
-        if (![408, 429, 500, 502, 503, 504].includes(status) || attempt >= 4) throw Object.assign(new Error(`${base} answered ${status}: ${detail}`), { fatal: true })
+        // A rate limit is waited out longer than other failures: aggregators often allow only so many calls a minute.
+        if (![408, 429, 500, 502, 503, 504].includes(status) || attempt >= (status === 429 ? 10 : 4)) throw Object.assign(new Error(`${base} answered ${status}: ${detail}`), { fatal: true })
       } catch (error) {
-        if (error.fatal || attempt >= 4) throw error
+        if (error.fatal || (attempt >= 4 && status !== 429)) throw error
       }
-      await new Promise(resolve => setTimeout(resolve, 2000 * 2 ** attempt))
+      await new Promise(resolve => setTimeout(resolve, Math.min(30000, 2000 * 2 ** attempt) * (0.75 + Math.random() / 2)))
     }
   }
 

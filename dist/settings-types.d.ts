@@ -43,7 +43,7 @@ export declare const RETIRED_SETTINGS_KEYS: readonly ["routerTransport", "router
 /** Added after the first release; settings saved before them take their defaults. */
 export declare const SETTINGS_DEFAULTS: {
     readonly linkScope: "auto";
-    readonly routeNotice: "switch";
+    readonly routeNotice: "hidden";
     readonly notices: true;
     readonly factLinks: false;
     readonly factExtraction: false;

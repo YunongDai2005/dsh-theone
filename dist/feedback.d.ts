@@ -22,7 +22,7 @@ export declare function routeDigest(routes: readonly RouteView[], now?: number):
     minutesAgo: number;
     action: import("./types.ts").Action;
     reason: string;
-    status: "planned" | "running" | "completed" | "failed";
+    status: "running" | "planned" | "completed" | "failed";
 }[];
 /**
  * One exchange in a session: the user message `messageId` (or, failing that, the latest user message
@@ -85,7 +85,7 @@ export declare function replySection(route: RouteView, main: ReturnType<typeof e
         minutesAgo: number;
         action: import("./types.ts").Action;
         reason: string;
-        status: "planned" | "running" | "completed" | "failed";
+        status: "running" | "planned" | "completed" | "failed";
     };
     found: {
         mainChat: boolean;

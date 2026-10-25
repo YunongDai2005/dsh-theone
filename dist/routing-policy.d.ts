@@ -5,6 +5,13 @@ export declare function redactRoutingText(text: string): string;
  * Missing factual knowledge (including an unfamiliar name) is the Worker's job.
  */
 export declare function referencesHistory(text: string): boolean;
+/**
+ * TheOne does not ask the user where a message belongs. An unclear decision settles on the topic the
+ * classifier leaned to (the current one when it is among the candidates), with the other candidates
+ * along as reference; with no candidate it stays in the current topic, or starts a new one. Only a
+ * missing model and an unclear "wrong topic" (a correction the user started) still ask.
+ */
+export declare function settleUnclear(decision: Decision, text: string, contexts: readonly ContextDescriptor[], currentId?: string): Decision;
 export declare function newIndependentTopic(text: string, contexts: ContextDescriptor[], reason: string): Decision;
 /** A bare acknowledgement or "go on" can only continue the mounted topic, so it needs no classifier call. */
 export declare function continuesCurrent(text: string): boolean;
@@ -13,9 +20,26 @@ export declare function continuesCurrent(text: string): boolean;
  * follows the phrase (often the right topic, e.g. "分错了，是论文的"), or undefined.
  */
 export declare function spokenCorrection(text: string): string | undefined;
+/** Search terms in the order they appear: dense-script runs of 2–8 characters, and words starting with a letter. */
+export declare const SEARCH_TERM: RegExp;
 /** A few distinctive terms of a message, used to teach a topic what belongs to it. */
 export declare function topicTerms(text: string, limit?: number): string[];
 /** Word and character-pair features of a short message, for cheap similarity without a model call. */
 export declare function textFeatures(text: string): Set<string>;
 /** Overlap of two feature sets, 0 (nothing shared) to 1 (identical). */
 export declare function similarity(a: Set<string>, b: Set<string>): number;
+export declare const MERGE_SHARED_NAMES = 2;
+export declare const MERGE_TITLE_SIMILARITY = 0.6;
+export declare const MERGE_NAME_MIN_LENGTH = 2;
+export declare const MERGE_ENGLISH_NAME_MIN_LETTERS = 3;
+export interface MergeTopic {
+    title: string;
+    names?: readonly string[];
+    entities?: readonly string[];
+    cwd?: string;
+}
+/** Only whole names count; a shared generic word inside a longer name is not another entity. */
+export declare function mergeSimilarity(a: MergeTopic, b: MergeTopic): {
+    sharedNames: number;
+    titleSimilarity: number;
+} | undefined;

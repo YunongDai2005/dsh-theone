@@ -1,3 +1,4 @@
+import { posix, win32 } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type { ModelSelection } from '@deepseek-ai/dsh-agent'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
@@ -6,7 +7,7 @@ import { createHash } from 'node:crypto'
 import type {} from '@deepseek-ai/dsh-compaction/types'
 import { redactRoutingText, RouterFailure } from './llm-router.ts'
 import { modelJson } from './model-json.ts'
-import { textFeatures } from './routing-policy.ts'
+import { SEARCH_TERM, textFeatures } from './routing-policy.ts'
 import type { StoredContext } from './types.ts'
 import { ContextStore } from './store.ts'
 import type { CatalogSnapshot, CatalogStatus, ExtractedTopic, HiddenReason, HistoryPart } from './catalog-types.ts'
@@ -78,18 +79,35 @@ export function validateCatalog(value: unknown, parts: HistoryPart[], contextIds
   return topics
 }
 
+/** Compare directory boundaries, including Windows paths on non-Windows hosts. */
+export function withinCatalogFolder(cwd: string | undefined, folder: string): boolean {
+  if (!cwd) return false
+  const windows = /^[a-z]:[\\/]|^\\\\/i.test(folder) || /^[a-z]:[\\/]|^\\\\/i.test(cwd)
+  const normalize = (value: string) => windows ? win32.normalize(value).replace(/\\/g, '/').toLowerCase() : posix.normalize(value)
+  const root = normalize(folder).replace(/\/+$/, '')
+  const path = normalize(cwd).replace(/\/+$/, '')
+  return path === root || path.startsWith(root + '/')
+}
+
+export function catalogSessionExcluded(id: string, cwd: string | undefined, exclusions: ReturnType<ContextStore['catalogExclusions']>): boolean {
+  return exclusions.sessions.has(id) || exclusions.folders.some(folder => withinCatalogFolder(cwd, folder))
+}
+
 /** Incremental descriptor index. Original messages remain solely in DSH. */
 export class HistoryCatalog {
   private readonly abort = new AbortController()
   private run?: Promise<void>
   private timer?: ReturnType<typeof setTimeout>
   private dirty = false
+  private activeRequest?: { id: string; cwd?: string; abort: AbortController }
   private status: CatalogStatus = { running: false, scanned: 0, indexed: 0, skipped: 0, failed: 0, pending: 0 }
   /** Sessions the last finished scan could not index; a scan in progress doesn't make the catalog incomplete. */
   private settledPending?: number
   constructor(private readonly ctx: Context, private readonly store: ContextStore,
     private readonly selection: () => ModelSelection, private readonly intervalMs = 60000,
-    private readonly batchBudget = 64) {}
+    private readonly batchBudget = 64, private readonly askFirst = false) {}
+
+  private get allowed(): boolean { return !this.askFirst || this.store.catalogConsent() === 'granted' }
 
   start(): void { this.schedule(200) }
   private schedule(ms: number): void {
@@ -98,15 +116,21 @@ export class HistoryCatalog {
     this.timer = setTimeout(() => { void this.refresh().catch(() => {}) }, ms)
     this.timer.unref?.()
   }
-  requestRefresh(): void { this.dirty = true; if (!this.run) this.schedule(1000) }
+  requestRefresh(): void {
+    this.dirty = true
+    const active = this.activeRequest
+    if (active && (!this.allowed || catalogSessionExcluded(active.id, active.cwd, this.store.catalogExclusions()))) active.abort.abort()
+    if (!this.run) this.schedule(1000)
+  }
   async close(): Promise<void> { this.abort.abort(); clearTimeout(this.timer); await this.run?.catch(() => {}) }
   snapshot(): CatalogSnapshot {
     const hidden = this.store.hiddenReasons()
-    return { status: { ...this.status }, groups: this.store.groups(),
+    return { status: { ...this.status, consent: this.askFirst ? this.store.catalogConsent() ?? 'ask' : this.store.catalogConsent(),
+      waiting: this.status.waiting ?? 0, excluded: this.status.excluded ?? 0 }, groups: this.store.groups(),
       contexts: this.store.contexts().map(context => ({ ...context, sourceSessionIds: this.store.sources(context.id),
         ...(hidden.has(context.id) ? { hidden: hidden.get(context.id) as HiddenReason } : {}) })) }
   }
-  get incomplete(): boolean { return !this.status.lastCompletedAt || (this.settledPending ?? 1) > 0 || !!this.status.searchUnavailable }
+  get incomplete(): boolean { if (!this.allowed) return false; return !this.status.lastCompletedAt || (this.settledPending ?? 1) > 0 || !!this.status.searchUnavailable }
 
   refresh(): Promise<void> {
     if (this.abort.signal.aborted) return Promise.resolve()
@@ -118,7 +142,7 @@ export class HistoryCatalog {
   }
 
   private async scan(): Promise<void> {
-    this.status = { ...this.status, running: true, scanned: 0, indexed: 0, skipped: 0, failed: 0, pending: 0 }
+    this.status = { ...this.status, running: true, scanned: 0, indexed: 0, skipped: 0, failed: 0, pending: 0, waiting: 0, excluded: 0 }
     const signal = this.abort.signal
     let records
     try { records = await this.ctx.sessionQuery.listSessions(signal) }
@@ -126,14 +150,30 @@ export class HistoryCatalog {
     this.status.pending = records.length
     const archived = this.archivedSessionIds()
     let budget = this.batchBudget
+    // A topic's own session keeps its descriptor current. It holds what was said through TheOne, not
+    // the earlier chats the user is asked about, so consent and exclusions don't apply to it.
+    const own = new Set(this.store.ownedSessionIds())
     for (const record of records) {
       signal.throwIfAborted()
       const sessionId = record.header.id
-      if (record.header.origin === 'subagent' || this.store.isGateway(sessionId) || this.store.indexState(sessionId)?.status === 'excluded') {
+      if (this.store.isGateway(sessionId)) {
+        this.store.markIndex(sessionId, this.store.indexState(sessionId)?.throughSeq ?? -1, 'skipped')
+        this.status.skipped++; this.status.pending--; continue
+      }
+      if (record.header.origin === 'subagent' || this.store.indexState(sessionId)?.status === 'excluded') {
         this.status.skipped++; this.status.pending--; continue
       }
       // An archived conversation still sits on disk, but its topic must not be pulled back in.
       if (archived.has(sessionId)) { this.status.skipped++; this.status.pending--; continue }
+      const excluded = () => catalogSessionExcluded(sessionId, record.header.cwd, this.store.catalogExclusions())
+      // Recheck after asynchronous reads and model calls: choices can change during a scan.
+      const blocked = () => {
+        if (own.has(sessionId)) return false
+        if (excluded()) { this.status.excluded!++; this.status.pending--; return true }
+        if (!this.allowed) { this.status.waiting!++; this.status.pending--; return true }
+        return false
+      }
+      if (blocked()) continue
       const live = this.ctx.agents.get(sessionId)
       if (live && live.status !== 'idle') {
         // Its turn in progress is indexed once it settles; what was already indexed stays usable meanwhile.
@@ -144,6 +184,7 @@ export class HistoryCatalog {
       try {
         const log = await this.ctx.sessionQuery.readSession(sessionId)
         signal.throwIfAborted()
+        if (blocked()) continue
         this.status.scanned++
         const through = log.events.at(-1)?.seq ?? -1
         const previous = this.store.indexState(sessionId)
@@ -160,9 +201,12 @@ export class HistoryCatalog {
         const changed = parts.filter(part => this.store.indexedTurn(sessionId, part.seq)?.fingerprint !== part.fingerprint && !dismissed(part))
         const owned = this.store.contexts().find(context => context.workingSessionId === sessionId)
         const title = clean((await this.ctx.sessionQuery.readTitle(sessionId, signal))?.title ?? '', 120)
+        if (blocked()) continue
+        let interrupted = false
         for (let offset = 0; offset < changed.length; offset += 8) {
           if (budget <= 0) break
           signal.throwIfAborted()
+          if (blocked()) { interrupted = true; break }
           const batch = changed.slice(offset, offset + 8)
           const knownIds = new Set(batch.flatMap(p => this.store.indexedTurn(sessionId, p.seq)?.contextId ?? []))
           if (owned) knownIds.add(owned.id)
@@ -177,18 +221,24 @@ export class HistoryCatalog {
             .map(c => ({ id: c.id, title: c.title, summary: clean(c.summary, 240), lastState: clean(c.lastState, 120) }))
           const groups = this.store.groups().slice(-24).map(({ id, title, summary }) => ({ id, title, summary: clean(summary, 120) }))
           budget--
+          const requestAbort = new AbortController()
+          this.activeRequest = { id: sessionId, cwd: record.header.cwd, abort: requestAbort }
           const value = await modelJson(this.ctx.llm, this.selection(), CATALOG_PROMPT,
             { title, ownedContextId: owned?.id ?? null, compactionSummaries: summaries,
-              turns: batch.map(({ seq, text }) => ({ seq, text })), contexts, groups }, signal)
+              turns: batch.map(({ seq, text }) => ({ seq, text })), contexts, groups }, AbortSignal.any([signal, requestAbort.signal]), { sessionId: log.session.id })
+            .finally(() => { this.activeRequest = undefined })
+          if (blocked()) { interrupted = true; break }
           const topics = validateCatalog(value, batch, contexts.map(c => c.id), groups.map(g => g.id), owned?.id)
           signal.throwIfAborted()
           this.store.importTopics(sessionId, log.session.cwd, batch, topics)
         }
+        if (interrupted) continue
         if (parts.every(p => this.store.indexedTurn(sessionId, p.seq)?.fingerprint === p.fingerprint || dismissed(p))) {
           this.store.markIndex(sessionId, through, 'ready'); this.status.indexed++; this.status.pending--
         }
       } catch (error) {
         signal.throwIfAborted()
+        if (blocked()) continue
         this.status.failed++
         this.store.markIndex(sessionId, -1, 'failed', error instanceof RouterFailure ? error.code : 'CATALOG_SOURCE_UNAVAILABLE')
         if (error instanceof RouterFailure && [401, 403, 429].includes(error.meta?.httpStatus ?? 0)) budget = 0
@@ -220,15 +270,19 @@ export class HistoryCatalog {
    * on every scan, which keeps it reversible: restoring or unarchiving a conversation brings its
    * topic back, and no topic is removed from the directory behind the reader's back.
    */
-  private reconcile(records: readonly { header: { id: string } }[], archived: ReadonlySet<string>): void {
+  private reconcile(records: readonly { header: { id: string; cwd?: string } }[], archived: ReadonlySet<string>): void {
     const live = new Set(records.map(record => record.header.id))
+    const exclusions = this.store.catalogExclusions()
+    const directories = new Map(records.map(record => [record.header.id, record.header.cwd]))
+    const excluded = (id: string) => catalogSessionExcluded(id, directories.get(id), exclusions)
     const hidden: { id: string; reason: HiddenReason }[] = []
     for (const context of this.store.contexts()) {
       const conversations = [context.workingSessionId, ...this.store.sources(context.id)]
       // Only conversations the catalog has actually seen count: a Worker session exists on disk only
       // once TheOne has run it, so an untouched placeholder must not look like a lost conversation.
       const known = conversations.filter(sessionId => this.store.indexState(sessionId) !== undefined)
-      if (known.length && known.every(sessionId => archived.has(sessionId))) hidden.push({ id: context.id, reason: 'archived' })
+      if (known.length && known.every(excluded)) hidden.push({ id: context.id, reason: 'excluded' })
+      else if (known.length && known.every(sessionId => archived.has(sessionId))) hidden.push({ id: context.id, reason: 'archived' })
       // Nothing left to read: every conversation is off disk, and at least one of them was indexed.
       else if (known.length && !conversations.some(sessionId => live.has(sessionId)))
         hidden.push({ id: context.id, reason: 'orphaned' })
@@ -244,7 +298,7 @@ export class HistoryCatalog {
   async candidates(text: string, currentId?: string, signal?: AbortSignal,
     hints: { contexts?: StoredContext[]; prior?: ReadonlyMap<string, number> } = {}) {
     this.status.searchUnavailable = false
-    const hidden = this.store.hiddenReasons()
+    const hidden = this.store.unreachable()
     const all = (hints.contexts ?? this.store.contexts()).filter(context => !hidden.has(context.id))
     if (all.length <= 16) return all
     const normalized = text.toLowerCase()
@@ -264,7 +318,7 @@ export class HistoryCatalog {
         scores.set(id, (scores.get(id) ?? 0) + Math.min(shared, 30) * 3)
       }
     }
-    const terms = [...new Set(text.match(/[a-zA-Z][\w.-]{1,40}|[\u4e00-\u9fff]{2,8}/g) ?? [])].slice(0, 4)
+    const terms = [...new Set(text.match(SEARCH_TERM) ?? [])].slice(0, 4)
     for (const term of terms) {
       signal?.throwIfAborted()
       let page
