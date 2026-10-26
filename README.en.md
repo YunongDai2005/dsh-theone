@@ -87,7 +87,7 @@ No coding needed:
 
 - **"Too new" and it won't install:** DSH only installs versions published at least 24 hours ago. That's a safety rule, not an error. Wait a day, or enter the GitHub address `https://github.com/YunongDai2005/dsh-theone` instead, which installs right away.
 - **No TheOne in the sidebar after installing:** restart DSH.
-- **Something wrong?** Click **Report a problem** at the top right of **Topic workspaces**: versions and diagnostics (no chat content) are attached, and Send delivers it without GitHub. Or email [theone@yulid.org](mailto:theone@yulid.org); a screenshot helps.
+- **Something wrong?** Click **Feedback** at the bottom of **Topic workspaces**: versions and diagnostics (no chat content) are attached, and Send delivers it without GitHub. Or email [theone@yulid.org](mailto:theone@yulid.org); a screenshot helps.
 - **Will it cost a lot?** Each message adds one short classification call (no deep thinking); about one in six (a new topic, a question, or a doubtful pick) gets a second call with thinking. "ok" or "go on" skips even the first. On DeepSeek V4.1 Flash that is about half a US dollar per thousand messages: at 100 messages a day, routing adds about $2 a month. The work itself runs on the model you chose and costs what it always does. With many old chats, the first pass that organises them uses some of your quota; turn **History catalog** off in the settings if you don't need it.
 </details>
 
@@ -145,6 +145,8 @@ The conversations are model-written from a script and this version has no assist
 
 ## Recent changes
 
+Version 0.4.2 **cleans things up**: the topic workspace is redesigned, with a filter for **Waiting on you** and **Done**, a search box, and topics waiting on you first; TheOne's settings moved into DSH's own Settings dialog and look like DSH's; experimental features such as **Ongoing tasks** sit in an **Experimental** section at the bottom of the settings, off by default. Main chat's greeting and the getting-started card under it are new too.
+
 Version 0.4.1 **offers choices when a topic is unsure**: when a topic is about to act on a message that may belong elsewhere, when you say "wrong topic" without saying where, or when a new topic closely matches an existing one, main chat gives you a few options to click. It also fixes **Continue chatting** looking like it opened the wrong topic, and archived original chats opening as an empty page.
 
 Version 0.4.0 **reads your earlier chats only after you agree**: a new install reads none of your earlier DSH chats and makes no model call on them until you choose to sort them, and any chat or project folder can be left out, any time. Upgrading changes nothing for existing users. The topic workspace is new too: laid out like DSH's own Plugins page, and a click anywhere on a card continues the topic.
@@ -193,26 +195,25 @@ Which comes first depends on what people need more. If you have a view, say so i
 
 The briefing is marked as reference, not instructions. For details, the background session can use `theone_read_topic` and `theone_search_history` (which can also search every topic that shares with it). Linking scope is **Learn automatically** (default), **Same workspace only** or **Off**. In the directory you can link or unlink topics and mark a topic **Do not share**; your choices always win.
 
-**Topic directory.** Each topic shows its latest progress and constraints, the project (DSH workspace) it works in, and its status when that is not plain in progress: **Waiting on you** (it asks you something, or a restart cut its work off), **Set aside** (untouched for longer than you usually come back), or **Done** (you marked it; a new message to it reopens it). Status is kept apart from the topic's record of what it worked on (its latest 20 messages and how each ended), and is worked out from it. **Mark done** / **Reopen** sits next to **Manage**. A new topic files itself in the workspace of a topic it draws on, or of the topics in its project folder; you can move it. Under **Manage** you can rename, edit the summary and constraints, move to another workspace, merge (the target topic then shows **Undo merge**, which brings the merged topic back as it was), delete, or attach an existing DSH session as searchable history; **+ New topic** starts one by hand. **Recent topic routing** lists where each message went, why, with which model and how long it took. With a long history, the first pass takes some time and API quota; set `THEONE_HISTORY_CATALOG=false` to turn it off.
+**Topic directory.** Each topic shows its latest progress, the project (DSH workspace) it works in, and its status when that is not plain in progress: **Waiting on you** (it asks you something, or a restart cut its work off), **Set aside** (untouched for longer than you usually come back), or **Done** (you marked it; a new message to it reopens it). In each workspace, topics waiting on you come first and finished ones last; at the top you can filter by status and search titles, summaries and progress. Status is kept apart from the topic's record of what it worked on (its latest 20 messages and how each ended), and is worked out from it. A new topic files itself in the workspace of a topic it draws on, or of the topics in its project folder; you can move it. The **⋯** on a card marks it done or reopens it, and lets you rename, edit the summary and constraints, move to another workspace, merge (the target topic then shows **Undo merge**, which brings the merged topic back as it was), delete, or attach an existing DSH session as searchable history. **New topic** at the top right starts one by hand; the **⋯** beside it holds occasional actions such as organizing history and choosing chats. **Recent topic routing**, further down, lists where each message went, why, with which model and how long it took. With a long history, the first pass takes some time and API quota; set `THEONE_HISTORY_CATALOG=false` to turn it off.
 
 ![TheOne main chat and topic workspaces](https://raw.githubusercontent.com/YunongDai2005/dsh-theone/main/docs/images/theone-topic-workspaces-en.png)
 
 <details>
 <summary><b>Settings</b></summary>
 
-Right-click the TheOne button in the sidebar and choose **Settings**. Changes apply when saved; only the history catalog settings wait for a DSH restart.
+TheOne's settings live in DSH's own Settings: open DSH Settings and choose **TheOne** on the left, or right-click the TheOne button in the sidebar and choose **Settings** to go straight there. History catalog and experimental settings apply after a DSH restart; everything else applies when saved.
 
 | Setting | What it does |
 | --- | --- |
 | Topic notices | How main chat shows topic changes: hidden (default; the topic workspace shows where each message went), one line only when the topic changes, or on every message with the reason |
 | Linking scope | Learn automatically (default), same workspace only, or off |
-| Share confirmed facts (experimental) | Off by default. Topics share only facts the user confirmed (a figure, a decision, where a file is), with version and source; a topic that used one is told when it changes or is withdrawn. Applies after a DSH restart |
-| Record facts automatically (experimental) | Off by default. With shared facts on, one small model call after each turn records facts the topic session left out; only user-confirmed ones are shared |
 | Model | Follow DSH (default) or pin the background model from any model configured in DSH; a pinned model takes precedence over main chat's selector |
 | Routing | LLM decision (default) or rule-based |
 | History catalog | On/off and rescan interval |
 | Limits | Topic descriptor length; reply length per background step, thinking included |
-| Manual catalog file | Optional JSON file of hand-written topics, imported when saved |
+| Manual catalog file | Optional JSON file of hand-written topics, imported when saved (under **Advanced**) |
+| Experimental | At the bottom of the settings, all off by default, applying after a DSH restart: **Share confirmed facts** (topics share only facts the user confirmed, with version and source), **Record facts automatically** (one small model call after each turn records facts a topic left out), **Ongoing tasks** (follow a GitHub PR's checks and hear in main chat when they change; while off, the sidebar has no **Ongoing tasks**) |
 
 The database location and entry identifier switch TheOne to different data, so they are set only through environment variables: `THEONE_DATABASE_PATH` and `THEONE_GATEWAY_KEY`. Also optional: `THEONE_CONTEXTS_PATH` and `THEONE_WORKER_PROVIDER` / `THEONE_WORKER_MODEL` (set both).
 </details>
@@ -225,7 +226,7 @@ The database location and entry identifier switch TheOne to different data, so t
 - Text sent to the router or written into briefings has API keys, passwords and similar secrets removed.
 - A topic marked **Do not share** never appears in other topics' briefings, recent-chat excerpts or lookups.
 - Notices from the author are read from `https://yulid.org/theone/notice.json` with a plain request that sends none of your data; turn them off in Settings.
-- **Report a problem** (top right of Topic workspaces, or **Report a problem** on a message under Recent topic routing) sends only when you press Send, and shows everything it would send first. By default it holds versions, settings and routing error codes and timings, no chat content; for one message, its text and reply are added only if you tick the box. Reports go to `feedback.yulid.org`, are used only to look into problems and are deleted after 90 days; to have one deleted sooner, email theone@yulid.org with its id.
+- **Feedback** (bottom of Topic workspaces, or **Report a problem** on a message under Recent topic routing) sends only when you press Send, and shows everything it would send first. By default it holds versions, settings and routing error codes and timings, no chat content; for one message, its text and reply are added only if you tick the box. Reports go to `feedback.yulid.org`, are used only to look into problems and are deleted after 90 days; to have one deleted sooner, email theone@yulid.org with its id.
 - When main chat grows long, DSH compacts it through TheOne: frequently used topics keep longer summaries and their latest turns, rarely used ones keep a short status. This makes no model call.
 - Updates are installed by DSH's plugin manager and reload TheOne in place; a DSH without plugin hot reload applies them at the next restart.
 </details>
