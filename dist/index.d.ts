@@ -40,6 +40,8 @@ export interface Config {
     factLinks?: boolean;
     /** With factLinks: after each turn, a small model call proposes facts the Worker did not record. */
     factExtraction?: boolean;
+    /** Experimental: topics can watch a GitHub PR and report back ("Ongoing tasks"). Off unless turned on in Settings. */
+    persistentWork?: boolean;
     /** A routing card per topic, written in the background after its first replies; on unless turned off (tests). */
     topicCards?: boolean;
     /** Where notices are read from; for testing. */

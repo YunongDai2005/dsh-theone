@@ -10,8 +10,21 @@ import type {} from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+
+/** Where people can reach the maintainer, shown as quiet links in Topic workspaces. */
+const QQ_GROUP = '1080980184'
+/** Closing the getting-started card is remembered under this id, beside dismissed notices (see index.ts). */
+const ONBOARDING = 'theone-onboarding'
+/** Main chat's first turn is TheOne's greeting; the getting-started card follows it. */
+const FIRST_TURN = 1
+const FEEDBACK_EMAIL = 'theone@yulid.org'
+/** What TheOne writes into a topic made by hand until it has history; not worth showing. */
+const PLACEHOLDERS = new Set(['等待首次执行', '新话题，尚无历史摘要。'])
+const GITHUB_URL = 'https://github.com/YunongDai2005/dsh-theone'
+/** An icon-only control's description, shown on hover and used as its accessible name (see the [data-tip] styles). */
+const tip = (text: string) => ({ 'data-tip': text, 'aria-label': text })
 import type { MainPanelId, PanelInfo } from '@deepseek-ai/dsh-client-ui-layout/client'
-import type { CatalogContext, CatalogSessions, CatalogSnapshot, LinkageSnapshot, TopicGroup } from './catalog-types.ts'
+import type { CatalogContext, CatalogSessions, CatalogSnapshot, CatalogStatus, LinkageSnapshot, TopicGroup } from './catalog-types.ts'
 import type { RouteView } from './types.ts'
 import type { UpdateStatus } from './update.ts'
 import type { Notice } from './notices.ts'
@@ -29,12 +42,18 @@ import { createWorkPanel, workCss } from './client-work.ts'
 declare module '@deepseek-ai/dsh-api-session-controller/client' {
   interface SessionReferenceSourceMap { mainView: unknown }
 }
+// DSH's Settings dialog: one page per entry. Declared at runtime by ui-settings-general, whose types are not a dependency here.
+declare module '@deepseek-ai/dsh-client-ui-slots' {
+  interface SlotMap { 'settings.section': { kind: 'list'; scope: 'root'; owner: { close: () => void } } }
+}
 
 export const inject = ['slots', 'locale', 'sessions', 'workspaces', 'layout', 'uiWorkspace', 'modelDirectories', 'remote.session']
 const panelId = 'theone-gateway' as MainPanelId
 const catalogPanelId = 'theone-catalog' as MainPanelId
-const settingsPanelId = 'theone-settings' as MainPanelId
 const tasksPanelId = 'theone-tasks' as MainPanelId
+/** TheOne's page in DSH's Settings dialog, after the built-in ones; the product name needs no translation. */
+const SETTINGS_SECTION = 'theone'
+const SETTINGS_LABEL = 'TheOne'
 
 export function apply(ctx: Context) {
   const lifetime = new AbortController()
@@ -246,7 +265,7 @@ export function apply(ctx: Context) {
       element.addEventListener('click', act); footer.append(element); return element
     }
     let draft: Record<string, unknown> | undefined
-    let email = 'theone@yulid.org'
+    let email = FEEDBACK_EMAIL
     let direct = false
     let sentId: string | undefined
     let sending = false
@@ -324,11 +343,61 @@ export function apply(ctx: Context) {
     close: ['M6 6l12 12', 'M18 6L6 18'],
     layers: ['M12 3.5l8.5 4.5-8.5 4.5L3.5 8z', 'M3.5 12.5l8.5 4.5 8.5-4.5', 'M3.5 16.5l8.5 4.5 8.5-4.5'],
     chevron: ['M6 15l6-6 6 6'],
+    // Lucide "plus", "search", "messages-square" and "arrow-up-right" (ISC)
+    plus: ['M5 12h14', 'M12 5v14'],
+    search: ['M11 19a8 8 0 1 0 0-16a8 8 0 0 0 0 16z', 'M21 21l-4.3-4.3'],
+    chats: ['M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z', 'M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1'],
+    arrowUpRight: ['M7 7h10v10', 'M7 17L17 7'],
     grid: ['M4 4h6.5v6.5H4z', 'M13.5 4H20v6.5h-6.5z', 'M4 13.5h6.5V20H4z', 'M13.5 13.5H20V20h-6.5z'],
+    // Lucide "mail", "users" and "github" (ISC)
+    mail: ['M2 6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z', 'M22 7l-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7'],
+    users: ['M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2', 'M5 7a4 4 0 1 0 8 0a4 4 0 1 0-8 0', 'M22 21v-2a4 4 0 0 0-3-3.87', 'M16 3.13a4 4 0 0 1 0 7.75'],
+    github: ['M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4', 'M9 18c-4.51 2-5-2-7-2'],
   } as const
   const icon = (name: keyof typeof ICONS, size = 16) => h('svg', { className: 'theone-icon', viewBox: '0 0 24 24', width: size, height: size, fill: 'none',
     stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true, focusable: false },
     ...ICONS[name].map(d => h('path', { key: d, d })))
+
+  /** The user group, as a quiet corner button: a plain group number cannot open QQ, so the click copies it. */
+  /**
+   * The author's address: a click copies it and still hands it to the mail app, so it works on a computer
+   * without one set up too.
+   */
+  function EmailLink({ className, size }: { className: string; size: number }) {
+    const t = useText()
+    const [copied, setCopied] = useState(false)
+    const copy = () => { void navigator.clipboard?.writeText(FEEDBACK_EMAIL).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2400) }, () => {}) }
+    return h('a', { className, href: `mailto:${FEEDBACK_EMAIL}`, 'data-copied': copied, onClick: copy,
+      ...tip(t(copied ? 'catalog.emailCopied' : 'catalog.email', { email: FEEDBACK_EMAIL })) }, icon('mail', size))
+  }
+
+  function QQGroupButton() {
+    const [copied, setCopied] = useState(false)
+    const copy = () => { void navigator.clipboard?.writeText(QQ_GROUP).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2400) }, () => {}) }
+    return h('button', { type: 'button', className: 'theone-quiet theone-icon-link', 'data-copied': copied, onClick: copy, ...tip(t(copied ? 'start.groupCopied' : 'start.groupTip')) }, icon('users', 16))
+  }
+
+  /**
+   * Open DSH's Settings on TheOne's page. The dialog lets plugins add a page but not open one, so this
+   * presses the user's own "Open settings" shortcut, then TheOne's entry in the dialog's list.
+   */
+  function openSettings() {
+    type Entry = { id: string; binding: { code: string; modifiers: readonly string[] } | null }
+    const shortcuts = (ctx.get as (name: string) => unknown)('shortcuts') as { catalog?: { getSnapshot(): readonly Entry[] } } | undefined
+    const binding = shortcuts?.catalog?.getSnapshot().find(entry => entry.id === 'settings.open')?.binding
+    if (!binding) return
+    const held = (modifier: string) => binding.modifiers.includes(modifier)
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { code: binding.code, bubbles: true, cancelable: true,
+      ctrlKey: held('control'), altKey: held('alt'), shiftKey: held('shift'), metaKey: held('meta') }))
+    // The dialog draws after this; choose TheOne's entry once its list is there (for up to a second).
+    let tries = 0
+    const choose = () => {
+      const entry = [...document.querySelectorAll<HTMLButtonElement>('[role=dialog] button')].find(button => button.textContent?.trim() === SETTINGS_LABEL)
+      if (entry) entry.click()
+      else if (++tries < 20) setTimeout(choose, 50)
+    }
+    setTimeout(choose, 0)
+  }
 
   /** One-click update on the right of the entry; it shows only when there is something to do. */
   function UpdateButton() {
@@ -397,7 +466,7 @@ export function apply(ctx: Context) {
         menu.setAttribute('translate', 'no')
         const item = document.createElement('button')
         item.type = 'button'; item.setAttribute('role', 'menuitem'); item.textContent = t('settings.menu')
-        item.addEventListener('click', () => { close(); ctx.layout.selectPanel(settingsPanelId) })
+        item.addEventListener('click', () => { close(); openSettings() })
         menu.append(item); document.body.append(menu)
         const bounds = menu.getBoundingClientRect()
         menu.style.left = `${Math.max(8, Math.min(x, window.innerWidth - bounds.width - 8))}px`
@@ -613,11 +682,15 @@ export function apply(ctx: Context) {
     document.addEventListener('keydown', keydown, true)
     document.body.append(backdrop); ok.focus()
   }
+  /** Whether the getting-started card is still wanted; it comes with the notices and is closed the same way. */
+  let onboarding = false
   const readNotices = async () => {
     try {
       const response = await fetch('/api/theone/notices', { signal: lifetime.signal, cache: 'no-store' })
       if (!response.ok) return
-      setNotices(((await response.json()) as { notices: Notice[] }).notices)
+      const value = (await response.json()) as { notices: Notice[]; onboarding?: boolean }
+      onboarding = value.onboarding === true
+      setNotices(value.notices)
       const important = notices.find(notice => notice.level === 'important' && !shownDialogs.has(notice.id))
       if (important && !document.querySelector('.theone-dialog-backdrop')) openNoticeDialog(important)
     } catch { /* No notices when offline. */ }
@@ -644,6 +717,43 @@ export function apply(ctx: Context) {
       h('button', { type: 'button', className: 'theone-notice-close', 'aria-label': t('notice.close'), title: t('notice.close'), onClick: () => dismissNotice(notice.id) }, icon('close', 14)))
   }
 
+  /**
+   * The getting-started card, right under main chat's first reply: what to do first, each one button
+   * away. It shows until closed, for new users and for those who came from an earlier version alike.
+   */
+  function OnboardingCard({ directory, turn }: { directory: DirectoryStore; turn: { turn: number; status: string } }) {
+    const t = useText()
+    const state = useSyncExternalStore(listener => directory.subscribe(listener), () => directory.getSnapshot())
+    useSyncExternalStore(subscribeNotices, () => notices)
+    const [consent, setConsent] = useState<CatalogStatus['consent']>()
+    const [copied, setCopied] = useState(false)
+    const welcome = turn.turn === FIRST_TURN && (state.pending ?? state.current)?.provider === 'theone'
+    const shown = onboarding && welcome && turn.status === 'closed'
+    useEffect(() => {
+      if (!shown) return
+      void fetch('/api/theone/catalog', { signal: lifetime.signal, cache: 'no-store' })
+        .then(response => response.ok ? response.json() as Promise<CatalogSnapshot> : undefined)
+        .then(value => { if (value) setConsent(value.status.consent) }, () => {})
+    }, [shown])
+    // Marks main chat's greeting so the styles can give its "TheOne" the brand glow, with or without the card.
+    const mark = welcome ? h('span', { className: 'theone-welcome-mark', hidden: true }) : null
+    if (!shown) return mark
+    const close = () => { onboarding = false; dismissNotice(ONBOARDING) }
+    const sorted = consent === 'granted'
+    const chip = (glyph: keyof typeof ICONS, label: string, hint: string, action: () => void, primary = false) =>
+      h('button', { type: 'button', className: 'theone-start-chip', 'data-primary': primary, title: hint, onClick: action }, icon(glyph, 14), label)
+    // The group, the author and the project are icons; what they are shows on hover (and after copying, what happened).
+    // Quiet suggestions in the host's own manner, like the actions under a reply; only the first step wears TheOne's tint.
+    return h(Fragment, null, mark, h('div', { className: 'theone-start', role: 'group', 'aria-label': t('start.title'), translate: 'no' },
+      chip('grid', t(sorted ? 'start.topicsTitle' : 'start.sortTitle'), t(sorted ? 'start.topicsBody' : 'start.sortBody'), () => ctx.layout.selectPanel(catalogPanelId), true),
+      h('button', { type: 'button', className: 'theone-start-chip theone-start-icon', 'data-copied': copied, ...tip(t(copied ? 'start.groupCopied' : 'start.groupTip')), onClick: () => {
+        void navigator.clipboard?.writeText(QQ_GROUP).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2400) }, () => {})
+      } }, icon('users', 15)),
+      h(EmailLink, { className: 'theone-start-chip theone-start-icon', size: 15 }),
+      h('a', { className: 'theone-start-chip theone-start-icon', href: GITHUB_URL, target: '_blank', rel: 'noopener', ...tip(t('catalog.github')) }, icon('github', 15)),
+      h('button', { type: 'button', className: 'theone-start-close', ...tip(t('start.close')), onClick: close }, icon('close', 12))))
+  }
+
   // Beside main chat's model button, only while TheOne is the selected model.
   ctx.inject(['slots', 'modelDirectories'], scope => {
     const slots = scope.slots as unknown as { inject(name: string, factory: () => () => void): void; register(options: Record<string, unknown>, component: unknown): () => void }
@@ -651,6 +761,8 @@ export function apply(ctx: Context) {
       inject: (sessionId: SessionId) => ({ directory: scope.modelDirectories.directoryFor(sessionId).store }) }, BackgroundModel))
     slots.inject('conversation.composer.dock', () => slots.register({ name: 'conversation.composer.dock', id: 'theone.notice', order: 100,
       inject: (sessionId: SessionId) => ({ directory: scope.modelDirectories.directoryFor(sessionId).store }) }, NoticeStrip))
+    slots.inject('conversation.chat.turnTail', () => slots.register({ name: 'conversation.chat.turnTail', id: 'theone.onboarding', order: 10,
+      inject: (sessionId: SessionId) => ({ directory: scope.modelDirectories.directoryFor(sessionId).store }) }, OnboardingCard))
   })
 
   function GatewayPanel() {
@@ -683,14 +795,18 @@ export function apply(ctx: Context) {
     const pending = !!status && (status.available || waiting || !!status.state)
     const line = checking ? t('settings.updateChecking') : failed ? t('settings.updateCheckFailed') : !status ? t('settings.updateUnknown')
       : pending ? updateHint(status) : t('settings.updateLatest')
+    // One settings row, as DSH draws its own: the version and what is going on, the buttons on the right.
+    const settled = !!status && !pending
     return h('section', { className: 'theone-settings-group theone-settings-update' },
       h('h2', null, t('settings.update')),
-      status && !pending ? h('p', { className: 'theone-settings-update-version' }, t('settings.updateCurrent', { current: status.current })) : null,
-      h('p', { role: 'status' }, line),
-      h('div', { className: 'theone-settings-update-actions' },
+      h('div', { className: 'theone-settings-row' },
+        h('div', null,
+          h('strong', settled ? null : { role: 'status' }, status && settled ? t('settings.updateCurrent', { current: status.current }) : line),
+          settled ? h('p', { role: 'status' }, line) : null),
+        h('div', { className: 'theone-settings-update-actions' },
         h('button', { type: 'button', disabled: checking || busy, onClick: () => { void check() } }, t('settings.updateCheck')),
         h('button', { type: 'button', className: 'theone-settings-save', disabled: checking || busy || !status || !pending || status.state === 'restart',
-          onClick: () => { if (status) startUpdate(status) } }, t(status?.state === 'installing' ? 'update.installing' : status?.state === 'reloading' ? 'update.reloading' : 'settings.updateInstall'))))
+          onClick: () => { if (status) startUpdate(status) } }, t(status?.state === 'installing' ? 'update.installing' : status?.state === 'reloading' ? 'update.reloading' : 'settings.updateInstall')))))
   }
 
   /**
@@ -836,9 +952,51 @@ export function apply(ctx: Context) {
       status?.supported ? h('p', { className: 'theone-settings-update-version' }, t('settings.imessageNote')) : null)
   }
 
+  /** Each messaging app with a small logo in its own colour; the glyphs are simplified shapes, not the apps' logos. */
+  const REMOTE_APPS = [
+    { id: 'weixin', label: 'settings.weixin', blurb: 'settings.weixinBlurb', color: '#07c160', Section: WeixinSection,
+      glyph: () => [h('ellipse', { key: 'a', cx: 9.2, cy: 9.3, rx: 7, ry: 5.9, fill: 'currentColor' }), h('path', { key: 'b', d: 'M4.6 13.4l-1.1 3.1 3.4-1.7z', fill: 'currentColor' }),
+        h('ellipse', { key: 'c', cx: 15.8, cy: 14.6, rx: 5.7, ry: 4.8, fill: 'currentColor', stroke: '#fff', strokeOpacity: .85, strokeWidth: 1.3 }), h('path', { key: 'd', d: 'M19.3 18.3l1.1 2.3-2.8-1.2z', fill: 'currentColor' }),
+        ...[[6.8, 8.3, .95], [11.5, 8.3, .95], [14, 13.9, .8], [17.6, 13.9, .8]].map(([cx, cy, r]) => h('circle', { key: `${cx}`, cx, cy, r, fill: '#fff' }))] },
+    { id: 'telegram', label: 'settings.telegram', blurb: 'settings.telegramBlurb', color: '#2aabee', Section: TelegramSection,
+      glyph: () => [h('path', { key: 'a', d: 'M20.6 4.2L3.4 10.9c-1.1.4-1.1 1.5-.2 1.8l4.4 1.4 1.7 5.2c.2.6.9.8 1.4.4l2.5-2.1 4.7 3.5c.7.5 1.6.1 1.8-.7l3-14.3c.2-1-.8-1.8-1.7-1.5z', fill: 'currentColor' }),
+        h('path', { key: 'b', d: 'M8.1 14.1l9.5-6.5', stroke: '#fff', strokeOpacity: .9, strokeWidth: 1.3, strokeLinecap: 'round', fill: 'none' })] },
+    { id: 'imessage', label: 'settings.imessage', blurb: 'settings.imessageBlurb', color: '#34c759', Section: IMessageSection,
+      glyph: () => [h('path', { key: 'a', d: 'M12 3.2c-5.4 0-9.8 3.6-9.8 8 0 2.4 1.3 4.6 3.4 6.1-.2 1.4-.9 2.7-2 3.6 2 0 3.8-.7 5.2-1.8 1 .3 2.1.4 3.2.4 5.4 0 9.8-3.6 9.8-8.3S17.4 3.2 12 3.2z', fill: 'currentColor' })] },
+  ] as const
+
+  /** One app as a plain card: logo, name and a few words; only the logo wears the app's colour. Choosing it opens its panel. */
+  function RemoteCard({ app, open, onChoose }: { app: typeof REMOTE_APPS[number]; open: boolean; onChoose: () => void }) {
+    const t = useText()
+    const { status } = useRemote<LinkStatus>(app.id, () => false)
+    const online = status?.state === 'online'
+    return h('button', { type: 'button', className: 'theone-app-card', 'data-open': open, 'aria-expanded': open, 'aria-controls': 'theone-app-panel',
+      style: { '--app': app.color } as React.CSSProperties, onClick: onChoose },
+      h('span', { className: 'theone-app-logo' }, h('svg', { viewBox: '0 0 24 24', width: 22, height: 22, 'aria-hidden': true, focusable: false }, ...app.glyph())),
+      h('strong', null, t(app.label as TheOneLocaleKey)),
+      h('span', { className: 'theone-app-blurb' }, t(app.blurb as TheOneLocaleKey)),
+      online ? h('span', { className: 'theone-app-online' }, t('settings.appOnline')) : null)
+  }
+
+  /** The messaging apps side by side; the chosen one's details and controls open in a panel below. */
+  function RemoteApps() {
+    const [open, setOpen] = useState<string>()
+    const app = REMOTE_APPS.find(item => item.id === open)
+    useEffect(() => {
+      if (!open) return
+      const key = (event: KeyboardEvent) => { if (event.key === 'Escape') setOpen(undefined) }
+      document.addEventListener('keydown', key)
+      return () => document.removeEventListener('keydown', key)
+    }, [open])
+    return h('div', { className: 'theone-apps' },
+      h('div', { className: 'theone-app-row' }, ...REMOTE_APPS.map(item => h(RemoteCard, { key: item.id, app: item, open: item.id === open,
+        onChoose: () => setOpen(current => current === item.id ? undefined : item.id) }))),
+      app ? h('div', { id: 'theone-app-panel', key: app.id, className: 'theone-app-panel' }, h(app.Section)) : null)
+  }
+
+  /** TheOne's page in DSH's Settings dialog; the dialog's list names it, so it has no title of its own. */
   function SettingsPanel() {
     const t = useText()
-    const heading = useRef<HTMLHeadingElement>(null)
     const [snapshot, setSnapshot] = useState<SettingsSnapshot>()
     const [draft, setDraft] = useState<EditableSettings>()
     const [saving, setSaving] = useState(false)
@@ -848,7 +1006,6 @@ export function apply(ctx: Context) {
     const [error, setError] = useState(false)
     const [attempt, setAttempt] = useState(0)
     useEffect(() => {
-      heading.current?.focus()
       const controller = new AbortController()
       const signal = AbortSignal.any([controller.signal, lifetime.signal])
       setError(false)
@@ -865,10 +1022,10 @@ export function apply(ctx: Context) {
     const groups = [
       ['models', ['workerProvider', 'workerModel', 'routerMode']],
       ['history', ['historyCatalog', 'catalogIntervalMs']],
-      ['linkage', ['linkScope', 'routeNotice', 'factLinks', 'factExtraction']],
-      ['limits', ['maxDescriptorChars', 'maxResponseChars']],
-      ['storage', ['contextsPath', 'databasePath', 'gatewayKey']],
+      ['linkage', ['linkScope', 'routeNotice']],
       ['other', ['notices']],
+      ['advanced', ['maxDescriptorChars', 'maxResponseChars', 'contextsPath', 'databasePath', 'gatewayKey']],
+      ['experimental', ['factLinks', 'factExtraction', 'persistentWork']],
     ] as const
     const display = (key: keyof SettingsSnapshot['values']) => {
       const value = snapshot!.values[key]
@@ -908,7 +1065,10 @@ export function apply(ctx: Context) {
       const select = (value: string, choices: { value: string; label: string }[], selectValue: (value: string) => void) =>
         h('select', { ...props, value, required: field === 'workerModel' && !!draft.workerProvider, onChange: (event: React.ChangeEvent<HTMLSelectElement>) => selectValue(event.target.value) },
           ...choices.map(choice => h('option', { key: choice.value, value: choice.value }, choice.label)))
-      if (field === 'historyCatalog' || field === 'notices' || field === 'factLinks' || field === 'factExtraction') return select(String(draft[field]), [{ value: 'true', label: t('settings.on') }, { value: 'false', label: t('settings.off') }], v => change(field, v === 'true'))
+      // On/off settings are switches, as in DSH's own Settings.
+      if (field === 'historyCatalog' || field === 'notices' || field === 'factLinks' || field === 'factExtraction' || field === 'persistentWork')
+        return h('button', { ...props, type: 'button', role: 'switch', 'aria-checked': draft[field], className: 'theone-switch', onClick: () => change(field, !draft[field]) },
+          h('span', { className: 'theone-switch-thumb' }))
       if (field === 'linkScope' || field === 'routeNotice') {
         const values = field === 'linkScope' ? ['auto', 'workspace', 'off'] : ['switch', 'hidden', 'all']
         return select(draft[field], values.map(value => ({ value, label: t(`settings.${field === 'linkScope' ? 'scope' : 'notice'}.${value}` as TheOneLocaleKey) })), v => change(field, v as never))
@@ -940,30 +1100,25 @@ export function apply(ctx: Context) {
         onChange: (event: React.ChangeEvent<HTMLInputElement>) => change('contextsPath', event.target.value.trim() ? event.target.value : null) })
     }
     return h('section', { className: 'theone-settings', translate: 'no' },
-      h('header', { className: 'theone-settings-header' },
-        h('div', null, h('h1', { ref: heading, tabIndex: -1 }, t('settings.title')), h('p', null, t('settings.subtitle'))),
-        h('button', { type: 'button', disabled: saving, onClick: () => ctx.layout.selectPanel(panelId) }, t('settings.back'))),
-      h('p', { className: 'theone-settings-notice' }, t('settings.readOnly')),
       h(UpdateSection),
-      h(WeixinSection),
-      h(TelegramSection),
-      h(IMessageSection),
+      h(RemoteApps),
       !snapshot && !error ? h('p', { role: 'status' }, t('settings.loading')) : null,
       error ? h('p', { role: 'alert' }, t('settings.error'), ' ', h('button', { type: 'button', onClick: () => setAttempt(n => n + 1) }, t('retry'))) : null,
       snapshot && draft && h('form', { onSubmit: (event: React.FormEvent<HTMLFormElement>) => { event.preventDefault(); void save() } },
-        h('section', { className: 'theone-settings-summary' },
-          h('dl', null,
-            h('div', null, h('dt', null, t('settings.model')), h('dd', null, snapshot.model ? `${snapshot.model.provider} / ${snapshot.model.model}` : t('settings.none'))),
-            h('div', null, h('dt', null, t('settings.capacity')), h('dd', null, snapshot.model?.contextWindow?.toLocaleString(localeSnapshot().active) ?? t('settings.none'))),
-            h('div', null, h('dt', null, t('settings.output')), h('dd', null, snapshot.model?.defaultMaxTokens?.toLocaleString(localeSnapshot().active) ?? t('settings.none')))),
-          snapshot.modelUnavailable ? h('p', { role: 'status' }, t('settings.modelUnavailable')) : null,
-          h('p', null, t('settings.inherited')),
-          h('p', null, t('settings.compression'))),
-        ...groups.map(([group, keys]) => h('section', { className: 'theone-settings-group', key: group },
-          h('h2', null, t(`settings.${group}`)),
-          h('dl', null, ...keys.map(key => h('div', { className: 'theone-settings-row', key },
-            h('dt', null, h('strong', null, t(`settings.${key}`)), h('p', null, t(`settings.help.${key}`)), h('code', null, key)),
-            h('dd', null, control(key), key === 'catalogIntervalMs' && Number.isFinite(draft.catalogIntervalMs) ? h('small', null, t('settings.seconds', { count: draft.catalogIntervalMs / 1000 })) : null)))))),
+        ...groups.map(([group, keys]) => {
+          const rows = h('dl', null, ...keys.map(key => h('div', { className: 'theone-settings-row', key },
+            h('dt', null, h('strong', null, t(`settings.${key}`)), h('p', null, t(`settings.help.${key}`))),
+            // A number with its unit beside it, as DSH writes "14 px".
+            h('dd', null, key === 'catalogIntervalMs' ? h('span', { className: 'theone-settings-unit' }, control(key), t('settings.secondsUnit')) : control(key)))))
+          // Limits and storage are for whoever runs TheOne in an unusual way; they stay folded away.
+          if (group === 'advanced') return h('details', { className: 'theone-settings-group theone-settings-advanced', key: group },
+            h('summary', null, h('h2', null, t('settings.advanced'))), rows)
+          return h('section', { className: 'theone-settings-group', key: group },
+            h('h2', null, t(`settings.${group}`)),
+            group === 'models' && snapshot.modelUnavailable ? h('p', { className: 'theone-settings-help', role: 'status' }, t('settings.modelUnavailable')) : null,
+            group === 'experimental' ? h('p', { className: 'theone-settings-help' }, t('settings.experimentalIntro')) : null,
+            rows)
+        }),
         h('footer', { className: 'theone-settings-footer' },
           h('p', { role: message === 'settings.saveError' || message === 'settings.conflict' || message === 'settings.contextsUnreadable' ? 'alert' : 'status' },
             message ? t(message) : dirty ? t('settings.unsaved') : snapshot.restartRequired ? t('settings.restart') : ''),
@@ -1039,6 +1194,25 @@ export function apply(ctx: Context) {
         confirm === 'delete' ? h('span', { className: 'theone-manage-hint' }, t('manage.deleteHint')) : null))
   }
 
+  /** A "more" button whose menu holds the actions used now and then; it closes on a choice, Escape or a click elsewhere. */
+  function MoreMenu({ items, disabled }: { items: { label: string; hint?: string; disabled?: boolean; run: () => void }[]; disabled: boolean }) {
+    const t = useText()
+    const [open, setOpen] = useState(false)
+    const root = useRef<HTMLDivElement>(null)
+    useEffect(() => {
+      if (!open) return
+      const outside = (event: PointerEvent) => { if (!root.current?.contains(event.target as Node)) setOpen(false) }
+      const key = (event: KeyboardEvent) => { if (event.key === 'Escape') setOpen(false) }
+      document.addEventListener('pointerdown', outside, true); document.addEventListener('keydown', key)
+      return () => { document.removeEventListener('pointerdown', outside, true); document.removeEventListener('keydown', key) }
+    }, [open])
+    return h('div', { ref: root, className: 'theone-more' },
+      h('button', { type: 'button', className: 'theone-icon-button', 'aria-haspopup': 'menu', 'aria-expanded': open, 'aria-label': t('catalog.more'), title: t('catalog.more'),
+        onClick: () => setOpen(value => !value) }, icon('more', 16)),
+      open ? h('div', { className: 'theone-menu', role: 'menu' }, ...items.map(item => h('button', { key: item.label, type: 'button', role: 'menuitem',
+        title: item.hint, disabled: disabled || item.disabled, onClick: () => { setOpen(false); item.run() } }, item.label))) : null)
+  }
+
   /** A field name as a column label: "进展：" → "进展". */
   const label = (text: string) => text.replace(/\s*[:：]\s*$/, '')
 
@@ -1092,6 +1266,8 @@ export function apply(ctx: Context) {
     const [choosing, setChoosing] = useState(false)
     const [choices, setChoices] = useState<CatalogSessions>()
     const [reconsidering, setReconsidering] = useState(false)
+    const [query, setQuery] = useState('')
+    const [filter, setFilter] = useState<'all' | 'waiting' | 'done'>('all')
     const choosingRef = useRef(false)
     const reload = useRef<() => Promise<void>>(async () => {})
     useEffect(() => {
@@ -1274,34 +1450,55 @@ export function apply(ctx: Context) {
     // Before the list is open, the scan's counts stand in for it.
     const total = choices ? choices.sessions.length : (status?.waiting ?? 0) + (status?.excluded ?? 0)
     const included = choices ? choices.sessions.filter(session => !session.excluded).length : status?.waiting ?? 0
-    const figure = (value: string | number, name: string) => h('div', { key: name }, h('dd', null, value), h('dt', null, name))
+    // Only work in progress is worth a line; "up to date" is the normal state.
+    const progress = !snapshot ? t('catalog.reading') : unconsented ? '' : status?.running ? t('catalog.indexing')
+      : status?.pending ? t('catalog.pending', { count: status.pending, sessionSuffix: status.pending === 1 ? '' : 's' }) : ''
+    // The occasional actions wait behind one button, so the header shows a single main one.
+    const occasional = [
+      // Before consent there is no history to refresh, so the action would only confuse.
+      unconsented ? null : { label: t('catalog.refresh'), disabled: !!status?.running, run: () => void refresh() },
+      status?.consent === 'granted' ? { label: t('catalog.chooseChatsShort'), run: () => choosing ? closeChoices() : void chooseChats() } : null,
+      snapshot?.linkage && snapshot.linkage.scope !== 'off' ? { label: t('link.clearLearned'), hint: t('link.clearLearnedHint'), run: () => void editLinks({ action: 'clearLearned' }) } : null,
+    ].filter(item => item !== null)
+    // Finding a topic is the page's main job: a filter by what needs you, and a search over what topics say.
+    const byId = new Map((snapshot?.contexts ?? []).map(context => [context.id, context]))
+    const needle = query.trim().toLowerCase()
+    const narrowed = !!needle || filter !== 'all'
+    const counts = { waiting: snapshot?.contexts.filter(c => c.topicStatus === 'waiting').length ?? 0, done: snapshot?.contexts.filter(c => c.topicStatus === 'done').length ?? 0 }
+    // In each group what needs you comes first and what is finished last; the rest keep their order.
+    const rank = { waiting: 0, active: 1, dormant: 2, done: 3 } as const
+    const shown = (ids: string[]) => ids.filter(id => {
+      const topic = byId.get(id)
+      if (!topic || filter !== 'all' && topic.topicStatus !== filter) return false
+      return !needle || [topic.title, topic.summary, topic.lastState, topic.projectInfo?.name].some(text => text?.toLowerCase().includes(needle))
+    }).sort((a, b) => rank[byId.get(a)!.topicStatus ?? 'active'] - rank[byId.get(b)!.topicStatus ?? 'active'])
+    const visible = groups.map(group => ({ group, ids: shown(group.contextIds) })).filter(entry => !narrowed || entry.ids.length)
+    const filters = [{ id: 'all' as const, label: t('catalog.filterAll'), count: snapshot?.contexts.length ?? 0 },
+      ...counts.waiting || filter === 'waiting' ? [{ id: 'waiting' as const, label: t('catalog.filterWaiting'), count: counts.waiting }] : [],
+      ...counts.done || filter === 'done' ? [{ id: 'done' as const, label: t('catalog.filterDone'), count: counts.done }] : []]
     return h('section', { className: 'theone-catalog', translate: 'no' },
       h('header', { className: 'theone-catalog-header' },
         h('div', { className: 'theone-catalog-heading' },
-          h('p', { className: 'theone-overline' }, 'TheOne'),
           h('h1', null, t('catalog.title')),
-          h('p', { className: 'theone-catalog-lede' }, t('catalog.subtitle'))),
-        // One number is enough here; how often routing was right lives with the routing list.
-        snapshot?.contexts.length ? h('dl', { className: 'theone-figures' }, figure(snapshot.contexts.length, t('catalog.figTopics'))) : null),
-      h('div', { className: 'theone-toolbar' },
-        // Only work in progress is worth a line; "up to date" is the normal state.
-        h('p', { className: 'theone-catalog-status', role: 'status' }, snapshot
-          ? (unconsented ? '' : status?.running ? t('catalog.indexing') : status?.pending ? t('catalog.pending', { count: status.pending, sessionSuffix: status.pending === 1 ? '' : 's' }) : '')
-          : t('catalog.reading')),
+          h('p', { className: 'theone-catalog-lede' }, t('catalog.subtitle')),
+          h('p', { className: 'theone-catalog-status', role: 'status' }, progress)),
         h('div', { className: 'theone-catalog-tools' },
-          h('button', { type: 'button', className: 'theone-primary', disabled: !!busy, onClick: () => setCreating(open => !open) }, t('manage.create')),
-          // Before consent there is no history to refresh, so the button would only confuse.
-          unconsented ? null : h('button', { type: 'button', onClick: refresh, disabled: !!busy || status?.running }, t('catalog.refresh')),
-          status?.consent === 'granted' ? h('button', { type: 'button', className: 'theone-quiet', disabled: !!busy, 'aria-expanded': choosing,
-            onClick: () => choosing ? closeChoices() : void chooseChats() }, t('catalog.chooseChatsShort')) : null,
-          snapshot?.linkage && snapshot.linkage.scope !== 'off' ? h('button', { type: 'button', className: 'theone-quiet', disabled: !!busy, title: t('link.clearLearnedHint'),
-            onClick: () => { void editLinks({ action: 'clearLearned' }) } }, t('link.clearLearned')) : null,
-          h('button', { type: 'button', className: 'theone-quiet', onClick: () => openFeedbackDialog() }, t('feedback.open')))),
+          occasional.length ? h(MoreMenu, { items: occasional, disabled: !!busy }) : null,
+          h('button', { type: 'button', className: 'theone-primary', disabled: !!busy, 'aria-expanded': creating, onClick: () => setCreating(open => !open) }, icon('plus', 14), t('manage.create')))),
+      snapshot?.contexts.length ? h('div', { className: 'theone-toolbar' },
+        filters.length > 1 ? h('div', { className: 'theone-filters', role: 'group', 'aria-label': t('catalog.filterLabel') }, ...filters.map(item =>
+          h('button', { key: item.id, type: 'button', className: 'theone-filter', 'aria-pressed': filter === item.id, onClick: () => setFilter(item.id) },
+            item.label, h('span', { className: 'theone-filter-count' }, item.count)))) : null,
+        h('label', { className: 'theone-search' }, icon('search', 14),
+          h('input', { type: 'search', value: query, placeholder: t('catalog.search'), 'aria-label': t('catalog.search'),
+            onChange: (event: React.ChangeEvent<HTMLInputElement>) => setQuery(event.target.value),
+            onKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => { if (event.key === 'Escape') setQuery('') } }),
+          query ? h('button', { type: 'button', className: 'theone-search-clear', 'aria-label': t('catalog.clearSearch'), title: t('catalog.clearSearch'), onClick: () => setQuery('') }, icon('close', 12)) : null)) : null,
       // One card from question to choice: the list opens inside it and the button counts what will be read.
       asking ? h('section', { className: 'theone-consent', 'aria-labelledby': 'theone-consent-title' },
         h('h2', { id: 'theone-consent-title' }, t('catalog.consentTitle')),
         h('p', { className: 'theone-consent-body' }, t('catalog.consentBody', { count: total, sessionSuffix: total === 1 ? '' : 's' })),
-        h('ul', { className: 'theone-consent-points' }, ...(['catalog.consentKeep', 'catalog.consentQuota', 'catalog.consentChoose'] as const)
+        h('ul', { className: 'theone-consent-points' }, ...(['catalog.consentKeep', 'catalog.consentQuota'] as const)
           .map(key => h('li', { key }, icon('check', 14), h('span', null, t(key))))),
         choosing ? chatPicker() : null,
         h('div', { className: 'theone-consent-actions' },
@@ -1326,23 +1523,30 @@ export function apply(ctx: Context) {
       status?.failed ? h('p', { className: 'theone-catalog-warning' }, t('catalog.failed', { count: status.failed, sessionSuffix: status.failed === 1 ? '' : 's' })) : null,
       status?.searchUnavailable ? h('p', { className: 'theone-catalog-warning' }, t('catalog.searchUnavailable')) : null,
       error ? h('p', { role: 'alert', className: 'theone-catalog-warning' }, t(error)) : null,
-      snapshot ? h(RouteList, { routes, stats: routeStats, contexts: snapshot.contexts, post, busy: !!busy }) : null,
-      snapshot && !snapshot.contexts.length && !unconsented ? h('p', { className: 'theone-catalog-empty' }, t(status?.running ? 'catalog.emptyIndexing' : 'catalog.empty')) : null,
+      // Nothing yet: say what will be here and offer the way back, as an empty page should.
+      snapshot && !snapshot.contexts.length ? h('div', { className: 'theone-empty' },
+        h('span', { className: 'theone-empty-icon' }, icon('chats', 20)),
+        h('h2', null, t(status?.running ? 'catalog.emptyIndexingTitle' : 'catalog.emptyTitle')),
+        h('p', null, t(status?.running ? 'catalog.emptyIndexing' : 'catalog.empty')),
+        h('button', { type: 'button', className: 'theone-quiet theone-empty-back', onClick: () => { void navigation.open() } }, icon('arrowUpRight', 14), t('catalog.backToMain'))) : null,
+      narrowed && !visible.length ? h('p', { className: 'theone-catalog-note theone-no-match' }, t('catalog.noMatch')) : null,
       // Laid out like DSH's built-in plugins: foldable groups of two-column cards; a card opens to full width.
-      h('div', { className: 'theone-catalog-groups' }, ...groups.map(group => {
-        const shut = folded.has(group.id)
+      h('div', { className: 'theone-catalog-groups' }, ...visible.map(({ group, ids }) => {
+        // A search or filter opens every group it finds something in.
+        const shut = folded.has(group.id) && !narrowed
         return h('section', { key: group.id, className: 'theone-topic-group' },
           h('div', { className: 'theone-group-head' },
             h('button', { type: 'button', className: 'theone-group-toggle', 'aria-expanded': !shut,
               onClick: () => setFolded(current => { const next = new Set(current); if (!next.delete(group.id)) next.add(group.id); return next }) },
-              icon('chevron', 12), h('h2', null, group.title), h('span', { className: 'theone-group-count' }, group.contextIds.length))),
+              icon('chevron', 12), h('h2', null, group.title), h('span', { className: 'theone-group-count' }, ids.length))),
           group.summary ? h('p', { className: 'theone-group-summary' }, group.summary) : null,
-          shut ? null : h('ol', { className: 'theone-topic-list' }, ...group.contextIds.flatMap(id => {
-            const topic = snapshot?.contexts.find(c => c.id === id)
+          shut ? null : h('ol', { className: 'theone-topic-list' }, ...ids.flatMap(id => {
+            const topic = byId.get(id)
             if (!topic) return []
             const constraints = snapshot?.linkage?.topics[id]?.constraints ?? ''
             const open = managing === id
-            const summary = topic.summary && topic.summary.trim() !== topic.title.trim() ? topic.summary : ''
+            const summary = topic.summary && topic.summary.trim() !== topic.title.trim() && !PLACEHOLDERS.has(topic.summary) ? topic.summary : ''
+            const lastState = PLACEHOLDERS.has(topic.lastState) ? '' : topic.lastState
             // A topic whose conversations are gone has nothing left to continue; an archived one does.
             const stuck = topic.hidden === 'orphaned' || topic.hidden === 'excluded'
             return [h('li', { key: id, 'data-open': open, className: `theone-topic-card${open ? ' theone-open' : ''}${stuck ? ' theone-hidden' : ''}` },
@@ -1355,8 +1559,8 @@ export function apply(ctx: Context) {
                     onClick: () => setManaging(current => current === id ? undefined : id) }, icon('more', 16))),
                 // Closed, a card answers one question, where it left off; open, it shows everything.
                 open ? [summary ? h('p', { key: 's', className: 'theone-topic-summary' }, summary) : null,
-                  topic.lastState ? h('p', { key: 'l', className: 'theone-topic-state' }, h('span', null, label(t('topic.state'))), topic.lastState) : null]
-                  : topic.lastState || summary ? h('p', { className: 'theone-topic-summary' }, topic.lastState || summary) : null,
+                  lastState ? h('p', { key: 'l', className: 'theone-topic-state' }, h('span', null, label(t('topic.state'))), lastState) : null]
+                  : lastState || summary ? h('p', { className: 'theone-topic-summary' }, lastState || summary) : null,
                 topic.hidden ? h('p', { className: 'theone-topic-warning' }, t(topic.hidden === 'excluded' ? 'topic.hiddenExcluded' : topic.hidden === 'archived' ? 'topic.hiddenArchived' : 'topic.hiddenOrphaned')) : null,
                 // Topics merged into this one, each of which can be taken apart again.
                 ...(snapshot?.merges ?? []).filter(merge => merge.targetId === id).map(merge => h('p', { key: `merge:${merge.sourceId}`, className: 'theone-topic-merged' },
@@ -1377,7 +1581,15 @@ export function apply(ctx: Context) {
                 linkRow(id),
                 h(TopicManager, { key: `${id}:${topic.title}:${topic.summary}:${constraints}`, topic, constraints, groups: snapshot!.groups, contexts: snapshot!.contexts, post, busy: !!busy })) : null)]
           })))
-      }))
+      })),
+      // How messages were sorted is for checking now and then, so it comes after the topics.
+      snapshot && routes.length ? h(RouteList, { routes, stats: routeStats, contexts: snapshot.contexts, post, busy: !!busy }) : null,
+      // Where to find people and the project, for whoever wants them: quiet links at the foot, no prompt.
+      h('footer', { className: 'theone-catalog-footer' },
+        h('button', { type: 'button', className: 'theone-quiet', onClick: () => openFeedbackDialog() }, t('feedback.open')),
+        h(QQGroupButton),
+        h(EmailLink, { className: 'theone-quiet theone-icon-link', size: 16 }),
+        h('a', { className: 'theone-quiet theone-icon-link', href: GITHUB_URL, target: '_blank', rel: 'noopener', ...tip(t('catalog.github')) }, icon('github', 16)))
     )
   }
 
@@ -1489,16 +1701,24 @@ export function apply(ctx: Context) {
   // Wait for the owning plugins' declarations; retain their normal browser and chat.
   const WorkPanel = createWorkPanel(useText, lifetime.signal, () => ctx.layout.selectPanel(panelId))
   ctx.slots.inject('main', () => [
-    ctx.slots.register({name:'main',key:tasksPanelId},WorkPanel),
     ctx.slots.register({name:'main',key:panelId},GatewayPanel),
     ctx.slots.register({name:'main',key:catalogPanelId},CatalogPanel),
-    ctx.slots.register({name:'main',key:settingsPanelId},SettingsPanel),
   ])
+  ctx.slots.inject('settings.section', () => ctx.slots.register({ name: 'settings.section', id: SETTINGS_SECTION, order: 1000, label: () => SETTINGS_LABEL }, SettingsPanel))
+  // Ongoing tasks are experimental: their panel is there only while Settings has them on (that applies after a restart).
+  void fetch('/api/theone/settings', { signal: lifetime.signal, cache: 'no-store' })
+    .then(response => response.ok ? response.json() as Promise<SettingsSnapshot> : undefined)
+    .then(value => {
+      if (!value?.values.persistentWork || lifetime.signal.aborted) return
+      ctx.slots.inject('main', () => [ctx.slots.register({name:'main',key:tasksPanelId},WorkPanel)])
+      ctx.slots.inject('sidebar.panellist', () => [
+        ctx.slots.register({name:'sidebar.panellist',id:tasksPanelId,order:-998,label:()=>t('tasks.title')}, ({size}: PropsRuntime<'sidebar.panellist'>) => {
+          const t = useText()
+          return h('span',{className:'theone-catalog-entry',translate:'no'},icon('grid',16),size === 16 ? h('span',null,t('tasks.title')) : null)
+        }),
+      ])
+    }).catch(() => {})
   ctx.slots.inject('sidebar.panellist', () => [
-    ctx.slots.register({name:'sidebar.panellist',id:tasksPanelId,order:-998,label:()=>t('tasks.title')}, ({size}: PropsRuntime<'sidebar.panellist'>) => {
-      const t = useText()
-      return h('span',{className:'theone-catalog-entry',translate:'no'},icon('grid',16),size === 16 ? h('span',null,t('tasks.title')) : null)
-    }),
     ctx.slots.register({name:'sidebar.panellist',id:panelId,order:-1000,label:()=>t('gateway.title')},SidebarEntry),
     ctx.slots.register({name:'sidebar.panellist',id:catalogPanelId,order:-999,label:()=>t('catalog.title')}, ({size}: PropsRuntime<'sidebar.panellist'>) => {
       const t = useText()
@@ -1540,8 +1760,8 @@ button:has(.theone-nav[data-wide=true])>span:has(.theone-nav){flex:1;min-width:0
 .theone-dialog-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:16px}
 .theone-dialog-actions button{padding:8px 14px;border:1px solid var(--dsw-alias-border-l2,#ffffff1f);border-radius:9px;background:transparent;color:inherit;font:inherit;cursor:pointer}
 .theone-dialog-actions button:hover{background:var(--dsw-alias-interactive-bg-hover,#ffffff12)}
-.theone-dialog-actions .theone-dialog-primary{border-color:transparent;background:var(--one-accent);color:var(--one-on-accent)}
-.theone-dialog-actions .theone-dialog-primary:hover{background:var(--one-accent-hover)}
+.theone-dialog-actions .theone-dialog-primary{border-color:var(--one-line);background:var(--one-tint);color:var(--one-accent);font-weight:500}
+.theone-dialog-actions .theone-dialog-primary:hover{border-color:color-mix(in srgb,var(--one-accent) 40%,var(--one-line));background:var(--one-tint)}
 .theone-dialog-actions button:focus-visible{outline:2px solid var(--one-accent);outline-offset:2px}
 .theone-dialog .theone-dialog-body{white-space:pre-wrap;color:var(--dsw-alias-label-primary,#e8e8ea)}
 .theone-feedback{width:min(560px,100%);max-height:calc(100vh - 32px);overflow:auto}
@@ -1550,6 +1770,23 @@ button:has(.theone-nav[data-wide=true])>span:has(.theone-nav){flex:1;min-width:0
 .theone-feedback-preview{margin:0 0 10px;font-size:13px}
 .theone-feedback-preview summary{cursor:pointer;color:var(--dsw-alias-label-secondary,#a0a0a6)}
 .theone-feedback-preview pre{max-height:220px;overflow:auto;margin:6px 0 0;padding:8px 10px;border-radius:9px;background:#0000001f;font-size:12px;line-height:1.5;white-space:pre-wrap;word-break:break-word}
+.theone-start{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:2px 0 10px}
+.theone-start-chip{box-sizing:border-box;text-decoration:none;display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;border:.5px solid var(--dsw-alias-border-l2,#ffffff24);border-radius:999px;background:transparent;color:var(--dsw-alias-label-secondary,#a0a0a6);font:inherit;font-size:13px;line-height:18px;white-space:nowrap;cursor:pointer;transition:background 140ms ease,color 140ms ease,border-color 140ms ease}
+.theone-start-chip .theone-icon{opacity:.75}
+.theone-start-chip[data-primary=true]{color:var(--one-accent);border-color:var(--one-line);background:var(--one-tint)}
+.theone-start-chip[data-primary=true] .theone-icon{opacity:1}
+.theone-start-chip[data-primary=true]:hover{color:var(--one-accent);border-color:color-mix(in srgb,var(--one-accent) 40%,var(--one-line));background:var(--one-tint)}
+.theone-start-chip:not([data-primary=true]):hover{background:var(--dsw-alias-interactive-bg-hover,#ffffff0f);color:var(--dsw-alias-label-primary,inherit);border-color:var(--dsw-alias-border-l3,#ffffff38)}
+.theone-start-chip:focus-visible,.theone-start-close:focus-visible{outline:2px solid var(--dsw-focus-ring-color,#4176e6);outline-offset:2px}
+.theone-start-close{display:grid;place-items:center;width:24px;height:24px;padding:0;border:0;border-radius:6px;background:none;color:var(--dsw-alias-label-tertiary,#6f6f76);cursor:pointer;opacity:0;transition:opacity 140ms ease}
+.theone-start:hover .theone-start-close,.theone-start-close:focus-visible{opacity:1}
+.theone-start-close:hover{color:var(--dsw-alias-label-secondary,#a0a0a6)}
+.theone-start-icon{position:relative;width:30px;padding:0;justify-content:center}
+.theone-start-close{position:relative}
+:is(.theone-start,.theone-catalog) [data-tip]::after{content:attr(data-tip);position:absolute;left:50%;bottom:calc(100% + 6px);z-index:5;padding:4px 8px;border:.5px solid var(--dsw-alias-border-l2,#ffffff24);border-radius:6px;background:var(--dsw-specific-sidebar-fill,#232326);box-shadow:0 4px 14px #0003;color:var(--dsw-alias-label-primary,#e8e8ea);font-size:12px;line-height:18px;font-weight:400;white-space:nowrap;pointer-events:none;opacity:0;transform:translate(-50%,2px);transition:opacity 120ms ease,transform 120ms ease}
+:is(.theone-start,.theone-catalog) :is([data-tip]:hover,[data-tip]:focus-visible,[data-copied=true])::after{opacity:1;transform:translate(-50%,0)}
+.theone-start-icon[data-copied=true]{color:var(--one-accent);border-color:var(--one-line)}
+@media(prefers-reduced-motion:reduce){.theone-start-chip,.theone-start-close,[data-tip]::after{transition:none}}
 .theone-notice{display:flex;align-items:center;gap:8px;margin:6px 4px 0;padding:6px 8px 6px 10px;border:1px solid var(--dsw-alias-border-l2,#ffffff1f);border-radius:10px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary,#a0a0a6);min-width:0}
 .theone-notice-tag{flex:none;display:inline-flex;padding:3px;border-radius:6px;background:var(--one-tint);box-shadow:inset 0 0 0 .5px var(--one-line);color:var(--one-accent)}
 .theone-notice-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -1574,54 +1811,178 @@ button:has(.theone-nav[data-wide=true])>span:has(.theone-nav){flex:1;min-width:0
 
 const catalogCss = `
 button:has(.theone-catalog-entry)>span:not(:has(.theone-catalog-entry)){display:none}
-body{--one-accent:#a75b1e;--one-accent-hover:#8c4a15;--one-on-accent:#fff;--one-tint:#fff5ec;--one-line:#eed3bb;--one-soft:#a75b1e14}
-body[data-ds-dark-theme]{--one-accent:#93c8f3;--one-accent-hover:#b6dbf8;--one-on-accent:#0e1a24;--one-tint:#1d2a37;--one-line:#344d64;--one-soft:#93c8f31a}
-.theone-catalog{--t-fg:var(--dsw-alias-label-primary,#18181b);--t-muted:var(--dsw-alias-label-secondary,#5c6370);--t-caption:var(--dsw-alias-label-caption,#9aa0aa);--t-rule:var(--dsw-alias-border-l2,#0000001a);--t-line:var(--dsw-alias-border-l3,#0000001f);--t-hover:var(--dsw-alias-interactive-bg-hover,#26314810);--t-base:var(--dsw-alias-bg-base,#fff);--t-accent:var(--one-accent);--t-warn:var(--dsw-alias-state-error-primary,#d9480f);--t-field:var(--t-hover);
-  container-type:inline-size;box-sizing:border-box;height:100%;overflow:auto;padding:0 clamp(24px,4vw,48px) 64px;color:var(--t-fg);font-family:var(--dsw-font-family,inherit);font-size:14px;line-height:22px}
-.theone-catalog>*{max-width:960px;margin-left:auto;margin-right:auto}
-.theone-catalog button{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;gap:4px;height:28px;padding:0 10px;border:.5px solid var(--t-line);border-radius:var(--dsw-radius-sm,8px);background:transparent;color:inherit;font:inherit;font-size:12px;line-height:18px;font-weight:400;cursor:pointer;white-space:nowrap}
+body{--one-accent:#a75b1e;--one-tint:#fff5ec;--one-line:#eed3bb;--one-soft:#a75b1e14;--one-halo:#ff780066}
+body[data-ds-dark-theme]{--one-accent:#93c8f3;--one-tint:#1d2a37;--one-line:#344d64;--one-soft:#93c8f31a;--one-halo:#80caff80}
+/* The brand word in main chat's greeting: TheOne's colour with the same soft halo as the main chat entry. */
+[data-slot="conversation.chat.flow"]:has(.theone-welcome-mark)>[data-chat-turn="1"][data-chat-flow-kind="assistant-step"] strong{color:var(--one-accent);font-weight:600;text-shadow:0 0 10px var(--one-halo),0 0 22px var(--one-halo)}
+.theone-catalog{--t-fg:var(--dsw-alias-label-primary,#18181b);--t-muted:var(--dsw-alias-label-secondary,#5c6370);--t-subtle:var(--dsw-alias-label-tertiary,var(--t-muted));--t-caption:var(--dsw-alias-label-caption,#9aa0aa);--t-rule:var(--dsw-alias-border-l2,#0000001a);--t-line:var(--dsw-alias-border-l3,#0000001f);--t-hover:var(--dsw-alias-interactive-bg-hover,#26314810);--t-base:var(--dsw-alias-bg-base,#fff);--t-fill:var(--dsw-alias-bg-module-platform,#f2f3f5);--t-card:var(--dsw-alias-settings-card-fill,var(--t-base));--t-accent:var(--one-accent);--t-warn:var(--dsw-alias-state-error-primary,#d9480f);
+  container-type:inline-size;box-sizing:border-box;display:flex;flex-direction:column;height:100%;overflow:auto;padding:0 clamp(24px,4vw,48px) 24px;color:var(--t-fg);font-family:var(--dsw-font-family,inherit);font-size:14px;line-height:22px}
+.theone-catalog>*{flex:none;box-sizing:border-box;width:100%;max-width:960px;margin-left:auto;margin-right:auto}
+.theone-catalog button{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 12px;border:.5px solid var(--t-line);border-radius:var(--dsw-radius-md,10px);background:transparent;color:inherit;font:inherit;font-size:13px;line-height:20px;font-weight:400;cursor:pointer;white-space:nowrap;transition:background 120ms ease,color 120ms ease,border-color 120ms ease}
 .theone-catalog button:hover:not(:disabled){background:var(--t-hover)}
 .theone-catalog button:disabled{opacity:.4;cursor:not-allowed}
-.theone-catalog button:focus-visible{outline:2px solid var(--t-accent);outline-offset:2px}
-.theone-catalog .theone-primary{border-color:transparent;background:var(--one-accent);color:var(--one-on-accent)}
-.theone-catalog .theone-primary:hover:not(:disabled){background:var(--one-accent-hover)}
+.theone-catalog :is(button,a,input,summary):focus-visible{outline:2px solid var(--t-accent);outline-offset:2px}
+.theone-catalog .theone-primary{border-color:var(--one-line);background:var(--one-tint);color:var(--one-accent);font-weight:500}
+.theone-catalog .theone-primary:hover:not(:disabled){border-color:color-mix(in srgb,var(--one-accent) 40%,var(--one-line));background:var(--one-tint)}
 .theone-catalog .theone-quiet{border-color:transparent;color:var(--t-muted)}
 .theone-catalog .theone-quiet:hover:not(:disabled){color:var(--t-fg)}
-.theone-catalog-header{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:8px 24px;padding-top:28px}
-.theone-catalog-header .theone-overline{display:none}
-.theone-overline{margin:0 0 4px;font-size:12px;line-height:18px;font-weight:500;color:var(--t-accent)}
-.theone-catalog h1{margin:0;font-size:20px;line-height:28px;font-weight:600}
+.theone-catalog .theone-icon-button{width:32px;padding:0;border-color:transparent;color:var(--t-caption)}
+.theone-catalog .theone-icon-button:hover:not(:disabled),.theone-catalog .theone-icon-button[aria-expanded=true]{color:var(--t-muted);background:var(--t-hover)}
+.theone-catalog .theone-icon-link{position:relative;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;padding:0;border-radius:var(--dsw-radius-md,10px);color:var(--t-caption);text-decoration:none}
+.theone-catalog .theone-icon-link:hover{background:var(--t-hover);color:var(--t-muted)}
+.theone-catalog .theone-icon-link[data-copied=true]{color:var(--t-accent)}
+.theone-catalog-header{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:12px 24px;padding:28px 0 24px}
+.theone-catalog h1{margin:0;font-size:20px;line-height:28px;font-weight:500}
 .theone-catalog-lede{margin:4px 0 0;font-size:13px;line-height:20px;color:var(--t-muted)}
-.theone-figures{display:flex;gap:16px;margin:0;padding-top:4px}
-.theone-figures>div{display:flex;align-items:baseline;gap:4px}
-.theone-figures dd{margin:0;font-size:13px;line-height:20px;font-weight:500;font-variant-numeric:tabular-nums}
-.theone-figures dt{font-size:13px;line-height:20px;color:var(--t-muted)}
-.theone-toolbar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px;padding:20px 0 24px}
-.theone-catalog-status{margin:0;font-size:13px;line-height:20px;color:var(--dsw-alias-label-tertiary,var(--t-muted))}
+.theone-catalog-status{display:flex;align-items:center;gap:6px;margin:8px 0 0;font-size:12px;line-height:18px;color:var(--t-subtle)}
 .theone-catalog-status:empty{display:none}
-.theone-catalog-tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-left:auto}
-.theone-catalog .theone-catalog-tools .theone-primary{border-color:var(--t-line);background:transparent;color:inherit}
-.theone-catalog .theone-catalog-tools .theone-primary:hover:not(:disabled){background:var(--t-hover)}
-.theone-catalog-note,.theone-catalog-empty{margin:0 0 24px;color:var(--t-muted);font-size:13px;line-height:20px}
-.theone-catalog-empty{padding:40px 0;text-align:center}
-.theone-consent{box-sizing:border-box;margin:0 auto 32px;padding:20px 24px;border:1px solid var(--one-line);border-radius:var(--dsw-radius-lg,16px);background:var(--one-tint)}
-.theone-consent .theone-overline{display:flex;align-items:center;gap:6px}
-.theone-consent .theone-overline::before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor}
+.theone-catalog-status::before{content:'';flex:none;width:6px;height:6px;border-radius:50%;background:var(--t-accent);animation:theone-pulse 1.6s ease-in-out infinite}
+@keyframes theone-pulse{50%{opacity:.3}}
+.theone-catalog-tools{display:flex;align-items:center;gap:8px;margin-left:auto}
+.theone-more{position:relative}
+.theone-menu{position:absolute;top:calc(100% + 6px);right:0;z-index:20;box-sizing:border-box;min-width:184px;padding:4px;border:.5px solid var(--t-line);border-radius:var(--dsw-radius-lg,12px);background:var(--dsw-alias-bg-layer-2,var(--dsw-specific-sidebar-fill,#232326));box-shadow:var(--dsw-elevation-prominent,0 8px 30px #0003)}
+.theone-catalog .theone-menu button{display:flex;justify-content:flex-start;width:100%;height:36px;padding:0 12px;border:0;border-radius:var(--dsw-radius-md,8px);font-size:14px;line-height:22px}
+.theone-toolbar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin-bottom:28px}
+.theone-filters{display:inline-flex;gap:2px;padding:2px;border-radius:var(--dsw-radius-md,10px);background:var(--t-fill)}
+.theone-catalog .theone-filter{height:28px;padding:0 10px;gap:6px;border:0;border-radius:var(--dsw-radius-sm,8px);color:var(--t-muted)}
+.theone-catalog .theone-filter:hover:not(:disabled){background:transparent;color:var(--t-fg)}
+.theone-catalog .theone-filter[aria-pressed=true],.theone-catalog .theone-filter[aria-pressed=true]:hover:not(:disabled){background:var(--t-card);color:var(--t-fg);box-shadow:0 1px 2px #0000001a,inset 0 0 0 .5px var(--t-rule)}
+.theone-filter-count{color:var(--t-caption);font-variant-numeric:tabular-nums}
+.theone-search{display:flex;align-items:center;gap:8px;box-sizing:border-box;width:240px;height:32px;margin-left:auto;padding:0 12px;border-radius:var(--dsw-radius-md,10px);background:var(--t-fill);color:var(--t-caption);cursor:text}
+.theone-search:focus-within{box-shadow:inset 0 0 0 1px var(--t-line)}
+.theone-catalog .theone-search input:not([type=checkbox]){flex:1;min-width:0;height:100%;min-height:0;padding:0;border:0;background:none;box-shadow:none;outline:none;color:var(--t-fg);font-size:13px}
+.theone-catalog .theone-search input::placeholder{color:var(--t-caption)}
+.theone-catalog .theone-search input:not([type=checkbox]):is(:focus,:focus-visible){border-color:transparent;box-shadow:none;outline:none}
+.theone-catalog .theone-search input::-webkit-search-cancel-button{-webkit-appearance:none;appearance:none}
+.theone-catalog .theone-search-clear{flex:none;width:20px;height:20px;margin-right:-6px;padding:0;border:0;border-radius:50%;color:var(--t-caption)}
+.theone-catalog .theone-search-clear:hover:not(:disabled){color:var(--t-fg);background:var(--t-hover)}
+[data-ds-dark-theme] .theone-catalog .theone-filter[aria-pressed=true],[data-ds-dark-theme] .theone-catalog .theone-filter[aria-pressed=true]:hover:not(:disabled){background:color-mix(in srgb,var(--t-fg) 14%,transparent);box-shadow:none}
+.theone-consent{box-sizing:border-box;margin:0 auto 40px;padding:24px 28px;border:.5px solid var(--one-line);border-radius:var(--dsw-radius-xl,20px);background:linear-gradient(135deg,var(--one-tint),transparent 80%)}
 .theone-consent h2{margin:0;font-size:16px;line-height:24px;font-weight:600}
-.theone-consent-body{margin:4px 0 0;max-width:640px;font-size:14px;line-height:22px;color:var(--t-muted)}
-.theone-consent-points{list-style:none;margin:10px 0 0;padding:0;display:flex;flex-wrap:wrap;gap:4px 16px;font-size:12px;line-height:18px;color:var(--t-muted)}
+.theone-consent-body{margin:6px 0 0;max-width:640px;font-size:14px;line-height:22px;color:var(--t-muted)}
+.theone-consent-points{list-style:none;margin:12px 0 0;padding:0;display:flex;flex-wrap:wrap;gap:6px 20px;font-size:13px;line-height:20px;color:var(--t-subtle)}
 .theone-consent-points li{display:flex;gap:6px;align-items:center}
-.theone-consent-points .theone-icon{flex:none;color:var(--t-accent)}
-.theone-consent-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:20px}
-.theone-catalog .theone-consent-actions button{height:32px;padding:0 14px;font-size:13px}
-.theone-catalog .theone-consent-actions button:not(.theone-primary):not(.theone-quiet){background:var(--t-base)}
-.theone-consent-strip{box-sizing:border-box;display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px;margin:0 auto 32px;padding:8px 8px 8px 16px;border:1px solid var(--one-line);border-radius:var(--dsw-radius-md,12px);font-size:13px;line-height:20px;color:var(--t-muted)}
+.theone-consent-points .theone-icon{flex:none}
+.theone-consent-actions{display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin-top:24px}
+.theone-catalog .theone-consent-actions button{height:36px;padding:0 16px;font-size:14px}
+.theone-catalog .theone-consent-actions .theone-primary{margin-right:8px}
+.theone-catalog .theone-consent-actions button:not(.theone-primary){border-color:transparent;color:var(--t-muted)}
+.theone-catalog .theone-consent-actions button:not(.theone-primary):hover:not(:disabled){color:var(--t-fg)}
+.theone-consent-strip{box-sizing:border-box;display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px;margin:0 auto 28px;padding:6px 6px 6px 16px;border:.5px solid var(--t-rule);border-radius:var(--dsw-radius-lg,12px);font-size:13px;line-height:20px;color:var(--t-muted)}
 .theone-consent-strip>span{display:flex;align-items:center;gap:8px}
 .theone-consent-strip>span::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--t-accent)}
 .theone-catalog .theone-consent-strip button{margin-left:auto;color:var(--t-accent)}
+.theone-empty{display:flex;flex-direction:column;align-items:center;gap:6px;padding:56px 16px 64px;text-align:center}
+.theone-empty-icon{display:grid;place-items:center;width:44px;height:44px;margin-bottom:8px;border-radius:14px;color:var(--t-accent);background:var(--one-soft)}
+.theone-empty h2{margin:0;font-size:15px;line-height:22px;font-weight:500}
+.theone-empty p{margin:0;max-width:420px;font-size:13px;line-height:20px;color:var(--t-subtle)}
+.theone-catalog .theone-empty-back{margin-top:14px}
+.theone-catalog-note{margin:0 0 24px;color:var(--t-subtle);font-size:13px;line-height:20px}
+.theone-no-match{padding:40px 0;text-align:center}
+.theone-catalog-warning{box-sizing:border-box;margin:0 auto 24px;padding:10px 16px;border:.5px solid color-mix(in srgb,var(--t-warn) 35%,transparent);border-radius:var(--dsw-radius-lg,12px);background:color-mix(in srgb,var(--t-warn) 6%,transparent);font-size:13px;line-height:20px}
+.theone-catalog-entry{display:flex;align-items:center;gap:10px;font-size:14px}
+.theone-catalog-groups{display:flex;flex-direction:column;gap:32px}
+.theone-topic-group{display:flex;flex-direction:column;gap:12px}
+.theone-group-head{display:flex;align-items:center;min-height:28px}
+.theone-catalog .theone-group-toggle{height:28px;gap:8px;margin-left:-8px;padding:0 8px;border:0;border-radius:var(--dsw-radius-sm,8px);background:none;font-size:14px;line-height:22px}
+.theone-catalog .theone-group-toggle:hover:not(:disabled){background:var(--t-hover)}
+.theone-group-toggle .theone-icon{color:var(--t-caption);transform:rotate(90deg);transition:transform 150ms ease}
+.theone-group-toggle[aria-expanded=true] .theone-icon{transform:rotate(180deg)}
+.theone-topic-group h2{margin:0;font-size:14px;line-height:22px;font-weight:500}
+.theone-group-count{color:var(--t-caption);font-variant-numeric:tabular-nums}
+.theone-group-summary{margin:-8px 0 0 20px;font-size:12px;line-height:18px;color:var(--t-subtle)}
+.theone-topic-list{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.theone-topic-card{position:relative;display:flex;flex-direction:column;min-width:0;overflow:hidden;border:.5px solid var(--t-rule);border-radius:var(--dsw-radius-xl,20px);background:var(--t-card);transition:border-color 120ms ease,background 120ms ease}
+.theone-topic-card[data-open=true]{grid-column:1/-1;border-color:var(--t-line)}
+.theone-topic-card:not(.theone-hidden):hover{border-color:var(--t-line);background-image:linear-gradient(var(--t-hover),var(--t-hover))}
+.theone-topic-card:not(.theone-hidden):hover .theone-continue{background:var(--one-soft)}
+.theone-catalog .theone-stretch::after{content:'';position:absolute;inset:0;border-radius:inherit}
+.theone-catalog .theone-stretch:focus-visible{outline:none}
+.theone-catalog .theone-stretch:focus-visible::after{outline:2px solid var(--t-accent);outline-offset:-2px}
+.theone-topic-main{display:flex;flex-direction:column;gap:4px;padding:16px 16px 0}
+.theone-topic-main:last-child{padding-bottom:16px}
+.theone-topic-card.theone-hidden .theone-topic-main{opacity:.55}
+.theone-topic-row{display:flex;align-items:center;gap:8px;min-width:0}
+.theone-topic-card h3{flex:1;min-width:0;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;line-height:22px;font-weight:500}
+.theone-topic-summary{margin:0;font-size:13px;line-height:20px;color:var(--t-subtle);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;text-wrap:pretty}
+.theone-topic-card[data-open=true] .theone-topic-summary{display:block}
+.theone-topic-state{margin:4px 0 0;font-size:13px;line-height:20px;color:var(--t-subtle)}
+.theone-topic-state>span{margin-right:6px;color:var(--t-caption)}
+.theone-topic-foot{display:flex;align-items:center;gap:8px;min-height:32px;margin-top:auto;padding:10px 10px 12px 16px}
+.theone-topic-chip{min-width:0;max-width:55%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 8px;border-radius:var(--dsw-radius-xs,6px);background:var(--t-fill);color:var(--t-subtle);font-family:var(--ds-font-family-code,ui-monospace,SFMono-Regular,Consolas,monospace);font-size:12px;line-height:20px}
+.theone-tag{flex:none;display:inline-flex;align-items:center;height:20px;padding:0 8px;border-radius:999px;background:var(--t-fill);font-size:11px;line-height:1;font-weight:500;color:var(--t-subtle)}
+.theone-status-waiting{color:var(--one-accent);background:var(--one-tint);box-shadow:inset 0 0 0 .5px var(--one-line)}
+.theone-topic-warning{margin:6px 0 0;font-size:12px;line-height:18px;color:var(--t-subtle)}
+.theone-topic-merged{margin:4px 0 0;font-size:12px;line-height:18px;color:var(--t-subtle)}
+.theone-catalog .theone-topic-merged .theone-quiet{height:22px;padding:0 6px;color:var(--t-accent)}
+.theone-catalog .theone-continue{margin-left:auto;height:28px;padding:0 10px;gap:6px;border-color:transparent;color:var(--t-accent);font-weight:500}
+.theone-catalog .theone-topic-more{position:relative;z-index:1;flex:none;width:28px;height:28px;margin:-3px -6px -3px 0;padding:0;border-color:transparent;color:var(--t-caption)}
+.theone-catalog .theone-topic-more:hover:not(:disabled),.theone-catalog .theone-topic-more[aria-expanded=true]{color:var(--t-fg);background:var(--t-hover)}
+.theone-topic-merged button{position:relative;z-index:1}
+.theone-topic-edit{display:flex;flex-direction:column;gap:16px;margin:4px 16px 16px;padding-top:16px;border-top:.5px solid var(--t-rule)}
+.theone-topic-quick{display:flex;flex-wrap:wrap;gap:8px}
+.theone-topic-links{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin:0;font-size:13px}
+.theone-links-label,.theone-links-empty{color:var(--t-subtle)}
+.theone-link-chip{display:inline-flex;align-items:center;gap:2px;height:24px;padding:0 2px 0 10px;border-radius:999px;background:var(--t-fill);font-size:12px}
+.theone-catalog .theone-link-chip button{height:20px;border:0;padding:0 6px;font-size:14px;line-height:1;color:var(--t-muted);border-radius:999px}
+.theone-link-private{display:inline-flex;align-items:center;gap:6px;color:var(--t-muted);cursor:pointer}
+.theone-catalog input:not([type=checkbox]),.theone-catalog textarea,.theone-catalog select{box-sizing:border-box;min-width:0;min-height:32px;padding:5px 10px;border:.5px solid transparent;border-radius:var(--dsw-radius-md,10px);background:var(--t-fill);color:inherit;font:inherit;font-size:13px;line-height:20px}
+.theone-catalog input:not([type=checkbox]):focus,.theone-catalog textarea:focus,.theone-catalog select:focus{outline:none;border-color:var(--one-line);box-shadow:0 0 0 3px var(--one-soft)}
+.theone-manage{display:flex;flex-direction:column;gap:14px;font-size:13px}
+.theone-create{box-sizing:border-box;flex-direction:row;flex-wrap:wrap;align-items:center;gap:8px;margin:0 auto 28px;padding:12px;border:.5px solid var(--t-rule);border-radius:var(--dsw-radius-xl,20px);background:var(--t-card)}
+.theone-create input{flex:1;min-width:200px}
+.theone-manage-field{display:flex;flex-direction:column;gap:6px}
+.theone-manage-field>span{font-size:12px;line-height:18px;color:var(--t-subtle)}
+.theone-manage textarea{resize:vertical;width:100%}
+.theone-manage-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.theone-manage-row select,.theone-manage-row input{flex:1;min-width:160px}
+.theone-manage-hint{margin:0;font-size:12px;line-height:18px;color:var(--t-subtle)}
+.theone-catalog .theone-danger{color:var(--t-warn);border-color:color-mix(in srgb,var(--t-warn) 35%,transparent)}
+.theone-routes{box-sizing:border-box;margin:48px auto 0;padding-top:16px;border-top:.5px solid var(--t-rule)}
+.theone-routes summary{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;width:fit-content;min-height:32px;margin-left:-8px;padding:0 8px;border-radius:var(--dsw-radius-sm,8px);cursor:pointer;font-size:14px;line-height:22px;font-weight:500;list-style:none}
+.theone-routes summary:hover{background:var(--t-hover)}
+.theone-routes summary::-webkit-details-marker{display:none}
+.theone-routes summary::before{content:'';width:5px;height:5px;margin:0 3px 0 1px;border-right:1.5px solid var(--t-caption);border-bottom:1.5px solid var(--t-caption);transform:rotate(-45deg);transition:transform 150ms ease}
+.theone-routes[open] summary::before{transform:rotate(45deg) translate(-2px,-1px)}
+.theone-routes summary>span{color:var(--t-caption);font-weight:400}
+.theone-route-stats{font-weight:400;color:var(--t-subtle);font-size:12px}
+.theone-routes .theone-manage-hint{margin:4px 0 8px 12px;max-width:46em}
+.theone-routes ol{list-style:none;margin:0 0 0 12px;padding:0}
+.theone-routes li{display:grid;grid-template-columns:auto minmax(0,1fr) minmax(0,1fr) auto;gap:4px 16px;align-items:center;min-height:48px;padding:8px 0;border-top:.5px solid var(--t-rule);font-size:13px;line-height:20px}
+.theone-routes time{min-width:40px;color:var(--t-caption);font-variant-numeric:tabular-nums;white-space:nowrap}
+.theone-routes q{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;quotes:none}
+.theone-route-target{display:flex;flex-direction:column;min-width:0}
+.theone-route-target strong{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.theone-route-target small{color:var(--t-subtle);font-size:12px;line-height:18px}
+.theone-route-actions{display:flex;gap:8px;align-items:center;justify-content:flex-end}
+.theone-route-fixed{color:var(--t-subtle);font-size:12px}
+.theone-catalog .theone-routes button{height:28px;padding:0 8px;font-size:12px}
+.theone-routes select{width:132px;height:28px;min-height:28px;padding:0 8px;font-size:12px}
+.theone-catalog-footer{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:2px;margin-top:auto;padding-top:40px}
+.theone-catalog [data-tip]::after{top:auto;bottom:calc(100% + 6px);left:50%;right:auto;transform:translate(-50%,2px)}
+.theone-catalog :is([data-tip]:hover,[data-tip]:focus-visible,[data-copied=true])::after{transform:translate(-50%,0)}
+@container (max-width:640px){.theone-catalog-tools{margin-left:0}.theone-search{width:100%;margin-left:0}.theone-topic-list{grid-template-columns:1fr}.theone-consent{padding:20px}.theone-routes li{grid-template-columns:auto minmax(0,1fr)}.theone-route-target,.theone-route-actions{grid-column:2}.theone-route-actions{justify-content:flex-start}}
+@media(max-width:640px){.theone-catalog{padding:0 16px 40px}}
+@media(prefers-reduced-motion:reduce){.theone-catalog-status::before{animation:none}.theone-catalog button,.theone-topic-card{transition:none}}
+.theone-apps{margin:0 0 20px}
+.theone-app-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+@container theone-settings (max-width:460px){.theone-app-row{grid-template-columns:1fr}}
+.theone-settings .theone-app-card{height:auto;position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:16px;text-align:left;white-space:normal;cursor:pointer;color:inherit;font:inherit;border-radius:16px;border:1px solid var(--dsw-alias-border-l2);background:transparent;transition:background 140ms ease,border-color 140ms ease}
+.theone-settings .theone-app-card:hover{background:var(--dsw-alias-interactive-bg-hover)}
+.theone-settings .theone-app-card[data-open=true],.theone-settings .theone-app-card[data-open=true]:hover:not(:disabled){border-color:var(--one-line);background:var(--one-tint)}
+.theone-settings .theone-app-card:focus-visible{outline:2px solid var(--one-accent);outline-offset:2px}
+.theone-app-logo{display:grid;place-items:center;width:36px;height:36px;margin-bottom:10px;border-radius:10px;color:var(--app);background:color-mix(in srgb,var(--app) 12%,transparent)}
+.theone-app-card strong{font-size:14px;line-height:20px;font-weight:500}
+.theone-app-blurb{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary))}
+.theone-app-online{position:absolute;top:16px;right:16px;display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--dsw-alias-label-secondary)}
+.theone-app-online::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--app)}
+.theone-app-panel{margin-top:12px;padding:22px;border-radius:16px;border:1px solid var(--dsw-alias-border-l2)}
+.theone-app-panel>section{margin:0;padding:0;border:0;background:none;box-shadow:none}
+.theone-app-panel h2{margin-top:0}
+@media(prefers-reduced-motion:reduce){.theone-settings .theone-app-card{transition:none}}
 .theone-picker{margin-top:16px}
 .theone-picker-hint{margin:0 0 8px;font-size:13px;line-height:20px;color:var(--t-muted)}
-.theone-picker-list{max-height:min(400px,55vh);overflow:auto;border:.5px solid var(--t-line);border-radius:var(--dsw-radius-md,12px);background:var(--t-base)}
+.theone-picker-list{max-height:min(400px,55vh);overflow:auto;border:.5px solid var(--t-line);border-radius:var(--dsw-radius-lg,12px);background:var(--t-base)}
 .theone-picker-group+.theone-picker-group{border-top:.5px solid var(--t-line)}
 .theone-picker-group>header{position:sticky;top:0;z-index:1;display:flex;align-items:center;gap:8px;height:36px;padding:0 12px 0 16px;border-bottom:.5px solid var(--t-rule);background:var(--t-base);font-size:12px;line-height:18px}
 .theone-picker-folder{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
@@ -1635,88 +1996,7 @@ body[data-ds-dark-theme]{--one-accent:#93c8f3;--one-accent-hover:#b6dbf8;--one-o
 .theone-picker-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .theone-picker-off .theone-picker-title{color:var(--t-caption)}
 .theone-picker time{color:var(--t-caption);font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}
-@container (max-width:560px){.theone-consent{padding:16px}.theone-picker time{display:none}}
-.theone-catalog-warning{box-sizing:border-box;margin:0 auto 24px;padding:10px 16px;border:.5px solid color-mix(in srgb,var(--t-warn) 40%,transparent);border-radius:var(--dsw-radius-md,12px);background:color-mix(in srgb,var(--t-warn) 6%,transparent);font-size:13px;line-height:20px}
-.theone-catalog-entry{display:flex;align-items:center;gap:10px;font-size:14px}
-.theone-routes{box-sizing:border-box;margin:0 auto 32px;padding:0 16px;border:.5px solid var(--t-line);border-radius:var(--dsw-radius-md,12px)}
-.theone-routes summary{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;min-height:44px;cursor:pointer;font-size:14px;line-height:22px;font-weight:500;list-style:none}
-.theone-routes summary::-webkit-details-marker{display:none}
-.theone-routes summary::before{content:'';width:6px;height:6px;margin:0 4px 0 2px;border-right:1.5px solid var(--t-muted);border-bottom:1.5px solid var(--t-muted);transform:rotate(-45deg);transition:transform 150ms ease}
-.theone-routes[open] summary::before{transform:rotate(45deg) translate(-2px,-1px)}
-.theone-routes summary>span{color:var(--t-caption);font-weight:400}
-.theone-route-stats{font-weight:400;color:var(--t-caption);font-size:13px}
-.theone-routes .theone-manage-hint{margin:0 0 8px 20px;max-width:46em}
-.theone-routes ol{list-style:none;margin:0;padding:0 0 8px}
-.theone-routes li{display:grid;grid-template-columns:48px minmax(0,1fr) minmax(0,1fr) 248px;gap:4px 16px;align-items:center;min-height:44px;padding:6px 0;border-top:.5px solid var(--t-rule);font-size:13px;line-height:20px}
-.theone-routes time{color:var(--t-caption);font-variant-numeric:tabular-nums}
-.theone-routes q{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;quotes:none}
-.theone-route-target{display:flex;flex-direction:column;min-width:0}
-.theone-route-target strong{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.theone-route-target small{color:var(--t-caption);font-size:12px;line-height:18px}
-.theone-route-actions{display:flex;gap:8px;align-items:center;justify-content:flex-end}
-.theone-route-fixed{color:var(--t-caption);font-size:12px}
-.theone-routes select{width:auto;width:132px;height:28px;min-height:28px;padding-top:0;padding-bottom:0;font-size:12px}
-.theone-catalog-groups{display:flex;flex-direction:column;gap:14px}
-.theone-topic-group{display:flex;flex-direction:column;gap:10px}
-.theone-topic-group+.theone-topic-group{padding-top:14px;border-top:.5px solid var(--t-rule)}
-.theone-group-head{display:flex;align-items:center;min-height:36px}
-.theone-catalog .theone-group-toggle{height:auto;gap:8px;padding:0;border:0;background:none;font-size:14px;line-height:22px}
-.theone-catalog .theone-group-toggle:hover:not(:disabled){background:none}
-.theone-group-toggle .theone-icon{color:var(--t-caption);transform:rotate(90deg);transition:transform 150ms ease}
-.theone-group-toggle[aria-expanded=true] .theone-icon{transform:rotate(180deg)}
-.theone-topic-group h2{margin:0;font-size:14px;line-height:22px;font-weight:400}
-.theone-group-count{color:var(--t-caption);font-variant-numeric:tabular-nums}
-.theone-group-summary{margin:-6px 0 0 20px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary,var(--t-muted))}
-.theone-topic-list{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
-.theone-topic-card{position:relative;display:flex;flex-direction:column;min-width:0;overflow:hidden;border:.5px solid var(--dsw-alias-settings-card-stroke,var(--dsw-alias-border-l4,#00000029));border-radius:var(--dsw-radius-xl,20px);background:var(--dsw-alias-settings-card-fill,var(--t-base));transition:background 120ms ease}
-.theone-topic-card[data-open=true]{grid-column:1/-1;border-color:var(--t-line)}
-.theone-topic-card:not(.theone-hidden):hover{background-image:linear-gradient(var(--t-hover),var(--t-hover))}
-.theone-topic-card:not(.theone-hidden):hover .theone-continue{background:var(--one-soft)}
-.theone-catalog .theone-stretch::after{content:'';position:absolute;inset:0;border-radius:inherit}
-.theone-catalog .theone-stretch:focus-visible{outline:none}
-.theone-catalog .theone-stretch:focus-visible::after{outline:2px solid var(--t-accent);outline-offset:-2px}
-.theone-topic-main{display:flex;flex-direction:column;gap:2px;padding:12px 14px 0}
-.theone-topic-main:last-child{padding-bottom:14px}
-.theone-topic-card.theone-hidden .theone-topic-main{opacity:.55}
-.theone-topic-row{display:flex;align-items:center;gap:12px;min-width:0}
-.theone-topic-card h3{flex:1;min-width:0;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;line-height:20px;font-weight:500}
-.theone-topic-summary{margin:0;font-size:13px;line-height:20px;color:var(--t-muted);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;text-wrap:pretty}
-.theone-topic-card[data-open=true] .theone-topic-summary{display:block}
-.theone-topic-state{margin:4px 0 0;font-size:13px;line-height:20px;color:var(--t-muted)}
-.theone-topic-state>span{margin-right:6px;color:var(--t-caption)}
-.theone-topic-foot{display:flex;align-items:center;gap:8px;min-height:28px;margin-top:auto;padding:8px 8px 10px 14px}
-.theone-topic-chip{min-width:0;max-width:50%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:1px 6px;border-radius:var(--dsw-radius-xs,4px);background:var(--dsw-alias-bg-module-platform,#f2f3f5);color:var(--t-muted);font-family:var(--ds-font-family-code,ui-monospace,SFMono-Regular,Consolas,monospace);font-size:12px;line-height:18px}
-.theone-tag{flex:none;display:inline-flex;align-items:center;height:18px;padding:0 7px;border-radius:999px;background:var(--dsw-alias-bg-module-platform,#f2f3f5);font-size:10px;line-height:1;font-weight:400;color:var(--t-muted)}
-.theone-status-waiting{color:var(--t-warn);background:color-mix(in srgb,var(--t-warn) 10%,transparent)}
-.theone-status-done{color:var(--t-accent);background:var(--one-soft)}
-.theone-topic-warning{margin:6px 0 0;padding-left:8px;border-left:2px solid var(--t-warn);font-size:12px;line-height:18px;color:var(--t-muted)}
-.theone-topic-merged{margin:4px 0 0;font-size:12px;line-height:18px;color:var(--t-muted)}
-.theone-catalog .theone-topic-merged .theone-quiet{height:22px;padding:0 6px;color:var(--t-accent)}
-.theone-catalog .theone-continue{margin-left:auto;height:26px;gap:6px;border-color:transparent;color:var(--t-accent);font-weight:500}
-.theone-catalog .theone-topic-more{position:relative;z-index:1;flex:none;width:26px;height:26px;margin:-3px -6px -3px 0;padding:0;border-color:transparent;color:var(--t-caption)}
-.theone-catalog .theone-topic-more:hover:not(:disabled),.theone-catalog .theone-topic-more[aria-expanded=true]{color:var(--t-fg);background:var(--t-hover)}
-.theone-topic-merged button{position:relative;z-index:1}
-.theone-topic-edit{display:flex;flex-direction:column;gap:14px;margin:2px 14px 14px;padding-top:14px;border-top:.5px solid var(--t-rule)}
-.theone-topic-quick{display:flex;flex-wrap:wrap;gap:8px}
-.theone-topic-links{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin:0 0 16px;font-size:13px}
-.theone-links-label,.theone-links-empty{color:var(--t-muted)}
-.theone-link-chip{display:inline-flex;align-items:center;gap:2px;height:24px;padding:0 2px 0 10px;border:.5px solid var(--t-line);border-radius:999px;font-size:12px}
-.theone-catalog .theone-link-chip button{height:20px;border:0;padding:0 6px;font-size:14px;line-height:1;color:var(--t-muted);border-radius:999px}
-.theone-link-private{display:inline-flex;align-items:center;gap:6px;color:var(--t-muted);cursor:pointer}
-.theone-catalog input:not([type=checkbox]),.theone-catalog textarea,.theone-catalog select{box-sizing:border-box;min-width:0;min-height:32px;padding:5px 10px;border:.5px solid var(--t-line);border-radius:var(--dsw-radius-sm,8px);background:var(--t-base);color:inherit;font:inherit;font-size:13px;line-height:20px}
-.theone-catalog input:not([type=checkbox]):focus,.theone-catalog textarea:focus,.theone-catalog select:focus{outline:none;border-color:var(--t-accent);box-shadow:0 0 0 3px var(--one-soft)}
-.theone-manage{display:flex;flex-direction:column;gap:14px;font-size:13px}
-.theone-create{box-sizing:border-box;flex-direction:row;flex-wrap:wrap;align-items:center;gap:8px;margin:0 auto 32px;padding:12px;border:.5px solid var(--t-line);border-radius:var(--dsw-radius-md,12px)}
-.theone-create input{flex:1;min-width:200px}
-.theone-manage-field{display:flex;flex-direction:column;gap:6px}
-.theone-manage-field>span{font-size:12px;line-height:18px;color:var(--t-muted)}
-.theone-manage textarea{resize:vertical;width:100%}
-.theone-manage-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
-.theone-manage-row select,.theone-manage-row input{flex:1;min-width:160px}
-.theone-manage-hint{margin:0;font-size:12px;line-height:18px;color:var(--t-muted)}
-.theone-catalog .theone-danger{color:var(--t-warn);border-color:color-mix(in srgb,var(--t-warn) 40%,transparent)}
-@container (max-width:640px){.theone-catalog-tools{margin-left:0}.theone-topic-list{grid-template-columns:1fr}.theone-routes li{grid-template-columns:40px minmax(0,1fr)}.theone-route-target,.theone-route-actions{grid-column:2}.theone-route-actions{justify-content:flex-start}}
-@media(max-width:640px){.theone-catalog{padding:0 16px 48px}}
+@container (max-width:560px){.theone-picker time{display:none}}
 `
 
 const composerCss = `
@@ -1743,18 +2023,32 @@ const composerCss = `
 `
 
 const settingsCss = `
-.theone-settings{--one-settings-accent:#a75b1e}[data-ds-dark-theme] .theone-settings{--one-settings-accent:#93c8f3}
-.theone-settings input,.theone-settings select{width:100%;box-sizing:border-box;min-height:38px;padding:8px 11px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;font:inherit;color:inherit;background:var(--dsw-specific-sidebar-fill)}.theone-settings input:focus-visible,.theone-settings select:focus-visible{outline:2px solid var(--one-settings-accent);outline-offset:2px}.theone-settings input:disabled,.theone-settings select:disabled,.theone-settings button:disabled{opacity:.5;cursor:default}.theone-settings small{display:block;margin-top:5px;color:var(--dsw-alias-label-secondary);font-size:12px}
-.theone-settings-footer{position:sticky;bottom:0;display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:15px 16px;margin-top:22px;border:1px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-specific-sidebar-fill);box-shadow:0 -4px 20px #00007;z-index:2}.theone-settings-footer p{flex:1;min-width:180px;margin:0;font-size:13px;line-height:1.6}.theone-settings .theone-settings-save{color:var(--one-settings-accent);border-color:color-mix(in srgb,var(--one-settings-accent) 35%,transparent);background:color-mix(in srgb,var(--one-settings-accent) 9%,var(--dsw-specific-sidebar-fill))}
 .theone-context-menu{position:fixed;z-index:10000;min-width:160px;padding:5px;border:1px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-specific-sidebar-fill);color:var(--dsw-alias-label-primary);box-shadow:0 8px 30px #0002;font:inherit}
 .theone-context-menu button{display:block;width:100%;padding:9px 14px;border:0;border-radius:8px;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}
 .theone-context-menu button:hover,.theone-context-menu button:focus-visible{outline:none;background:var(--dsw-alias-interactive-bg-hover)}
-.theone-settings{height:100%;overflow:auto;box-sizing:border-box;padding:32px max(24px,calc((100% - 980px)/2));color:var(--dsw-alias-label-primary);font:inherit}
-.theone-settings-header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.theone-settings h1{font-size:26px;margin:0 0 8px;outline:none}.theone-settings h2{font-size:17px;margin:0 0 16px}.theone-settings-header p,.theone-settings-help{color:var(--dsw-alias-label-secondary);line-height:1.6;margin:0 0 18px}
-.theone-settings button{border:1px solid var(--dsw-alias-border-l2);border-radius:9px;padding:9px 14px;background:var(--dsw-alias-interactive-bg-hover);color:inherit;font:inherit;cursor:pointer;white-space:nowrap}.theone-settings button:focus-visible{outline:2px solid var(--dsw-focus-ring-color);outline-offset:2px}
-.theone-settings-notice{padding:13px 16px;border:1px solid #ed9b412a;background:#f3940710;border-radius:12px;font-size:13px;line-height:1.7;margin:0 0 22px}
-.theone-weixin-login{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin:6px 0 12px}.theone-weixin-qr{background:#fff;border-radius:12px;padding:6px;image-rendering:pixelated}.theone-weixin input{min-width:8em}.theone-weixin .theone-settings-update-actions+p{margin-top:12px}.theone-settings-update p{margin:0 0 10px;line-height:1.7}.theone-settings-update-version{color:var(--dsw-alias-label-secondary);font-size:13px}.theone-settings-update-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:6px}
-.theone-settings-summary,.theone-settings-group{border:1px solid var(--dsw-alias-border-l2);border-radius:16px;padding:22px;margin-bottom:20px}.theone-settings-summary{background:#88804}.theone-settings-summary dl{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px}.theone-settings dl{margin:0}.theone-settings-summary dt{font-size:12px;color:var(--dsw-alias-label-secondary);margin-bottom:8px}.theone-settings dd{margin:0;overflow-wrap:anywhere;line-height:1.6}.theone-settings-summary dd{font-size:15px}.theone-settings-summary p{font-size:13px;line-height:1.7;color:var(--dsw-alias-label-secondary);margin:16px 0 0}
-.theone-settings-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(160px,42%);gap:24px;padding:16px 0;border-top:1px solid var(--dsw-alias-border-l2)}.theone-settings-row:first-child{border-top:0;padding-top:0}.theone-settings-row:last-child{padding-bottom:0}.theone-settings-row strong{font-size:14px;font-weight:500}.theone-settings-row p{font-size:13px;line-height:1.6;color:var(--dsw-alias-label-secondary);margin:6px 0}.theone-settings-row code{font-size:11px;color:var(--dsw-alias-label-secondary)}.theone-settings-row dd{font-size:13px;padding-top:1px}.theone-settings-row[data-inactive=true]{opacity:.6}
-@media(max-width:640px){.theone-settings{padding:20px 16px}.theone-settings-header{flex-wrap:wrap}.theone-settings-summary,.theone-settings-group{padding:18px}.theone-settings-summary dl{grid-template-columns:1fr}.theone-settings-row{grid-template-columns:1fr;gap:10px}}
+.theone-settings{container:theone-settings/inline-size;color:var(--dsw-alias-label-primary);font:inherit;font-size:14px;line-height:22px}
+.theone-settings h2{margin:0;font-size:12px;line-height:18px;font-weight:600;color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary))}
+.theone-settings-help{margin:4px 0 0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary))}
+.theone-settings-group{display:block;margin:0 0 24px}.theone-settings dl{margin:0}.theone-settings dt,.theone-settings dd{margin:0}
+.theone-settings-row{display:flex;align-items:center;gap:8px;padding:16px 0;border-bottom:.5px solid var(--dsw-alias-border-l2)}.theone-settings-row:last-child{border-bottom:0}
+.theone-settings-row>:first-child{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px;padding-right:48px}.theone-settings-row>:last-child{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:4px;overflow-wrap:anywhere;max-width:50%}
+.theone-settings-row strong{font-size:14px;line-height:22px;font-weight:400}.theone-settings-row p{margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary))}.theone-settings-row[data-inactive=true]{opacity:.6}
+.theone-settings-unit{display:inline-flex;align-items:center;gap:10px;color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary))}.theone-settings input[type=number]{width:112px;text-align:center}
+.theone-settings small{display:block;color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary));font-size:12px;line-height:18px}
+.theone-settings button,.theone-settings select,.theone-settings input{box-sizing:border-box;height:36px;padding:0 14px;border:0;border-radius:var(--dsw-radius-md,10px);background:var(--dsw-alias-bg-module-platform);color:var(--dsw-alias-label-primary);font:inherit;font-size:14px;line-height:22px;white-space:nowrap}
+.theone-settings button{cursor:pointer}.theone-settings button:hover:not(:disabled),.theone-settings select:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}
+.theone-settings select{min-width:140px;max-width:260px;padding-right:10px;cursor:pointer}.theone-settings input{width:180px}.theone-settings input:focus{outline:none;box-shadow:inset 0 0 0 1px var(--dsw-alias-border-l3)}
+.theone-settings :is(button,select,input):focus-visible{outline:var(--dsw-focus-ring-width,2px) solid var(--dsw-focus-ring-color,var(--one-accent));outline-offset:2px}
+.theone-settings :is(button,select,input):disabled{opacity:.4;cursor:default}
+.theone-settings .theone-switch{position:relative;flex:none;width:36px;height:20px;padding:2px;border-radius:999px;background:var(--dsw-alias-border-l3)}
+.theone-settings .theone-switch:hover:not(:disabled){background:var(--dsw-alias-border-l3)}.theone-settings .theone-switch[aria-checked=true],.theone-settings .theone-switch[aria-checked=true]:hover:not(:disabled){background:var(--dsw-alias-brand-primary)}
+.theone-switch-thumb{display:block;width:16px;height:16px;border-radius:50%;background:var(--dsw-alias-switch-thumb,#fff);transition:transform 120ms}.theone-switch[aria-checked=true] .theone-switch-thumb{background:var(--dsw-alias-label-primary-foreground,#fff);transform:translateX(16px)}
+.theone-settings-footer{position:sticky;bottom:0;display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:12px 0 0;border-top:.5px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2,var(--dsw-specific-sidebar-fill));box-shadow:0 24px 0 var(--dsw-alias-bg-layer-2,var(--dsw-specific-sidebar-fill));z-index:2}.theone-settings-footer p{flex:1;min-width:180px;margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary))}
+.theone-settings .theone-settings-save:not(:disabled){color:var(--one-accent);background:var(--one-tint);box-shadow:inset 0 0 0 .5px var(--one-line)}
+.theone-settings-update-actions{display:flex;gap:8px;flex-wrap:wrap;flex-direction:row!important}
+.theone-weixin-login{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin:6px 0 12px}.theone-weixin-qr{background:#fff;border-radius:12px;padding:6px;image-rendering:pixelated}.theone-weixin input{min-width:8em}.theone-weixin .theone-settings-update-actions+p{margin-top:12px}
+.theone-app-panel p{margin:8px 0;font-size:13px;line-height:20px}.theone-app-panel h2{margin:0 0 4px}
+.theone-settings-advanced>summary{display:flex;align-items:center;gap:8px;list-style:none;cursor:pointer}.theone-settings-advanced>summary::-webkit-details-marker{display:none}.theone-settings-advanced>summary::before{content:'';width:5px;height:5px;margin:0 2px;border-right:1.5px solid var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary));border-bottom:1.5px solid var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary));transform:rotate(-45deg);transition:transform 150ms ease}.theone-settings-advanced[open]>summary::before{transform:rotate(45deg) translate(-2px,-1px)}.theone-settings-advanced>summary:focus-visible{outline:2px solid var(--dsw-focus-ring-color);outline-offset:4px;border-radius:4px}
+@container theone-settings (max-width:520px){.theone-settings-row{flex-wrap:wrap}.theone-settings-row>:first-child{flex-basis:100%;padding-right:0}.theone-settings-row>:last-child{align-items:flex-start;max-width:100%}}
+@media(prefers-reduced-motion:reduce){.theone-switch-thumb{transition:none}}
 `

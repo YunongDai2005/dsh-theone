@@ -16,6 +16,7 @@ export interface SettingsSnapshot {
         notices: boolean;
         factLinks: boolean;
         factExtraction: boolean;
+        persistentWork: boolean;
     };
     model: {
         provider: string;
@@ -35,9 +36,9 @@ export interface SettingsSnapshot {
     /** Saved settings that apply only after DSH restarts; everything else applies when saved. */
     restartRequired: boolean;
 }
-export declare const EDITABLE_SETTINGS_KEYS: readonly ["workerProvider", "workerModel", "routerMode", "historyCatalog", "catalogIntervalMs", "maxDescriptorChars", "maxResponseChars", "linkScope", "routeNotice", "contextsPath", "notices", "factLinks", "factExtraction"];
+export declare const EDITABLE_SETTINGS_KEYS: readonly ["workerProvider", "workerModel", "routerMode", "historyCatalog", "catalogIntervalMs", "maxDescriptorChars", "maxResponseChars", "linkScope", "routeNotice", "contextsPath", "notices", "factLinks", "factExtraction", "persistentWork"];
 /** The background catalog is started once; these take effect after DSH restarts. */
-export declare const RESTART_SETTINGS_KEYS: readonly ["historyCatalog", "catalogIntervalMs", "factLinks", "factExtraction"];
+export declare const RESTART_SETTINGS_KEYS: readonly ["historyCatalog", "catalogIntervalMs", "factLinks", "factExtraction", "persistentWork"];
 /** Settings of the removed direct router; forms saved by older versions may still carry them. */
 export declare const RETIRED_SETTINGS_KEYS: readonly ["routerTransport", "routerBaseUrl", "routerModel", "routerApiKeyEnv"];
 /** Added after the first release; settings saved before them take their defaults. */
@@ -47,5 +48,6 @@ export declare const SETTINGS_DEFAULTS: {
     readonly notices: true;
     readonly factLinks: false;
     readonly factExtraction: false;
+    readonly persistentWork: false;
 };
 export type EditableSettings = Pick<SettingsSnapshot['values'], typeof EDITABLE_SETTINGS_KEYS[number]>;

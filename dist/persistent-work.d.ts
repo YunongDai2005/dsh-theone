@@ -13,6 +13,8 @@ export interface ResearchTask {
     maxChecks: number;
 }
 export interface WorkHost {
+    /** Off: PR checks wait (TASKS_OFF) and pick up again once turned back on. */
+    enabled?(): boolean;
     available?(task: ResearchTask): boolean;
     analyze(task: ResearchTask, snapshot: PullSnapshot, signal: AbortSignal): Promise<unknown>;
     memory(job: WorkJob, scope: WorkScope): Promise<WorkOutcome>;

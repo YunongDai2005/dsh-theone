@@ -35,7 +35,7 @@ test('settings expose all public runtime options without credentials, writes or 
     assert.equal(response.status, 200)
     assert.equal(response.headers.get('cache-control'), 'no-store')
     const settings: SettingsSnapshot = await response.json()
-    assert.equal(Object.keys(settings.values).length, 15)
+    assert.equal(Object.keys(settings.values).length, 16)
     // Shared facts are experimental and stay off unless turned on.
     assert.deepEqual([settings.values.factLinks, settings.values.factExtraction], [false, false])
     assert.equal(settings.values.catalogIntervalMs, 45000)

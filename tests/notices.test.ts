@@ -71,3 +71,23 @@ test('closed notices stay closed, and the setting turns notices off', { timeout:
     assert.deepEqual((await read()).notices, [])
   } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
 })
+
+test('the getting-started card shows until closed, also with notices turned off', { timeout: 30000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'theone-onboarding-'))
+  const app = await harness(root)
+  try {
+    Object.defineProperty(app.ctx.theone, 'noticeBoard', { value: new NoticeBoard('0.3.13', 'https://example.test/n.json', (async () => new Response(JSON.stringify(file))) as typeof fetch) })
+    const connection = new HostConnectionService(app.ctx, [], undefined as never)
+    const handler = peered(connection)
+    await new Promise<void>(resolve => setImmediate(resolve))
+    const read = async (init?: RequestInit) => (await (await handler.fetch(new Request('http://dsh.internal/api/theone/notices', init))).json()) as { notices: { id: string }[]; onboarding: boolean }
+    assert.equal((await read()).onboarding, true)
+    const initial = await app.ctx.theone.settingsSnapshot()
+    await handler.fetch(new Request('http://dsh.internal/api/theone/settings', { method: 'PUT', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ values: { ...initial.savedValues, notices: false }, revision: initial.revision }) }))
+    assert.deepEqual(await read(), { notices: [], onboarding: true })
+    const closed = await read({ method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ dismiss: 'theone-onboarding' }) })
+    assert.equal(closed.onboarding, false)
+    assert.equal((await read()).onboarding, false)
+  } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
+})
