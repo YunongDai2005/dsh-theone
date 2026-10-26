@@ -379,16 +379,23 @@ export function apply(ctx: Context) {
 
   /**
    * Open DSH's Settings on TheOne's page. The dialog lets plugins add a page but not open one, so this
-   * presses the user's own "Open settings" shortcut, then TheOne's entry in the dialog's list.
+   * presses the sidebar's own Settings button, then TheOne's entry in the dialog's list. Where the
+   * sidebar has no such button (the web app shows an account menu there), it presses the user's
+   * "Open settings" shortcut instead; the desktop app takes that shortcut through its native menu,
+   * so there only the button works.
    */
   function openSettings() {
-    type Entry = { id: string; binding: { code: string; modifiers: readonly string[] } | null }
-    const shortcuts = (ctx.get as (name: string) => unknown)('shortcuts') as { catalog?: { getSnapshot(): readonly Entry[] } } | undefined
-    const binding = shortcuts?.catalog?.getSnapshot().find(entry => entry.id === 'settings.open')?.binding
-    if (!binding) return
-    const held = (modifier: string) => binding.modifiers.includes(modifier)
-    document.body.dispatchEvent(new KeyboardEvent('keydown', { code: binding.code, bubbles: true, cancelable: true,
-      ctrlKey: held('control'), altKey: held('alt'), shiftKey: held('shift'), metaKey: held('meta') }))
+    const trigger = document.querySelector<HTMLButtonElement>('[data-slot="sidebar.settings"] button[aria-haspopup="dialog"]')
+    if (trigger) trigger.click()
+    else {
+      type Entry = { id: string; binding: { code: string; modifiers: readonly string[] } | null }
+      const shortcuts = (ctx.get as (name: string) => unknown)('shortcuts') as { catalog?: { getSnapshot(): readonly Entry[] } } | undefined
+      const binding = shortcuts?.catalog?.getSnapshot().find(entry => entry.id === 'settings.open')?.binding
+      if (!binding) return
+      const held = (modifier: string) => binding.modifiers.includes(modifier)
+      document.body.dispatchEvent(new KeyboardEvent('keydown', { code: binding.code, bubbles: true, cancelable: true,
+        ctrlKey: held('control'), altKey: held('alt'), shiftKey: held('shift'), metaKey: held('meta') }))
+    }
     // The dialog draws after this; choose TheOne's entry once its list is there (for up to a second).
     let tries = 0
     const choose = () => {
@@ -1064,8 +1071,7 @@ export function apply(ctx: Context) {
       const field = key as keyof EditableSettings
       const props = { 'aria-label': t(`settings.${key}`), disabled: saving, id: `theone-setting-${key}` }
       const select = (value: string, choices: { value: string; label: string }[], selectValue: (value: string) => void) =>
-        h('select', { ...props, value, required: field === 'workerModel' && !!draft.workerProvider, onChange: (event: React.ChangeEvent<HTMLSelectElement>) => selectValue(event.target.value) },
-          ...choices.map(choice => h('option', { key: choice.value, value: choice.value }, choice.label)))
+        h(Dropdown, { id: props.id, label: props['aria-label'], disabled: props.disabled, value, choices, onChange: selectValue })
       // On/off settings are switches, as in DSH's own Settings.
       if (field === 'historyCatalog' || field === 'notices' || field === 'factLinks' || field === 'factExtraction' || field === 'persistentWork')
         return h('button', { ...props, type: 'button', role: 'switch', 'aria-checked': draft[field], className: 'theone-switch', onClick: () => change(field, !draft[field]) },
@@ -1169,21 +1175,20 @@ export function apply(ctx: Context) {
         h('button', { type: 'button', disabled: busy || !edited || !title.trim() || !summary.trim(),
           onClick: () => { void post('/api/theone/topics', { action: 'edit', id: topic.id, title, summary, constraints: rules }) } }, t('manage.save'))),
       field('manage.workspace', h('div', { className: 'theone-manage-row' },
-        h('select', { value: group, disabled: busy, onChange: (event: React.ChangeEvent<HTMLSelectElement>) => setGroup(event.target.value) },
-          h('option', { value: '' }, t('manage.unassigned')), ...groups.map(item => h('option', { key: item.id, value: item.id }, item.title)),
-          h('option', { value: '__new' }, t('manage.newWorkspace'))),
+        h(Dropdown, { label: t('manage.workspace'), value: group, disabled: busy, onChange: setGroup,
+          choices: [{ value: '', label: t('manage.unassigned') }, ...groups.map(item => ({ value: item.id, label: item.title })), { value: '__new', label: t('manage.newWorkspace') }] }),
         group === '__new' ? h('input', { value: groupTitle, maxLength: 80, placeholder: t('manage.newWorkspaceName'), disabled: busy, onChange: (event: React.ChangeEvent<HTMLInputElement>) => setGroupTitle(event.target.value) }) : null,
         h('button', { type: 'button', disabled: busy || group === groupOf || (group === '__new' && !groupTitle.trim()),
           onClick: () => { void post('/api/theone/topics', { action: 'move', id: topic.id, ...(group === '__new' ? { groupTitle } : group ? { groupId: group } : {}) }) } }, t('manage.move')))),
       field('manage.attach', h('div', { className: 'theone-manage-row' },
-        h('select', { value: session, disabled: busy || !sessions, onChange: (event: React.ChangeEvent<HTMLSelectElement>) => setSession(event.target.value) },
-          h('option', { value: '' }, sessions ? t('manage.attachPick') : t('manage.loadingSessions')),
-          ...(sessions ?? []).filter(item => !own.has(item.id)).map(item => h('option', { key: item.id, value: item.id }, item.title))),
+        h(Dropdown, { label: t('manage.attach'), value: session, disabled: busy || !sessions, onChange: setSession,
+          placeholder: sessions ? t('manage.attachPick') : t('manage.loadingSessions'),
+          choices: (sessions ?? []).filter(item => !own.has(item.id)).map(item => ({ value: item.id, label: item.title })) }),
         h('button', { type: 'button', disabled: busy || !session, onClick: () => { void post('/api/theone/topics', { action: 'attach', id: topic.id, sessionId: session }).then(ok => { if (ok) setSession('') }) } }, t('manage.attachButton')))),
       h('p', { className: 'theone-manage-hint' }, t('manage.attachHint')),
       field('manage.merge', h('div', { className: 'theone-manage-row' },
-        h('select', { value: into, disabled: busy, onChange: (event: React.ChangeEvent<HTMLSelectElement>) => { setInto(event.target.value); setConfirm(undefined) } },
-          h('option', { value: '' }, t('manage.mergePick')), ...contexts.filter(item => item.id !== topic.id).map(item => h('option', { key: item.id, value: item.id }, item.title))),
+        h(Dropdown, { label: t('manage.merge'), value: into, disabled: busy, onChange: value => { setInto(value); setConfirm(undefined) },
+          placeholder: t('manage.mergePick'), choices: contexts.filter(item => item.id !== topic.id).map(item => ({ value: item.id, label: item.title })) }),
         h('button', { type: 'button', disabled: busy || !into, className: confirm === 'merge' ? 'theone-danger' : undefined,
           onClick: () => { if (confirm !== 'merge') setConfirm('merge'); else void post('/api/theone/topics', { action: 'merge', id: topic.id, into }) } },
           t(confirm === 'merge' ? 'manage.confirm' : 'manage.mergeButton')))),
@@ -1193,6 +1198,59 @@ export function apply(ctx: Context) {
           onClick: () => { if (confirm !== 'delete') setConfirm('delete'); else void post('/api/theone/topics', { action: 'delete', id: topic.id }) } },
           t(confirm === 'delete' ? 'manage.deleteConfirm' : 'manage.delete')),
         confirm === 'delete' ? h('span', { className: 'theone-manage-hint' }, t('manage.deleteHint')) : null))
+  }
+
+  /**
+   * A drop-down drawn like DSH's own: the browser's native one opens in the system's colours, a light
+   * list in a dark app. Arrow keys move, Enter or Space picks, Escape closes; it opens upward near the
+   * bottom of the window.
+   */
+  function Dropdown({ id, label, disabled, value, choices, onChange, placeholder }: {
+    id?: string; label: string; disabled?: boolean; value: string; choices: { value: string; label: string }[]; onChange: (value: string) => void
+    /** Shown on the button while nothing is chosen, as in an action like "Move to…"; not a choice in the list. */
+    placeholder?: string
+  }) {
+    const [open, setOpen] = useState(false)
+    const [active, setActive] = useState(0)
+    const [up, setUp] = useState(false)
+    const root = useRef<HTMLDivElement>(null)
+    const menu = useRef<HTMLDivElement>(null)
+    const selected = choices.findIndex(choice => choice.value === value)
+    useEffect(() => {
+      if (!open) return
+      menu.current?.querySelector<HTMLElement>('[data-active=true]')?.scrollIntoView({ block: 'nearest' })
+      const outside = (event: PointerEvent) => { if (!root.current?.contains(event.target as Node)) setOpen(false) }
+      document.addEventListener('pointerdown', outside, true)
+      return () => document.removeEventListener('pointerdown', outside, true)
+    }, [open, active])
+    const show = () => {
+      const bounds = root.current?.getBoundingClientRect()
+      setUp(!!bounds && window.innerHeight - bounds.bottom < 300 && bounds.top > window.innerHeight - bounds.bottom)
+      setActive(Math.max(0, selected)); setOpen(true)
+    }
+    const pick = (index: number) => {
+      setOpen(false)
+      root.current?.querySelector('button')?.focus()
+      if (choices[index] && choices[index].value !== value) onChange(choices[index].value)
+    }
+    const keydown = (event: React.KeyboardEvent) => {
+      if (!open) {
+        if (['ArrowDown', 'ArrowUp', 'Enter', ' '].includes(event.key)) { event.preventDefault(); show() }
+        return
+      }
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); setActive(index => Math.min(choices.length - 1, Math.max(0, index + (event.key === 'ArrowDown' ? 1 : -1)))) }
+      else if (event.key === 'Home' || event.key === 'End') { event.preventDefault(); setActive(event.key === 'Home' ? 0 : choices.length - 1) }
+      else if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); pick(active) }
+      else if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setOpen(false) }
+      else if (event.key === 'Tab') setOpen(false)
+    }
+    return h('div', { ref: root, className: 'theone-dropdown', 'data-up': up, onKeyDown: keydown },
+      h('button', { type: 'button', id, className: 'theone-dropdown-button', disabled, 'aria-haspopup': 'listbox', 'aria-expanded': open, 'aria-label': label,
+        onClick: () => open ? setOpen(false) : show() },
+        h('span', { className: 'theone-dropdown-value', 'data-placeholder': selected < 0 }, choices[selected]?.label ?? placeholder ?? ''), icon('chevron', 12)),
+      open ? h('div', { ref: menu, className: 'theone-dropdown-menu', role: 'listbox', 'aria-label': label },
+        ...choices.map((choice, index) => h('div', { key: choice.value, role: 'option', className: 'theone-dropdown-option', 'aria-selected': index === selected, 'data-active': index === active,
+          onPointerEnter: () => setActive(index), onClick: () => pick(index) }, h('span', null, choice.label), index === selected ? icon('check', 14) : null))) : null)
   }
 
   /** A "more" button whose menu holds the actions used now and then; it closes on a choice, Escape or a click elsewhere. */
@@ -1247,9 +1305,9 @@ export function apply(ctx: Context) {
                 // The topics routing hesitated between come first: one click, nothing to remember.
                 ...(route.decision.alternateIds ?? []).filter(id => id !== target && contexts.some(context => context.id === id)).slice(0, 2).map(id =>
                   h('button', { key: id, type: 'button', className: 'theone-quiet', disabled: busy, onClick: () => void post('/api/theone/routes', { messageId: route.messageId, contextId: id }) }, t('routes.moveTo', { title: titleOf(id) }))),
-                h('select', { value: '', disabled: busy, 'aria-label': t('routes.move'),
-                  onChange: (event: React.ChangeEvent<HTMLSelectElement>) => { if (event.target.value) void post('/api/theone/routes', { messageId: route.messageId, contextId: event.target.value }) } },
-                  h('option', { value: '' }, t('routes.move')), ...contexts.filter(context => context.id !== target).map(context => h('option', { key: context.id, value: context.id }, context.title))))))
+                h(Dropdown, { label: t('routes.move'), value: '', disabled: busy,
+                  onChange: value => { if (value) void post('/api/theone/routes', { messageId: route.messageId, contextId: value }) },
+                  placeholder: t('routes.move'), choices: contexts.filter(context => context.id !== target).map(context => ({ value: context.id, label: context.title })) }))))
       })) : h('p', { className: 'theone-links-empty' }, t('routes.empty')))
   }
 
@@ -1427,9 +1485,9 @@ export function apply(ctx: Context) {
         ...own.related.map(topic => h('span', { key: topic.id, className: 'theone-link-chip', title: topic.reasons.map(reason => t(`link.reason.${reason}` as TheOneLocaleKey)).join(' · ') },
           topic.title, h('button', { type: 'button', 'aria-label': t('link.remove'), title: t('link.remove'), disabled: !!busy,
             onClick: () => { void editLinks({ action: 'unlink', a: id, b: topic.id }) } }, '×'))),
-        others.length ? h('select', { 'aria-label': t('link.add'), value: '', disabled: !!busy,
-          onChange: (event: React.ChangeEvent<HTMLSelectElement>) => { if (event.target.value) void editLinks({ action: 'link', a: id, b: event.target.value }) } },
-          h('option', { value: '' }, t('link.add')), ...others.map(context => h('option', { key: context.id, value: context.id }, context.title))) : null,
+        others.length ? h(Dropdown, { label: t('link.add'), value: '', disabled: !!busy,
+          onChange: value => { if (value) void editLinks({ action: 'link', a: id, b: value }) },
+          placeholder: t('link.add'), choices: others.map(context => ({ value: context.id, label: context.title })) }) : null,
         h('label', { className: 'theone-link-private', title: t('link.privateHint') },
           h('input', { type: 'checkbox', checked: own.private, disabled: !!busy,
             onChange: (event: React.ChangeEvent<HTMLInputElement>) => { void editLinks({ action: 'private', id, value: event.target.checked }) } }),
@@ -1844,7 +1902,7 @@ body[data-ds-dark-theme]{--one-accent:#93c8f3;--one-tint:#1d2a37;--one-line:#344
 @keyframes theone-pulse{50%{opacity:.3}}
 .theone-catalog-tools{display:flex;align-items:center;gap:8px;margin-left:auto}
 .theone-more{position:relative}
-.theone-menu{position:absolute;top:calc(100% + 6px);right:0;z-index:20;box-sizing:border-box;min-width:184px;padding:4px;border:.5px solid var(--t-line);border-radius:var(--dsw-radius-lg,12px);background:var(--dsw-alias-bg-layer-2,var(--dsw-specific-sidebar-fill,#232326));box-shadow:var(--dsw-elevation-prominent,0 8px 30px #0003)}
+.theone-menu{position:absolute;top:calc(100% + 6px);right:0;z-index:20;box-sizing:border-box;min-width:184px;padding:4px;border:.5px solid var(--t-line);border-radius:var(--dsw-radius-lg,12px);background:var(--dsw-specific-menu,var(--dsw-alias-bg-layer-2,#232326));backdrop-filter:blur(24px) saturate(1.4);box-shadow:var(--dsw-elevation-prominent,0 8px 30px #0003)}
 .theone-catalog .theone-menu button{display:flex;justify-content:flex-start;width:100%;height:36px;padding:0 12px;border:0;border-radius:var(--dsw-radius-md,8px);font-size:14px;line-height:22px}
 .theone-toolbar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin-bottom:28px}
 .theone-filters{display:inline-flex;gap:2px;padding:2px;border-radius:var(--dsw-radius-md,10px);background:var(--t-fill)}
@@ -1939,7 +1997,13 @@ body[data-ds-dark-theme]{--one-accent:#93c8f3;--one-tint:#1d2a37;--one-line:#344
 .theone-manage-field>span{font-size:12px;line-height:18px;color:var(--t-subtle)}
 .theone-manage textarea{resize:vertical;width:100%}
 .theone-manage-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
-.theone-manage-row select,.theone-manage-row input{flex:1;min-width:160px}
+.theone-manage-row input,.theone-manage-row .theone-dropdown{flex:1;min-width:160px}
+.theone-catalog .theone-dropdown-button{justify-content:space-between;gap:10px;min-width:132px;max-width:280px;border-color:transparent;background:var(--t-fill)}
+.theone-catalog .theone-dropdown-button:hover:not(:disabled){background:var(--t-hover)}
+.theone-manage-row .theone-dropdown-button{width:100%;max-width:none}
+.theone-manage-row .theone-dropdown-menu{left:0;right:auto}
+.theone-catalog :is(.theone-routes,.theone-topic-links) .theone-dropdown-button{height:28px;padding:0 10px;font-size:12px}
+.theone-catalog .theone-dropdown-option{font-size:13px;min-height:32px}
 .theone-manage-hint{margin:0;font-size:12px;line-height:18px;color:var(--t-subtle)}
 .theone-catalog .theone-danger{color:var(--t-warn);border-color:color-mix(in srgb,var(--t-warn) 35%,transparent)}
 .theone-routes{box-sizing:border-box;margin:48px auto 0;padding-top:16px;border-top:.5px solid var(--t-rule)}
@@ -1961,7 +2025,6 @@ body[data-ds-dark-theme]{--one-accent:#93c8f3;--one-tint:#1d2a37;--one-line:#344
 .theone-route-actions{display:flex;gap:8px;align-items:center;justify-content:flex-end}
 .theone-route-fixed{color:var(--t-subtle);font-size:12px}
 .theone-catalog .theone-routes button{height:28px;padding:0 8px;font-size:12px}
-.theone-routes select{width:132px;height:28px;min-height:28px;padding:0 8px;font-size:12px}
 .theone-catalog-footer{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:2px;margin-top:auto;padding-top:40px}
 .theone-catalog [data-tip]::after{top:auto;bottom:calc(100% + 6px);left:50%;right:auto;transform:translate(-50%,2px)}
 .theone-catalog :is([data-tip]:hover,[data-tip]:focus-visible,[data-copied=true])::after{transform:translate(-50%,0)}
@@ -2030,6 +2093,19 @@ const settingsCss = `
 button:has(.theone-settings-nav)>svg:first-child{display:none}
 .theone-settings-nav{display:inline-flex;align-items:center;gap:8px;vertical-align:top}
 .theone-settings-nav .theone-symbol{display:block;flex:none;width:16px;height:16px}
+.theone-dropdown{position:relative;display:inline-block;max-width:100%}
+.theone-settings .theone-dropdown-button{display:inline-flex;align-items:center;justify-content:space-between;gap:12px;min-width:140px;max-width:260px}
+.theone-dropdown-value{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.theone-dropdown-value[data-placeholder=true]{color:var(--dsw-alias-label-secondary)}
+.theone-dropdown-button .theone-icon{flex:none;transform:rotate(180deg);color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary));transition:transform 150ms ease}
+.theone-dropdown-button[aria-expanded=true] .theone-icon{transform:none}
+.theone-dropdown-menu{position:absolute;top:calc(100% + 4px);right:0;z-index:30;box-sizing:border-box;min-width:100%;max-width:min(360px,80vw);max-height:280px;overflow:auto;padding:4px;border:.5px solid var(--dsw-alias-border-l3);border-radius:var(--dsw-radius-lg,12px);background:var(--dsw-specific-menu,var(--dsw-alias-bg-layer-2));backdrop-filter:blur(24px) saturate(1.4);box-shadow:var(--dsw-elevation-prominent,0 8px 30px #0003)}
+.theone-dropdown[data-up=true] .theone-dropdown-menu{top:auto;bottom:calc(100% + 4px)}
+.theone-dropdown-option{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:36px;padding:0 10px 0 12px;border-radius:var(--dsw-radius-md,8px);font-size:14px;line-height:22px;white-space:nowrap;cursor:pointer;color:var(--dsw-alias-label-primary)}
+.theone-dropdown-option>span{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.theone-dropdown-option[data-active=true]{background:var(--dsw-alias-interactive-bg-hover)}
+.theone-dropdown-option .theone-icon{flex:none;color:var(--dsw-alias-label-secondary)}
+@media(prefers-reduced-motion:reduce){.theone-dropdown-button .theone-icon{transition:none}}
 .theone-context-menu{position:fixed;z-index:10000;min-width:160px;padding:5px;border:1px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-specific-sidebar-fill);color:var(--dsw-alias-label-primary);box-shadow:0 8px 30px #0002;font:inherit}
 .theone-context-menu button{display:block;width:100%;padding:9px 14px;border:0;border-radius:8px;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}
 .theone-context-menu button:hover,.theone-context-menu button:focus-visible{outline:none;background:var(--dsw-alias-interactive-bg-hover)}

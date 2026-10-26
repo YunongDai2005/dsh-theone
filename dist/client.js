@@ -3114,19 +3114,23 @@ function apply(ctx) {
     return (0, import_react2.createElement)("button", { type: "button", className: "theone-quiet theone-icon-link", "data-copied": copied, onClick: copy, ...tip(t(copied ? "start.groupCopied" : "start.groupTip")) }, icon("users", 16));
   }
   function openSettings() {
-    const shortcuts = ctx.get("shortcuts");
-    const binding = shortcuts?.catalog?.getSnapshot().find((entry) => entry.id === "settings.open")?.binding;
-    if (!binding) return;
-    const held = (modifier) => binding.modifiers.includes(modifier);
-    document.body.dispatchEvent(new KeyboardEvent("keydown", {
-      code: binding.code,
-      bubbles: true,
-      cancelable: true,
-      ctrlKey: held("control"),
-      altKey: held("alt"),
-      shiftKey: held("shift"),
-      metaKey: held("meta")
-    }));
+    const trigger = document.querySelector('[data-slot="sidebar.settings"] button[aria-haspopup="dialog"]');
+    if (trigger) trigger.click();
+    else {
+      const shortcuts = ctx.get("shortcuts");
+      const binding = shortcuts?.catalog?.getSnapshot().find((entry) => entry.id === "settings.open")?.binding;
+      if (!binding) return;
+      const held = (modifier) => binding.modifiers.includes(modifier);
+      document.body.dispatchEvent(new KeyboardEvent("keydown", {
+        code: binding.code,
+        bubbles: true,
+        cancelable: true,
+        ctrlKey: held("control"),
+        altKey: held("alt"),
+        shiftKey: held("shift"),
+        metaKey: held("meta")
+      }));
+    }
     let tries = 0;
     const choose = () => {
       const entry = [...document.querySelectorAll("[role=dialog] button")].find((button) => button.textContent?.trim() === SETTINGS_LABEL);
@@ -4115,11 +4119,7 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
       if (!draft || !snapshot || !EDITABLE_SETTINGS_KEYS.includes(key)) return display(key);
       const field = key;
       const props = { "aria-label": t2(`settings.${key}`), disabled: saving, id: `theone-setting-${key}` };
-      const select = (value, choices, selectValue) => (0, import_react2.createElement)(
-        "select",
-        { ...props, value, required: field === "workerModel" && !!draft.workerProvider, onChange: (event) => selectValue(event.target.value) },
-        ...choices.map((choice) => (0, import_react2.createElement)("option", { key: choice.value, value: choice.value }, choice.label))
-      );
+      const select = (value, choices, selectValue) => (0, import_react2.createElement)(Dropdown, { id: props.id, label: props["aria-label"], disabled: props.disabled, value, choices, onChange: selectValue });
       if (field === "historyCatalog" || field === "notices" || field === "factLinks" || field === "factExtraction" || field === "persistentWork")
         return (0, import_react2.createElement)(
           "button",
@@ -4287,13 +4287,13 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
       field("manage.workspace", (0, import_react2.createElement)(
         "div",
         { className: "theone-manage-row" },
-        (0, import_react2.createElement)(
-          "select",
-          { value: group, disabled: busy, onChange: (event) => setGroup(event.target.value) },
-          (0, import_react2.createElement)("option", { value: "" }, t2("manage.unassigned")),
-          ...groups.map((item) => (0, import_react2.createElement)("option", { key: item.id, value: item.id }, item.title)),
-          (0, import_react2.createElement)("option", { value: "__new" }, t2("manage.newWorkspace"))
-        ),
+        (0, import_react2.createElement)(Dropdown, {
+          label: t2("manage.workspace"),
+          value: group,
+          disabled: busy,
+          onChange: setGroup,
+          choices: [{ value: "", label: t2("manage.unassigned") }, ...groups.map((item) => ({ value: item.id, label: item.title })), { value: "__new", label: t2("manage.newWorkspace") }]
+        }),
         group === "__new" ? (0, import_react2.createElement)("input", { value: groupTitle, maxLength: 80, placeholder: t2("manage.newWorkspaceName"), disabled: busy, onChange: (event) => setGroupTitle(event.target.value) }) : null,
         (0, import_react2.createElement)("button", {
           type: "button",
@@ -4306,12 +4306,14 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
       field("manage.attach", (0, import_react2.createElement)(
         "div",
         { className: "theone-manage-row" },
-        (0, import_react2.createElement)(
-          "select",
-          { value: session, disabled: busy || !sessions, onChange: (event) => setSession(event.target.value) },
-          (0, import_react2.createElement)("option", { value: "" }, sessions ? t2("manage.attachPick") : t2("manage.loadingSessions")),
-          ...(sessions ?? []).filter((item) => !own.has(item.id)).map((item) => (0, import_react2.createElement)("option", { key: item.id, value: item.id }, item.title))
-        ),
+        (0, import_react2.createElement)(Dropdown, {
+          label: t2("manage.attach"),
+          value: session,
+          disabled: busy || !sessions,
+          onChange: setSession,
+          placeholder: sessions ? t2("manage.attachPick") : t2("manage.loadingSessions"),
+          choices: (sessions ?? []).filter((item) => !own.has(item.id)).map((item) => ({ value: item.id, label: item.title }))
+        }),
         (0, import_react2.createElement)("button", { type: "button", disabled: busy || !session, onClick: () => {
           void post("/api/theone/topics", { action: "attach", id: topic.id, sessionId: session }).then((ok) => {
             if (ok) setSession("");
@@ -4322,15 +4324,17 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
       field("manage.merge", (0, import_react2.createElement)(
         "div",
         { className: "theone-manage-row" },
-        (0, import_react2.createElement)(
-          "select",
-          { value: into, disabled: busy, onChange: (event) => {
-            setInto(event.target.value);
+        (0, import_react2.createElement)(Dropdown, {
+          label: t2("manage.merge"),
+          value: into,
+          disabled: busy,
+          onChange: (value) => {
+            setInto(value);
             setConfirm(void 0);
-          } },
-          (0, import_react2.createElement)("option", { value: "" }, t2("manage.mergePick")),
-          ...contexts.filter((item) => item.id !== topic.id).map((item) => (0, import_react2.createElement)("option", { key: item.id, value: item.id }, item.title))
-        ),
+          },
+          placeholder: t2("manage.mergePick"),
+          choices: contexts.filter((item) => item.id !== topic.id).map((item) => ({ value: item.id, label: item.title }))
+        }),
         (0, import_react2.createElement)(
           "button",
           {
@@ -4364,6 +4368,89 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
         ),
         confirm === "delete" ? (0, import_react2.createElement)("span", { className: "theone-manage-hint" }, t2("manage.deleteHint")) : null
       )
+    );
+  }
+  function Dropdown({ id, label: label2, disabled, value, choices, onChange, placeholder }) {
+    const [open, setOpen] = (0, import_react2.useState)(false);
+    const [active, setActive] = (0, import_react2.useState)(0);
+    const [up, setUp] = (0, import_react2.useState)(false);
+    const root = (0, import_react2.useRef)(null);
+    const menu = (0, import_react2.useRef)(null);
+    const selected = choices.findIndex((choice) => choice.value === value);
+    (0, import_react2.useEffect)(() => {
+      if (!open) return;
+      menu.current?.querySelector("[data-active=true]")?.scrollIntoView({ block: "nearest" });
+      const outside = (event) => {
+        if (!root.current?.contains(event.target)) setOpen(false);
+      };
+      document.addEventListener("pointerdown", outside, true);
+      return () => document.removeEventListener("pointerdown", outside, true);
+    }, [open, active]);
+    const show = () => {
+      const bounds = root.current?.getBoundingClientRect();
+      setUp(!!bounds && window.innerHeight - bounds.bottom < 300 && bounds.top > window.innerHeight - bounds.bottom);
+      setActive(Math.max(0, selected));
+      setOpen(true);
+    };
+    const pick = (index) => {
+      setOpen(false);
+      root.current?.querySelector("button")?.focus();
+      if (choices[index] && choices[index].value !== value) onChange(choices[index].value);
+    };
+    const keydown = (event) => {
+      if (!open) {
+        if (["ArrowDown", "ArrowUp", "Enter", " "].includes(event.key)) {
+          event.preventDefault();
+          show();
+        }
+        return;
+      }
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        setActive((index) => Math.min(choices.length - 1, Math.max(0, index + (event.key === "ArrowDown" ? 1 : -1))));
+      } else if (event.key === "Home" || event.key === "End") {
+        event.preventDefault();
+        setActive(event.key === "Home" ? 0 : choices.length - 1);
+      } else if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        pick(active);
+      } else if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        setOpen(false);
+      } else if (event.key === "Tab") setOpen(false);
+    };
+    return (0, import_react2.createElement)(
+      "div",
+      { ref: root, className: "theone-dropdown", "data-up": up, onKeyDown: keydown },
+      (0, import_react2.createElement)(
+        "button",
+        {
+          type: "button",
+          id,
+          className: "theone-dropdown-button",
+          disabled,
+          "aria-haspopup": "listbox",
+          "aria-expanded": open,
+          "aria-label": label2,
+          onClick: () => open ? setOpen(false) : show()
+        },
+        (0, import_react2.createElement)("span", { className: "theone-dropdown-value", "data-placeholder": selected < 0 }, choices[selected]?.label ?? placeholder ?? ""),
+        icon("chevron", 12)
+      ),
+      open ? (0, import_react2.createElement)(
+        "div",
+        { ref: menu, className: "theone-dropdown-menu", role: "listbox", "aria-label": label2 },
+        ...choices.map((choice, index) => (0, import_react2.createElement)("div", {
+          key: choice.value,
+          role: "option",
+          className: "theone-dropdown-option",
+          "aria-selected": index === selected,
+          "data-active": index === active,
+          onPointerEnter: () => setActive(index),
+          onClick: () => pick(index)
+        }, (0, import_react2.createElement)("span", null, choice.label), index === selected ? icon("check", 14) : null))
+      ) : null
     );
   }
   function MoreMenu({ items, disabled }) {
@@ -4464,19 +4551,16 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
               import_react2.Fragment,
               null,
               ...(route.decision.alternateIds ?? []).filter((id) => id !== target && contexts.some((context) => context.id === id)).slice(0, 2).map((id) => (0, import_react2.createElement)("button", { key: id, type: "button", className: "theone-quiet", disabled: busy, onClick: () => void post("/api/theone/routes", { messageId: route.messageId, contextId: id }) }, t2("routes.moveTo", { title: titleOf(id) }))),
-              (0, import_react2.createElement)(
-                "select",
-                {
-                  value: "",
-                  disabled: busy,
-                  "aria-label": t2("routes.move"),
-                  onChange: (event) => {
-                    if (event.target.value) void post("/api/theone/routes", { messageId: route.messageId, contextId: event.target.value });
-                  }
+              (0, import_react2.createElement)(Dropdown, {
+                label: t2("routes.move"),
+                value: "",
+                disabled: busy,
+                onChange: (value) => {
+                  if (value) void post("/api/theone/routes", { messageId: route.messageId, contextId: value });
                 },
-                (0, import_react2.createElement)("option", { value: "" }, t2("routes.move")),
-                ...contexts.filter((context) => context.id !== target).map((context) => (0, import_react2.createElement)("option", { key: context.id, value: context.id }, context.title))
-              )
+                placeholder: t2("routes.move"),
+                choices: contexts.filter((context) => context.id !== target).map((context) => ({ value: context.id, label: context.title }))
+              })
             )
           )
         );
@@ -4754,19 +4838,16 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
             }
           }, "\xD7")
         )),
-        others.length ? (0, import_react2.createElement)(
-          "select",
-          {
-            "aria-label": t2("link.add"),
-            value: "",
-            disabled: !!busy,
-            onChange: (event) => {
-              if (event.target.value) void editLinks({ action: "link", a: id, b: event.target.value });
-            }
+        others.length ? (0, import_react2.createElement)(Dropdown, {
+          label: t2("link.add"),
+          value: "",
+          disabled: !!busy,
+          onChange: (value) => {
+            if (value) void editLinks({ action: "link", a: id, b: value });
           },
-          (0, import_react2.createElement)("option", { value: "" }, t2("link.add")),
-          ...others.map((context) => (0, import_react2.createElement)("option", { key: context.id, value: context.id }, context.title))
-        ) : null,
+          placeholder: t2("link.add"),
+          choices: others.map((context) => ({ value: context.id, label: context.title }))
+        }) : null,
         (0, import_react2.createElement)(
           "label",
           { className: "theone-link-private", title: t2("link.privateHint") },
@@ -5328,7 +5409,7 @@ body[data-ds-dark-theme]{--one-accent:#93c8f3;--one-tint:#1d2a37;--one-line:#344
 @keyframes theone-pulse{50%{opacity:.3}}
 .theone-catalog-tools{display:flex;align-items:center;gap:8px;margin-left:auto}
 .theone-more{position:relative}
-.theone-menu{position:absolute;top:calc(100% + 6px);right:0;z-index:20;box-sizing:border-box;min-width:184px;padding:4px;border:.5px solid var(--t-line);border-radius:var(--dsw-radius-lg,12px);background:var(--dsw-alias-bg-layer-2,var(--dsw-specific-sidebar-fill,#232326));box-shadow:var(--dsw-elevation-prominent,0 8px 30px #0003)}
+.theone-menu{position:absolute;top:calc(100% + 6px);right:0;z-index:20;box-sizing:border-box;min-width:184px;padding:4px;border:.5px solid var(--t-line);border-radius:var(--dsw-radius-lg,12px);background:var(--dsw-specific-menu,var(--dsw-alias-bg-layer-2,#232326));backdrop-filter:blur(24px) saturate(1.4);box-shadow:var(--dsw-elevation-prominent,0 8px 30px #0003)}
 .theone-catalog .theone-menu button{display:flex;justify-content:flex-start;width:100%;height:36px;padding:0 12px;border:0;border-radius:var(--dsw-radius-md,8px);font-size:14px;line-height:22px}
 .theone-toolbar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin-bottom:28px}
 .theone-filters{display:inline-flex;gap:2px;padding:2px;border-radius:var(--dsw-radius-md,10px);background:var(--t-fill)}
@@ -5423,7 +5504,13 @@ body[data-ds-dark-theme]{--one-accent:#93c8f3;--one-tint:#1d2a37;--one-line:#344
 .theone-manage-field>span{font-size:12px;line-height:18px;color:var(--t-subtle)}
 .theone-manage textarea{resize:vertical;width:100%}
 .theone-manage-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
-.theone-manage-row select,.theone-manage-row input{flex:1;min-width:160px}
+.theone-manage-row input,.theone-manage-row .theone-dropdown{flex:1;min-width:160px}
+.theone-catalog .theone-dropdown-button{justify-content:space-between;gap:10px;min-width:132px;max-width:280px;border-color:transparent;background:var(--t-fill)}
+.theone-catalog .theone-dropdown-button:hover:not(:disabled){background:var(--t-hover)}
+.theone-manage-row .theone-dropdown-button{width:100%;max-width:none}
+.theone-manage-row .theone-dropdown-menu{left:0;right:auto}
+.theone-catalog :is(.theone-routes,.theone-topic-links) .theone-dropdown-button{height:28px;padding:0 10px;font-size:12px}
+.theone-catalog .theone-dropdown-option{font-size:13px;min-height:32px}
 .theone-manage-hint{margin:0;font-size:12px;line-height:18px;color:var(--t-subtle)}
 .theone-catalog .theone-danger{color:var(--t-warn);border-color:color-mix(in srgb,var(--t-warn) 35%,transparent)}
 .theone-routes{box-sizing:border-box;margin:48px auto 0;padding-top:16px;border-top:.5px solid var(--t-rule)}
@@ -5445,7 +5532,6 @@ body[data-ds-dark-theme]{--one-accent:#93c8f3;--one-tint:#1d2a37;--one-line:#344
 .theone-route-actions{display:flex;gap:8px;align-items:center;justify-content:flex-end}
 .theone-route-fixed{color:var(--t-subtle);font-size:12px}
 .theone-catalog .theone-routes button{height:28px;padding:0 8px;font-size:12px}
-.theone-routes select{width:132px;height:28px;min-height:28px;padding:0 8px;font-size:12px}
 .theone-catalog-footer{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:2px;margin-top:auto;padding-top:40px}
 .theone-catalog [data-tip]::after{top:auto;bottom:calc(100% + 6px);left:50%;right:auto;transform:translate(-50%,2px)}
 .theone-catalog :is([data-tip]:hover,[data-tip]:focus-visible,[data-copied=true])::after{transform:translate(-50%,0)}
@@ -5512,6 +5598,19 @@ var settingsCss = `
 button:has(.theone-settings-nav)>svg:first-child{display:none}
 .theone-settings-nav{display:inline-flex;align-items:center;gap:8px;vertical-align:top}
 .theone-settings-nav .theone-symbol{display:block;flex:none;width:16px;height:16px}
+.theone-dropdown{position:relative;display:inline-block;max-width:100%}
+.theone-settings .theone-dropdown-button{display:inline-flex;align-items:center;justify-content:space-between;gap:12px;min-width:140px;max-width:260px}
+.theone-dropdown-value{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.theone-dropdown-value[data-placeholder=true]{color:var(--dsw-alias-label-secondary)}
+.theone-dropdown-button .theone-icon{flex:none;transform:rotate(180deg);color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary));transition:transform 150ms ease}
+.theone-dropdown-button[aria-expanded=true] .theone-icon{transform:none}
+.theone-dropdown-menu{position:absolute;top:calc(100% + 4px);right:0;z-index:30;box-sizing:border-box;min-width:100%;max-width:min(360px,80vw);max-height:280px;overflow:auto;padding:4px;border:.5px solid var(--dsw-alias-border-l3);border-radius:var(--dsw-radius-lg,12px);background:var(--dsw-specific-menu,var(--dsw-alias-bg-layer-2));backdrop-filter:blur(24px) saturate(1.4);box-shadow:var(--dsw-elevation-prominent,0 8px 30px #0003)}
+.theone-dropdown[data-up=true] .theone-dropdown-menu{top:auto;bottom:calc(100% + 4px)}
+.theone-dropdown-option{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:36px;padding:0 10px 0 12px;border-radius:var(--dsw-radius-md,8px);font-size:14px;line-height:22px;white-space:nowrap;cursor:pointer;color:var(--dsw-alias-label-primary)}
+.theone-dropdown-option>span{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.theone-dropdown-option[data-active=true]{background:var(--dsw-alias-interactive-bg-hover)}
+.theone-dropdown-option .theone-icon{flex:none;color:var(--dsw-alias-label-secondary)}
+@media(prefers-reduced-motion:reduce){.theone-dropdown-button .theone-icon{transition:none}}
 .theone-context-menu{position:fixed;z-index:10000;min-width:160px;padding:5px;border:1px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-specific-sidebar-fill);color:var(--dsw-alias-label-primary);box-shadow:0 8px 30px #0002;font:inherit}
 .theone-context-menu button{display:block;width:100%;padding:9px 14px;border:0;border-radius:8px;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}
 .theone-context-menu button:hover,.theone-context-menu button:focus-visible{outline:none;background:var(--dsw-alias-interactive-bg-hover)}
