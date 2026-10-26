@@ -87,6 +87,9 @@ var GatewayNavigation = class {
   }
 };
 
+// src/client-season.ts
+var halloween = (now = /* @__PURE__ */ new Date()) => now.getMonth() === 9 && now.getDate() >= 30;
+
 // src/client-locales.ts
 var zh = {
   "tasks.title": "\u6301\u7EED\u4EFB\u52A1",
@@ -3178,6 +3181,30 @@ function apply(ctx) {
     (0, import_react2.createElement)("circle", { cx: 10, cy: 10, r: 8.6, fill: "none", stroke: "currentColor", strokeWidth: 1.4 }),
     (0, import_react2.createElement)("circle", { cx: 10, cy: 10, r: 2.4, fill: "currentColor" })
   );
+  const pumpkin = (id) => (0, import_react2.createElement)(
+    "svg",
+    { className: "theone-pumpkin", viewBox: "0 0 30 30", width: 30, height: 30, "aria-hidden": true, focusable: false },
+    (0, import_react2.createElement)(
+      "filter",
+      { id, x: "-20%", y: "-20%", width: "140%", height: "140%" },
+      (0, import_react2.createElement)("feTurbulence", { type: "fractalNoise", baseFrequency: 1.8, numOctaves: 2, seed: 7, result: "fur" }),
+      (0, import_react2.createElement)("feDisplacementMap", { in: "SourceGraphic", in2: "fur", scale: 2, xChannelSelector: "R", yChannelSelector: "G", result: "coat" }),
+      (0, import_react2.createElement)("feDisplacementMap", { in: "SourceGraphic", in2: "fur", scale: 4.4, xChannelSelector: "G", yChannelSelector: "R", result: "tufts" }),
+      (0, import_react2.createElement)("feColorMatrix", { in: "tufts", values: "1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 .45 0", result: "fringe" }),
+      (0, import_react2.createElement)("feMerge", { result: "pelt" }, (0, import_react2.createElement)("feMergeNode", { in: "fringe" }), (0, import_react2.createElement)("feMergeNode", { in: "coat" })),
+      (0, import_react2.createElement)("feGaussianBlur", { in: "pelt", stdDeviation: 0.18 })
+    ),
+    (0, import_react2.createElement)(
+      "g",
+      { filter: `url(#${id})`, opacity: 0.6 },
+      (0, import_react2.createElement)("path", { d: "M14 7.4C13.7 5.3 14.4 3.3 16.6 2.4L17.6 3.6C16.3 4.4 16 5.7 16.2 7.4Z", fill: "#6f8a3c" }),
+      (0, import_react2.createElement)("ellipse", { cx: 8.8, cy: 16.6, rx: 6.6, ry: 8.6, fill: "#d9600c" }),
+      (0, import_react2.createElement)("ellipse", { cx: 21.2, cy: 16.6, rx: 6.6, ry: 8.6, fill: "#d9600c" }),
+      (0, import_react2.createElement)("ellipse", { cx: 12.2, cy: 16.4, rx: 5.8, ry: 9.6, fill: "#ec7618" }),
+      (0, import_react2.createElement)("ellipse", { cx: 17.8, cy: 16.4, rx: 5.8, ry: 9.6, fill: "#ec7618" }),
+      (0, import_react2.createElement)("ellipse", { cx: 15, cy: 16.4, rx: 4.4, ry: 10, fill: "#fb9233" })
+    )
+  );
   function SidebarEntry({ size }) {
     const t2 = useText();
     const marker = (0, import_react2.useRef)(null);
@@ -3186,6 +3213,7 @@ function apply(ctx) {
     const sessions = (0, import_react2.useSyncExternalStore)(ctx.sessions.list.subscribe, ctx.sessions.list.getSnapshot);
     const panel = (0, import_react2.useSyncExternalStore)(ctx.layout.panelInfo.subscribe, ctx.layout.panelInfo.getSnapshot);
     const active = panel.activePanelId === panelId || panel.activePanelId === null && !!id && !!sessions.byId[id]?.retainedBy.mainView;
+    const spooky = halloween(), furId = `theone-fur${(0, import_react2.useId)().replace(/:/g, "")}`;
     (0, import_react2.useEffect)(() => {
       const button = marker.current?.closest("button");
       if (!button) return;
@@ -3288,7 +3316,7 @@ function apply(ctx) {
     return (0, import_react2.createElement)(
       "span",
       { ref: marker, className: "theone-nav", translate: "no", "data-wide": size === 16, "data-active": active },
-      (0, import_react2.createElement)("span", { className: "theone-symbol-wrap" }, symbol(), size !== 16 && pending ? (0, import_react2.createElement)("span", { className: "theone-update-dot", "aria-hidden": true }) : null),
+      (0, import_react2.createElement)("span", { className: "theone-symbol-wrap" }, spooky ? pumpkin(furId) : null, symbol(), size !== 16 && pending ? (0, import_react2.createElement)("span", { className: "theone-update-dot", "aria-hidden": true }) : null),
       size === 16 && (0, import_react2.createElement)(
         "span",
         { className: "theone-entry-copy" },
@@ -5318,7 +5346,8 @@ button:has(.theone-nav):hover{background:var(--one-tint);border-color:color-mix(
 button:has(.theone-nav[data-active=true]){border-color:color-mix(in srgb,var(--one-accent) 40%,var(--one-line))}
 .theone-nav{display:flex;align-items:center;gap:10px;color:var(--one-accent);font-family:inherit;position:relative;z-index:1}
 .theone-symbol-wrap{position:relative;display:inline-flex;flex:none;width:20px;height:20px}
-.theone-nav .theone-symbol{display:block;width:20px;height:20px;flex:none;overflow:visible;border:0;border-radius:0;background:none}
+.theone-nav .theone-symbol{display:block;width:20px;height:20px;flex:none;overflow:visible;border:0;border-radius:0;background:none;position:relative}
+.theone-nav .theone-pumpkin{position:absolute;left:-5px;top:-5px;width:30px;height:30px;overflow:visible;pointer-events:none}
 .theone-nav[data-wide=true] .theone-symbol-wrap{margin:0 2px}
 .theone-update-dot{position:absolute;top:-2px;right:-2px;width:7px;height:7px;border-radius:50%;corner-shape:round;background:#e8590c;box-shadow:0 0 0 2px var(--one-tint)}
 button:has(.theone-nav[data-wide=true])>span:has(.theone-nav){flex:1;min-width:0}

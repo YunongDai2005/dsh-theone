@@ -1,4 +1,4 @@
-import { createElement as h, Fragment, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { createElement as h, Fragment, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
@@ -30,6 +30,7 @@ import type { UpdateStatus } from './update.ts'
 import type { Notice } from './notices.ts'
 import { EDITABLE_SETTINGS_KEYS, type EditableSettings, type SettingsSnapshot } from './settings-types.ts'
 import { GatewayNavigation } from './client-navigation.ts'
+import { halloween } from './client-season.ts'
 import { zh, en, type TheOneLocaleKey } from './client-locales.ts'
 import type { WeixinStatus } from './weixin-link.ts'
 import type { TelegramStatus } from './telegram-bot.ts'
@@ -437,6 +438,23 @@ export function apply(ctx: Context) {
     h('circle', { cx: 10, cy: 10, r: 8.6, fill: 'none', stroke: 'currentColor', strokeWidth: 1.4 }),
     h('circle', { cx: 10, cy: 10, r: 2.4, fill: 'currentColor' }))
 
+  /** A see-through, fuzzy pumpkin behind the mark around Halloween; the noise filter ruffles its edges and ribs into fur. */
+  const pumpkin = (id: string) => h('svg', { className: 'theone-pumpkin', viewBox: '0 0 30 30', width: 30, height: 30, 'aria-hidden': true, focusable: false },
+    h('filter', { id, x: '-20%', y: '-20%', width: '140%', height: '140%' },
+      h('feTurbulence', { type: 'fractalNoise', baseFrequency: 1.8, numOctaves: 2, seed: 7, result: 'fur' }),
+      h('feDisplacementMap', { in: 'SourceGraphic', in2: 'fur', scale: 2, xChannelSelector: 'R', yChannelSelector: 'G', result: 'coat' }),
+      h('feDisplacementMap', { in: 'SourceGraphic', in2: 'fur', scale: 4.4, xChannelSelector: 'G', yChannelSelector: 'R', result: 'tufts' }),
+      h('feColorMatrix', { in: 'tufts', values: '1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 .45 0', result: 'fringe' }),
+      h('feMerge', { result: 'pelt' }, h('feMergeNode', { in: 'fringe' }), h('feMergeNode', { in: 'coat' })),
+      h('feGaussianBlur', { in: 'pelt', stdDeviation: 0.18 })),
+    h('g', { filter: `url(#${id})`, opacity: 0.6 },
+      h('path', { d: 'M14 7.4C13.7 5.3 14.4 3.3 16.6 2.4L17.6 3.6C16.3 4.4 16 5.7 16.2 7.4Z', fill: '#6f8a3c' }),
+      h('ellipse', { cx: 8.8, cy: 16.6, rx: 6.6, ry: 8.6, fill: '#d9600c' }),
+      h('ellipse', { cx: 21.2, cy: 16.6, rx: 6.6, ry: 8.6, fill: '#d9600c' }),
+      h('ellipse', { cx: 12.2, cy: 16.4, rx: 5.8, ry: 9.6, fill: '#ec7618' }),
+      h('ellipse', { cx: 17.8, cy: 16.4, rx: 5.8, ry: 9.6, fill: '#ec7618' }),
+      h('ellipse', { cx: 15, cy: 16.4, rx: 4.4, ry: 10, fill: '#fb9233' })))
+
   function SidebarEntry({size}: PropsRuntime<'sidebar.panellist'>) {
     const t = useText()
     const marker = useRef<HTMLSpanElement>(null)
@@ -445,6 +463,7 @@ export function apply(ctx: Context) {
     const sessions = useSyncExternalStore<SessionListState>(ctx.sessions.list.subscribe,ctx.sessions.list.getSnapshot)
     const panel = useSyncExternalStore<PanelInfo>(ctx.layout.panelInfo.subscribe,ctx.layout.panelInfo.getSnapshot)
     const active = panel.activePanelId === panelId || (panel.activePanelId === null && !!id && !!sessions.byId[id as SessionId]?.retainedBy.mainView)
+    const spooky = halloween(), furId = `theone-fur${useId().replace(/:/g, '')}`
     useEffect(() => {
       const button = marker.current?.closest('button')
       if (!button) return
@@ -524,7 +543,7 @@ export function apply(ctx: Context) {
       }
     }, [active, size])
     return h('span',{ref:marker,className:'theone-nav',translate:'no','data-wide':size === 16,'data-active':active},
-      h('span',{className:'theone-symbol-wrap'},symbol(),size !== 16 && pending ? h('span',{className:'theone-update-dot','aria-hidden':true}) : null),
+      h('span',{className:'theone-symbol-wrap'},spooky ? pumpkin(furId) : null,symbol(),size !== 16 && pending ? h('span',{className:'theone-update-dot','aria-hidden':true}) : null),
       size === 16 && h('span',{className:'theone-entry-copy'},
         h('span',{className:'theone-entry-title'},
           h('span',{className:'theone-wordmark',translate:'no'},h('span',{className:'theone-word-the'},'The'),
@@ -1808,7 +1827,8 @@ button:has(.theone-nav):hover{background:var(--one-tint);border-color:color-mix(
 button:has(.theone-nav[data-active=true]){border-color:color-mix(in srgb,var(--one-accent) 40%,var(--one-line))}
 .theone-nav{display:flex;align-items:center;gap:10px;color:var(--one-accent);font-family:inherit;position:relative;z-index:1}
 .theone-symbol-wrap{position:relative;display:inline-flex;flex:none;width:20px;height:20px}
-.theone-nav .theone-symbol{display:block;width:20px;height:20px;flex:none;overflow:visible;border:0;border-radius:0;background:none}
+.theone-nav .theone-symbol{display:block;width:20px;height:20px;flex:none;overflow:visible;border:0;border-radius:0;background:none;position:relative}
+.theone-nav .theone-pumpkin{position:absolute;left:-5px;top:-5px;width:30px;height:30px;overflow:visible;pointer-events:none}
 .theone-nav[data-wide=true] .theone-symbol-wrap{margin:0 2px}
 .theone-update-dot{position:absolute;top:-2px;right:-2px;width:7px;height:7px;border-radius:50%;corner-shape:round;background:#e8590c;box-shadow:0 0 0 2px var(--one-tint)}
 button:has(.theone-nav[data-wide=true])>span:has(.theone-nav){flex:1;min-width:0}
