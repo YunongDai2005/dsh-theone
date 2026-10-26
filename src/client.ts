@@ -780,10 +780,16 @@ export function apply(ctx: Context) {
     useEffect(() => {
       let mounted = true
       setError(undefined)
-      void navigation.open().catch(error => {
-        console.warn('TheOne gateway navigation failed:', error instanceof Error ? error.message : 'Unknown navigation error')
-        if (mounted) setError('gateway.error')
-      })
+      // Another click on the entry while main chat opens starts a navigation of its own, which cancels
+      // this one although nothing else is shown: while this page is still the one selected, open again.
+      const still = () => mounted && ctx.layout.panelInfo.getSnapshot().activePanelId === panelId
+      const run = (left: number): void => {
+        void navigation.open().then(opened => { if (!opened && left > 0 && still()) run(left - 1) }, error => {
+          console.warn('TheOne gateway navigation failed:', error instanceof Error ? error.message : 'Unknown navigation error')
+          if (mounted) setError('gateway.error')
+        })
+      }
+      run(5)
       return () => { mounted = false }
     },[attempt])
     return h('section',{className:'theone-opening','aria-live':'polite'},

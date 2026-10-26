@@ -49,6 +49,14 @@ test('double click creates once and only the latest navigation opens',async()=>{
   assert.equal(f.opened.length,1)
 })
 
+test('an open that a later navigation took over says so, so the waiting page can open again',async()=>{
+  const f=fixture(), nav=f.make()
+  const [first,second]=await Promise.all([nav.open(),nav.open()])
+  assert.equal(first,undefined)
+  assert.equal(second,'fixed-gateway')
+  assert.deepEqual(f.opened,['fixed-gateway'])
+})
+
 test('switching away while creation runs does not pull the user back',async()=>{
   const f=fixture()
   let resume!:()=>void

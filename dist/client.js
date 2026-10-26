@@ -62,13 +62,15 @@ var GatewayNavigation = class {
       this.listeners.delete(listener);
     };
   };
+  /** Main chat's id once it is open, or undefined when a later navigation took over first. */
   async open() {
     const signal = this.host.beginNavigation();
     this.pending ??= this.ensure().finally(() => {
       this.pending = void 0;
     });
     const id = await this.pending;
-    if (!signal.aborted) this.host.open(id);
+    if (signal.aborted) return void 0;
+    this.host.open(id);
     return id;
   }
   async ensure() {
@@ -3689,10 +3691,16 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
     (0, import_react2.useEffect)(() => {
       let mounted = true;
       setError(void 0);
-      void navigation.open().catch((error2) => {
-        console.warn("TheOne gateway navigation failed:", error2 instanceof Error ? error2.message : "Unknown navigation error");
-        if (mounted) setError("gateway.error");
-      });
+      const still = () => mounted && ctx.layout.panelInfo.getSnapshot().activePanelId === panelId;
+      const run = (left) => {
+        void navigation.open().then((opened) => {
+          if (!opened && left > 0 && still()) run(left - 1);
+        }, (error2) => {
+          console.warn("TheOne gateway navigation failed:", error2 instanceof Error ? error2.message : "Unknown navigation error");
+          if (mounted) setError("gateway.error");
+        });
+      };
+      run(5);
       return () => {
         mounted = false;
       };
