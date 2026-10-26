@@ -35,7 +35,7 @@ test('version ranges, dates and links are checked before a notice is shown', () 
   assert.deepEqual(applicableNotices('not json', '0.3.16'), [])
 })
 
-test('the notice file is read at most every three hours, and an unreachable one shows nothing', async () => {
+test('the notice file is read at most every half hour, and an unreachable one shows nothing', async () => {
   let time = Date.now(), reads = 0, fail = false
   const board = new NoticeBoard('0.3.13', 'https://example.test/notice.json', (async () => {
     reads++
@@ -44,6 +44,10 @@ test('the notice file is read at most every three hours, and an unreachable one 
   }) as typeof fetch, () => time)
   assert.equal((await board.notices()).length, 2)
   await board.notices(); assert.equal(reads, 1)
+  time += 20 * 60000
+  await board.notices(); assert.equal(reads, 1)
+  time += 15 * 60000
+  await board.notices(); assert.equal(reads, 2)
   time += 4 * 3600000; fail = true
   // Offline: what was read before stays.
   assert.equal((await board.notices()).length, 2)
