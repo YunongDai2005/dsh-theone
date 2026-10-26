@@ -145,6 +145,8 @@ The conversations are model-written from a script and this version has no assist
 
 ## Recent changes
 
+Version 0.4.3 works with later DSH 0.2 releases without an update and fixes a few icons and how quickly notices appear.
+
 Version 0.4.2 reworks the topic workspace and settings layout; experimental features are off by default.
 
 Version 0.4.1 **offers choices when a topic is unsure**: when a topic is about to act on a message that may belong elsewhere, when you say "wrong topic" without saying where, or when a new topic closely matches an existing one, main chat gives you a few options to click. It also fixes **Continue chatting** looking like it opened the wrong topic, and archived original chats opening as an empty page.
