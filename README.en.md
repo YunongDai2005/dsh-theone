@@ -145,7 +145,7 @@ The conversations are model-written from a script and this version has no assist
 
 ## Recent changes
 
-Version 0.4.2 **cleans things up**: the topic workspace is redesigned, with a filter for **Waiting on you** and **Done**, a search box, and topics waiting on you first; TheOne's settings moved into DSH's own Settings dialog and look like DSH's; experimental features such as **Ongoing tasks** sit in an **Experimental** section at the bottom of the settings, off by default. Main chat's greeting and the getting-started card under it are new too.
+Version 0.4.2 reworks the topic workspace and settings layout; experimental features are off by default.
 
 Version 0.4.1 **offers choices when a topic is unsure**: when a topic is about to act on a message that may belong elsewhere, when you say "wrong topic" without saying where, or when a new topic closely matches an existing one, main chat gives you a few options to click. It also fixes **Continue chatting** looking like it opened the wrong topic, and archived original chats opening as an empty page.
 
