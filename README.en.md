@@ -145,6 +145,8 @@ The conversations are model-written from a script and this version has no assist
 
 ## Recent changes
 
+Version 0.4.5 adds a short setup after installing or updating, lets topic sessions sit in the sidebar, and turns TheOne's mark into a breathing cell that becomes a pumpkin for Halloween.
+
 Version 0.4.4 fixes right-click Settings in the desktop app and main chat sometimes sticking while it opens, draws drop-downs in DSH's style, and puts a pumpkin on the main chat entry for Halloween.
 
 Version 0.4.3 works with later DSH 0.2 releases without an update and fixes a few icons and how quickly notices appear.
