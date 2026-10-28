@@ -40,6 +40,7 @@ var EDITABLE_SETTINGS_KEYS = [
   "routeNotice",
   "contextsPath",
   "notices",
+  "hideTopicSessions",
   "factLinks",
   "factExtraction",
   "persistentWork"
@@ -90,6 +91,270 @@ var GatewayNavigation = class {
 // src/client-season.ts
 var halloween = (now = /* @__PURE__ */ new Date()) => now.getMonth() === 9 && now.getDate() >= 30;
 
+// src/client-setup.ts
+var escape = (text) => text.replace(/[&<>"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[char]);
+var multiline = (text) => escape(text).replace(/\n/g, "<br>");
+var ring = (x, y, r, attributes = "") => `<g class="theone-setup-a" ${attributes}><circle cx="${x}" cy="${y}" r="${r}" fill="none" stroke="currentColor" stroke-width="${Math.max(1.4, r * 0.16)}"/><circle cx="${x}" cy="${y}" r="${r * 0.34}" fill="currentColor"/></g>`;
+var heroes = {
+  sort: (mode) => {
+    const crumbs = [[30, 22], [192, 28], [22, 90], [200, 94], [64, 108], [160, 8]];
+    return `<svg viewBox="0 0 220 110"><g class="theone-setup-a" style="animation:theone-setup-pulse 3.2s ease-in-out infinite">${ring(110, 55, 28)}</g>${crumbs.map(([x, y], i) => mode === 0 ? `<circle class="theone-setup-a" cx="${x}" cy="${y}" r="5" fill="currentColor" style="--dx:${110 - x}px;--dy:${55 - y}px;animation:theone-setup-absorb 3.2s ${i * 0.45}s cubic-bezier(.5,0,.4,1) infinite;opacity:0"/>` : `<circle class="theone-setup-a" cx="${x}" cy="${y}" r="5" fill="currentColor" opacity=".35" style="--fx:${i % 2 ? 3 : -3}px;--fy:${i % 3 ? -3 : 3}px;animation:theone-setup-drift ${3 + i * 0.4}s ease-in-out infinite"/>`).join("")}</svg>`;
+  },
+  side: (mode) => `<svg viewBox="0 0 220 110"><rect x="20" y="4" width="180" height="102" rx="14" fill="none" stroke="currentColor" stroke-width="2" opacity=".4"/><path d="M82 4v102" stroke="currentColor" stroke-width="1.5" opacity=".22"/><rect x="32" y="18" width="38" height="8" rx="4" fill="currentColor" opacity=".28"/><rect x="32" y="32" width="30" height="8" rx="4" fill="currentColor" opacity=".28"/>${mode === 0 ? [0, 1, 2].map((i) => `<g class="theone-setup-a" style="animation:theone-setup-slide 3.6s ${0.3 + i * 0.35}s ease-out infinite;opacity:0">${ring(36, 54 + i * 17, 5)}<rect x="46" y="${50 + i * 17}" width="${26 - i * 4}" height="8" rx="4" fill="currentColor"/></g>`).join("") : `<rect x="110" y="24" width="74" height="64" rx="12" fill="none" stroke="currentColor" stroke-width="1.8"/>${[0, 1, 2].map((i) => `<g class="theone-setup-a" style="animation:theone-setup-pop 3.6s ${0.3 + i * 0.3}s ease-out infinite;opacity:0">${ring(126, 41 + i * 17, 5)}<rect x="136" y="${37 + i * 17}" width="${34 - i * 6}" height="8" rx="4" fill="currentColor"/></g>`).join("")}`}</svg>`,
+  tag: (mode) => `<svg viewBox="0 0 220 110">${[[30, 10, 96], [30, 44, 120], [30, 78, 84]].map(([x, y, w], i) => {
+    const marked = mode === 2 || mode === 1 && i === 2;
+    return `<g class="theone-setup-a" style="animation:theone-setup-type 4.2s ${i * 0.5}s ease-out infinite;opacity:0"><rect x="${x}" y="${y}" width="${w}" height="22" rx="11" fill="currentColor" opacity=".2"/></g>${marked ? ring(x + w + 16, y + 11, 7.5, `style="animation:theone-setup-pop 4.2s ${i * 0.5 + 0.25}s ease-out infinite;opacity:0"`) : ""}`;
+  }).join("")}</svg>`
+};
+var icons = {
+  absorb: '<circle cx="23" cy="12" r="7.5" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="23" cy="12" r="2.6" fill="currentColor"/><circle cx="5" cy="6" r="2.2" fill="currentColor"/><circle cx="6" cy="18" r="2.2" fill="currentColor"/>',
+  loose: '<circle cx="8" cy="7" r="2.2" fill="currentColor"/><circle cx="18" cy="17" r="2.2" fill="currentColor"/><circle cx="28" cy="8" r="2.2" fill="currentColor"/>',
+  sidebar: '<rect x="2" y="2" width="32" height="20" rx="4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M13 2v20" stroke="currentColor" stroke-width="1.3"/><circle cx="7.5" cy="9" r="2" fill="currentColor"/><circle cx="7.5" cy="15.5" r="2" fill="currentColor"/>',
+  list: '<rect x="2" y="2" width="32" height="20" rx="4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M13 2v20" stroke="currentColor" stroke-width="1.3"/><rect x="18" y="6" width="12" height="12" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="24" cy="12" r="2" fill="currentColor"/>',
+  some: '<rect x="2" y="5" width="20" height="5" rx="2.5" fill="currentColor" opacity=".5"/><rect x="2" y="14" width="16" height="5" rx="2.5" fill="currentColor" opacity=".5"/><circle cx="25" cy="16.5" r="3.6" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="25" cy="16.5" r="1.3" fill="currentColor"/>',
+  all: '<rect x="2" y="5" width="20" height="5" rx="2.5" fill="currentColor" opacity=".5"/><circle cx="29" cy="7.5" r="3.6" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="29" cy="7.5" r="1.3" fill="currentColor"/><rect x="2" y="14" width="16" height="5" rx="2.5" fill="currentColor" opacity=".5"/><circle cx="25" cy="16.5" r="3.6" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="25" cy="16.5" r="1.3" fill="currentColor"/>',
+  none: '<rect x="2" y="5" width="20" height="5" rx="2.5" fill="currentColor" opacity=".5"/><rect x="2" y="14" width="16" height="5" rx="2.5" fill="currentColor" opacity=".5"/>'
+};
+var arrow = '<svg viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M3 7h8m-3-3 3 3-3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+var cell = (size) => `<svg class="theone-setup-cell" width="${size}" height="${size}" viewBox="0 0 20 20" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><circle fill="currentColor"/></svg>`;
+var notices = ["switch", "all", "hidden"];
+var news = [
+  { key: "mark", svg: '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M17.4 10c0 4.2-3.2 7.3-7.4 7.3S2.6 14.2 2.6 10 5.8 2.6 10 2.6s7.4 3.2 7.4 7.4Z" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="10.4" cy="9.6" r="2.9" fill="currentColor"/></svg>' },
+  { key: "sessions", svg: `<svg viewBox="0 0 36 24" aria-hidden="true">${icons.sidebar}</svg>` },
+  { key: "pumpkin", svg: '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 5.6c-1-.9-2.6-1-4-.4C3.8 6.1 2.4 8.4 2.6 11c.3 3.5 3.4 5.6 7.4 5.6s7.1-2.1 7.4-5.6c.2-2.6-1.2-4.9-3.4-5.8-1.4-.6-3-.5-4 .4Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M10 5.4c0-1.4.6-2.4 1.8-2.9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>' }
+];
+async function openSetup({ t, cellFrame, signal, onClose }) {
+  const read = async (path) => {
+    try {
+      const response = await fetch(path, { signal, cache: "no-store" });
+      return response.ok ? await response.json() : void 0;
+    } catch {
+      return void 0;
+    }
+  };
+  const [catalog, settings] = await Promise.all([
+    read("/api/theone/catalog"),
+    read("/api/theone/settings")
+  ]);
+  if (signal.aborted) return;
+  const questions = [];
+  if (catalog && catalog.status.consent !== "granted") questions.push({ key: "sort", title: t("setup.sortTitle"), body: t("setup.sortBody"), pick: 0, options: [
+    { icon: "absorb", hero: 0, label: t("setup.sortYes"), hint: t("setup.sortYesHint"), recommended: true },
+    { icon: "loose", hero: 1, label: t("setup.sortNo"), hint: t("setup.sortNoHint") }
+  ] });
+  if (settings) {
+    questions.push({ key: "side", title: t("setup.sideTitle"), body: t("setup.sideBody"), pick: settings.savedValues.hideTopicSessions ? 1 : 0, options: [
+      { icon: "sidebar", hero: 0, label: t("setup.sideShow"), hint: t("setup.sideShowHint"), recommended: true },
+      { icon: "list", hero: 1, label: t("setup.sideHide"), hint: t("setup.sideHideHint") }
+    ] });
+    questions.push({ key: "tag", title: t("setup.tagTitle"), body: t("setup.tagBody"), pick: 0, options: [
+      { icon: "some", hero: 1, label: t("setup.tagSwitch"), hint: t("setup.tagSwitchHint"), recommended: true },
+      { icon: "all", hero: 2, label: t("setup.tagAll"), hint: t("setup.tagAllHint") },
+      { icon: "none", hero: 0, label: t("setup.tagNone"), hint: t("setup.tagNoneHint") }
+    ] });
+  }
+  const hint = (option) => option.recommended ? `<b>${escape(t("setup.recommended"))}</b>${escape(option.hint)}` : escape(option.hint);
+  const dots = (at2) => `<div class="theone-setup-dots" aria-hidden="true">${questions.map((_, i) => `<i data-on="${i === at2}"></i>`).join("")}</div>`;
+  const question = (q, index) => `<div class="theone-setup-hero" data-hero="${index}">${heroes[q.key](q.options[q.pick].hero)}</div>
+    <h2 class="theone-setup-title" id="theone-setup-q${index}">${escape(q.title)}</h2><p class="theone-setup-body">${escape(q.body)}</p>
+    <div class="theone-setup-options" role="radiogroup" aria-labelledby="theone-setup-q${index}" style="grid-template-columns:repeat(${q.options.length},minmax(0,1fr))">${q.options.map((option, i) => `<button type="button" class="theone-setup-option" role="radio" data-question="${index}" data-option="${i}" aria-checked="${q.pick === i}"><svg viewBox="0 0 36 24" aria-hidden="true">${icons[option.icon]}</svg>${escape(option.label)}</button>`).join("")}</div>
+    <p class="theone-setup-hint" data-hint="${index}" aria-live="polite">${hint(q.options[q.pick])}</p>
+    <div class="theone-setup-space"></div>${dots(index)}<button type="button" class="theone-setup-go" data-next>${escape(t("setup.continue"))}${arrow}</button>`;
+  const pages = [
+    `<div class="theone-setup-hero theone-setup-hero-cell">${cell(92)}</div>
+     <h2 class="theone-setup-title theone-setup-welcome">${escape(t("setup.welcome"))} <span class="theone-setup-brand"><span>The</span>One</span></h2>
+     <p class="theone-setup-body">${multiline(t("setup.welcomeBody"))}</p><div class="theone-setup-space"></div>
+     <button type="button" class="theone-setup-go" data-next>${escape(t("setup.start"))}${arrow}</button><button type="button" class="theone-setup-later" data-later>${escape(t("setup.later"))}</button>`,
+    `<div class="theone-setup-hero theone-setup-hero-cell theone-setup-hero-news">${cell(64)}<span class="theone-setup-badge">${escape(t("setup.newBadge"))}</span></div><h2 class="theone-setup-title">${escape(t("setup.newTitle"))}</h2>
+     <ul class="theone-setup-news">${news.map((item) => `<li><span class="theone-setup-news-icon">${item.svg}</span><span><b>${escape(t(`setup.new.${item.key}`))}</b><small>${escape(t(`setup.new.${item.key}Hint`))}</small></span></li>`).join("")}</ul>
+     <div class="theone-setup-space"></div><button type="button" class="theone-setup-go" data-next>${escape(t("setup.continue"))}${arrow}</button>`,
+    ...questions.map(question),
+    `<div class="theone-setup-hero theone-setup-hero-cell">${cell(92)}</div><h2 class="theone-setup-title">${escape(t("setup.doneTitle"))}</h2>
+     <p class="theone-setup-body">${multiline(t("setup.doneBody"))}</p><p class="theone-setup-hint" data-status>${escape(t("setup.apps"))}</p><div class="theone-setup-space"></div>
+     <button type="button" class="theone-setup-go" data-finish>${escape(t("setup.finish"))}${arrow}</button>`
+  ];
+  const overlay = document.createElement("div");
+  overlay.className = "theone-setup";
+  overlay.setAttribute("role", "dialog");
+  overlay.setAttribute("aria-modal", "true");
+  overlay.setAttribute("aria-label", t("setup.label"));
+  overlay.setAttribute("translate", "no");
+  overlay.innerHTML = `<button type="button" class="theone-setup-back" data-back hidden>\u2039 ${escape(t("setup.back"))}</button>
+    <div class="theone-setup-track">${pages.map((page) => `<section class="theone-setup-page"><div class="theone-setup-column">${page}</div></section>`).join("")}</div>`;
+  const track = overlay.querySelector(".theone-setup-track"), back = overlay.querySelector("[data-back]");
+  const sections = [...overlay.querySelectorAll(".theone-setup-page")];
+  let at = 0;
+  const go = (index) => {
+    at = index;
+    track.style.transform = `translateX(${-100 * index}%)`;
+    sections.forEach((section, i) => {
+      section.inert = i !== index;
+    });
+    back.hidden = index === 0 || index === pages.length - 1;
+    sections[index].querySelector(".theone-setup-go")?.focus({ preventScroll: true });
+  };
+  const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let frame = 0;
+  const paint = (time) => {
+    const pose = cellFrame(time);
+    for (const svg of overlay.querySelectorAll(".theone-setup-cell")) {
+      svg.children[0].setAttribute("d", pose.membrane);
+      svg.children[1].setAttribute("cx", pose.x.toFixed(3));
+      svg.children[1].setAttribute("cy", pose.y.toFixed(3));
+      svg.children[1].setAttribute("r", pose.r.toFixed(3));
+    }
+  };
+  paint(0);
+  if (!still) {
+    let time = 0, last = performance.now();
+    frame = requestAnimationFrame(function step(now) {
+      time += Math.min(0.05, (now - last) / 1e3) * 0.7;
+      last = now;
+      paint(time);
+      frame = requestAnimationFrame(step);
+    });
+  }
+  let closed = false;
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    cancelAnimationFrame(frame);
+    document.removeEventListener("keydown", keydown, true);
+    overlay.remove();
+    onClose();
+  };
+  const keydown = (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      close();
+    }
+  };
+  signal.addEventListener("abort", close, { once: true });
+  const finish = async (button) => {
+    button.disabled = true;
+    let failed = false;
+    const sort = questions.find((q) => q.key === "sort");
+    if (sort) {
+      try {
+        const response = await fetch("/api/theone/catalog/consent", { method: "POST", signal, cache: "no-store", headers: { "content-type": "application/json" }, body: JSON.stringify({ consent: sort.pick === 0 }) });
+        failed ||= !response.ok;
+      } catch {
+        failed = true;
+      }
+    }
+    const side = questions.find((q) => q.key === "side"), tag = questions.find((q) => q.key === "tag");
+    if (side && tag) {
+      const fresh = await read("/api/theone/settings");
+      try {
+        const response = fresh ? await fetch("/api/theone/settings", {
+          method: "PUT",
+          signal,
+          cache: "no-store",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ values: { ...fresh.savedValues, hideTopicSessions: side.pick === 1, routeNotice: notices[tag.pick] }, revision: fresh.revision })
+        }) : void 0;
+        failed ||= !response?.ok;
+        if (response?.ok) window.dispatchEvent(new Event("theone-settings-changed"));
+      } catch {
+        failed = true;
+      }
+    }
+    if (signal.aborted) return;
+    if (failed) {
+      overlay.querySelector("[data-status]").textContent = t("setup.error");
+      button.disabled = false;
+      button.removeAttribute("data-finish");
+      button.setAttribute("data-later", "");
+      return;
+    }
+    close();
+  };
+  overlay.addEventListener("click", (event) => {
+    const button = event.target.closest("button");
+    if (!button || button.disabled) return;
+    if (button.dataset.question !== void 0) {
+      const index = Number(button.dataset.question), q = questions[index];
+      q.pick = Number(button.dataset.option);
+      button.parentElement.querySelectorAll("[role=radio]").forEach((radio) => radio.setAttribute("aria-checked", String(radio === button)));
+      overlay.querySelector(`[data-hero="${index}"]`).innerHTML = heroes[q.key](q.options[q.pick].hero);
+      const hintLine = overlay.querySelector(`[data-hint="${index}"]`);
+      hintLine.innerHTML = hint(q.options[q.pick]);
+      hintLine.classList.remove("theone-setup-fade");
+      void hintLine.offsetWidth;
+      hintLine.classList.add("theone-setup-fade");
+    } else if ("next" in button.dataset) go(at + 1);
+    else if ("back" in button.dataset) go(at - 1);
+    else if ("later" in button.dataset) close();
+    else if ("finish" in button.dataset) void finish(button);
+  });
+  overlay.addEventListener("keydown", (event) => {
+    const radio = event.target.closest("[role=radio]");
+    if (!radio || !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
+    event.preventDefault();
+    const radios = [...radio.parentElement.querySelectorAll("[role=radio]")];
+    const next = radios[(radios.indexOf(radio) + (event.key === "ArrowLeft" || event.key === "ArrowUp" ? radios.length - 1 : 1)) % radios.length];
+    next.focus();
+    next.click();
+  });
+  document.addEventListener("keydown", keydown, true);
+  document.body.append(overlay);
+  go(0);
+}
+var setupCss = `
+.theone-setup{--s-bg:var(--dsw-alias-bg-base,#fff);--s-tx:var(--dsw-alias-label-primary,#18181b);--s-mu:var(--dsw-alias-label-tertiary,#6b6f78);--s-cap:var(--dsw-alias-label-caption,#9aa0aa);--s-neutral:var(--dsw-alias-border-l2,#00000014);
+  --s-ac:#a75b1e;--s-tint:#fff5ec;--s-line:#eed3bb;--s-glow:0 0 22px 4px #ff6b001c;
+  position:fixed;inset:0;z-index:10050;overflow:hidden;background:var(--s-bg);color:var(--s-tx);font-family:var(--dsw-font-family,inherit);animation:theone-setup-in .28s ease}
+[data-ds-dark-theme] .theone-setup{--s-ac:#93c8f3;--s-tint:#1d2a37;--s-line:#344d64;--s-glow:0 0 22px 4px #80bae91c}
+@keyframes theone-setup-in{from{opacity:0}}
+.theone-setup-track{display:flex;height:100%;transition:transform .5s cubic-bezier(.32,.72,0,1)}
+.theone-setup-page{flex:0 0 100%;height:100%;box-sizing:border-box;padding:48px 24px 32px;display:flex;align-items:center;justify-content:center;overflow:auto}
+/* A fixed-height column, centred: the button keeps the same place on every page however tall the window is. */
+.theone-setup-column{width:min(400px,100%);height:min(580px,100%);display:flex;flex-direction:column;align-items:center}
+.theone-setup-back{all:unset;position:absolute;left:20px;top:16px;z-index:1;cursor:pointer;color:var(--s-cap);font-size:13px;line-height:20px;padding:4px 8px;border-radius:8px}
+.theone-setup-back:hover{color:var(--s-tx)}.theone-setup-back[hidden]{display:none}
+.theone-setup-hero{flex:none;width:100%;height:150px;display:flex;align-items:center;justify-content:center;color:var(--s-ac)}
+.theone-setup-hero>svg{width:220px;height:110px;overflow:visible}
+.theone-setup-hero-cell svg{overflow:visible}
+.theone-setup-hero-news{flex-direction:column;gap:16px}
+.theone-setup-badge{font-size:12px;line-height:18px;color:var(--s-ac);background:var(--s-tint);box-shadow:inset 0 0 0 .5px var(--s-line);border-radius:6px;padding:2px 9px;margin-bottom:14px}
+.theone-setup-title{font-size:26px;font-weight:500;letter-spacing:-.6px;line-height:1.3;margin:8px 0 8px;text-wrap:balance;text-align:center;color:var(--s-tx)}
+.theone-setup-welcome{font-size:30px}
+.theone-setup-news{list-style:none;margin:14px 0 0;padding:0;width:100%;display:flex;flex-direction:column;gap:18px}
+.theone-setup-news li{display:flex;gap:14px;align-items:flex-start}
+.theone-setup-news-icon{flex:none;width:40px;height:40px;border-radius:10px;background:var(--s-tint);box-shadow:inset 0 0 0 .5px var(--s-line);color:var(--s-ac);display:grid;place-items:center}
+.theone-setup-news-icon svg{width:22px;height:22px;overflow:visible}
+.theone-setup-news b{display:block;font-size:14px;line-height:20px;font-weight:500;color:var(--s-tx)}
+.theone-setup-news small{display:block;font-size:13px;line-height:1.6;color:var(--s-cap);margin-top:2px}
+.theone-setup-brand{color:var(--s-ac)}.theone-setup-brand span{font-weight:400;font-size:.78em;color:var(--s-mu);margin-right:1px}
+.theone-setup-body{font-size:14px;line-height:1.7;color:var(--s-mu);text-align:center;margin:0 0 22px;text-wrap:pretty}
+.theone-setup-options{display:grid;gap:10px;width:100%}
+.theone-setup-option{all:unset;box-sizing:border-box;cursor:pointer;border-radius:12px;border:1px solid var(--s-neutral);padding:13px 6px 11px;display:flex;flex-direction:column;align-items:center;gap:8px;color:var(--s-mu);font-size:13px;line-height:18px;transition:border-color .2s,background .2s,color .2s}
+.theone-setup-option svg{width:40px;height:26px;transition:color .2s}
+.theone-setup-option:hover{border-color:var(--s-line)}
+.theone-setup-option[aria-checked=true]{background:var(--s-tint);border-color:color-mix(in srgb,var(--s-ac) 40%,var(--s-line));color:var(--s-tx)}
+.theone-setup-option[aria-checked=true] svg{color:var(--s-ac)}
+.theone-setup-hint{min-height:44px;margin:14px 0 0;text-align:center;text-wrap:pretty;font-size:13px;line-height:1.65;color:var(--s-cap)}
+.theone-setup-hint b{color:var(--s-tx);font-weight:500}
+.theone-setup-fade{animation:theone-setup-fade .3s ease}@keyframes theone-setup-fade{from{opacity:0}}
+.theone-setup-space{flex:1;min-height:20px}
+.theone-setup-go{all:unset;box-sizing:border-box;cursor:pointer;display:inline-flex;align-items:center;gap:8px;min-height:38px;padding:9px 22px;border-radius:var(--dsw-radius-md,12px);background:var(--s-tint);border:1px solid var(--s-line);color:var(--s-ac);font-size:14px;line-height:20px;font-weight:500;box-shadow:var(--s-glow);transition:border-color .2s}
+.theone-setup-go:hover{border-color:color-mix(in srgb,var(--s-ac) 40%,var(--s-line))}
+.theone-setup-go:disabled{opacity:.6;cursor:default}
+.theone-setup-go svg{width:13px;height:13px}
+.theone-setup :is(.theone-setup-go,.theone-setup-option,.theone-setup-back,.theone-setup-later):focus-visible{outline:2px solid var(--s-ac);outline-offset:3px}
+.theone-setup-later{all:unset;cursor:pointer;margin-top:14px;font-size:13px;line-height:20px;color:var(--s-cap)}.theone-setup-later:hover{color:var(--s-tx)}
+.theone-setup-dots{display:flex;gap:6px;margin-bottom:18px}.theone-setup-dots i{width:5px;height:5px;border-radius:50%;background:var(--s-neutral);transition:all .3s}
+.theone-setup-dots i[data-on=true]{background:var(--s-cap);width:14px;border-radius:3px}
+.theone-setup-a{transform-box:fill-box;transform-origin:center}
+@keyframes theone-setup-absorb{0%{opacity:0;transform:translate(0,0) scale(1)}15%{opacity:.75}75%{opacity:.85;transform:translate(var(--dx),var(--dy)) scale(.35)}85%,100%{opacity:0;transform:translate(var(--dx),var(--dy)) scale(.2)}}
+@keyframes theone-setup-drift{0%,100%{transform:translate(0,0)}50%{transform:translate(var(--fx),var(--fy))}}
+@keyframes theone-setup-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}
+@keyframes theone-setup-slide{0%{opacity:0;transform:translateX(-10px)}12%,82%{opacity:1;transform:none}94%,100%{opacity:0}}
+@keyframes theone-setup-pop{0%,20%{opacity:0;transform:scale(.4)}32%,85%{opacity:1;transform:scale(1)}95%,100%{opacity:0}}
+@keyframes theone-setup-type{0%{opacity:0;transform:translateY(5px)}10%,88%{opacity:1;transform:none}98%,100%{opacity:0}}
+@media(prefers-reduced-motion:reduce){.theone-setup,.theone-setup-track{animation:none;transition:none}.theone-setup-a{animation:none!important;opacity:1!important}}
+`;
+
 // src/client-locales.ts
 var zh = {
   "tasks.title": "\u6301\u7EED\u4EFB\u52A1",
@@ -132,6 +397,9 @@ var zh = {
   "gateway.error": "\u4E3B\u804A\u5929\u6682\u65F6\u65E0\u6CD5\u6253\u5F00\uFF0C\u8BF7\u68C0\u67E5 DSH \u8FDE\u63A5\u548C TheOne \u63D2\u4EF6\u72B6\u6001\u3002",
   "retry": "\u91CD\u8BD5",
   "settings.other": "\u5176\u4ED6",
+  "settings.sessions": "\u4F1A\u8BDD\u663E\u793A",
+  "settings.hideTopicSessions": "\u9690\u85CF\u8BDD\u9898\u4F1A\u8BDD",
+  "settings.help.hideTopicSessions": "\u9ED8\u8BA4\u5173\u95ED\uFF0C\u4E3B\u804A\u5929\u53D1\u8D77\u7684\u8BDD\u9898\u4F1A\u8BDD\u4F1A\u663E\u793A\u5728\u4FA7\u8FB9\u680F\u3002\u5F00\u542F\u540E\u9690\u85CF\u8FD9\u4E9B\u4F1A\u8BDD\uFF0C\u4ECD\u53EF\u4ECE\u8BDD\u9898\u5217\u8868\u8BBF\u95EE\u3002\u4FDD\u5B58\u540E\u751F\u6548\u3002",
   "settings.notices": "\u663E\u793A\u516C\u544A",
   "settings.advanced": "\u9AD8\u7EA7",
   "settings.experimental": "\u6D4B\u8BD5\u529F\u80FD",
@@ -419,6 +687,47 @@ var zh = {
   "start.topicsBody": "\u6BCF\u4EF6\u4E8B\u90FD\u5728\u8FD9\u91CC\uFF0C\u6709\u81EA\u5DF1\u7684\u8FDB\u5EA6\uFF0C\u968F\u65F6\u53EF\u4EE5\u63A5\u7740\u804A\u3002",
   "start.groupTip": "\u52A0\u5165\u7528\u6237\u7FA4\uFF1A\u70B9\u4E00\u4E0B\u590D\u5236 QQ \u7FA4\u53F7",
   "start.groupCopied": "\u5DF2\u590D\u5236\u7FA4\u53F7\uFF0C\u5728 QQ \u91CC\u641C\u7D22\u5373\u53EF",
+  "setup.label": "TheOne \u8BBE\u7F6E\u5411\u5BFC",
+  "setup.welcome": "\u6B22\u8FCE\u4F7F\u7528",
+  "setup.welcomeBody": "\u4E00\u4E2A\u4E3B\u804A\u5929\uFF0C\u63A5\u7740\u804A\u6BCF\u4EF6\u4E8B\u3002\n\u4F60\u8BF4\u7684\u6BCF\u4EF6\u4E8B\uFF0CTheOne \u90FD\u4F1A\u63A5\u5230\u5BF9\u5E94\u7684\u8BDD\u9898\u4E0A\u3002",
+  "setup.start": "\u5F00\u59CB",
+  "setup.later": "\u7A0D\u540E\u8BBE\u7F6E",
+  "setup.continue": "\u7EE7\u7EED",
+  "setup.back": "\u8FD4\u56DE",
+  "setup.recommended": "\u63A8\u8350\u3002",
+  "setup.sortTitle": "\u6574\u7406\u4EE5\u524D\u7684\u804A\u5929",
+  "setup.sortBody": "TheOne \u53EF\u4EE5\u628A\u4F60\u5728 DSH \u91CC\u7684\u5386\u53F2\u4F1A\u8BDD\u6574\u7406\u6210\u8BDD\u9898\u3002",
+  "setup.sortYes": "\u6574\u7406",
+  "setup.sortYesHint": "\u4E4B\u540E\u63D0\u5230\u4EE5\u524D\u7684\u4E8B\uFF0CTheOne \u4E5F\u80FD\u81EA\u7136\u63A5\u4E0A\u3002\u539F\u4F1A\u8BDD\u4FDD\u6301\u539F\u6837\uFF0C\u4E0D\u4F1A\u88AB\u5220\u9664\u6216\u4FEE\u6539\u3002",
+  "setup.sortNo": "\u6682\u65F6\u4E0D\u7528",
+  "setup.sortNoHint": "TheOne \u53EA\u4ECE\u73B0\u5728\u5F00\u59CB\u8BB0\u5F55\u3002\u4E4B\u540E\u53EF\u4EE5\u5728\u8BDD\u9898\u5DE5\u4F5C\u533A\u968F\u65F6\u5F00\u542F\u6574\u7406\u3002",
+  "setup.sideTitle": "\u8BDD\u9898\u4F1A\u8BDD\u653E\u5728\u54EA\u91CC",
+  "setup.sideBody": "\u6BCF\u4E2A\u8BDD\u9898\u90FD\u6709\u4E00\u4E2A\u4E13\u5C5E\u4F1A\u8BDD\uFF0C\u5728\u540E\u53F0\u5EF6\u7EED\u5B83\u7684\u4E0A\u4E0B\u6587\u3002",
+  "setup.sideShow": "\u4FA7\u8FB9\u680F",
+  "setup.sideShowHint": "\u8BDD\u9898\u4F1A\u8BDD\u548C\u4F60\u7684\u5176\u4ED6\u4F1A\u8BDD\u653E\u5728\u4E00\u8D77\uFF0C\u5728\u4FA7\u8FB9\u680F\u91CC\u968F\u65F6\u6253\u5F00\u3002",
+  "setup.sideHide": "\u8BDD\u9898\u5217\u8868",
+  "setup.sideHideHint": "\u4FA7\u8FB9\u680F\u53EA\u4FDD\u7559\u4F60\u81EA\u5DF1\u521B\u5EFA\u7684\u4F1A\u8BDD\uFF0C\u8BDD\u9898\u4F1A\u8BDD\u7EDF\u4E00\u6536\u5728\u8BDD\u9898\u5217\u8868\u91CC\u3002",
+  "setup.tagTitle": "\u8BDD\u9898\u63D0\u793A",
+  "setup.tagBody": "TheOne \u53EF\u4EE5\u5728\u4E3B\u804A\u5929\u91CC\u6807\u51FA\u6BCF\u6761\u6D88\u606F\u63A5\u5230\u4E86\u54EA\u4E2A\u8BDD\u9898\u3002",
+  "setup.tagSwitch": "\u5207\u6362\u65F6",
+  "setup.tagSwitchHint": "\u53EA\u5728\u8BDD\u9898\u5207\u6362\u65F6\u63D0\u793A\u4E00\u6B21\uFF0C\u4E86\u89E3\u8FDB\u5C55\uFF0C\u53C8\u4E0D\u6253\u6270\u5BF9\u8BDD\u3002",
+  "setup.tagAll": "\u6BCF\u6761",
+  "setup.tagAllHint": "\u6BCF\u6761\u6D88\u606F\u65C1\u90FD\u6807\u51FA\u6240\u5C5E\u8BDD\u9898\uFF0C\u6E05\u695A\u770B\u5230\u6BCF\u53E5\u8BDD\u7684\u53BB\u5411\u3002",
+  "setup.tagNone": "\u4E0D\u63D0\u793A",
+  "setup.tagNoneHint": "\u5BF9\u8BDD\u754C\u9762\u4FDD\u6301\u7B80\u6D01\uFF0CTheOne \u5728\u540E\u53F0\u5B89\u9759\u5730\u6574\u7406\u3002",
+  "setup.newBadge": "\u65B0\u7248\u672C",
+  "setup.newTitle": "TheOne \u6709\u54EA\u4E9B\u65B0\u53D8\u5316",
+  "setup.new.mark": "\u6D3B\u8D77\u6765\u7684\u6807\u8BC6",
+  "setup.new.markHint": "TheOne \u7684\u6807\u8BC6\u53D8\u6210\u4E86\u4E00\u4E2A\u4F1A\u547C\u5438\u7684\u7EC6\u80DE\uFF0C\u6253\u5F00\u4E3B\u804A\u5929\u65F6\u4F1A\u66F4\u6D3B\u8DC3\u4E00\u4E9B\u3002",
+  "setup.new.sessions": "\u8BDD\u9898\u4F1A\u8BDD\u53EF\u4EE5\u653E\u56DE\u4FA7\u8FB9\u680F",
+  "setup.new.sessionsHint": "\u8BDD\u9898\u4F1A\u8BDD\u53EF\u4EE5\u548C\u4F60\u7684\u5176\u4ED6\u4F1A\u8BDD\u653E\u5728\u4E00\u8D77\uFF0C\u4E5F\u53EF\u4EE5\u7EE7\u7EED\u6536\u5728\u8BDD\u9898\u5217\u8868\u91CC\u3002",
+  "setup.new.pumpkin": "\u4E07\u5723\u8282\u5C0F\u5F69\u86CB",
+  "setup.new.pumpkinHint": "10 \u6708 30 \u65E5\u548C 31 \u65E5\uFF0C\u7EC6\u80DE\u4F1A\u53D8\u6210\u4E00\u9897\u5357\u74DC\u3002",
+  "setup.doneTitle": "\u4E00\u5207\u5C31\u7EEA",
+  "setup.doneBody": "\u73B0\u5728\uFF0C\u76F4\u63A5\u8BF4\u51FA\u4F60\u60F3\u505A\u7684\u4E8B\u5427\u3002\n\u4EE5\u4E0A\u8BBE\u7F6E\u968F\u65F6\u53EF\u4EE5\u5728 TheOne \u8BBE\u7F6E\u4E2D\u66F4\u6539\u3002",
+  "setup.apps": "\u8FD8\u53EF\u4EE5\u5728 TheOne \u8BBE\u7F6E\u91CC\u8FDE\u63A5\u5FAE\u4FE1\u3001Telegram \u6216 iMessage\u3002",
+  "setup.finish": "\u5F00\u59CB\u4F7F\u7528 TheOne",
+  "setup.error": "\u90E8\u5206\u8BBE\u7F6E\u6CA1\u6709\u4FDD\u5B58\u6210\u529F\uFF0C\u53EF\u4EE5\u7A0D\u540E\u5728 TheOne \u8BBE\u7F6E\u4E2D\u8C03\u6574\u3002",
   "settings.weixinBlurb": "\u626B\u7801\u7ED1\u5B9A\uFF0C\u5728\u5FAE\u4FE1\u4E2D\u4F7F\u7528",
   "settings.telegramBlurb": "\u8FDE\u63A5\u4E2A\u4EBA\u673A\u5668\u4EBA",
   "settings.imessageBlurb": "\u5728 Mac \u4E0A\u901A\u8FC7\u4FE1\u606F\u4F7F\u7528",
@@ -516,6 +825,9 @@ var en = {
   "gateway.error": "Main chat could not open. Check your DSH connection and TheOne plugin status.",
   "retry": "Retry",
   "settings.other": "Other",
+  "settings.sessions": "Session visibility",
+  "settings.hideTopicSessions": "Hide topic sessions",
+  "settings.help.hideTopicSessions": "Off by default: topic sessions started from main chat appear in the sidebar. Enable to hide them; they remain accessible in the topic list. Applies when saved.",
   "settings.notices": "Show notices",
   "settings.advanced": "Advanced",
   "settings.experimental": "Experimental",
@@ -803,6 +1115,47 @@ var en = {
   "start.topicsBody": "Every thing you work on lives here with its own progress, ready to pick up.",
   "start.groupTip": "Join the user group (in Chinese): click to copy the QQ group number",
   "start.groupCopied": "Group number copied; search for it in QQ",
+  "setup.label": "TheOne setup",
+  "setup.welcome": "Welcome to",
+  "setup.welcomeBody": "One main chat for everything.\nWhatever you bring up, TheOne picks up the right topic.",
+  "setup.start": "Get started",
+  "setup.later": "Set up later",
+  "setup.continue": "Continue",
+  "setup.back": "Back",
+  "setup.recommended": "Recommended. ",
+  "setup.sortTitle": "Organize earlier chats",
+  "setup.sortBody": "TheOne can sort your past DSH conversations into topics.",
+  "setup.sortYes": "Organize",
+  "setup.sortYesHint": "When you mention something from before, TheOne can pick it up. Your original conversations stay exactly as they are.",
+  "setup.sortNo": "Not now",
+  "setup.sortNoHint": "TheOne starts from today. You can organize earlier chats any time from the topic workspace.",
+  "setup.sideTitle": "Where topic sessions go",
+  "setup.sideBody": "Each topic has its own session that carries its context in the background.",
+  "setup.sideShow": "Sidebar",
+  "setup.sideShowHint": "Topic sessions sit with your other sessions, one click away in the sidebar.",
+  "setup.sideHide": "Topic list",
+  "setup.sideHideHint": "The sidebar keeps only the sessions you created; topic sessions stay in the topic list.",
+  "setup.tagTitle": "Topic labels",
+  "setup.tagBody": "In main chat, TheOne can show which topic each message went to.",
+  "setup.tagSwitch": "On switch",
+  "setup.tagSwitchHint": "A label only when the topic changes: you see where things go without the clutter.",
+  "setup.tagAll": "Every message",
+  "setup.tagAllHint": "Every message shows its topic, so you can see exactly where each one went.",
+  "setup.tagNone": "None",
+  "setup.tagNoneHint": "The conversation stays clean while TheOne organizes quietly in the background.",
+  "setup.newBadge": "New version",
+  "setup.newTitle": "What's new in TheOne",
+  "setup.new.mark": "A mark that comes alive",
+  "setup.new.markHint": "TheOne\u2019s mark is now a breathing cell, a little livelier while main chat is open.",
+  "setup.new.sessions": "Topic sessions in the sidebar",
+  "setup.new.sessionsHint": "Topic sessions can sit with your other sessions, or stay in the topic list.",
+  "setup.new.pumpkin": "A Halloween surprise",
+  "setup.new.pumpkinHint": "On 30 and 31 October, the cell turns into a pumpkin.",
+  "setup.doneTitle": "You're all set",
+  "setup.doneBody": "Now just say what you want to do.\nYou can change these any time in TheOne settings.",
+  "setup.apps": "You can also connect WeChat, Telegram or iMessage in TheOne settings.",
+  "setup.finish": "Start using TheOne",
+  "setup.error": "Some choices could not be saved. You can adjust them in TheOne settings.",
   "settings.weixinBlurb": "Scan to link, then use it from WeChat",
   "settings.telegramBlurb": "Connect your own bot",
   "settings.imessageBlurb": "Use Messages on a Mac",
@@ -2657,6 +3010,7 @@ var workCss = `.theone-tasks{padding:24px;max-width:900px;margin:auto;overflow:a
 // src/client.ts
 var QQ_GROUP = "1080980184";
 var ONBOARDING = "theone-onboarding";
+var SETUP = "theone-setup-1";
 var FIRST_TURN = 1;
 var FEEDBACK_EMAIL = "theone@yulid.org";
 var PLACEHOLDERS = /* @__PURE__ */ new Set(["\u7B49\u5F85\u9996\u6B21\u6267\u884C", "\u65B0\u8BDD\u9898\uFF0C\u5C1A\u65E0\u5386\u53F2\u6458\u8981\u3002"]);
@@ -3175,36 +3529,81 @@ function apply(ctx) {
       status.state === "installing" || status.state === "reloading" ? (0, import_react2.createElement)("span", { className: "theone-update-spin", "aria-hidden": true }) : icon(status.state === "restart" ? "restart" : status.state === "failed" ? "alert" : "download", 15)
     );
   }
-  const symbol = () => (0, import_react2.createElement)(
-    "svg",
-    { className: "theone-symbol", viewBox: "0 0 20 20", width: 20, height: 20, "aria-hidden": true, focusable: false },
-    (0, import_react2.createElement)("circle", { cx: 10, cy: 10, r: 8.6, fill: "none", stroke: "currentColor", strokeWidth: 1.4 }),
-    (0, import_react2.createElement)("circle", { cx: 10, cy: 10, r: 2.4, fill: "currentColor" })
-  );
-  const pumpkin = (id) => (0, import_react2.createElement)(
-    "svg",
-    { className: "theone-pumpkin", viewBox: "0 0 30 30", width: 30, height: 30, "aria-hidden": true, focusable: false },
-    (0, import_react2.createElement)(
-      "filter",
-      { id, x: "-20%", y: "-20%", width: "140%", height: "140%" },
-      (0, import_react2.createElement)("feTurbulence", { type: "fractalNoise", baseFrequency: 1.8, numOctaves: 2, seed: 7, result: "fur" }),
-      (0, import_react2.createElement)("feDisplacementMap", { in: "SourceGraphic", in2: "fur", scale: 2, xChannelSelector: "R", yChannelSelector: "G", result: "coat" }),
-      (0, import_react2.createElement)("feDisplacementMap", { in: "SourceGraphic", in2: "fur", scale: 4.4, xChannelSelector: "G", yChannelSelector: "R", result: "tufts" }),
-      (0, import_react2.createElement)("feColorMatrix", { in: "tufts", values: "1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 .45 0", result: "fringe" }),
-      (0, import_react2.createElement)("feMerge", { result: "pelt" }, (0, import_react2.createElement)("feMergeNode", { in: "fringe" }), (0, import_react2.createElement)("feMergeNode", { in: "coat" })),
-      (0, import_react2.createElement)("feGaussianBlur", { in: "pelt", stdDeviation: 0.18 })
-    ),
-    (0, import_react2.createElement)(
-      "g",
-      { filter: `url(#${id})`, opacity: 0.6 },
-      (0, import_react2.createElement)("path", { d: "M14 7.4C13.7 5.3 14.4 3.3 16.6 2.4L17.6 3.6C16.3 4.4 16 5.7 16.2 7.4Z", fill: "#6f8a3c" }),
-      (0, import_react2.createElement)("ellipse", { cx: 8.8, cy: 16.6, rx: 6.6, ry: 8.6, fill: "#d9600c" }),
-      (0, import_react2.createElement)("ellipse", { cx: 21.2, cy: 16.6, rx: 6.6, ry: 8.6, fill: "#d9600c" }),
-      (0, import_react2.createElement)("ellipse", { cx: 12.2, cy: 16.4, rx: 5.8, ry: 9.6, fill: "#ec7618" }),
-      (0, import_react2.createElement)("ellipse", { cx: 17.8, cy: 16.4, rx: 5.8, ry: 9.6, fill: "#ec7618" }),
-      (0, import_react2.createElement)("ellipse", { cx: 15, cy: 16.4, rx: 4.4, ry: 10, fill: "#fb9233" })
-    )
-  );
+  const cellWaves = [0.4, 0.13, 0.31, 0.17, 0.29, 0.18, -0.11, 0.25];
+  const fix = (value) => value.toFixed(3);
+  const closedCurve = (points) => {
+    const n = points.length;
+    let path = `M${fix(points[0][0])} ${fix(points[0][1])}`;
+    points.forEach((p1, i) => {
+      const p0 = points[(i + n - 1) % n], p2 = points[(i + 1) % n], p3 = points[(i + 2) % n];
+      path += `C${fix(p1[0] + (p2[0] - p0[0]) / 6)} ${fix(p1[1] + (p2[1] - p0[1]) / 6)} ${fix(p2[0] - (p3[0] - p1[0]) / 6)} ${fix(p2[1] - (p3[1] - p1[1]) / 6)} ${fix(p2[0])} ${fix(p2[1])}`;
+    });
+    return `${path}Z`;
+  };
+  const cellFrame = (t2, pace = cellWaves) => {
+    const { sin, cos, PI } = Math;
+    const points = Array.from({ length: 44 }, (_, i) => {
+      const a = i / 44 * 2 * PI, r = 7.4 + 0.12 * sin(pace[7] * t2) + 0.22 * sin(2 * a + pace[5] * t2) + 0.07 * sin(3 * a + pace[6] * t2);
+      return [10 + r * cos(a), 10 + r * sin(a)];
+    });
+    return { membrane: closedCurve(points), x: 10 + 0.6 * sin(pace[1] * t2) + 0.25 * sin(pace[2] * t2), y: 10 + 0.55 * sin(pace[3] * t2) + 0.2 * sin(pace[4] * t2), r: 2.9 + 0.12 * sin(pace[0] * t2) };
+  };
+  const pumpkinY = 10.9;
+  const pumpkinRibs = `M6.6 ${pumpkinY - 5.2}C5.2 ${pumpkinY - 2} 5.2 ${pumpkinY + 2} 6.6 ${pumpkinY + 5.2}M13.4 ${pumpkinY - 5.2}C14.8 ${pumpkinY - 2} 14.8 ${pumpkinY + 2} 13.4 ${pumpkinY + 5.2}`;
+  const pumpkinFrame = (t2, pace = cellWaves) => {
+    const { sin, cos, exp, abs, max, atan2, PI } = Math, swell = 0.1 * sin(pace[7] * t2);
+    const points = Array.from({ length: 64 }, (_, i) => {
+      const a = i / 64 * 2 * PI, fromTop = atan2(sin(a + PI / 2), cos(a + PI / 2)), shape = sin(2 * a + pace[5] * t2);
+      const dent = 0.55 * abs(sin(a)) * max(0, -cos(4 * a)) + 0.45 * exp(-fromTop * fromTop / 0.06);
+      return [10 + (7.9 + swell + 0.12 * shape - dent) * cos(a), pumpkinY + (6.8 + swell + 0.1 * shape - dent) * sin(a)];
+    });
+    const top = pumpkinY - 6.35 - swell, sway = 0.25 * sin(pace[2] * t2);
+    return {
+      membrane: closedCurve(points),
+      stem: `M10 ${fix(top + 0.2)}C${fix(10 + sway * 0.3)} ${fix(top - 1)} ${fix(10.4 + sway)} ${fix(top - 1.9)} ${fix(11.5 + sway)} ${fix(top - 2.3)}`,
+      x: 10 + 0.45 * sin(pace[1] * t2),
+      y: pumpkinY + 0.4 * sin(pace[3] * t2),
+      r: 2.6 + 0.1 * sin(pace[0] * t2)
+    };
+  };
+  function CellSymbol({ state, spooky = false }) {
+    const svg = (0, import_react2.useRef)(null), tempo = (0, import_react2.useRef)(0.7), pose = spooky ? pumpkinFrame : cellFrame, still = pose(0), live = !!state;
+    tempo.current = state === "active" ? 1 : 0.7;
+    (0, import_react2.useEffect)(() => {
+      if (!live || !svg.current || typeof matchMedia !== "function" || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+      const part = (name) => svg.current.querySelector(`[data-part="${name}"]`);
+      const membrane = part("membrane"), nucleus = part("nucleus"), stem = spooky ? part("stem") : void 0;
+      const paint = (frame2) => {
+        membrane.setAttribute("d", frame2.membrane);
+        if (stem && frame2.stem) stem.setAttribute("d", frame2.stem);
+        nucleus.setAttribute("cx", fix(frame2.x));
+        nucleus.setAttribute("cy", fix(frame2.y));
+        nucleus.setAttribute("r", fix(frame2.r));
+      };
+      const pace = cellWaves.map((wave) => wave * (0.85 + Math.random() * 0.3));
+      let t2 = 0, speed = tempo.current, last = performance.now(), frame = requestAnimationFrame(function step(now) {
+        const dt = Math.min(0.05, (now - last) / 1e3);
+        last = now;
+        speed += (tempo.current - speed) * Math.min(1, dt * 2);
+        t2 += dt * speed;
+        paint(pose(t2, pace));
+        frame = requestAnimationFrame(step);
+      });
+      return () => {
+        cancelAnimationFrame(frame);
+        paint(pose(0));
+      };
+    }, [live, spooky]);
+    return (0, import_react2.createElement)(
+      "svg",
+      { ref: svg, className: "theone-symbol", "data-spooky": spooky, viewBox: "0 0 20 20", width: 20, height: 20, "aria-hidden": true, focusable: false },
+      spooky && (0, import_react2.createElement)("path", { d: pumpkinRibs, fill: "none", stroke: "currentColor", strokeWidth: 0.9, strokeLinecap: "round", opacity: 0.38 }),
+      (0, import_react2.createElement)("path", { "data-part": "membrane", d: still.membrane, fill: "none", stroke: "currentColor", strokeWidth: 1.4, strokeLinejoin: "round" }),
+      spooky && (0, import_react2.createElement)("path", { "data-part": "stem", className: "theone-symbol-stem", d: still.stem, fill: "none", strokeWidth: 1.5, strokeLinecap: "round" }),
+      (0, import_react2.createElement)("circle", { "data-part": "nucleus", cx: fix(still.x), cy: fix(still.y), r: fix(still.r), fill: "currentColor" })
+    );
+  }
+  const symbol = (state, spooky = false) => (0, import_react2.createElement)(CellSymbol, { state, spooky });
   function SidebarEntry({ size }) {
     const t2 = useText();
     const marker = (0, import_react2.useRef)(null);
@@ -3213,7 +3612,7 @@ function apply(ctx) {
     const sessions = (0, import_react2.useSyncExternalStore)(ctx.sessions.list.subscribe, ctx.sessions.list.getSnapshot);
     const panel = (0, import_react2.useSyncExternalStore)(ctx.layout.panelInfo.subscribe, ctx.layout.panelInfo.getSnapshot);
     const active = panel.activePanelId === panelId || panel.activePanelId === null && !!id && !!sessions.byId[id]?.retainedBy.mainView;
-    const spooky = halloween(), furId = `theone-fur${(0, import_react2.useId)().replace(/:/g, "")}`;
+    const spooky = halloween();
     (0, import_react2.useEffect)(() => {
       const button = marker.current?.closest("button");
       if (!button) return;
@@ -3316,7 +3715,7 @@ function apply(ctx) {
     return (0, import_react2.createElement)(
       "span",
       { ref: marker, className: "theone-nav", translate: "no", "data-wide": size === 16, "data-active": active },
-      (0, import_react2.createElement)("span", { className: "theone-symbol-wrap" }, spooky ? pumpkin(furId) : null, symbol(), size !== 16 && pending ? (0, import_react2.createElement)("span", { className: "theone-update-dot", "aria-hidden": true }) : null),
+      (0, import_react2.createElement)("span", { className: "theone-symbol-wrap" }, symbol(active ? "active" : "idle", spooky), size !== 16 && pending ? (0, import_react2.createElement)("span", { className: "theone-update-dot", "aria-hidden": true }) : null),
       size === 16 && (0, import_react2.createElement)(
         "span",
         { className: "theone-entry-copy" },
@@ -3531,10 +3930,10 @@ function apply(ctx) {
       (0, import_react2.createElement)("span", { className: "theone-bg-chevron", "aria-hidden": true }, saving ? "\u2026" : icon("chevron", 12))
     );
   }
-  let notices = [];
+  let notices2 = [];
   const noticeListeners = /* @__PURE__ */ new Set();
   const setNotices = (value) => {
-    notices = value;
+    notices2 = value;
     for (const listener of noticeListeners) listener();
   };
   const subscribeNotices = (listener) => {
@@ -3546,7 +3945,7 @@ function apply(ctx) {
   const localized = (value) => localeSnapshot().active.startsWith("zh") ? value.zh ?? value.en ?? "" : value.en ?? value.zh ?? "";
   const shownDialogs = /* @__PURE__ */ new Set();
   const dismissNotice = (id) => {
-    setNotices(notices.filter((notice) => notice.id !== id));
+    setNotices(notices2.filter((notice) => notice.id !== id));
     void fetch("/api/theone/notices", {
       method: "POST",
       signal: lifetime.signal,
@@ -3607,7 +4006,7 @@ function apply(ctx) {
     document.body.append(backdrop);
     ok.focus();
   }
-  let onboarding = false;
+  let onboarding = false, setupShown = false;
   const readNotices = async () => {
     try {
       const response = await fetch("/api/theone/notices", { signal: lifetime.signal, cache: "no-store" });
@@ -3615,7 +4014,23 @@ function apply(ctx) {
       const value = await response.json();
       onboarding = value.onboarding === true;
       setNotices(value.notices);
-      const important = notices.find((notice) => notice.level === "important" && !shownDialogs.has(notice.id));
+      if (value.setup === true && !setupShown) {
+        setupShown = true;
+        void openSetup({
+          t: (key) => t(key),
+          cellFrame,
+          signal: lifetime.signal,
+          onClose: () => {
+            dismissNotice(SETUP);
+            if (onboarding) {
+              onboarding = false;
+              dismissNotice(ONBOARDING);
+            }
+          }
+        });
+        return;
+      }
+      const important = notices2.find((notice) => notice.level === "important" && !shownDialogs.has(notice.id));
       if (important && !document.querySelector(".theone-dialog-backdrop")) openNoticeDialog(important);
     } catch {
     }
@@ -3630,7 +4045,7 @@ function apply(ctx) {
   function NoticeStrip({ directory }) {
     const t2 = useText();
     const state = (0, import_react2.useSyncExternalStore)((listener) => directory.subscribe(listener), () => directory.getSnapshot());
-    const list = (0, import_react2.useSyncExternalStore)(subscribeNotices, () => notices);
+    const list = (0, import_react2.useSyncExternalStore)(subscribeNotices, () => notices2);
     const notice = list.find((item) => item.level === "info");
     if ((state.pending ?? state.current)?.provider !== "theone" || !notice) return null;
     const title = localized(notice.title), body = localized(notice.body);
@@ -3655,7 +4070,7 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
   function OnboardingCard({ directory, turn }) {
     const t2 = useText();
     const state = (0, import_react2.useSyncExternalStore)((listener) => directory.subscribe(listener), () => directory.getSnapshot());
-    (0, import_react2.useSyncExternalStore)(subscribeNotices, () => notices);
+    (0, import_react2.useSyncExternalStore)(subscribeNotices, () => notices2);
     const [consent, setConsent] = (0, import_react2.useState)();
     const [copied, setCopied] = (0, import_react2.useState)(false);
     const welcome = turn.turn === FIRST_TURN && (state.pending ?? state.current)?.provider === "theone";
@@ -4098,6 +4513,7 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
       return () => controller.abort();
     }, [attempt]);
     const groups = [
+      ["sessions", ["hideTopicSessions"]],
       ["models", ["workerProvider", "workerModel", "routerMode"]],
       ["history", ["historyCatalog", "catalogIntervalMs"]],
       ["linkage", ["linkScope", "routeNotice"]],
@@ -4144,6 +4560,7 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
           setSnapshot(value);
           setDraft(value.savedValues);
           setMessage(value.restartRequired ? "settings.restart" : "settings.saved");
+          window.dispatchEvent(new Event("theone-settings-changed"));
         }
       } catch {
         if (!signal.aborted) setMessage("settings.saveError");
@@ -4156,7 +4573,7 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
       const field = key;
       const props = { "aria-label": t2(`settings.${key}`), disabled: saving, id: `theone-setting-${key}` };
       const select = (value, choices, selectValue) => (0, import_react2.createElement)(Dropdown, { id: props.id, label: props["aria-label"], disabled: props.disabled, value, choices, onChange: selectValue });
-      if (field === "historyCatalog" || field === "notices" || field === "factLinks" || field === "factExtraction" || field === "persistentWork")
+      if (field === "hideTopicSessions" || field === "historyCatalog" || field === "notices" || field === "factLinks" || field === "factExtraction" || field === "persistentWork")
         return (0, import_react2.createElement)(
           "button",
           { ...props, type: "button", role: "switch", "aria-checked": draft[field], className: "theone-switch", onClick: () => change(field, !draft[field]) },
@@ -5190,7 +5607,7 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
   ctx.effect(() => {
     const style = document.createElement("style");
     style.dataset.plugin = "dsh-theone";
-    style.textContent = sidebarCss + catalogCss + settingsCss + composerCss;
+    style.textContent = sidebarCss + catalogCss + settingsCss + composerCss + setupCss;
     document.head.append(style);
     return () => {
       lifetime.abort();
@@ -5201,6 +5618,8 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
     const style = document.createElement("style");
     style.dataset.plugin = "dsh-theone-gateway-row";
     let owned = [];
+    let mainSessionIds = [];
+    let hideTopicSessions = false;
     const onlyOursUnassigned = (ids) => {
       const workspaces = ctx.workspaces.list.getSnapshot();
       const list = ctx.sessions.list.getSnapshot();
@@ -5214,7 +5633,7 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
       return stray.length > 0 && stray.every((id) => ids.has(id));
     };
     const update2 = () => {
-      const ids = new Set(owned);
+      const ids = new Set(hideTopicSessions ? owned : mainSessionIds);
       const id = navigation.getSnapshot();
       if (id) ids.add(id);
       const rules = [...ids].map((sessionId) => `[role="treeitem"][data-row-key="${CSS.escape(`session:${sessionId}`)}"]{display:none!important}`);
@@ -5228,6 +5647,8 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
         void fetch("/api/theone/owned", { signal: lifetime.signal, cache: "no-store" }).then((response) => response.ok ? response.json() : void 0).then((value) => {
           if (value && !lifetime.signal.aborted) {
             owned = value.sessionIds;
+            mainSessionIds = value.mainSessionIds ?? [];
+            hideTopicSessions = value.hideTopicSessions === true;
             update2();
           }
         }).catch(() => {
@@ -5247,6 +5668,8 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
     });
     const unsubscribeWorkspaces = ctx.workspaces.list.subscribe(update2);
     window.addEventListener("storage", update2);
+    window.addEventListener("theone-settings-changed", readOwned);
+    window.addEventListener("focus", readOwned);
     document.head.append(style);
     return () => {
       unsubscribe();
@@ -5254,6 +5677,8 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
       unsubscribeWorkspaces();
       clearTimeout(timer);
       window.removeEventListener("storage", update2);
+      window.removeEventListener("theone-settings-changed", readOwned);
+      window.removeEventListener("focus", readOwned);
       style.remove();
     };
   });
@@ -5347,7 +5772,8 @@ button:has(.theone-nav[data-active=true]){border-color:color-mix(in srgb,var(--o
 .theone-nav{display:flex;align-items:center;gap:10px;color:var(--one-accent);font-family:inherit;position:relative;z-index:1}
 .theone-symbol-wrap{position:relative;display:inline-flex;flex:none;width:20px;height:20px}
 .theone-nav .theone-symbol{display:block;width:20px;height:20px;flex:none;overflow:visible;border:0;border-radius:0;background:none;position:relative}
-.theone-nav .theone-pumpkin{position:absolute;left:-5px;top:-5px;width:30px;height:30px;overflow:visible;pointer-events:none}
+.theone-symbol[data-spooky=true]{color:#d9600c}.theone-symbol-stem{stroke:#5f7a2e}
+[data-ds-dark-theme] .theone-symbol[data-spooky=true]{color:#f39a4a}[data-ds-dark-theme] .theone-symbol-stem{stroke:#8fae55}
 .theone-nav[data-wide=true] .theone-symbol-wrap{margin:0 2px}
 .theone-update-dot{position:absolute;top:-2px;right:-2px;width:7px;height:7px;border-radius:50%;corner-shape:round;background:#e8590c;box-shadow:0 0 0 2px var(--one-tint)}
 button:has(.theone-nav[data-wide=true])>span:has(.theone-nav){flex:1;min-width:0}

@@ -1,4 +1,4 @@
-import { createElement as h, Fragment, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
+import { createElement as h, Fragment, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
@@ -15,6 +15,8 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 const QQ_GROUP = '1080980184'
 /** Closing the getting-started card is remembered under this id, beside dismissed notices (see index.ts). */
 const ONBOARDING = 'theone-onboarding'
+/** Finishing or putting off the full-window setup is remembered the same way; the id matches index.ts. */
+const SETUP = 'theone-setup-1'
 /** Main chat's first turn is TheOne's greeting; the getting-started card follows it. */
 const FIRST_TURN = 1
 const FEEDBACK_EMAIL = 'theone@yulid.org'
@@ -31,6 +33,7 @@ import type { Notice } from './notices.ts'
 import { EDITABLE_SETTINGS_KEYS, type EditableSettings, type SettingsSnapshot } from './settings-types.ts'
 import { GatewayNavigation } from './client-navigation.ts'
 import { halloween } from './client-season.ts'
+import { openSetup, setupCss } from './client-setup.ts'
 import { zh, en, type TheOneLocaleKey } from './client-locales.ts'
 import type { WeixinStatus } from './weixin-link.ts'
 import type { TelegramStatus } from './telegram-bot.ts'
@@ -433,27 +436,75 @@ export function apply(ctx: Context) {
         : icon(status.state === 'restart' ? 'restart' : status.state === 'failed' ? 'alert' : 'download', 15))
   }
 
-  /** The One mark: a ring around a dot, drawn so host styles cannot reshape it. */
-  const symbol = () => h('svg', { className: 'theone-symbol', viewBox: '0 0 20 20', width: 20, height: 20, 'aria-hidden': true, focusable: false },
-    h('circle', { cx: 10, cy: 10, r: 8.6, fill: 'none', stroke: 'currentColor', strokeWidth: 1.4 }),
-    h('circle', { cx: 10, cy: 10, r: 2.4, fill: 'currentColor' }))
-
-  /** A see-through, fuzzy pumpkin behind the mark around Halloween; the noise filter ruffles its edges and ribs into fur. */
-  const pumpkin = (id: string) => h('svg', { className: 'theone-pumpkin', viewBox: '0 0 30 30', width: 30, height: 30, 'aria-hidden': true, focusable: false },
-    h('filter', { id, x: '-20%', y: '-20%', width: '140%', height: '140%' },
-      h('feTurbulence', { type: 'fractalNoise', baseFrequency: 1.8, numOctaves: 2, seed: 7, result: 'fur' }),
-      h('feDisplacementMap', { in: 'SourceGraphic', in2: 'fur', scale: 2, xChannelSelector: 'R', yChannelSelector: 'G', result: 'coat' }),
-      h('feDisplacementMap', { in: 'SourceGraphic', in2: 'fur', scale: 4.4, xChannelSelector: 'G', yChannelSelector: 'R', result: 'tufts' }),
-      h('feColorMatrix', { in: 'tufts', values: '1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 .45 0', result: 'fringe' }),
-      h('feMerge', { result: 'pelt' }, h('feMergeNode', { in: 'fringe' }), h('feMergeNode', { in: 'coat' })),
-      h('feGaussianBlur', { in: 'pelt', stdDeviation: 0.18 })),
-    h('g', { filter: `url(#${id})`, opacity: 0.6 },
-      h('path', { d: 'M14 7.4C13.7 5.3 14.4 3.3 16.6 2.4L17.6 3.6C16.3 4.4 16 5.7 16.2 7.4Z', fill: '#6f8a3c' }),
-      h('ellipse', { cx: 8.8, cy: 16.6, rx: 6.6, ry: 8.6, fill: '#d9600c' }),
-      h('ellipse', { cx: 21.2, cy: 16.6, rx: 6.6, ry: 8.6, fill: '#d9600c' }),
-      h('ellipse', { cx: 12.2, cy: 16.4, rx: 5.8, ry: 9.6, fill: '#ec7618' }),
-      h('ellipse', { cx: 17.8, cy: 16.4, rx: 5.8, ry: 9.6, fill: '#ec7618' }),
-      h('ellipse', { cx: 15, cy: 16.4, rx: 4.4, ry: 10, fill: '#fb9233' })))
+  /**
+   * The One mark: a living cell with one nucleus, the sibling of TheTwo's two-nucleus cell. Plain vector paths (no filters) keep it
+   * sharp at 16px. The membrane breathes and slowly changes shape, the nucleus drifts and swells on layered slow sine waves; slow,
+   * low-order motion and three-decimal coordinates keep small sizes from shivering. t = 0 is the still pose shown when not animating.
+   */
+  const cellWaves = [0.4, 0.13, 0.31, 0.17, 0.29, 0.18, -0.11, 0.25]
+  const fix = (value: number) => value.toFixed(3)
+  /** A smooth closed curve through the points (Catmull-Rom as cubic Béziers). */
+  const closedCurve = (points: readonly (readonly [number, number])[]) => {
+    const n = points.length
+    let path = `M${fix(points[0][0])} ${fix(points[0][1])}`
+    points.forEach((p1, i) => {
+      const p0 = points[(i + n - 1) % n], p2 = points[(i + 1) % n], p3 = points[(i + 2) % n]
+      path += `C${fix(p1[0] + (p2[0] - p0[0]) / 6)} ${fix(p1[1] + (p2[1] - p0[1]) / 6)} ${fix(p2[0] - (p3[0] - p1[0]) / 6)} ${fix(p2[1] - (p3[1] - p1[1]) / 6)} ${fix(p2[0])} ${fix(p2[1])}`
+    })
+    return `${path}Z`
+  }
+  type CellPose = { membrane: string; x: number; y: number; r: number; stem?: string }
+  const cellFrame = (t: number, pace: readonly number[] = cellWaves): CellPose => {
+    const { sin, cos, PI } = Math
+    const points = Array.from({ length: 44 }, (_, i) => {
+      const a = i / 44 * 2 * PI, r = 7.4 + 0.12 * sin(pace[7] * t) + 0.22 * sin(2 * a + pace[5] * t) + 0.07 * sin(3 * a + pace[6] * t)
+      return [10 + r * cos(a), 10 + r * sin(a)] as const
+    })
+    return { membrane: closedCurve(points), x: 10 + 0.6 * sin(pace[1] * t) + 0.25 * sin(pace[2] * t), y: 10 + 0.55 * sin(pace[3] * t) + 0.2 * sin(pace[4] * t), r: 2.9 + 0.12 * sin(pace[0] * t) }
+  }
+  /** Halloween: the same cell, squat and lobed like a pumpkin (two notches top and bottom, a dip under the stem), with a swaying stem. */
+  const pumpkinY = 10.9
+  const pumpkinRibs = `M6.6 ${pumpkinY - 5.2}C5.2 ${pumpkinY - 2} 5.2 ${pumpkinY + 2} 6.6 ${pumpkinY + 5.2}M13.4 ${pumpkinY - 5.2}C14.8 ${pumpkinY - 2} 14.8 ${pumpkinY + 2} 13.4 ${pumpkinY + 5.2}`
+  const pumpkinFrame = (t: number, pace: readonly number[] = cellWaves): CellPose => {
+    const { sin, cos, exp, abs, max, atan2, PI } = Math, swell = 0.1 * sin(pace[7] * t)
+    const points = Array.from({ length: 64 }, (_, i) => {
+      const a = i / 64 * 2 * PI, fromTop = atan2(sin(a + PI / 2), cos(a + PI / 2)), shape = sin(2 * a + pace[5] * t)
+      const dent = 0.55 * abs(sin(a)) * max(0, -cos(4 * a)) + 0.45 * exp(-fromTop * fromTop / 0.06)
+      return [10 + (7.9 + swell + 0.12 * shape - dent) * cos(a), pumpkinY + (6.8 + swell + 0.1 * shape - dent) * sin(a)] as const
+    })
+    const top = pumpkinY - 6.35 - swell, sway = 0.25 * sin(pace[2] * t)
+    return { membrane: closedCurve(points), stem: `M10 ${fix(top + 0.2)}C${fix(10 + sway * 0.3)} ${fix(top - 1)} ${fix(10.4 + sway)} ${fix(top - 1.9)} ${fix(11.5 + sway)} ${fix(top - 2.3)}`,
+      x: 10 + 0.45 * sin(pace[1] * t), y: pumpkinY + 0.4 * sin(pace[3] * t), r: 2.6 + 0.1 * sin(pace[0] * t) }
+  }
+  function CellSymbol({ state, spooky = false }: { state?: 'idle' | 'active'; spooky?: boolean }) {
+    const svg = useRef<SVGSVGElement>(null), tempo = useRef(0.7), pose = spooky ? pumpkinFrame : cellFrame, still = pose(0), live = !!state
+    tempo.current = state === 'active' ? 1 : 0.7
+    useEffect(() => {
+      if (!live || !svg.current || typeof matchMedia !== 'function' || matchMedia('(prefers-reduced-motion: reduce)').matches) return
+      const part = (name: string) => svg.current!.querySelector(`[data-part="${name}"]`)!
+      const membrane = part('membrane'), nucleus = part('nucleus'), stem = spooky ? part('stem') : undefined
+      const paint = (frame: CellPose) => {
+        membrane.setAttribute('d', frame.membrane)
+        if (stem && frame.stem) stem.setAttribute('d', frame.stem)
+        nucleus.setAttribute('cx', fix(frame.x)); nucleus.setAttribute('cy', fix(frame.y)); nucleus.setAttribute('r', fix(frame.r))
+      }
+      // Slightly different tempos per mark, so two marks on screen never move in step.
+      const pace = cellWaves.map(wave => wave * (0.85 + Math.random() * 0.3))
+      let t = 0, speed = tempo.current, last = performance.now(), frame = requestAnimationFrame(function step(now) {
+        const dt = Math.min(0.05, (now - last) / 1000); last = now
+        speed += (tempo.current - speed) * Math.min(1, dt * 2); t += dt * speed
+        paint(pose(t, pace)); frame = requestAnimationFrame(step)
+      })
+      return () => { cancelAnimationFrame(frame); paint(pose(0)) }
+    }, [live, spooky])
+    return h('svg', { ref: svg, className: 'theone-symbol', 'data-spooky': spooky, viewBox: '0 0 20 20', width: 20, height: 20, 'aria-hidden': true, focusable: false },
+      spooky && h('path', { d: pumpkinRibs, fill: 'none', stroke: 'currentColor', strokeWidth: 0.9, strokeLinecap: 'round', opacity: 0.38 }),
+      h('path', { 'data-part': 'membrane', d: still.membrane, fill: 'none', stroke: 'currentColor', strokeWidth: 1.4, strokeLinejoin: 'round' }),
+      spooky && h('path', { 'data-part': 'stem', className: 'theone-symbol-stem', d: still.stem, fill: 'none', strokeWidth: 1.5, strokeLinecap: 'round' }),
+      h('circle', { 'data-part': 'nucleus', cx: fix(still.x), cy: fix(still.y), r: fix(still.r), fill: 'currentColor' }))
+  }
+  /** The sidebar entry always breathes, a little livelier while main chat is open; everywhere else the cell holds still. */
+  const symbol = (state?: 'idle' | 'active', spooky = false) => h(CellSymbol, { state, spooky })
 
   function SidebarEntry({size}: PropsRuntime<'sidebar.panellist'>) {
     const t = useText()
@@ -463,7 +514,7 @@ export function apply(ctx: Context) {
     const sessions = useSyncExternalStore<SessionListState>(ctx.sessions.list.subscribe,ctx.sessions.list.getSnapshot)
     const panel = useSyncExternalStore<PanelInfo>(ctx.layout.panelInfo.subscribe,ctx.layout.panelInfo.getSnapshot)
     const active = panel.activePanelId === panelId || (panel.activePanelId === null && !!id && !!sessions.byId[id as SessionId]?.retainedBy.mainView)
-    const spooky = halloween(), furId = `theone-fur${useId().replace(/:/g, '')}`
+    const spooky = halloween()
     useEffect(() => {
       const button = marker.current?.closest('button')
       if (!button) return
@@ -543,7 +594,7 @@ export function apply(ctx: Context) {
       }
     }, [active, size])
     return h('span',{ref:marker,className:'theone-nav',translate:'no','data-wide':size === 16,'data-active':active},
-      h('span',{className:'theone-symbol-wrap'},spooky ? pumpkin(furId) : null,symbol(),size !== 16 && pending ? h('span',{className:'theone-update-dot','aria-hidden':true}) : null),
+      h('span',{className:'theone-symbol-wrap'},symbol(active ? 'active' : 'idle', spooky),size !== 16 && pending ? h('span',{className:'theone-update-dot','aria-hidden':true}) : null),
       size === 16 && h('span',{className:'theone-entry-copy'},
         h('span',{className:'theone-entry-title'},
           h('span',{className:'theone-wordmark',translate:'no'},h('span',{className:'theone-word-the'},'The'),
@@ -709,14 +760,21 @@ export function apply(ctx: Context) {
     document.body.append(backdrop); ok.focus()
   }
   /** Whether the getting-started card is still wanted; it comes with the notices and is closed the same way. */
-  let onboarding = false
+  let onboarding = false, setupShown = false
   const readNotices = async () => {
     try {
       const response = await fetch('/api/theone/notices', { signal: lifetime.signal, cache: 'no-store' })
       if (!response.ok) return
-      const value = (await response.json()) as { notices: Notice[]; onboarding?: boolean }
+      const value = (await response.json()) as { notices: Notice[]; onboarding?: boolean; setup?: boolean }
       onboarding = value.onboarding === true
       setNotices(value.notices)
+      // The full-window setup comes first and supersedes the getting-started card; notices wait for the next read.
+      if (value.setup === true && !setupShown) {
+        setupShown = true
+        void openSetup({ t: key => t(key as TheOneLocaleKey), cellFrame, signal: lifetime.signal,
+          onClose: () => { dismissNotice(SETUP); if (onboarding) { onboarding = false; dismissNotice(ONBOARDING) } } })
+        return
+      }
       const important = notices.find(notice => notice.level === 'important' && !shownDialogs.has(notice.id))
       if (important && !document.querySelector('.theone-dialog-backdrop')) openNoticeDialog(important)
     } catch { /* No notices when offline. */ }
@@ -1053,6 +1111,7 @@ export function apply(ctx: Context) {
       return () => controller.abort()
     }, [attempt])
     const groups = [
+      ['sessions', ['hideTopicSessions']],
       ['models', ['workerProvider', 'workerModel', 'routerMode']],
       ['history', ['historyCatalog', 'catalogIntervalMs']],
       ['linkage', ['linkScope', 'routeNotice']],
@@ -1087,7 +1146,10 @@ export function apply(ctx: Context) {
           return
         }
         const value = await response.json() as SettingsSnapshot
-        if (!signal.aborted) { setSnapshot(value); setDraft(value.savedValues); setMessage(value.restartRequired ? 'settings.restart' : 'settings.saved') }
+        if (!signal.aborted) {
+          setSnapshot(value); setDraft(value.savedValues); setMessage(value.restartRequired ? 'settings.restart' : 'settings.saved')
+          window.dispatchEvent(new Event('theone-settings-changed'))
+        }
       } catch { if (!signal.aborted) setMessage('settings.saveError') }
       finally { if (!signal.aborted) setSaving(false) }
     }
@@ -1098,7 +1160,7 @@ export function apply(ctx: Context) {
       const select = (value: string, choices: { value: string; label: string }[], selectValue: (value: string) => void) =>
         h(Dropdown, { id: props.id, label: props['aria-label'], disabled: props.disabled, value, choices, onChange: selectValue })
       // On/off settings are switches, as in DSH's own Settings.
-      if (field === 'historyCatalog' || field === 'notices' || field === 'factLinks' || field === 'factExtraction' || field === 'persistentWork')
+      if (field === 'hideTopicSessions' || field === 'historyCatalog' || field === 'notices' || field === 'factLinks' || field === 'factExtraction' || field === 'persistentWork')
         return h('button', { ...props, type: 'button', role: 'switch', 'aria-checked': draft[field], className: 'theone-switch', onClick: () => change(field, !draft[field]) },
           h('span', { className: 'theone-switch-thumb' }))
       if (field === 'linkScope' || field === 'routeNotice') {
@@ -1680,7 +1742,7 @@ export function apply(ctx: Context) {
   ctx.effect(() => {
     const style = document.createElement('style')
     style.dataset.plugin = 'dsh-theone'
-    style.textContent = sidebarCss + catalogCss + settingsCss + composerCss
+    style.textContent = sidebarCss + catalogCss + settingsCss + composerCss + setupCss
     document.head.append(style)
     return () => { lifetime.abort(); style.remove() }
   })
@@ -1689,10 +1751,11 @@ export function apply(ctx: Context) {
     style.dataset.plugin = 'dsh-theone-gateway-row'
     // DSH's grouped and flat lists expose the exact Session row identity.
     // Keep the host Session active; only its duplicate navigation row is hidden.
-    // TheOne only organises: the sessions it made for itself (every main chat, each topic's background
-    // session) stay out of DSH's list, which keeps showing exactly the sessions the user made.
-    // Nothing is moved or archived; the rows are only not drawn, and come back if TheOne is removed.
+    // Main chats use the dedicated entry; topic rows are hidden only when requested.
+    // The server also archives idle topic sessions; this filter covers active sessions.
     let owned: string[] = []
+    let mainSessionIds: string[] = []
+    let hideTopicSessions = false
     // DSH puts sessions outside every workspace under "Unassigned". When only TheOne's are left there,
     // its heading and "show N more" row go too, as they would without TheOne.
     const onlyOursUnassigned = (ids: Set<string>) => {
@@ -1705,7 +1768,7 @@ export function apply(ctx: Context) {
       return stray.length > 0 && stray.every((id: SessionId) => ids.has(id))
     }
     const update = () => {
-      const ids = new Set(owned)
+      const ids = new Set(hideTopicSessions ? owned : mainSessionIds)
       const id = navigation.getSnapshot()
       if (id) ids.add(id)
       const rules = [...ids].map(sessionId => `[role="treeitem"][data-row-key="${CSS.escape(`session:${sessionId}`)}"]{display:none!important}`)
@@ -1717,8 +1780,8 @@ export function apply(ctx: Context) {
       clearTimeout(timer)
       timer = setTimeout(() => {
         void fetch('/api/theone/owned', { signal: lifetime.signal, cache: 'no-store' })
-          .then(response => response.ok ? response.json() as Promise<{ sessionIds: string[] }> : undefined)
-          .then(value => { if (value && !lifetime.signal.aborted) { owned = value.sessionIds; update() } }).catch(() => {})
+          .then(response => response.ok ? response.json() as Promise<{ sessionIds: string[]; mainSessionIds: string[]; hideTopicSessions: boolean }> : undefined)
+          .then(value => { if (value && !lifetime.signal.aborted) { owned = value.sessionIds; mainSessionIds = value.mainSessionIds ?? []; hideTopicSessions = value.hideTopicSessions === true; update() } }).catch(() => {})
       }, 300)
     }
     update()
@@ -1732,8 +1795,10 @@ export function apply(ctx: Context) {
     })
     const unsubscribeWorkspaces = ctx.workspaces.list.subscribe(update)
     window.addEventListener('storage', update)
+    window.addEventListener('theone-settings-changed', readOwned)
+    window.addEventListener('focus', readOwned)
     document.head.append(style)
-    return () => { unsubscribe(); unsubscribeList(); unsubscribeWorkspaces(); clearTimeout(timer); window.removeEventListener('storage', update); style.remove() }
+    return () => { unsubscribe(); unsubscribeList(); unsubscribeWorkspaces(); clearTimeout(timer); window.removeEventListener('storage', update); window.removeEventListener('theone-settings-changed', readOwned); window.removeEventListener('focus', readOwned); style.remove() }
   })
   // Main chat works through its topics: as far as its file panel and "@" file references go, its folder
   // is the folder of the topic in use. Only main chat's row in this browser's list changes; the
@@ -1828,7 +1893,8 @@ button:has(.theone-nav[data-active=true]){border-color:color-mix(in srgb,var(--o
 .theone-nav{display:flex;align-items:center;gap:10px;color:var(--one-accent);font-family:inherit;position:relative;z-index:1}
 .theone-symbol-wrap{position:relative;display:inline-flex;flex:none;width:20px;height:20px}
 .theone-nav .theone-symbol{display:block;width:20px;height:20px;flex:none;overflow:visible;border:0;border-radius:0;background:none;position:relative}
-.theone-nav .theone-pumpkin{position:absolute;left:-5px;top:-5px;width:30px;height:30px;overflow:visible;pointer-events:none}
+.theone-symbol[data-spooky=true]{color:#d9600c}.theone-symbol-stem{stroke:#5f7a2e}
+[data-ds-dark-theme] .theone-symbol[data-spooky=true]{color:#f39a4a}[data-ds-dark-theme] .theone-symbol-stem{stroke:#8fae55}
 .theone-nav[data-wide=true] .theone-symbol-wrap{margin:0 2px}
 .theone-update-dot{position:absolute;top:-2px;right:-2px;width:7px;height:7px;border-radius:50%;corner-shape:round;background:#e8590c;box-shadow:0 0 0 2px var(--one-tint)}
 button:has(.theone-nav[data-wide=true])>span:has(.theone-nav){flex:1;min-width:0}

@@ -14,6 +14,7 @@ export interface SettingsSnapshot {
         linkScope: 'off' | 'workspace' | 'auto';
         routeNotice: 'hidden' | 'switch' | 'all';
         notices: boolean;
+        hideTopicSessions: boolean;
         factLinks: boolean;
         factExtraction: boolean;
         persistentWork: boolean;
@@ -36,7 +37,7 @@ export interface SettingsSnapshot {
     /** Saved settings that apply only after DSH restarts; everything else applies when saved. */
     restartRequired: boolean;
 }
-export declare const EDITABLE_SETTINGS_KEYS: readonly ["workerProvider", "workerModel", "routerMode", "historyCatalog", "catalogIntervalMs", "maxDescriptorChars", "maxResponseChars", "linkScope", "routeNotice", "contextsPath", "notices", "factLinks", "factExtraction", "persistentWork"];
+export declare const EDITABLE_SETTINGS_KEYS: readonly ["workerProvider", "workerModel", "routerMode", "historyCatalog", "catalogIntervalMs", "maxDescriptorChars", "maxResponseChars", "linkScope", "routeNotice", "contextsPath", "notices", "hideTopicSessions", "factLinks", "factExtraction", "persistentWork"];
 /** The background catalog is started once; these take effect after DSH restarts. */
 export declare const RESTART_SETTINGS_KEYS: readonly ["historyCatalog", "catalogIntervalMs", "factLinks", "factExtraction", "persistentWork"];
 /** Settings of the removed direct router; forms saved by older versions may still carry them. */
@@ -46,6 +47,7 @@ export declare const SETTINGS_DEFAULTS: {
     readonly linkScope: "auto";
     readonly routeNotice: "hidden";
     readonly notices: true;
+    readonly hideTopicSessions: false;
     readonly factLinks: false;
     readonly factExtraction: false;
     readonly persistentWork: false;

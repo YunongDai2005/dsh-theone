@@ -146,6 +146,8 @@ const TERMS_PROMPT = `你在帮话题路由器从用户的更正中学习。用�
 不要选泛泛的词（如「帮我」「这个」「问题」），不要选 wrongTopic 的名字。只输出 JSON 字符串数组，例如 ["消融实验","第三章"]。`;
 /** The id under which closing the getting-started card is remembered, beside dismissed notices. */
 const ONBOARDING_NOTICE = 'theone-onboarding';
+/** The full-window setup; a new id shows it (with what changed) again to everyone after a release that needs it. */
+const SETUP_NOTICE = 'theone-setup-1';
 /**
  * The first words of a new main chat, in the interface language: a welcome, what main chat is for, and
  * that TheOne is still being tested. Sorting earlier chats, the user group and the author's links are
@@ -249,6 +251,7 @@ export default class TheOne extends Service {
         linkScope: z.union([z.const('off'), z.const('workspace'), z.const('auto')]).default('auto'),
         routeNotice: z.union([z.const('hidden'), z.const('switch'), z.const('all')]).default('hidden'),
         notices: z.boolean().default(true),
+        hideTopicSessions: z.boolean().default(false),
         factLinks: z.boolean().default(false),
         factExtraction: z.boolean().default(false),
         topicCards: z.boolean().default(true),
@@ -1023,7 +1026,7 @@ export default class TheOne extends Service {
                     }
                     if (!this.store.saveSettings(this.config.gatewayKey, values, row.revision))
                         return Response.json({ error: 'SETTINGS_CONFLICT' }, { status: 409 });
-                    this.applySettings(values, descriptors);
+                    await this.applySettings(values, descriptors);
                     return Response.json(await this.settingsSnapshot(), { headers: { 'cache-control': 'no-store' } });
                 } }));
             child.inject(['workspaceRegistry'], scope => {
@@ -1195,9 +1198,11 @@ export default class TheOne extends Service {
                     const dismissed = this.store.dismissedNotices();
                     // The getting-started card is TheOne's own, so it shows even with the maintainer's notices turned off.
                     const onboarding = !dismissed.has(ONBOARDING_NOTICE);
+                    // The full-window setup opens once for everyone, new or updating, until finished or put off.
+                    const own = { onboarding, setup: !dismissed.has(SETUP_NOTICE) };
                     if (this.config.notices === false)
-                        return Response.json({ notices: [], onboarding }, { headers: { 'cache-control': 'no-store' } });
-                    return Response.json({ notices: (await this.noticeBoard.notices()).filter(notice => !dismissed.has(notice.id)), onboarding }, { headers: { 'cache-control': 'no-store' } });
+                        return Response.json({ notices: [], ...own }, { headers: { 'cache-control': 'no-store' } });
+                    return Response.json({ notices: (await this.noticeBoard.notices()).filter(notice => !dismissed.has(notice.id)), ...own }, { headers: { 'cache-control': 'no-store' } });
                 } }));
             // Problem reports: a draft to show the user in full, then sent only when they press Send.
             child.effect(() => connection.fetch.register({ path: '/api/theone/feedback', methods: ['POST'], requestBody: 'buffered', fetch: async (request) => {
@@ -1232,7 +1237,8 @@ export default class TheOne extends Service {
                 child.effect(() => connection.fetch.register({ path: `/api/theone/${name}`, methods: ['GET', 'POST'], requestBody: 'buffered',
                     fetch: request => app.handle(request) }));
             // TheOne's own sessions, so the client can keep them out of DSH's session list.
-            child.effect(() => connection.fetch.register({ path: '/api/theone/owned', methods: ['GET'], requestBody: 'buffered', fetch: async () => Response.json({ sessionIds: this.store.ownedSessionIds() }, { headers: { 'cache-control': 'no-store' } }) }));
+            child.effect(() => connection.fetch.register({ path: '/api/theone/owned', methods: ['GET'], requestBody: 'buffered', fetch: async () => Response.json({ sessionIds: this.store.ownedSessionIds(), mainSessionIds: this.store.ownedSessionIds().filter(id => this.store.isPinnedGateway(id)),
+                    hideTopicSessions: this.config.hideTopicSessions ?? false }, { headers: { 'cache-control': 'no-store' } }) }));
             child.effect(() => connection.fetch.register({ path: '/api/theone/sessions', methods: ['GET'], requestBody: 'buffered', fetch: async () => Response.json({ sessions: await this.attachableSessions() }, { headers: { 'cache-control': 'no-store' } }) }));
             // The user's corrections to topic linking always take precedence over what was learned.
             child.effect(() => connection.fetch.register({ path: '/api/theone/links', methods: ['POST'], requestBody: 'buffered', fetch: async (request) => {
@@ -1504,6 +1510,7 @@ export default class TheOne extends Service {
             maxDescriptorChars: c.maxDescriptorChars, maxResponseChars: c.maxResponseChars,
             routerMode: c.routerMode ?? 'llm',
             linkScope: c.linkScope ?? 'auto', routeNotice: c.routeNotice ?? 'hidden', notices: c.notices ?? true,
+            hideTopicSessions: c.hideTopicSessions ?? false,
             factLinks: c.factLinks ?? false, factExtraction: c.factExtraction ?? false, persistentWork: c.persistentWork ?? false,
         };
         const activeEditable = Object.fromEntries(EDITABLE_SETTINGS_KEYS.map(key => [key, key === 'contextsPath' ? c.contextsPath ?? null : values[key]]));
@@ -1521,7 +1528,7 @@ export default class TheOne extends Service {
         return (mode ?? 'llm') === 'llm' ? new DshRouter(this.ctx.llm, () => this.backingModel()) : undefined;
     }
     /** Saved settings take effect for the next message; only the background catalog waits for a restart. */
-    applySettings(values, descriptors) {
+    async applySettings(values, descriptors) {
         const { historyCatalog: _catalog, catalogIntervalMs: _interval, factLinks: _links, factExtraction: _extraction, persistentWork: _work, ...live } = settingsConfig(values);
         if (live.routerMode !== this.config.routerMode)
             this.router = this.routerFor(live.routerMode);
@@ -1534,9 +1541,11 @@ export default class TheOne extends Service {
             }
             catch { /* Released during shutdown. */ }
         this.store.seed(descriptors);
+        if (this.ownArchive)
+            await this.unstowOwnSessions(this.ownArchive);
     }
     /**
-     * TheOne's own sessions live in DSH's archive, so DSH's own list stays the user's alone, with
+     * When hiding is enabled, TheOne's own sessions live in DSH's archive, so DSH's list stays the user's alone, with
      * TheOne on or off, and after a crash. A topic session leaves the archive only while it answers;
      * main chat, which the user types into, is archived when TheOne is turned off and back out when
      * it is on again. Only sessions TheOne made are ever archived, and only those it archived itself
@@ -1546,7 +1555,7 @@ export default class TheOne extends Service {
     /** Turning off: archive main chat and anything of TheOne's still out. Read before any wait, as the database closes alongside. */
     async stowOwnSessions(registry) {
         const archived = new Set(registry.archivedSessionIds);
-        const ids = this.store.ownedSessionIds().filter(id => !archived.has(id));
+        const ids = this.store.ownedSessionIds().filter(id => !archived.has(id) && (this.store.isPinnedGateway(id) || this.config.hideTopicSessions));
         for (const id of ids)
             this.store.markStowed(id, true);
         for (const id of ids) {
@@ -1557,12 +1566,21 @@ export default class TheOne extends Service {
             catch { /* Not a session, or DSH is closing. */ }
         }
     }
-    /** Turning on: main chats TheOne archived come back out; topic sessions it finds out are put away. */
+    /** Restore plugin-stowed sessions, keeping idle topic sessions archived only when hiding is enabled. */
     async unstowOwnSessions(registry) {
         const archived = new Set(registry.archivedSessionIds);
+        // Older versions archived idle topic sessions without recording ownership of that action.
+        // Adopt those once; later manual archives must remain the user's choice.
+        if (this.store.markOnce('owned-archive-tracking-v1')) {
+            for (const id of this.store.ownedSessionIds())
+                if (archived.has(id) && !this.store.isPinnedGateway(id))
+                    this.store.markStowed(id, true);
+        }
         for (const id of this.store.stowedSessionIds()) {
             try {
-                if (archived.has(id) && this.store.isPinnedGateway(id))
+                if (this.config.hideTopicSessions && !this.store.isPinnedGateway(id))
+                    continue;
+                if (archived.has(id))
                     await registry.unarchiveSession(SessionId(id));
                 this.store.markStowed(id, false);
             }
@@ -1570,6 +1588,8 @@ export default class TheOne extends Service {
                 console.warn('TheOne could not restore its session', id, error);
             }
         }
+        if (!this.config.hideTopicSessions)
+            return;
         const known = new Set((await this.ctx.sessionQuery.listSessions().catch(() => [])).map(session => String(session.header.id)));
         for (const id of this.store.ownedSessionIds())
             if (known.has(id) && !this.store.isPinnedGateway(id))
@@ -1580,18 +1600,26 @@ export default class TheOne extends Service {
         const registry = this.ownArchive;
         if (registry?.archivedSessionIds.includes(sessionId))
             await registry.unarchiveSession(SessionId(sessionId));
+        this.store.markStowed(sessionId, false);
     }
     /** Put a topic session back once it is idle; DSH refuses while it still runs, so try again shortly. */
     stowWhenIdle(sessionId, attempt = 0) {
         const registry = this.ownArchive;
-        if (!registry || registry.archivedSessionIds.includes(sessionId) || this.store.isPinnedGateway(sessionId))
+        if (!this.config.hideTopicSessions || !registry || registry.archivedSessionIds.includes(sessionId) || this.store.isPinnedGateway(sessionId))
             return;
         if ([...this.runs.values()].some(run => run.worker.id === sessionId && !run.done))
             return;
         // Work not shown yet stays out until main chat gets to it.
         if ([...this.background.values()].some(entry => entry.run.worker.id === sessionId))
             return;
-        registry.archiveSession(SessionId(sessionId)).catch(() => {
+        this.store.markStowed(sessionId, true);
+        registry.archiveSession(SessionId(sessionId)).then(async () => {
+            // A save can turn hiding off while the archive operation is still in flight.
+            if (!this.config.hideTopicSessions) {
+                await registry.unarchiveSession(SessionId(sessionId));
+                this.store.markStowed(sessionId, false);
+            }
+        }).catch(() => {
             if (attempt < 10)
                 setTimeout(() => this.stowWhenIdle(sessionId, attempt + 1), 3000).unref?.();
         });
