@@ -65,6 +65,7 @@ function redactDescriptor(text: string): string {
 /** The part of DSH's workspace registry TheOne uses to keep its own sessions out of sight while off. */
 interface OwnSessionArchive {
   readonly archivedSessionIds: readonly string[]
+  readonly pinnedSessionIds?: readonly string[]
   archiveSession(sessionId: SessionId, options?: { stopActivity?: boolean }): Promise<void>
   unarchiveSession(sessionId: SessionId): Promise<void>
 }
@@ -425,6 +426,9 @@ export default class TheOne extends Service {
     }, fetch, Date.now, () => { const dir = profileDir(); return dir ? join(dir, 'pnpm-workspace.yaml') : undefined })
     this.noticeBoard = new NoticeBoard(this.updater.current, config.noticeUrl || NOTICE_URL)
     ctx.effect(() => async () => {
+      this.stopping = true
+      for (const timer of this.stowTimers.values()) clearTimeout(timer)
+      this.stowTimers.clear()
       this.projects.close()
       this.mergePromptAbort.abort()
       await Promise.all(this.mergePromptTasks.values())
@@ -432,7 +436,7 @@ export default class TheOne extends Service {
         await Promise.all([...this.workers.values()].map(handle => handle.dispose()))
         await Promise.all(this.closing.values())
       }
-      finally { await this.work.close(); await this.catalog?.close(); this.store.close() }
+      finally { await this.work.close(); await this.catalog?.close(); await Promise.all(this.pendingStows.values()); this.store.close() }
     })
     this.store.seed(descriptors)
     if (!!config.workerProvider !== !!config.workerModel) throw new Error('Set both workerProvider and workerModel, or neither')
@@ -1414,11 +1418,15 @@ export default class TheOne extends Service {
    * are ever taken out.
    */
   private ownArchive?: OwnSessionArchive
+  private readonly pendingStows = new Map<string, Promise<void>>()
+  private readonly stowTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  private stopping = false
 
   /** Turning off: archive main chat and anything of TheOne's still out. Read before any wait, as the database closes alongside. */
   private async stowOwnSessions(registry: OwnSessionArchive): Promise<void> {
     const archived = new Set<string>(registry.archivedSessionIds)
-    const ids = this.store.ownedSessionIds().filter(id => !archived.has(id) && (this.store.isPinnedGateway(id) || this.config.hideTopicSessions))
+    const ids = this.store.ownedSessionIds().filter(id => !archived.has(id)
+      && (this.store.isPinnedGateway(id) || this.config.hideTopicSessions && !registry.pinnedSessionIds?.includes(id)))
     for (const id of ids) this.store.markStowed(id, true)
     for (const id of ids) {
       // Placeholders of topics that never ran have no session; DSH refuses those, which is fine.
@@ -1428,6 +1436,9 @@ export default class TheOne extends Service {
 
   /** Restore plugin-stowed sessions, keeping idle topic sessions archived only when hiding is enabled. */
   private async unstowOwnSessions(registry: OwnSessionArchive): Promise<void> {
+    // Do not clear ownership while the archive it describes is still being written.
+    await Promise.all(this.pendingStows.values())
+    if (this.stopping) return
     const archived = new Set<string>(registry.archivedSessionIds)
     // Older versions archived idle topic sessions without recording ownership of that action.
     // Adopt those once; later manual archives must remain the user's choice.
@@ -1438,16 +1449,21 @@ export default class TheOne extends Service {
       try {
         if (this.config.hideTopicSessions && !this.store.isPinnedGateway(id)) continue
         if (archived.has(id)) await registry.unarchiveSession(SessionId(id))
+        if (this.stopping) return
         this.store.markStowed(id, false)
       } catch (error) { console.warn('TheOne could not restore its session', id, error) }
     }
     if (!this.config.hideTopicSessions) return
     const known = new Set((await this.ctx.sessionQuery.listSessions().catch(() => [])).map(session => String(session.header.id)))
+    if (this.stopping) return
     for (const id of this.store.ownedSessionIds()) if (known.has(id) && !this.store.isPinnedGateway(id)) this.stowWhenIdle(id)
   }
 
   /** A topic session must be out of the archive to answer: DSH does not run archived sessions. */
   private async readyToRun(sessionId: string): Promise<void> {
+    await this.pendingStows.get(sessionId)
+    clearTimeout(this.stowTimers.get(sessionId))
+    this.stowTimers.delete(sessionId)
     const registry = this.ownArchive
     if (registry?.archivedSessionIds.includes(sessionId)) await registry.unarchiveSession(SessionId(sessionId))
     this.store.markStowed(sessionId, false)
@@ -1456,20 +1472,31 @@ export default class TheOne extends Service {
   /** Put a topic session back once it is idle; DSH refuses while it still runs, so try again shortly. */
   private stowWhenIdle(sessionId: string, attempt = 0): void {
     const registry = this.ownArchive
+    if (this.stopping || this.pendingStows.has(sessionId)) return
+    clearTimeout(this.stowTimers.get(sessionId))
+    this.stowTimers.delete(sessionId)
     if (!this.config.hideTopicSessions || !registry || registry.archivedSessionIds.includes(sessionId) || this.store.isPinnedGateway(sessionId)) return
+    // DSH archival drops pins. A user-pinned topic is hidden only by the sidebar filter.
+    if (registry.pinnedSessionIds?.includes(sessionId)) return
     if ([...this.runs.values()].some(run => run.worker.id === sessionId && !run.done)) return
     // Work not shown yet stays out until main chat gets to it.
     if ([...this.background.values()].some(entry => entry.run.worker.id === sessionId)) return
     this.store.markStowed(sessionId, true)
-    registry.archiveSession(SessionId(sessionId)).then(async () => {
+    const pending = registry.archiveSession(SessionId(sessionId)).then(async () => {
       // A save can turn hiding off while the archive operation is still in flight.
       if (!this.config.hideTopicSessions) {
         await registry.unarchiveSession(SessionId(sessionId))
         this.store.markStowed(sessionId, false)
       }
     }).catch(() => {
-      if (attempt < 10) setTimeout(() => this.stowWhenIdle(sessionId, attempt + 1), 3000).unref?.()
-    })
+      if (!registry.archivedSessionIds.includes(sessionId)) this.store.markStowed(sessionId, false)
+      if (!this.stopping && this.ownArchive === registry && this.config.hideTopicSessions && attempt < 10) {
+        const timer = setTimeout(() => this.stowWhenIdle(sessionId, attempt + 1), 3000)
+        timer.unref?.()
+        this.stowTimers.set(sessionId, timer)
+      }
+    }).finally(() => { this.pendingStows.delete(sessionId) })
+    this.pendingStows.set(sessionId, pending)
   }
 
   /**

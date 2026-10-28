@@ -27,6 +27,42 @@ __export(client_exports, {
 module.exports = __toCommonJS(client_exports);
 var import_react2 = require("react");
 
+// src/client-session-visibility.ts
+var SessionVisibility = class {
+  constructor(read, changed) {
+    this.read = read;
+    this.changed = changed;
+  }
+  snapshot = { sessionIds: [], mainSessionIds: [], hideTopicSessions: false };
+  request = 0;
+  disposed = false;
+  hiddenIds(currentMain) {
+    return [.../* @__PURE__ */ new Set([
+      ...this.snapshot.hideTopicSessions ? this.snapshot.sessionIds : this.snapshot.mainSessionIds,
+      ...currentMain ? [currentMain] : []
+    ])];
+  }
+  async refresh() {
+    if (this.disposed) return;
+    const request = ++this.request;
+    try {
+      const value = await this.read();
+      if (this.disposed || request !== this.request) return;
+      this.snapshot = { ...value, mainSessionIds: value.mainSessionIds ?? [], hideTopicSessions: value.hideTopicSessions === true };
+      this.changed();
+    } catch {
+    }
+  }
+  /** Invalidate immediately, even when the next read is debounced. */
+  invalidate() {
+    this.request++;
+  }
+  dispose() {
+    this.disposed = true;
+    this.invalidate();
+  }
+};
+
 // src/settings-types.ts
 var EDITABLE_SETTINGS_KEYS = [
   "workerProvider",
@@ -3011,6 +3047,7 @@ var workCss = `.theone-tasks{padding:24px;max-width:900px;margin:auto;overflow:a
 var QQ_GROUP = "1080980184";
 var ONBOARDING = "theone-onboarding";
 var SETUP = "theone-setup-1";
+var SETTINGS_REVISION = "dsh-theone-settings-revision";
 var FIRST_TURN = 1;
 var FEEDBACK_EMAIL = "theone@yulid.org";
 var PLACEHOLDERS = /* @__PURE__ */ new Set(["\u7B49\u5F85\u9996\u6B21\u6267\u884C", "\u65B0\u8BDD\u9898\uFF0C\u5C1A\u65E0\u5386\u53F2\u6458\u8981\u3002"]);
@@ -4561,6 +4598,10 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
           setDraft(value.savedValues);
           setMessage(value.restartRequired ? "settings.restart" : "settings.saved");
           window.dispatchEvent(new Event("theone-settings-changed"));
+          try {
+            localStorage.setItem(SETTINGS_REVISION, String(value.revision));
+          } catch {
+          }
         }
       } catch {
         if (!signal.aborted) setMessage("settings.saveError");
@@ -5617,9 +5658,6 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
   ctx.effect(() => {
     const style = document.createElement("style");
     style.dataset.plugin = "dsh-theone-gateway-row";
-    let owned = [];
-    let mainSessionIds = [];
-    let hideTopicSessions = false;
     const onlyOursUnassigned = (ids) => {
       const workspaces = ctx.workspaces.list.getSnapshot();
       const list = ctx.sessions.list.getSnapshot();
@@ -5633,50 +5671,52 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
       return stray.length > 0 && stray.every((id) => ids.has(id));
     };
     const update2 = () => {
-      const ids = new Set(hideTopicSessions ? owned : mainSessionIds);
-      const id = navigation.getSnapshot();
-      if (id) ids.add(id);
+      const ids = new Set(visibility.hiddenIds(navigation.getSnapshot()));
       const rules = [...ids].map((sessionId) => `[role="treeitem"][data-row-key="${CSS.escape(`session:${sessionId}`)}"]{display:none!important}`);
       if (onlyOursUnassigned(ids)) rules.push('[data-row-key="workspace:"],[data-row-key="overflow:"]{display:none!important}');
       style.textContent = rules.join("\n");
     };
     let timer;
+    const visibility = new SessionVisibility(async () => {
+      const response = await fetch("/api/theone/owned", { signal: lifetime.signal, cache: "no-store" });
+      if (!response.ok) throw new Error("Session visibility unavailable");
+      return await response.json();
+    }, update2);
     const readOwned = () => {
+      visibility.invalidate();
       clearTimeout(timer);
       timer = setTimeout(() => {
-        void fetch("/api/theone/owned", { signal: lifetime.signal, cache: "no-store" }).then((response) => response.ok ? response.json() : void 0).then((value) => {
-          if (value && !lifetime.signal.aborted) {
-            owned = value.sessionIds;
-            mainSessionIds = value.mainSessionIds ?? [];
-            hideTopicSessions = value.hideTopicSessions === true;
-            update2();
-          }
-        }).catch(() => {
-        });
+        void visibility.refresh();
       }, 300);
     };
     update2();
     readOwned();
     const unsubscribe = navigation.subscribe(update2);
-    let count = ctx.sessions.list.getSnapshot().ids.length;
+    let identity = ctx.sessions.list.getSnapshot().ids.join("\0");
     const unsubscribeList = ctx.sessions.list.subscribe(() => {
-      const next = ctx.sessions.list.getSnapshot().ids.length;
-      if (next !== count) {
-        count = next;
+      const next = ctx.sessions.list.getSnapshot().ids.join("\0");
+      if (next !== identity) {
+        identity = next;
         readOwned();
-      } else update2();
+      }
+      update2();
     });
     const unsubscribeWorkspaces = ctx.workspaces.list.subscribe(update2);
-    window.addEventListener("storage", update2);
+    const storageChanged = (event) => {
+      update2();
+      if (event.key === SETTINGS_REVISION || event.key === null) readOwned();
+    };
+    window.addEventListener("storage", storageChanged);
     window.addEventListener("theone-settings-changed", readOwned);
     window.addEventListener("focus", readOwned);
     document.head.append(style);
     return () => {
+      visibility.dispose();
       unsubscribe();
       unsubscribeList();
       unsubscribeWorkspaces();
       clearTimeout(timer);
-      window.removeEventListener("storage", update2);
+      window.removeEventListener("storage", storageChanged);
       window.removeEventListener("theone-settings-changed", readOwned);
       window.removeEventListener("focus", readOwned);
       style.remove();

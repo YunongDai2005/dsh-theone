@@ -10,6 +10,7 @@ import type {} from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { SessionVisibility, type OwnedSessions } from './client-session-visibility.ts'
 
 /** Where people can reach the maintainer, shown as quiet links in Topic workspaces. */
 const QQ_GROUP = '1080980184'
@@ -17,6 +18,7 @@ const QQ_GROUP = '1080980184'
 const ONBOARDING = 'theone-onboarding'
 /** Finishing or putting off the full-window setup is remembered the same way; the id matches index.ts. */
 const SETUP = 'theone-setup-1'
+const SETTINGS_REVISION = 'dsh-theone-settings-revision'
 /** Main chat's first turn is TheOne's greeting; the getting-started card follows it. */
 const FIRST_TURN = 1
 const FEEDBACK_EMAIL = 'theone@yulid.org'
@@ -1149,6 +1151,8 @@ export function apply(ctx: Context) {
         if (!signal.aborted) {
           setSnapshot(value); setDraft(value.savedValues); setMessage(value.restartRequired ? 'settings.restart' : 'settings.saved')
           window.dispatchEvent(new Event('theone-settings-changed'))
+          // Tell other tabs without storing any settings or conversation contents in the browser.
+          try { localStorage.setItem(SETTINGS_REVISION, String(value.revision)) } catch { /* Storage can be disabled. */ }
         }
       } catch { if (!signal.aborted) setMessage('settings.saveError') }
       finally { if (!signal.aborted) setSaving(false) }
@@ -1753,9 +1757,6 @@ export function apply(ctx: Context) {
     // Keep the host Session active; only its duplicate navigation row is hidden.
     // Main chats use the dedicated entry; topic rows are hidden only when requested.
     // The server also archives idle topic sessions; this filter covers active sessions.
-    let owned: string[] = []
-    let mainSessionIds: string[] = []
-    let hideTopicSessions = false
     // DSH puts sessions outside every workspace under "Unassigned". When only TheOne's are left there,
     // its heading and "show N more" row go too, as they would without TheOne.
     const onlyOursUnassigned = (ids: Set<string>) => {
@@ -1768,37 +1769,39 @@ export function apply(ctx: Context) {
       return stray.length > 0 && stray.every((id: SessionId) => ids.has(id))
     }
     const update = () => {
-      const ids = new Set(hideTopicSessions ? owned : mainSessionIds)
-      const id = navigation.getSnapshot()
-      if (id) ids.add(id)
+      const ids = new Set(visibility.hiddenIds(navigation.getSnapshot()))
       const rules = [...ids].map(sessionId => `[role="treeitem"][data-row-key="${CSS.escape(`session:${sessionId}`)}"]{display:none!important}`)
       if (onlyOursUnassigned(ids)) rules.push('[data-row-key="workspace:"],[data-row-key="overflow:"]{display:none!important}')
       style.textContent = rules.join('\n')
     }
     let timer: ReturnType<typeof setTimeout> | undefined
+    const visibility = new SessionVisibility(async () => {
+      const response = await fetch('/api/theone/owned', { signal: lifetime.signal, cache: 'no-store' })
+      if (!response.ok) throw new Error('Session visibility unavailable')
+      return await response.json() as OwnedSessions
+    }, update)
     const readOwned = () => {
+      visibility.invalidate()
       clearTimeout(timer)
-      timer = setTimeout(() => {
-        void fetch('/api/theone/owned', { signal: lifetime.signal, cache: 'no-store' })
-          .then(response => response.ok ? response.json() as Promise<{ sessionIds: string[]; mainSessionIds: string[]; hideTopicSessions: boolean }> : undefined)
-          .then(value => { if (value && !lifetime.signal.aborted) { owned = value.sessionIds; mainSessionIds = value.mainSessionIds ?? []; hideTopicSessions = value.hideTopicSessions === true; update() } }).catch(() => {})
-      }, 300)
+      timer = setTimeout(() => { void visibility.refresh() }, 300)
     }
     update()
     readOwned()
     const unsubscribe = navigation.subscribe(update)
     // A new topic session appears in DSH's list: read TheOne's sessions again.
-    let count = ctx.sessions.list.getSnapshot().ids.length
+    let identity = ctx.sessions.list.getSnapshot().ids.join('\0')
     const unsubscribeList = ctx.sessions.list.subscribe(() => {
-      const next = ctx.sessions.list.getSnapshot().ids.length
-      if (next !== count) { count = next; readOwned() } else update()
+      const next = ctx.sessions.list.getSnapshot().ids.join('\0')
+      if (next !== identity) { identity = next; readOwned() }
+      update()
     })
     const unsubscribeWorkspaces = ctx.workspaces.list.subscribe(update)
-    window.addEventListener('storage', update)
+    const storageChanged = (event: StorageEvent) => { update(); if (event.key === SETTINGS_REVISION || event.key === null) readOwned() }
+    window.addEventListener('storage', storageChanged)
     window.addEventListener('theone-settings-changed', readOwned)
     window.addEventListener('focus', readOwned)
     document.head.append(style)
-    return () => { unsubscribe(); unsubscribeList(); unsubscribeWorkspaces(); clearTimeout(timer); window.removeEventListener('storage', update); window.removeEventListener('theone-settings-changed', readOwned); window.removeEventListener('focus', readOwned); style.remove() }
+    return () => { visibility.dispose(); unsubscribe(); unsubscribeList(); unsubscribeWorkspaces(); clearTimeout(timer); window.removeEventListener('storage', storageChanged); window.removeEventListener('theone-settings-changed', readOwned); window.removeEventListener('focus', readOwned); style.remove() }
   })
   // Main chat works through its topics: as far as its file panel and "@" file references go, its folder
   // is the folder of the topic in use. Only main chat's row in this browser's list changes; the

@@ -173,6 +173,9 @@ export default class TheOne extends Service {
      * are ever taken out.
      */
     private ownArchive?;
+    private readonly pendingStows;
+    private readonly stowTimers;
+    private stopping;
     /** Turning off: archive main chat and anything of TheOne's still out. Read before any wait, as the database closes alongside. */
     private stowOwnSessions;
     /** Restore plugin-stowed sessions, keeping idle topic sessions archived only when hiding is enabled. */

@@ -360,6 +360,10 @@ export default class TheOne extends Service {
         }, fetch, Date.now, () => { const dir = profileDir(); return dir ? join(dir, 'pnpm-workspace.yaml') : undefined; });
         this.noticeBoard = new NoticeBoard(this.updater.current, config.noticeUrl || NOTICE_URL);
         ctx.effect(() => async () => {
+            this.stopping = true;
+            for (const timer of this.stowTimers.values())
+                clearTimeout(timer);
+            this.stowTimers.clear();
             this.projects.close();
             this.mergePromptAbort.abort();
             await Promise.all(this.mergePromptTasks.values());
@@ -370,6 +374,7 @@ export default class TheOne extends Service {
             finally {
                 await this.work.close();
                 await this.catalog?.close();
+                await Promise.all(this.pendingStows.values());
                 this.store.close();
             }
         });
@@ -1552,10 +1557,14 @@ export default class TheOne extends Service {
      * are ever taken out.
      */
     ownArchive;
+    pendingStows = new Map();
+    stowTimers = new Map();
+    stopping = false;
     /** Turning off: archive main chat and anything of TheOne's still out. Read before any wait, as the database closes alongside. */
     async stowOwnSessions(registry) {
         const archived = new Set(registry.archivedSessionIds);
-        const ids = this.store.ownedSessionIds().filter(id => !archived.has(id) && (this.store.isPinnedGateway(id) || this.config.hideTopicSessions));
+        const ids = this.store.ownedSessionIds().filter(id => !archived.has(id)
+            && (this.store.isPinnedGateway(id) || this.config.hideTopicSessions && !registry.pinnedSessionIds?.includes(id)));
         for (const id of ids)
             this.store.markStowed(id, true);
         for (const id of ids) {
@@ -1568,6 +1577,10 @@ export default class TheOne extends Service {
     }
     /** Restore plugin-stowed sessions, keeping idle topic sessions archived only when hiding is enabled. */
     async unstowOwnSessions(registry) {
+        // Do not clear ownership while the archive it describes is still being written.
+        await Promise.all(this.pendingStows.values());
+        if (this.stopping)
+            return;
         const archived = new Set(registry.archivedSessionIds);
         // Older versions archived idle topic sessions without recording ownership of that action.
         // Adopt those once; later manual archives must remain the user's choice.
@@ -1582,6 +1595,8 @@ export default class TheOne extends Service {
                     continue;
                 if (archived.has(id))
                     await registry.unarchiveSession(SessionId(id));
+                if (this.stopping)
+                    return;
                 this.store.markStowed(id, false);
             }
             catch (error) {
@@ -1591,12 +1606,17 @@ export default class TheOne extends Service {
         if (!this.config.hideTopicSessions)
             return;
         const known = new Set((await this.ctx.sessionQuery.listSessions().catch(() => [])).map(session => String(session.header.id)));
+        if (this.stopping)
+            return;
         for (const id of this.store.ownedSessionIds())
             if (known.has(id) && !this.store.isPinnedGateway(id))
                 this.stowWhenIdle(id);
     }
     /** A topic session must be out of the archive to answer: DSH does not run archived sessions. */
     async readyToRun(sessionId) {
+        await this.pendingStows.get(sessionId);
+        clearTimeout(this.stowTimers.get(sessionId));
+        this.stowTimers.delete(sessionId);
         const registry = this.ownArchive;
         if (registry?.archivedSessionIds.includes(sessionId))
             await registry.unarchiveSession(SessionId(sessionId));
@@ -1605,7 +1625,14 @@ export default class TheOne extends Service {
     /** Put a topic session back once it is idle; DSH refuses while it still runs, so try again shortly. */
     stowWhenIdle(sessionId, attempt = 0) {
         const registry = this.ownArchive;
+        if (this.stopping || this.pendingStows.has(sessionId))
+            return;
+        clearTimeout(this.stowTimers.get(sessionId));
+        this.stowTimers.delete(sessionId);
         if (!this.config.hideTopicSessions || !registry || registry.archivedSessionIds.includes(sessionId) || this.store.isPinnedGateway(sessionId))
+            return;
+        // DSH archival drops pins. A user-pinned topic is hidden only by the sidebar filter.
+        if (registry.pinnedSessionIds?.includes(sessionId))
             return;
         if ([...this.runs.values()].some(run => run.worker.id === sessionId && !run.done))
             return;
@@ -1613,16 +1640,22 @@ export default class TheOne extends Service {
         if ([...this.background.values()].some(entry => entry.run.worker.id === sessionId))
             return;
         this.store.markStowed(sessionId, true);
-        registry.archiveSession(SessionId(sessionId)).then(async () => {
+        const pending = registry.archiveSession(SessionId(sessionId)).then(async () => {
             // A save can turn hiding off while the archive operation is still in flight.
             if (!this.config.hideTopicSessions) {
                 await registry.unarchiveSession(SessionId(sessionId));
                 this.store.markStowed(sessionId, false);
             }
         }).catch(() => {
-            if (attempt < 10)
-                setTimeout(() => this.stowWhenIdle(sessionId, attempt + 1), 3000).unref?.();
-        });
+            if (!registry.archivedSessionIds.includes(sessionId))
+                this.store.markStowed(sessionId, false);
+            if (!this.stopping && this.ownArchive === registry && this.config.hideTopicSessions && attempt < 10) {
+                const timer = setTimeout(() => this.stowWhenIdle(sessionId, attempt + 1), 3000);
+                timer.unref?.();
+                this.stowTimers.set(sessionId, timer);
+            }
+        }).finally(() => { this.pendingStows.delete(sessionId); });
+        this.pendingStows.set(sessionId, pending);
     }
     /**
      * DSH saves any session's model choice as its global default, so main chat choosing TheOne used
