@@ -71,13 +71,20 @@ export function compareVersions(a, b) {
         return 0;
     return x.pre === undefined ? 1 : y.pre === undefined ? -1 : x.pre < y.pre ? -1 : 1;
 }
-/** Read the dependency spec DSH saved for this plugin: GitHub, npm, or something else (a local path, a tarball). */
+/**
+ * The registry tarball of one npm version. DSH's plugin manager refuses `dsh-theone@x.y.z` while
+ * TheOne is installed (`already-installed`, with hot reload), but installs a tarball address over it.
+ */
+export const npmTarball = (version) => `https://registry.npmjs.org/${PACKAGE_NAME}/-/${PACKAGE_NAME}-${version}.tgz`;
+/** Read the dependency spec DSH saved for this plugin: GitHub, npm (a range or a registry tarball), or something else (a local path or file). */
 export function installSource(spec) {
     if (!spec)
         return 'other';
     if (spec.toLowerCase().includes(REPOSITORY.toLowerCase()))
         return 'github';
     if (/^(?:npm:dsh-theone@)?[\^~>=<\s]*\d|^latest$|^\*$/.test(spec))
+        return 'npm';
+    if (/^https?:\/\/\S+\/dsh-theone\/-\/dsh-theone-\d[\w.+-]*\.tgz$/.test(spec))
         return 'npm';
     return 'other';
 }
@@ -181,7 +188,7 @@ export class Updater {
         const status = await this.status();
         if (!status.available || !status.installable || !installer || this.state === 'installing' || this.state === 'reloading' || this.state === 'restart')
             return this.snapshot();
-        const spec = this.source === 'github' ? `github:${REPOSITORY}#${this.checked.sha}` : `${PACKAGE_NAME}@${status.latest}`;
+        const spec = this.source === 'github' ? `github:${REPOSITORY}#${this.checked.sha}` : npmTarball(status.latest);
         this.state = 'installing';
         this.error = undefined;
         this.detail = undefined;

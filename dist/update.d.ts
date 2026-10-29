@@ -61,7 +61,12 @@ export interface PluginInstaller {
 }
 /** Compare dotted versions numerically; a pre-release sorts before its release. */
 export declare function compareVersions(a: string, b: string): number;
-/** Read the dependency spec DSH saved for this plugin: GitHub, npm, or something else (a local path, a tarball). */
+/**
+ * The registry tarball of one npm version. DSH's plugin manager refuses `dsh-theone@x.y.z` while
+ * TheOne is installed (`already-installed`, with hot reload), but installs a tarball address over it.
+ */
+export declare const npmTarball: (version: string) => string;
+/** Read the dependency spec DSH saved for this plugin: GitHub, npm (a range or a registry tarball), or something else (a local path or file). */
 export declare function installSource(spec: string | undefined): UpdateSource;
 /** Checks for a newer TheOne and installs it through DSH's own plugin manager. */
 export declare class Updater {

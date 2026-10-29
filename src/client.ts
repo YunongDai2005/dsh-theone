@@ -385,17 +385,21 @@ export function apply(ctx: Context) {
 
   /**
    * Open DSH's Settings on TheOne's page. The dialog lets plugins add a page but not open one, so this
-   * presses the sidebar's own Settings button, then TheOne's entry in the dialog's list. Where the
-   * sidebar has no such button (the web app shows an account menu there), it presses the user's
-   * "Open settings" shortcut instead; the desktop app takes that shortcut through its native menu,
-   * so there only the button works.
+   * runs DSH's own "Open settings" command, then presses TheOne's entry in the dialog's list. DSH
+   * versions without `shortcuts.invoke` get the sidebar's Settings button pressed instead or, where the
+   * sidebar shows an account menu, the user's "Open settings" shortcut; the desktop app takes that
+   * shortcut through its native menu, so there only `invoke` or the button works.
    */
   function openSettings() {
+    type Entry = { id: string; binding: { code: string; modifiers: readonly string[] } | null }
+    const shortcuts = (ctx.get as (name: string) => unknown)('shortcuts') as {
+      catalog?: { getSnapshot(): readonly Entry[] }
+      invoke?: (id: string, context: { modal: null; region: 'page' }) => void
+    } | undefined
     const trigger = document.querySelector<HTMLButtonElement>('[data-slot="sidebar.settings"] button[aria-haspopup="dialog"]')
-    if (trigger) trigger.click()
+    if (typeof shortcuts?.invoke === 'function') shortcuts.invoke('settings.open', { modal: null, region: 'page' })
+    else if (trigger) trigger.click()
     else {
-      type Entry = { id: string; binding: { code: string; modifiers: readonly string[] } | null }
-      const shortcuts = (ctx.get as (name: string) => unknown)('shortcuts') as { catalog?: { getSnapshot(): readonly Entry[] } } | undefined
       const binding = shortcuts?.catalog?.getSnapshot().find(entry => entry.id === 'settings.open')?.binding
       if (!binding) return
       const held = (modifier: string) => binding.modifiers.includes(modifier)

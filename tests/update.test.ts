@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { compareVersions, installSource, RELEASE_AGE_MS, releaseAgeExemptions, releaseAgeViolations, Updater, withReleaseAgeExemption, type PluginInstaller } from '../src/update.ts'
+import { compareVersions, installSource, npmTarball, RELEASE_AGE_MS, releaseAgeExemptions, releaseAgeViolations, Updater, withReleaseAgeExemption, type PluginInstaller } from '../src/update.ts'
 
 /** An npm registry answer: each version with its publication time. */
 const registry = (releases: Record<string, number>): typeof fetch => (async () => Response.json({
@@ -25,7 +25,10 @@ test('versions compare numerically and installs are traced to their source', () 
   assert.equal(installSource('github:YunongDai2005/dsh-theone'), 'github')
   assert.equal(installSource('git+https://github.com/YunongDai2005/dsh-theone.git#abc'), 'github')
   assert.equal(installSource('^0.3.9'), 'npm')
+  // An update installs the registry tarball, which pnpm then saves as the spec.
+  assert.equal(installSource(npmTarball('0.4.5')), 'npm')
   assert.equal(installSource('file:../dsh-theone'), 'other')
+  assert.equal(installSource('file:D:/doc/dsh-theone/.dsh-test/desktop/dsh-theone-0.4.4-55224618.tgz'), 'other')
   assert.equal(installSource(undefined), 'other')
 })
 
@@ -48,11 +51,11 @@ test('a GitHub install updates to the exact commit it checked, through the plugi
   await updater.install(installer); assert.equal(specs.length, 1)
 })
 
-test('npm installs use the registry; nothing newer, offline or unmanaged installs are handled', async () => {
+test('npm installs use the registry tarball; nothing newer, offline or unmanaged installs are handled', async () => {
   const npm = new Updater('0.3.10', () => '^0.3.10', registry({ '0.3.10': DAY_AGO, '0.4.0': DAY_AGO }))
   const specs: string[] = []
   const status = await npm.install({ installBundle: async spec => { specs.push(spec); return { application: 'failed', error: { code: 'incompatible-version' } } } })
-  assert.deepEqual(specs, ['dsh-theone@0.4.0'])
+  assert.deepEqual(specs, ['https://registry.npmjs.org/dsh-theone/-/dsh-theone-0.4.0.tgz'])
   assert.equal(status.state, 'failed')
   assert.equal(status.error, 'incompatible-version')
 
@@ -168,7 +171,7 @@ test('exempting TheOne installs the fresh version now, and only TheOne is exempt
     assert.equal(await readFile(file, 'utf8'), 'onlyBuiltDependencies:\n  - esbuild\nminimumReleaseAgeExclude:\n  - dsh-theone\n')
     const specs: string[] = []
     const installed = await updater.install({ installBundle: async spec => { specs.push(spec); return { application: 'restart-required' } } })
-    assert.deepEqual(specs, ['dsh-theone@0.3.15'])
+    assert.deepEqual(specs, [npmTarball('0.3.15')])
     assert.equal(installed.state, 'restart')
     assert.equal(installed.exempt, true)
     // Without a known profile there is nothing to edit.

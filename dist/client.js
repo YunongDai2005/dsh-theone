@@ -3510,10 +3510,11 @@ function apply(ctx) {
     return (0, import_react2.createElement)("button", { type: "button", className: "theone-quiet theone-icon-link", "data-copied": copied, onClick: copy, ...tip(t(copied ? "start.groupCopied" : "start.groupTip")) }, icon("users", 16));
   }
   function openSettings() {
+    const shortcuts = ctx.get("shortcuts");
     const trigger = document.querySelector('[data-slot="sidebar.settings"] button[aria-haspopup="dialog"]');
-    if (trigger) trigger.click();
+    if (typeof shortcuts?.invoke === "function") shortcuts.invoke("settings.open", { modal: null, region: "page" });
+    else if (trigger) trigger.click();
     else {
-      const shortcuts = ctx.get("shortcuts");
       const binding = shortcuts?.catalog?.getSnapshot().find((entry) => entry.id === "settings.open")?.binding;
       if (!binding) return;
       const held = (modifier) => binding.modifiers.includes(modifier);
