@@ -277,13 +277,13 @@ function settingsConfig(values: EditableSettings): Partial<Config> {
  * Switch an installed bundle off and on so DSH loads its new version. This disposes the running
  * TheOne, so it runs after the current request has answered and outlives this instance.
  */
-function reloadBundle(manager: { setBundleEnabled?(name: string, enabled: boolean): Promise<{ application: string }> }, bundle: string): void {
+function reloadBundle(manager: { setBundleEnabled?(name: string, enabled: boolean): Promise<{ application: string }> }, bundle: string, stillRunning: () => void): void {
   setTimeout(() => {
     void (async () => {
       const off = await manager.setBundleEnabled!(bundle, false)
-      if (off.application === 'failed' || off.application === 'cancelled') return
+      if (off.application === 'failed' || off.application === 'cancelled') { stillRunning(); return }
       await manager.setBundleEnabled!(bundle, true)
-    })().catch(error => console.warn('TheOne could not reload itself after updating; restart DSH to apply the update.', error))
+    })().catch(error => { stillRunning(); console.warn('TheOne could not reload itself after updating; restart DSH to apply the update.', error) })
   }, 300)
 }
 
@@ -416,7 +416,8 @@ export default class TheOne extends Service {
     }
     descriptors ??= config.contextsPath ? readDescriptors(config.contextsPath) : []
     this.gatewayDirectory = resolve(dirname(databasePath), 'gateway')
-    const profileDir = () => (ctx as unknown as { profileContext?: { dir?: string } }).profileContext?.dir
+    // Cordis refuses to read a service that is not registered; without a profile there is no directory.
+    const profileDir = () => { try { return (ctx as unknown as { profileContext?: { dir?: string } }).profileContext?.dir } catch { return undefined } }
     this.updater = new Updater(readOwnVersion(), () => {
       // The profile's package.json records how this plugin was installed (GitHub, npm or a local path).
       const dir = profileDir()
@@ -427,6 +428,8 @@ export default class TheOne extends Service {
     this.noticeBoard = new NoticeBoard(this.updater.current, config.noticeUrl || NOTICE_URL)
     ctx.effect(() => async () => {
       this.stopping = true
+      if (!this.reloadingSelf && !this.selectedInProfile(profileDir()))
+        await this.releaseDefaultModel().catch(error => console.warn('TheOne could not switch DSH\'s default model back.', error))
       for (const timer of this.stowTimers.values()) clearTimeout(timer)
       this.stowTimers.clear()
       this.projects.close()
@@ -1114,7 +1117,10 @@ export default class TheOne extends Service {
           }
         }
         const status = request.method === 'POST'
-          ? await this.updater.install(manager, live ? bundle => reloadBundle(manager!, bundle) : undefined)
+          ? await this.updater.install(manager, live ? bundle => {
+            this.reloadingSelf = true
+            reloadBundle(manager!, bundle, () => { this.reloadingSelf = false })
+          } : undefined)
           : await this.updater.status(new URL(request.url).searchParams.has('force'))
         return Response.json(status, { headers: { 'cache-control': 'no-store' } })
       } }))
@@ -1523,6 +1529,29 @@ export default class TheOne extends Service {
     const before = this.store.rememberedModel(this.config.gatewayKey)
     if (!before || !this.store.markOnce('default-model-restored')) return
     void this.ctx.agentDefaultModel.saveSelection?.(before)?.catch(error => console.warn('TheOne could not restore DSH\'s default model.', error))
+  }
+
+  /** Set while TheOne switches itself off and on to load an update, which is not a removal. */
+  private reloadingSelf = false
+
+  /**
+   * Whether this profile still selects TheOne. Removing or turning off a bundle takes it out of
+   * `dsh.profile.bundles` before its plugins stop; a reload leaves it there. Unknown counts as selected.
+   */
+  selectedInProfile(dir: string | undefined): boolean {
+    if (!dir) return true
+    try {
+      const bundles = (JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as { dsh?: { profile?: { bundles?: unknown } } }).dsh?.profile?.bundles
+      return !Array.isArray(bundles) || bundles.includes(PACKAGE_NAME)
+    } catch { return true }
+  }
+
+  /** Removed or turned off: a default left as TheOne would fail every new chat (NO_ADAPTER), so it goes back to the model behind it. */
+  async releaseDefaultModel(): Promise<void> {
+    const current = this.ctx.agentDefaultModel.currentSelection()
+    if (current.provider !== 'theone') return
+    const back = parseVia(current.model) ?? this.store.rememberedModel(this.config.gatewayKey)
+    if (back) await this.ctx.agentDefaultModel.saveSelection?.(back)
   }
 
   /** Capture before Web saves the gateway itself as DSH's new default. */

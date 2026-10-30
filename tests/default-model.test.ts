@@ -33,6 +33,39 @@ test('main chat picking TheOne leaves the user’s default model as it was', { t
   } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
 })
 
+test('removed or turned off, TheOne switches a default left as TheOne back to the model behind it', { timeout: 30000 }, async () => {
+  const { writeFile } = await import('node:fs/promises')
+  const root = await mkdtemp(join(tmpdir(), 'theone-release-default-'))
+  const app = await harness(root)
+  try {
+    let saved = { provider: 'theone', model: 'gateway' }
+    const service = app.ctx.agentDefaultModel as unknown as { currentSelection(): typeof saved; saveSelection(next: typeof saved): Promise<void> }
+    service.currentSelection = () => ({ ...saved })
+    service.saveSelection = async next => { saved = { provider: next.provider, model: next.model } }
+    const theone = app.ctx.theone as unknown as { selectedInProfile(dir: string | undefined): boolean; releaseDefaultModel(): Promise<void>; store: ContextStore }
+
+    // DSH takes a removed or turned-off bundle out of the profile's list before stopping it; a reload leaves it in.
+    const manifest = (bundles: string[]) => writeFile(join(root, 'package.json'), JSON.stringify({ dsh: { profile: { bundles } } }))
+    await manifest(['@deepseek-ai/dsh-base', 'dsh-theone'])
+    assert.equal(theone.selectedInProfile(root), true)
+    await manifest(['@deepseek-ai/dsh-base'])
+    assert.equal(theone.selectedInProfile(root), false)
+    // Without a readable profile list nothing counts as removed.
+    assert.equal(theone.selectedInProfile(undefined), true)
+    assert.equal(theone.selectedInProfile(join(root, 'missing')), true)
+
+    theone.store.rememberModel('test-gateway', { provider: 'deepseek', model: 'deepseek-v4' })
+    await theone.releaseDefaultModel()
+    assert.deepEqual(saved, { provider: 'deepseek', model: 'deepseek-v4' })
+    // An older "TheOne · <model>" default goes back to that model; a default that is not TheOne stays.
+    saved = { provider: 'theone', model: 'via:fixture/small' }
+    await theone.releaseDefaultModel()
+    assert.deepEqual(saved, { provider: 'fixture', model: 'small' })
+    await theone.releaseDefaultModel()
+    assert.deepEqual(saved, { provider: 'fixture', model: 'small' })
+  } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
+})
+
 test('one-time repairs run once', () => {
   const store = new ContextStore(':memory:')
   try {

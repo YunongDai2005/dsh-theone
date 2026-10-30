@@ -194,6 +194,15 @@ export default class TheOne extends Service {
     restoreDefaultModel(): Promise<void>;
     /** Once: undo the default earlier versions left as TheOne, back to the model in use before it. */
     private repairDefaultModel;
+    /** Set while TheOne switches itself off and on to load an update, which is not a removal. */
+    private reloadingSelf;
+    /**
+     * Whether this profile still selects TheOne. Removing or turning off a bundle takes it out of
+     * `dsh.profile.bundles` before its plugins stop; a reload leaves it there. Unknown counts as selected.
+     */
+    selectedInProfile(dir: string | undefined): boolean;
+    /** Removed or turned off: a default left as TheOne would fail every new chat (NO_ADAPTER), so it goes back to the model behind it. */
+    releaseDefaultModel(): Promise<void>;
     /** Capture before Web saves the gateway itself as DSH's new default. */
     captureDefaultModel(): void;
     private backingModel;
