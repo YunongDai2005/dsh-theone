@@ -14,7 +14,7 @@ This is a standalone Node.js adaptation of TheOne's one-chat/per-topic design. I
 - Search resolves a favorite through Qloo. The user chooses the exact candidate before it becomes a persistent preference. A model/client cannot invent a saved entity ID; a five-minute server-side search token binds candidates to the browser and topic.
 - Recommendations use only the selected topic's confirmed entity IDs. They may cross categories: a favorite movie can inform book or music picks. Results come from Qloo; no model-generated substitutes or fabricated explanations appear if the API fails.
 - SQLite persists topics and preferences. An opaque HttpOnly browser cookie scopes ownership; every topic read/write checks it. This is a browser workspace, not a multi-device account or an identity-verification system. Clearing cookies loses access to that workspace.
-- Keys stay on the server. JSON requests reject a different browser Origin, response text uses textContent, and upstream redirects are refused. Hard process-wide Qloo/model budgets and per-browser request limits bound demo use. No paid-resource provisioning is included.
+- Keys stay on the server. JSON requests reject a different browser Origin, response text uses textContent, and upstream redirects are refused. Persistent global Qloo/model attempt budgets and per-browser request limits bound demo use. No paid-resource provisioning is included.
 
 ## Run locally
 
@@ -61,7 +61,7 @@ The Dockerfile runs the reference Node server on port 7860 with no external pack
 
 `render.yaml` prepares a **Free** native Node service from this public branch, without Docker Hub, a persistent disk, database service, provider keys or automatic redeploys. If using a Blueprint, choose `examples/qloo-topic-taste/render.yaml` explicitly; the file is not at the repository root. Native Node 24 is pinned and requires no package installation. Configuration is prepared, not an accepted/deployed service.
 
-Render's [free-service documentation](https://render.com/docs/free) says idle services sleep after 15 minutes, wake on a request, and lose local SQLite data on sleep/restart/redeploy. `TASTE_EPHEMERAL=1` discloses this in the actual page. Keep secrets absent until actual provider validation and destination approval; request counters are process-local and reset on restart, so also require provider-level quota/spend controls before enabling public traffic. Do not add a payment method or paid upgrade. Keep an offline reproduction path if the free service is suspended or sleeping.
+Render's [free-service documentation](https://render.com/docs/free) says idle services sleep after 15 minutes, wake on a request, and lose local SQLite data on sleep/restart/redeploy. `TASTE_EPHEMERAL=1` discloses this in the actual page. Keep secrets absent until actual provider validation and destination approval; request counters are stored in the same SQLite database and are lost if the ephemeral disk is reset, so also require provider-level quota/spend controls before enabling public traffic. Do not add a payment method or paid upgrade. Keep an offline reproduction path if the free service is suspended or sleeping.
 
 Hugging Face's current [Spaces overview](https://huggingface.co/docs/hub/spaces-overview) requires a paid plan to create Docker Spaces, so it is not the chosen free candidate. A local Docker build attempted October 12 failed retrieving the official Node image's registry token; no image-build success is claimed. This ordinary hosting image is unrelated to the Docker Sandbox contest.
 
