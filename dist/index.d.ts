@@ -34,12 +34,15 @@ export interface Config {
     routerApiKeyEnv?: string;
     linkScope?: LinkScope;
     routeNotice?: 'hidden' | 'switch' | 'all';
+    hideTopicSessions?: boolean;
     /** Show notices the maintainer publishes (read from a static file; nothing is sent). */
     notices?: boolean;
     /** Experimental: topics share confirmed facts (a figure, a decision) with evidence and versions. */
     factLinks?: boolean;
     /** With factLinks: after each turn, a small model call proposes facts the Worker did not record. */
     factExtraction?: boolean;
+    /** Experimental: topics can watch a GitHub PR and report back ("Ongoing tasks"). Off unless turned on in Settings. */
+    persistentWork?: boolean;
     /** A routing card per topic, written in the background after its first replies; on unless turned off (tests). */
     topicCards?: boolean;
     /** Where notices are read from; for testing. */
@@ -163,7 +166,7 @@ export default class TheOne extends Service {
     /** Saved settings take effect for the next message; only the background catalog waits for a restart. */
     private applySettings;
     /**
-     * TheOne's own sessions live in DSH's archive, so DSH's own list stays the user's alone, with
+     * When hiding is enabled, TheOne's own sessions live in DSH's archive, so DSH's list stays the user's alone, with
      * TheOne on or off, and after a crash. A topic session leaves the archive only while it answers;
      * main chat, which the user types into, is archived when TheOne is turned off and back out when
      * it is on again. Only sessions TheOne made are ever archived, and only those it archived itself
@@ -172,7 +175,7 @@ export default class TheOne extends Service {
     private ownArchive?;
     /** Turning off: archive main chat and anything of TheOne's still out. Read before any wait, as the database closes alongside. */
     private stowOwnSessions;
-    /** Turning on: main chats TheOne archived come back out; topic sessions it finds out are put away. */
+    /** Restore plugin-stowed sessions, keeping idle topic sessions archived only when hiding is enabled. */
     private unstowOwnSessions;
     /** A topic session must be out of the archive to answer: DSH does not run archived sessions. */
     private readyToRun;

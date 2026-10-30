@@ -11,9 +11,45 @@ import { ROUTING_PROMPT } from '../src/llm-router.ts'
 import type { ProjectQueue } from '../src/project-queue.ts'
 import { SessionId } from '@deepseek-ai/dsh-session'
 
+/** Ongoing tasks are experimental and off unless Settings turns them on. */
+const tasksOn = { theoneConfig: { persistentWork: true } }
+
+test('ongoing tasks are off by default: no new tasks, and existing ones wait without a notice until turned back on', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'theone-work-off-'))
+  let app = await harness(root, undefined, tasksOn)
+  try {
+    app.ctx.theone.store.rememberGateway('test-gateway', app.gateway.id)
+    const handler = peered(new HostConnectionService(app.ctx, [], undefined as never))
+    await new Promise(resolve => setImmediate(resolve))
+    const send = (body: unknown) => handler.fetch(new Request('http://dsh.internal/api/theone/tasks', {
+      method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://dsh.internal' }, body: JSON.stringify(body),
+    }))
+    const input = { action: 'create', requestId: 'request-1', objective: 'Watch CI', url: 'https://github.com/example/demo/pull/1' }
+    const { id } = await (await send(input)).json() as { id: string }
+    await app.close()
+    app = await harness(root)
+    const off = peered(new HostConnectionService(app.ctx, [], undefined as never))
+    await new Promise(resolve => setImmediate(resolve))
+    const refused = await off.fetch(new Request('http://dsh.internal/api/theone/tasks', {
+      method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://dsh.internal' }, body: JSON.stringify({ ...input, requestId: 'request-2' }),
+    }))
+    assert.equal(refused.status, 409)
+    assert.equal((await refused.json() as { error: string }).error, 'TASKS_OFF')
+    assert.equal((await app.ctx.theone.settingsSnapshot()).values.persistentWork, false)
+    await app.ctx.theone.work.tick()
+    assert.equal(app.ctx.theone.work.store.get(id)!.state, 'waiting')
+    assert.equal(app.ctx.theone.work.store.get(id)!.error, 'TASKS_OFF')
+    assert.equal(app.ctx.theone.work.store.pendingNotices().length, 0)
+    await app.close()
+    app = await harness(root, undefined, tasksOn)
+    assert.equal(app.ctx.theone.work.store.get(id)!.state, 'queued')
+    app.ctx.theone.work.scheduler.control(id, 'cancel')
+  } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
+})
+
 test('task API persists user requests, deduplicates retries and rejects cross-origin writes', async () => {
   const root = await mkdtemp(join(tmpdir(), 'theone-work-api-'))
-  let app = await harness(root)
+  let app = await harness(root, undefined, tasksOn)
   try {
     app.ctx.theone.store.rememberGateway('test-gateway', app.gateway.id)
     const handler = peered(new HostConnectionService(app.ctx, [], undefined as never))
@@ -37,7 +73,7 @@ test('task API persists user requests, deduplicates retries and rejects cross-or
     assert.equal((await send({ action: 'pause', id: first.id })).status, 200)
     assert.equal((await send({ ...input, requestId: 'bad', url: 'http://localhost:1234' })).status, 400)
     await app.close()
-    app = await harness(root)
+    app = await harness(root, undefined, tasksOn)
     const job = app.ctx.theone.work.store.get(first.id)!
     assert.equal(job.state, 'paused')
     assert.equal((job.payload as { objective: string }).objective, 'Watch CI')
@@ -59,7 +95,7 @@ test('chat monitoring requires a quote and URL from this user turn and remains t
       yield { type: 'finish', reason: { kind: 'tool-calls' } }
     } else yield* textResponse('ok')
   }
-  const app = await harness(root, model)
+  const app = await harness(root, model, tasksOn)
   try {
     app.ctx.theone.store.rememberGateway('test-gateway', app.gateway.id)
     await ask(app.gateway, 'Qwen 的配置怎么做')
@@ -153,7 +189,7 @@ test('failure research carries its session identity but receives no agent tools 
   }
   let app: Awaited<ReturnType<typeof harness>> | undefined
   try {
-    app = await harness(root, model)
+    app = await harness(root, model, tasksOn)
     app.ctx.theone.store.rememberGateway('test-gateway', app.gateway.id)
     globalThis.fetch = fetcher
     const job = app.ctx.theone.work.create({ objective: 'Watch CI', url: 'https://github.com/example/demo/pull/9' }, { key: 'analysis', gatewayId: app.gateway.id, sessionId: app.gateway.id })

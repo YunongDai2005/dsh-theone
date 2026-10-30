@@ -18,6 +18,7 @@ export declare class GatewayNavigation {
     constructor(host: GatewayNavigationHost, storage: Pick<Storage, 'getItem' | 'setItem'>, key: string, uuid: () => string);
     readonly getSnapshot: () => string | null;
     readonly subscribe: (listener: () => void) => () => void;
-    open(): Promise<string>;
+    /** Main chat's id once it is open, or undefined when a later navigation took over first. */
+    open(): Promise<string | undefined>;
     private ensure;
 }

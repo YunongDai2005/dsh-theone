@@ -17,7 +17,7 @@ test('a new main chat opens with a welcome turn, so DSH does not treat it as bla
     assert.ok(events.some(event => event.type === 'turn/start'))
     const replies = events.flatMap(event => event.type === 'assistant/message' ? event.data.message.content.flatMap(block => block.type === 'text' ? [block.text] : []) : [])
     assert.equal(replies.length, 1)
-    assert.match(replies[0], /^你好/)
+    assert.match(replies[0], /^欢迎使用 \*\*TheOne\*\*/)
     // No model was called and nothing was routed.
     assert.equal(app.model.requests.length, 0)
     assert.equal(app.ctx.theone.store.current('test-gateway'), undefined)

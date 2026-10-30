@@ -25,7 +25,7 @@ export declare function versionMatches(range: unknown, version: string): boolean
  * not fit the format is skipped rather than shown; text is plain, links must be https.
  */
 export declare function applicableNotices(file: unknown, version: string, now?: number): Notice[];
-/** Reads the notice file at most every three hours; a failure simply means no notices. */
+/** Reads the notice file at most every half hour, so a new notice shows the same session; a failure simply means no notices. */
 export declare class NoticeBoard {
     private readonly version;
     private readonly url;

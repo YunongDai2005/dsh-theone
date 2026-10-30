@@ -6,7 +6,7 @@ This is a standalone experiment inspired by TheOne's topic workflow, built Octob
 
 ## Source and demonstration versions
 
-On October 25 the repository's base plugin was upgraded to TheOne **0.4.1**, using release commit `5e6f4e9b190c7773d080885bcdcbe02e033e2ffe`. Invoice Desk remains the standalone Sandbox application described here; it does not acquire the DSH plugin's new topic-choice controls through this merge. Its invoice implementation and October 11 evidence are unchanged. The existing 96-second video was made before this upgrade and is not a 0.4.1 plugin demonstration. Local verification for this update uses mocked provider responses, with no new live invoice or model call.
+On October 30 the repository's base plugin was upgraded to TheOne **0.4.5**, using release commit `10f196d70d69dd5e44ffe8bbdac64bc70b57f0c7`. Invoice Desk remains the standalone Sandbox application described here; the merge does not add the DSH plugin's setup flow, sidebar setting or topic controls to this app. Its invoice implementation and October 11 evidence are unchanged. The existing 96-second video predates this upgrade and is not a 0.4.5 plugin demonstration. All 11 local invoice tests pass using mocked provider responses, with no new live invoice or model call.
 
 ## Run
 

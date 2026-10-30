@@ -40,8 +40,10 @@ var EDITABLE_SETTINGS_KEYS = [
   "routeNotice",
   "contextsPath",
   "notices",
+  "hideTopicSessions",
   "factLinks",
-  "factExtraction"
+  "factExtraction",
+  "persistentWork"
 ];
 
 // src/client-navigation.ts
@@ -61,13 +63,15 @@ var GatewayNavigation = class {
       this.listeners.delete(listener);
     };
   };
+  /** Main chat's id once it is open, or undefined when a later navigation took over first. */
   async open() {
     const signal = this.host.beginNavigation();
     this.pending ??= this.ensure().finally(() => {
       this.pending = void 0;
     });
     const id = await this.pending;
-    if (!signal.aborted) this.host.open(id);
+    if (signal.aborted) return void 0;
+    this.host.open(id);
     return id;
   }
   async ensure() {
@@ -83,6 +87,273 @@ var GatewayNavigation = class {
     return id;
   }
 };
+
+// src/client-season.ts
+var halloween = (now = /* @__PURE__ */ new Date()) => now.getMonth() === 9 && now.getDate() >= 30;
+
+// src/client-setup.ts
+var escape = (text) => text.replace(/[&<>"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[char]);
+var multiline = (text) => escape(text).replace(/\n/g, "<br>");
+var ring = (x, y, r, attributes = "") => `<g class="theone-setup-a" ${attributes}><circle cx="${x}" cy="${y}" r="${r}" fill="none" stroke="currentColor" stroke-width="${Math.max(1.4, r * 0.16)}"/><circle cx="${x}" cy="${y}" r="${r * 0.34}" fill="currentColor"/></g>`;
+var heroes = {
+  sort: (mode) => {
+    const crumbs = [[30, 22], [192, 28], [22, 90], [200, 94], [64, 108], [160, 8]];
+    return `<svg viewBox="0 0 220 110"><g class="theone-setup-a" style="animation:theone-setup-pulse 3.2s ease-in-out infinite">${ring(110, 55, 28)}</g>${crumbs.map(([x, y], i) => mode === 0 ? `<circle class="theone-setup-a" cx="${x}" cy="${y}" r="5" fill="currentColor" style="--dx:${110 - x}px;--dy:${55 - y}px;animation:theone-setup-absorb 3.2s ${i * 0.45}s cubic-bezier(.5,0,.4,1) infinite;opacity:0"/>` : `<circle class="theone-setup-a" cx="${x}" cy="${y}" r="5" fill="currentColor" opacity=".35" style="--fx:${i % 2 ? 3 : -3}px;--fy:${i % 3 ? -3 : 3}px;animation:theone-setup-drift ${3 + i * 0.4}s ease-in-out infinite"/>`).join("")}</svg>`;
+  },
+  side: (mode) => `<svg viewBox="0 0 220 110"><rect x="20" y="4" width="180" height="102" rx="14" fill="none" stroke="currentColor" stroke-width="2" opacity=".4"/><path d="M82 4v102" stroke="currentColor" stroke-width="1.5" opacity=".22"/><rect x="32" y="18" width="38" height="8" rx="4" fill="currentColor" opacity=".28"/><rect x="32" y="32" width="30" height="8" rx="4" fill="currentColor" opacity=".28"/>${mode === 0 ? [0, 1, 2].map((i) => `<g class="theone-setup-a" style="animation:theone-setup-slide 3.6s ${0.3 + i * 0.35}s ease-out infinite;opacity:0">${ring(36, 54 + i * 17, 5)}<rect x="46" y="${50 + i * 17}" width="${26 - i * 4}" height="8" rx="4" fill="currentColor"/></g>`).join("") : `<rect x="110" y="24" width="74" height="64" rx="12" fill="none" stroke="currentColor" stroke-width="1.8"/>${[0, 1, 2].map((i) => `<g class="theone-setup-a" style="animation:theone-setup-pop 3.6s ${0.3 + i * 0.3}s ease-out infinite;opacity:0">${ring(126, 41 + i * 17, 5)}<rect x="136" y="${37 + i * 17}" width="${34 - i * 6}" height="8" rx="4" fill="currentColor"/></g>`).join("")}`}</svg>`,
+  tag: (mode) => `<svg viewBox="0 0 220 110">${[[30, 10, 96], [30, 44, 120], [30, 78, 84]].map(([x, y, w], i) => {
+    const marked = mode === 2 || mode === 1 && i === 2;
+    return `<g class="theone-setup-a" style="animation:theone-setup-type 4.2s ${i * 0.5}s ease-out infinite;opacity:0"><rect x="${x}" y="${y}" width="${w}" height="22" rx="11" fill="currentColor" opacity=".2"/></g>${marked ? ring(x + w + 16, y + 11, 7.5, `style="animation:theone-setup-pop 4.2s ${i * 0.5 + 0.25}s ease-out infinite;opacity:0"`) : ""}`;
+  }).join("")}</svg>`
+};
+var icons = {
+  absorb: '<circle cx="23" cy="12" r="7.5" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="23" cy="12" r="2.6" fill="currentColor"/><circle cx="5" cy="6" r="2.2" fill="currentColor"/><circle cx="6" cy="18" r="2.2" fill="currentColor"/>',
+  loose: '<circle cx="8" cy="7" r="2.2" fill="currentColor"/><circle cx="18" cy="17" r="2.2" fill="currentColor"/><circle cx="28" cy="8" r="2.2" fill="currentColor"/>',
+  sidebar: '<rect x="2" y="2" width="32" height="20" rx="4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M13 2v20" stroke="currentColor" stroke-width="1.3"/><circle cx="7.5" cy="9" r="2" fill="currentColor"/><circle cx="7.5" cy="15.5" r="2" fill="currentColor"/>',
+  list: '<rect x="2" y="2" width="32" height="20" rx="4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M13 2v20" stroke="currentColor" stroke-width="1.3"/><rect x="18" y="6" width="12" height="12" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="24" cy="12" r="2" fill="currentColor"/>',
+  some: '<rect x="2" y="5" width="20" height="5" rx="2.5" fill="currentColor" opacity=".5"/><rect x="2" y="14" width="16" height="5" rx="2.5" fill="currentColor" opacity=".5"/><circle cx="25" cy="16.5" r="3.6" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="25" cy="16.5" r="1.3" fill="currentColor"/>',
+  all: '<rect x="2" y="5" width="20" height="5" rx="2.5" fill="currentColor" opacity=".5"/><circle cx="29" cy="7.5" r="3.6" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="29" cy="7.5" r="1.3" fill="currentColor"/><rect x="2" y="14" width="16" height="5" rx="2.5" fill="currentColor" opacity=".5"/><circle cx="25" cy="16.5" r="3.6" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="25" cy="16.5" r="1.3" fill="currentColor"/>',
+  none: '<rect x="2" y="5" width="20" height="5" rx="2.5" fill="currentColor" opacity=".5"/><rect x="2" y="14" width="16" height="5" rx="2.5" fill="currentColor" opacity=".5"/>'
+};
+var arrow = '<svg viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M3 7h8m-3-3 3 3-3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+var cell = (size) => `<svg class="theone-setup-cell" width="${size}" height="${size}" viewBox="0 0 20 20" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><circle fill="currentColor"/></svg>`;
+var notices = ["switch", "all", "hidden"];
+var news = [
+  { key: "mark", svg: '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M17.4 10c0 4.2-3.2 7.3-7.4 7.3S2.6 14.2 2.6 10 5.8 2.6 10 2.6s7.4 3.2 7.4 7.4Z" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="10.4" cy="9.6" r="2.9" fill="currentColor"/></svg>' },
+  { key: "sessions", svg: `<svg viewBox="0 0 36 24" aria-hidden="true">${icons.sidebar}</svg>` },
+  { key: "pumpkin", svg: '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 5.6c-1-.9-2.6-1-4-.4C3.8 6.1 2.4 8.4 2.6 11c.3 3.5 3.4 5.6 7.4 5.6s7.1-2.1 7.4-5.6c.2-2.6-1.2-4.9-3.4-5.8-1.4-.6-3-.5-4 .4Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M10 5.4c0-1.4.6-2.4 1.8-2.9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>' }
+];
+async function openSetup({ t, cellFrame, signal, onClose }) {
+  const read = async (path) => {
+    try {
+      const response = await fetch(path, { signal, cache: "no-store" });
+      return response.ok ? await response.json() : void 0;
+    } catch {
+      return void 0;
+    }
+  };
+  const [catalog, settings] = await Promise.all([
+    read("/api/theone/catalog"),
+    read("/api/theone/settings")
+  ]);
+  if (signal.aborted) return;
+  const questions = [];
+  if (catalog && catalog.status.consent !== "granted") questions.push({ key: "sort", title: t("setup.sortTitle"), body: t("setup.sortBody"), pick: 0, options: [
+    { icon: "absorb", hero: 0, label: t("setup.sortYes"), hint: t("setup.sortYesHint"), recommended: true },
+    { icon: "loose", hero: 1, label: t("setup.sortNo"), hint: t("setup.sortNoHint") }
+  ] });
+  if (settings) {
+    questions.push({ key: "side", title: t("setup.sideTitle"), body: t("setup.sideBody"), pick: settings.savedValues.hideTopicSessions ? 1 : 0, options: [
+      { icon: "sidebar", hero: 0, label: t("setup.sideShow"), hint: t("setup.sideShowHint"), recommended: true },
+      { icon: "list", hero: 1, label: t("setup.sideHide"), hint: t("setup.sideHideHint") }
+    ] });
+    questions.push({ key: "tag", title: t("setup.tagTitle"), body: t("setup.tagBody"), pick: 0, options: [
+      { icon: "some", hero: 1, label: t("setup.tagSwitch"), hint: t("setup.tagSwitchHint"), recommended: true },
+      { icon: "all", hero: 2, label: t("setup.tagAll"), hint: t("setup.tagAllHint") },
+      { icon: "none", hero: 0, label: t("setup.tagNone"), hint: t("setup.tagNoneHint") }
+    ] });
+  }
+  const hint = (option) => option.recommended ? `<b>${escape(t("setup.recommended"))}</b>${escape(option.hint)}` : escape(option.hint);
+  const dots = (at2) => `<div class="theone-setup-dots" aria-hidden="true">${questions.map((_, i) => `<i data-on="${i === at2}"></i>`).join("")}</div>`;
+  const question = (q, index) => `<div class="theone-setup-hero" data-hero="${index}">${heroes[q.key](q.options[q.pick].hero)}</div>
+    <h2 class="theone-setup-title" id="theone-setup-q${index}">${escape(q.title)}</h2><p class="theone-setup-body">${escape(q.body)}</p>
+    <div class="theone-setup-options" role="radiogroup" aria-labelledby="theone-setup-q${index}" style="grid-template-columns:repeat(${q.options.length},minmax(0,1fr))">${q.options.map((option, i) => `<button type="button" class="theone-setup-option" role="radio" data-question="${index}" data-option="${i}" aria-checked="${q.pick === i}"><svg viewBox="0 0 36 24" aria-hidden="true">${icons[option.icon]}</svg>${escape(option.label)}</button>`).join("")}</div>
+    <p class="theone-setup-hint" data-hint="${index}" aria-live="polite">${hint(q.options[q.pick])}</p>
+    <div class="theone-setup-space"></div>${dots(index)}<button type="button" class="theone-setup-go" data-next>${escape(t("setup.continue"))}${arrow}</button>`;
+  const pages = [
+    `<div class="theone-setup-hero theone-setup-hero-cell">${cell(92)}</div>
+     <h2 class="theone-setup-title theone-setup-welcome">${escape(t("setup.welcome"))} <span class="theone-setup-brand"><span>The</span>One</span></h2>
+     <p class="theone-setup-body">${multiline(t("setup.welcomeBody"))}</p><div class="theone-setup-space"></div>
+     <button type="button" class="theone-setup-go" data-next>${escape(t("setup.start"))}${arrow}</button><button type="button" class="theone-setup-later" data-later>${escape(t("setup.later"))}</button>`,
+    `<div class="theone-setup-hero theone-setup-hero-cell theone-setup-hero-news">${cell(64)}<span class="theone-setup-badge">${escape(t("setup.newBadge"))}</span></div><h2 class="theone-setup-title">${escape(t("setup.newTitle"))}</h2>
+     <ul class="theone-setup-news">${news.map((item) => `<li><span class="theone-setup-news-icon">${item.svg}</span><span><b>${escape(t(`setup.new.${item.key}`))}</b><small>${escape(t(`setup.new.${item.key}Hint`))}</small></span></li>`).join("")}</ul>
+     <div class="theone-setup-space"></div><button type="button" class="theone-setup-go" data-next>${escape(t("setup.continue"))}${arrow}</button>`,
+    ...questions.map(question),
+    `<div class="theone-setup-hero theone-setup-hero-cell">${cell(92)}</div><h2 class="theone-setup-title">${escape(t("setup.doneTitle"))}</h2>
+     <p class="theone-setup-body">${multiline(t("setup.doneBody"))}</p><p class="theone-setup-hint" data-status>${escape(t("setup.apps"))}</p><div class="theone-setup-space"></div>
+     <button type="button" class="theone-setup-go" data-finish>${escape(t("setup.finish"))}${arrow}</button>`
+  ];
+  const overlay = document.createElement("div");
+  overlay.className = "theone-setup";
+  overlay.setAttribute("role", "dialog");
+  overlay.setAttribute("aria-modal", "true");
+  overlay.setAttribute("aria-label", t("setup.label"));
+  overlay.setAttribute("translate", "no");
+  overlay.innerHTML = `<button type="button" class="theone-setup-back" data-back hidden>\u2039 ${escape(t("setup.back"))}</button>
+    <div class="theone-setup-track">${pages.map((page) => `<section class="theone-setup-page"><div class="theone-setup-column">${page}</div></section>`).join("")}</div>`;
+  const track = overlay.querySelector(".theone-setup-track"), back = overlay.querySelector("[data-back]");
+  const sections = [...overlay.querySelectorAll(".theone-setup-page")];
+  let at = 0;
+  const go = (index) => {
+    at = index;
+    track.style.transform = `translateX(${-100 * index}%)`;
+    sections.forEach((section, i) => {
+      section.inert = i !== index;
+    });
+    back.hidden = index === 0 || index === pages.length - 1;
+    sections[index].querySelector(".theone-setup-go")?.focus({ preventScroll: true });
+  };
+  const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let frame = 0;
+  const paint = (time) => {
+    const pose = cellFrame(time);
+    for (const svg of overlay.querySelectorAll(".theone-setup-cell")) {
+      svg.children[0].setAttribute("d", pose.membrane);
+      svg.children[1].setAttribute("cx", pose.x.toFixed(3));
+      svg.children[1].setAttribute("cy", pose.y.toFixed(3));
+      svg.children[1].setAttribute("r", pose.r.toFixed(3));
+    }
+  };
+  paint(0);
+  if (!still) {
+    let time = 0, last = performance.now();
+    frame = requestAnimationFrame(function step(now) {
+      time += Math.min(0.05, (now - last) / 1e3) * 0.7;
+      last = now;
+      paint(time);
+      frame = requestAnimationFrame(step);
+    });
+  }
+  let closed = false;
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    cancelAnimationFrame(frame);
+    document.removeEventListener("keydown", keydown, true);
+    overlay.remove();
+    onClose();
+  };
+  const keydown = (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      close();
+    }
+  };
+  signal.addEventListener("abort", close, { once: true });
+  const finish = async (button) => {
+    button.disabled = true;
+    let failed = false;
+    const sort = questions.find((q) => q.key === "sort");
+    if (sort) {
+      try {
+        const response = await fetch("/api/theone/catalog/consent", { method: "POST", signal, cache: "no-store", headers: { "content-type": "application/json" }, body: JSON.stringify({ consent: sort.pick === 0 }) });
+        failed ||= !response.ok;
+      } catch {
+        failed = true;
+      }
+    }
+    const side = questions.find((q) => q.key === "side"), tag = questions.find((q) => q.key === "tag");
+    if (side && tag) {
+      const fresh = await read("/api/theone/settings");
+      try {
+        const response = fresh ? await fetch("/api/theone/settings", {
+          method: "PUT",
+          signal,
+          cache: "no-store",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ values: { ...fresh.savedValues, hideTopicSessions: side.pick === 1, routeNotice: notices[tag.pick] }, revision: fresh.revision })
+        }) : void 0;
+        failed ||= !response?.ok;
+        if (response?.ok) window.dispatchEvent(new Event("theone-settings-changed"));
+      } catch {
+        failed = true;
+      }
+    }
+    if (signal.aborted) return;
+    if (failed) {
+      overlay.querySelector("[data-status]").textContent = t("setup.error");
+      button.disabled = false;
+      button.removeAttribute("data-finish");
+      button.setAttribute("data-later", "");
+      return;
+    }
+    close();
+  };
+  overlay.addEventListener("click", (event) => {
+    const button = event.target.closest("button");
+    if (!button || button.disabled) return;
+    if (button.dataset.question !== void 0) {
+      const index = Number(button.dataset.question), q = questions[index];
+      q.pick = Number(button.dataset.option);
+      button.parentElement.querySelectorAll("[role=radio]").forEach((radio) => radio.setAttribute("aria-checked", String(radio === button)));
+      overlay.querySelector(`[data-hero="${index}"]`).innerHTML = heroes[q.key](q.options[q.pick].hero);
+      const hintLine = overlay.querySelector(`[data-hint="${index}"]`);
+      hintLine.innerHTML = hint(q.options[q.pick]);
+      hintLine.classList.remove("theone-setup-fade");
+      void hintLine.offsetWidth;
+      hintLine.classList.add("theone-setup-fade");
+    } else if ("next" in button.dataset) go(at + 1);
+    else if ("back" in button.dataset) go(at - 1);
+    else if ("later" in button.dataset) close();
+    else if ("finish" in button.dataset) void finish(button);
+  });
+  overlay.addEventListener("keydown", (event) => {
+    const radio = event.target.closest("[role=radio]");
+    if (!radio || !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
+    event.preventDefault();
+    const radios = [...radio.parentElement.querySelectorAll("[role=radio]")];
+    const next = radios[(radios.indexOf(radio) + (event.key === "ArrowLeft" || event.key === "ArrowUp" ? radios.length - 1 : 1)) % radios.length];
+    next.focus();
+    next.click();
+  });
+  document.addEventListener("keydown", keydown, true);
+  document.body.append(overlay);
+  go(0);
+}
+var setupCss = `
+.theone-setup{--s-bg:var(--dsw-alias-bg-base,#fff);--s-tx:var(--dsw-alias-label-primary,#18181b);--s-mu:var(--dsw-alias-label-tertiary,#6b6f78);--s-cap:var(--dsw-alias-label-caption,#9aa0aa);--s-neutral:var(--dsw-alias-border-l2,#00000014);
+  --s-ac:#a75b1e;--s-tint:#fff5ec;--s-line:#eed3bb;--s-glow:0 0 22px 4px #ff6b001c;
+  position:fixed;inset:0;z-index:10050;overflow:hidden;background:var(--s-bg);color:var(--s-tx);font-family:var(--dsw-font-family,inherit);animation:theone-setup-in .28s ease}
+[data-ds-dark-theme] .theone-setup{--s-ac:#93c8f3;--s-tint:#1d2a37;--s-line:#344d64;--s-glow:0 0 22px 4px #80bae91c}
+@keyframes theone-setup-in{from{opacity:0}}
+.theone-setup-track{display:flex;height:100%;transition:transform .5s cubic-bezier(.32,.72,0,1)}
+.theone-setup-page{flex:0 0 100%;height:100%;box-sizing:border-box;padding:48px 24px 32px;display:flex;align-items:center;justify-content:center;overflow:auto}
+/* A fixed-height column, centred: the button keeps the same place on every page however tall the window is. */
+.theone-setup-column{width:min(400px,100%);height:min(580px,100%);display:flex;flex-direction:column;align-items:center}
+.theone-setup-back{all:unset;position:absolute;left:20px;top:16px;z-index:1;cursor:pointer;color:var(--s-cap);font-size:13px;line-height:20px;padding:4px 8px;border-radius:8px}
+.theone-setup-back:hover{color:var(--s-tx)}.theone-setup-back[hidden]{display:none}
+.theone-setup-hero{flex:none;width:100%;height:150px;display:flex;align-items:center;justify-content:center;color:var(--s-ac)}
+.theone-setup-hero>svg{width:220px;height:110px;overflow:visible}
+.theone-setup-hero-cell svg{overflow:visible}
+.theone-setup-hero-news{flex-direction:column;gap:16px}
+.theone-setup-badge{font-size:12px;line-height:18px;color:var(--s-ac);background:var(--s-tint);box-shadow:inset 0 0 0 .5px var(--s-line);border-radius:6px;padding:2px 9px;margin-bottom:14px}
+.theone-setup-title{font-size:26px;font-weight:500;letter-spacing:-.6px;line-height:1.3;margin:8px 0 8px;text-wrap:balance;text-align:center;color:var(--s-tx)}
+.theone-setup-welcome{font-size:30px}
+.theone-setup-news{list-style:none;margin:14px 0 0;padding:0;width:100%;display:flex;flex-direction:column;gap:18px}
+.theone-setup-news li{display:flex;gap:14px;align-items:flex-start}
+.theone-setup-news-icon{flex:none;width:40px;height:40px;border-radius:10px;background:var(--s-tint);box-shadow:inset 0 0 0 .5px var(--s-line);color:var(--s-ac);display:grid;place-items:center}
+.theone-setup-news-icon svg{width:22px;height:22px;overflow:visible}
+.theone-setup-news b{display:block;font-size:14px;line-height:20px;font-weight:500;color:var(--s-tx)}
+.theone-setup-news small{display:block;font-size:13px;line-height:1.6;color:var(--s-cap);margin-top:2px}
+.theone-setup-brand{color:var(--s-ac)}.theone-setup-brand span{font-weight:400;font-size:.78em;color:var(--s-mu);margin-right:1px}
+.theone-setup-body{font-size:14px;line-height:1.7;color:var(--s-mu);text-align:center;margin:0 0 22px;text-wrap:pretty}
+.theone-setup-options{display:grid;gap:10px;width:100%}
+.theone-setup-option{all:unset;box-sizing:border-box;cursor:pointer;border-radius:12px;border:1px solid var(--s-neutral);padding:13px 6px 11px;display:flex;flex-direction:column;align-items:center;gap:8px;color:var(--s-mu);font-size:13px;line-height:18px;transition:border-color .2s,background .2s,color .2s}
+.theone-setup-option svg{width:40px;height:26px;transition:color .2s}
+.theone-setup-option:hover{border-color:var(--s-line)}
+.theone-setup-option[aria-checked=true]{background:var(--s-tint);border-color:color-mix(in srgb,var(--s-ac) 40%,var(--s-line));color:var(--s-tx)}
+.theone-setup-option[aria-checked=true] svg{color:var(--s-ac)}
+.theone-setup-hint{min-height:44px;margin:14px 0 0;text-align:center;text-wrap:pretty;font-size:13px;line-height:1.65;color:var(--s-cap)}
+.theone-setup-hint b{color:var(--s-tx);font-weight:500}
+.theone-setup-fade{animation:theone-setup-fade .3s ease}@keyframes theone-setup-fade{from{opacity:0}}
+.theone-setup-space{flex:1;min-height:20px}
+.theone-setup-go{all:unset;box-sizing:border-box;cursor:pointer;display:inline-flex;align-items:center;gap:8px;min-height:38px;padding:9px 22px;border-radius:var(--dsw-radius-md,12px);background:var(--s-tint);border:1px solid var(--s-line);color:var(--s-ac);font-size:14px;line-height:20px;font-weight:500;box-shadow:var(--s-glow);transition:border-color .2s}
+.theone-setup-go:hover{border-color:color-mix(in srgb,var(--s-ac) 40%,var(--s-line))}
+.theone-setup-go:disabled{opacity:.6;cursor:default}
+.theone-setup-go svg{width:13px;height:13px}
+.theone-setup :is(.theone-setup-go,.theone-setup-option,.theone-setup-back,.theone-setup-later):focus-visible{outline:2px solid var(--s-ac);outline-offset:3px}
+.theone-setup-later{all:unset;cursor:pointer;margin-top:14px;font-size:13px;line-height:20px;color:var(--s-cap)}.theone-setup-later:hover{color:var(--s-tx)}
+.theone-setup-dots{display:flex;gap:6px;margin-bottom:18px}.theone-setup-dots i{width:5px;height:5px;border-radius:50%;background:var(--s-neutral);transition:all .3s}
+.theone-setup-dots i[data-on=true]{background:var(--s-cap);width:14px;border-radius:3px}
+.theone-setup-a{transform-box:fill-box;transform-origin:center}
+@keyframes theone-setup-absorb{0%{opacity:0;transform:translate(0,0) scale(1)}15%{opacity:.75}75%{opacity:.85;transform:translate(var(--dx),var(--dy)) scale(.35)}85%,100%{opacity:0;transform:translate(var(--dx),var(--dy)) scale(.2)}}
+@keyframes theone-setup-drift{0%,100%{transform:translate(0,0)}50%{transform:translate(var(--fx),var(--fy))}}
+@keyframes theone-setup-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}
+@keyframes theone-setup-slide{0%{opacity:0;transform:translateX(-10px)}12%,82%{opacity:1;transform:none}94%,100%{opacity:0}}
+@keyframes theone-setup-pop{0%,20%{opacity:0;transform:scale(.4)}32%,85%{opacity:1;transform:scale(1)}95%,100%{opacity:0}}
+@keyframes theone-setup-type{0%{opacity:0;transform:translateY(5px)}10%,88%{opacity:1;transform:none}98%,100%{opacity:0}}
+@media(prefers-reduced-motion:reduce){.theone-setup,.theone-setup-track{animation:none;transition:none}.theone-setup-a{animation:none!important;opacity:1!important}}
+`;
 
 // src/client-locales.ts
 var zh = {
@@ -126,12 +397,20 @@ var zh = {
   "gateway.error": "\u4E3B\u804A\u5929\u6682\u65F6\u65E0\u6CD5\u6253\u5F00\uFF0C\u8BF7\u68C0\u67E5 DSH \u8FDE\u63A5\u548C TheOne \u63D2\u4EF6\u72B6\u6001\u3002",
   "retry": "\u91CD\u8BD5",
   "settings.other": "\u5176\u4ED6",
+  "settings.sessions": "\u4F1A\u8BDD\u663E\u793A",
+  "settings.hideTopicSessions": "\u9690\u85CF\u8BDD\u9898\u4F1A\u8BDD",
+  "settings.help.hideTopicSessions": "\u9ED8\u8BA4\u5173\u95ED\uFF0C\u4E3B\u804A\u5929\u53D1\u8D77\u7684\u8BDD\u9898\u4F1A\u8BDD\u4F1A\u663E\u793A\u5728\u4FA7\u8FB9\u680F\u3002\u5F00\u542F\u540E\u9690\u85CF\u8FD9\u4E9B\u4F1A\u8BDD\uFF0C\u4ECD\u53EF\u4ECE\u8BDD\u9898\u5217\u8868\u8BBF\u95EE\u3002\u4FDD\u5B58\u540E\u751F\u6548\u3002",
   "settings.notices": "\u663E\u793A\u516C\u544A",
-  "settings.factLinks": "\u5171\u4EAB\u5DF2\u786E\u8BA4\u7684\u8981\u70B9\uFF08\u5B9E\u9A8C\uFF09",
-  "settings.help.factLinks": "\u8BDD\u9898\u4E4B\u95F4\u53EA\u5171\u4EAB\u7528\u6237\u4EB2\u81EA\u786E\u8BA4\u8FC7\u7684\u8981\u70B9\uFF08\u6570\u5B57\u3001\u51B3\u5B9A\u3001\u6587\u4EF6\u4F4D\u7F6E\uFF09\uFF0C\u5E26\u7248\u672C\u548C\u51FA\u5904\uFF1B\u8981\u70B9\u6539\u4E86\u6216\u64A4\u56DE\u4E86\uFF0C\u7528\u5230\u5B83\u7684\u8BDD\u9898\u4F1A\u6536\u5230\u63D0\u793A\u3002\u9ED8\u8BA4\u5173\u95ED\uFF0C\u91CD\u542F DSH \u540E\u751F\u6548\u3002",
-  "settings.factExtraction": "\u81EA\u52A8\u8BB0\u5F55\u8981\u70B9\uFF08\u5B9E\u9A8C\uFF09",
-  "settings.help.factExtraction": "\u5F00\u542F\u300C\u5171\u4EAB\u5DF2\u786E\u8BA4\u7684\u8981\u70B9\u300D\u540E\uFF0C\u6BCF\u8F6E\u7ED3\u675F\u591A\u7528\u4E00\u6B21\u5C0F\u6A21\u578B\u8C03\u7528\uFF0C\u8865\u8BB0\u540E\u53F0\u4F1A\u8BDD\u6CA1\u8BB0\u4E0B\u7684\u8981\u70B9\uFF1B\u540C\u6837\u53EA\u6709\u7528\u6237\u786E\u8BA4\u8FC7\u7684\u624D\u4F1A\u5171\u4EAB\u3002\u9ED8\u8BA4\u5173\u95ED\uFF0C\u91CD\u542F DSH \u540E\u751F\u6548\u3002",
-  "settings.help.notices": "\u663E\u793A TheOne \u4F5C\u8005\u53D1\u5E03\u7684\u516C\u544A\uFF08\u65B0\u7248\u672C\u3001\u91CD\u8981\u63D0\u9192\u7B49\uFF09\u3002\u53EA\u4ECE yulid.org \u8BFB\u53D6\u4E00\u4E2A\u516C\u544A\u6587\u4EF6\uFF0C\u4E0D\u53D1\u9001\u4EFB\u4F55\u4F60\u7684\u6570\u636E\u3002",
+  "settings.advanced": "\u9AD8\u7EA7",
+  "settings.experimental": "\u6D4B\u8BD5\u529F\u80FD",
+  "settings.experimentalIntro": "\u6D4B\u8BD5\u529F\u80FD\uFF0C\u9ED8\u8BA4\u5173\u95ED\u3002\u66F4\u6539\u540E\u9700\u91CD\u542F\u751F\u6548\u3002",
+  "settings.factLinks": "\u5171\u4EAB\u5DF2\u786E\u8BA4\u7684\u8981\u70B9",
+  "settings.help.factLinks": "\u8BDD\u9898\u95F4\u4EC5\u5171\u4EAB\u7ECF\u4F60\u786E\u8BA4\u7684\u8981\u70B9\uFF08\u6570\u5B57\u3001\u51B3\u5B9A\u3001\u6587\u4EF6\u4F4D\u7F6E\uFF09\uFF0C\u9644\u5E26\u7248\u672C\u548C\u51FA\u5904\u3002\u8981\u70B9\u53D8\u66F4\u65F6\uFF0C\u5F15\u7528\u5B83\u7684\u8BDD\u9898\u4F1A\u6536\u5230\u63D0\u793A\u3002",
+  "settings.factExtraction": "\u81EA\u52A8\u8BB0\u5F55\u8981\u70B9",
+  "settings.help.factExtraction": "\u9700\u5148\u5F00\u542F\u4E0A\u4E00\u9879\u3002\u6BCF\u8F6E\u7ED3\u675F\u540E\u989D\u5916\u8C03\u7528\u4E00\u6B21\u5C0F\u6A21\u578B\uFF0C\u8865\u8BB0\u9057\u6F0F\u7684\u8981\u70B9\uFF0C\u4ECD\u4EC5\u5171\u4EAB\u7ECF\u4F60\u786E\u8BA4\u7684\u5185\u5BB9\u3002",
+  "settings.persistentWork": "\u6301\u7EED\u4EFB\u52A1",
+  "settings.help.persistentWork": "\u6301\u7EED\u8DDF\u8E2A GitHub PR \u7684\u68C0\u67E5\u7ED3\u679C\uFF0C\u6709\u53D8\u5316\u65F6\u5728\u4E3B\u804A\u5929\u901A\u77E5\u3002\u53EA\u8BFB\uFF0C\u4E0D\u4FEE\u6539\u4EE3\u7801\u3002",
+  "settings.help.notices": "\u663E\u793A\u65B0\u7248\u672C\u548C\u91CD\u8981\u901A\u77E5\uFF0C\u4E0D\u4F1A\u4E0A\u4F20\u4EFB\u4F55\u6570\u636E\u3002",
   "notice.label": "\u516C\u544A",
   "notice.more": "\u67E5\u770B\u8BE6\u60C5",
   "notice.ok": "\u77E5\u9053\u4E86",
@@ -173,95 +452,86 @@ var zh = {
   "settings.title": "TheOne \u8BBE\u7F6E",
   "settings.update": "\u66F4\u65B0",
   "settings.updateCurrent": "\u5F53\u524D\u7248\u672C {current}",
-  "settings.updateLatest": "\u5DF2\u662F\u6700\u65B0\u7248\u672C\u3002DSH \u542F\u52A8\u65F6\u548C\u4E4B\u540E\u6BCF 6 \u5C0F\u65F6\u4E5F\u4F1A\u81EA\u52A8\u68C0\u67E5\u4E00\u6B21\u3002",
-  "settings.updateUnknown": "\u8FD8\u6CA1\u6709\u68C0\u67E5\u8FC7\u3002",
+  "settings.updateLatest": "\u5DF2\u662F\u6700\u65B0\u7248\u672C\u3002",
+  "settings.updateUnknown": "\u5C1A\u672A\u68C0\u67E5\u66F4\u65B0\u3002",
   "settings.updateChecking": "\u6B63\u5728\u68C0\u67E5\u2026",
-  "settings.updateCheckFailed": "\u68C0\u67E5\u5931\u8D25\uFF1A\u8FDE\u4E0D\u4E0A\u66F4\u65B0\u6E90\uFF0C\u8BF7\u68C0\u67E5\u7F51\u7EDC\u540E\u91CD\u8BD5\u3002",
+  "settings.updateCheckFailed": "\u68C0\u67E5\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5\u7F51\u7EDC\u540E\u91CD\u8BD5\u3002",
   "settings.updateCheck": "\u68C0\u67E5\u66F4\u65B0",
   "settings.updateInstall": "\u66F4\u65B0",
   "settings.weixin": "\u5FAE\u4FE1",
-  "settings.weixinIntro": "\u626B\u7801\u7ED1\u5B9A\u4F60\u81EA\u5DF1\u7684\u5FAE\u4FE1\u3002\u4E4B\u540E\u5728\u5FAE\u4FE1\u91CC\u7ED9\u5B83\u53D1\u6D88\u606F\uFF0C\u5C31\u548C\u5728\u4E3B\u804A\u5929\u91CC\u8BF4\u8BDD\u4E00\u6837\uFF1A\u7167\u5E38\u5206\u5230\u8BDD\u9898\u3001\u5728\u540E\u53F0\u5E72\u6D3B\uFF0C\u56DE\u590D\u53D1\u56DE\u5FAE\u4FE1\u3002\u53EA\u8BA4\u626B\u7801\u7684\u672C\u4EBA\uFF0C\u522B\u4EBA\u53D1\u7684\u6D88\u606F\u4E0D\u4F1A\u8FDB\u4E3B\u804A\u5929\u3002",
-  "settings.weixinNote": "\u7528\u7684\u662F\u817E\u8BAF iLink \u63A5\u53E3\uFF08\u548C OpenClaw \u5FAE\u4FE1\u63D2\u4EF6\u540C\u4E00\u5957\uFF09\u3002DSH \u5F00\u7740\u624D\u80FD\u6536\u5230\u6D88\u606F\uFF0C\u7535\u8111\u7761\u7720\u6216 DSH \u9000\u51FA\u65F6\u6536\u4E0D\u5230\u3002",
+  "settings.weixinIntro": "\u626B\u7801\u7ED1\u5B9A\u4E2A\u4EBA\u5FAE\u4FE1\u3002\u7ED1\u5B9A\u540E\uFF0C\u5FAE\u4FE1\u4E2D\u53D1\u9001\u7684\u6D88\u606F\u7B49\u540C\u4E8E\u4E3B\u804A\u5929\u6D88\u606F\uFF0C\u56DE\u590D\u540C\u6B65\u53D1\u56DE\u5FAE\u4FE1\u3002\u4EC5\u54CD\u5E94\u626B\u7801\u672C\u4EBA\u3002",
+  "settings.weixinNote": "\u9700\u4FDD\u6301 DSH \u8FD0\u884C\u3002",
   "settings.weixinBind": "\u626B\u7801\u7ED1\u5B9A",
-  "settings.weixinScan": "\u7528\u624B\u673A\u5FAE\u4FE1\u626B\u8FD9\u4E2A\u7801\u3002",
+  "settings.weixinScan": "\u8BF7\u4F7F\u7528\u624B\u673A\u5FAE\u4FE1\u626B\u63CF\u4E8C\u7EF4\u7801\u3002",
   "settings.weixinScanned": "\u5DF2\u626B\u7801\uFF0C\u8BF7\u5728\u624B\u673A\u4E0A\u786E\u8BA4\u3002",
-  "settings.weixinVerify": "\u624B\u673A\u4E0A\u663E\u793A\u4E86\u4E00\u4E2A\u9A8C\u8BC1\u7801\uFF0C\u8BF7\u586B\u5728\u8FD9\u91CC\uFF1A",
+  "settings.weixinVerify": "\u8BF7\u8F93\u5165\u624B\u673A\u4E0A\u663E\u793A\u7684\u9A8C\u8BC1\u7801\uFF1A",
   "settings.weixinVerifySubmit": "\u63D0\u4EA4",
   "settings.weixinCancel": "\u53D6\u6D88",
-  "settings.weixinFailed": "\u7ED1\u5B9A\u6CA1\u6709\u6210\u529F\uFF08{reason}\uFF09\uFF0C\u53EF\u4EE5\u91CD\u8BD5\u3002",
+  "settings.weixinFailed": "\u7ED1\u5B9A\u5931\u8D25\uFF08{reason}\uFF09\uFF0C\u8BF7\u91CD\u8BD5\u3002",
   "settings.remoteOnline": "\u5DF2\u8FDE\u63A5 \xB7 \u8D26\u53F7 {account}",
   "settings.remoteConnecting": "\u6B63\u5728\u8FDE\u63A5 \xB7 \u8D26\u53F7 {account}",
-  "settings.remotePaused": "\u670D\u52A1\u5668\u6682\u65F6\u62D2\u7EDD\u4E86\u767B\u5F55\uFF0C{minutes} \u5206\u949F\u540E\u81EA\u52A8\u91CD\u8BD5 \xB7 \u8D26\u53F7 {account}",
+  "settings.remotePaused": "\u767B\u5F55\u6682\u88AB\u62D2\u7EDD\uFF0C{minutes} \u5206\u949F\u540E\u81EA\u52A8\u91CD\u8BD5 \xB7 \u8D26\u53F7 {account}",
   "settings.weixinExpired": "\u767B\u5F55\u5DF2\u5931\u6548\uFF0C\u8BF7\u91CD\u65B0\u626B\u7801\u3002",
   "settings.remoteOff": "\u5DF2\u6682\u505C\u63A5\u6536 \xB7 \u8D26\u53F7 {account}",
   "settings.remotePause": "\u6682\u505C\u63A5\u6536",
   "settings.remoteResume": "\u6062\u590D\u63A5\u6536",
   "settings.remoteLogout": "\u9000\u51FA\u767B\u5F55",
   "settings.weixinRescan": "\u91CD\u65B0\u626B\u7801",
-  "settings.remoteError": "\u8BFB\u4E0D\u5230\u8FDE\u63A5\u72B6\u6001\u3002",
-  "settings.remoteLastError": "\u6700\u8FD1\u4E00\u6B21\u51FA\u9519\uFF1A{error}",
+  "settings.remoteError": "\u65E0\u6CD5\u8BFB\u53D6\u8FDE\u63A5\u72B6\u6001\u3002",
+  "settings.remoteLastError": "\u6700\u8FD1\u9519\u8BEF\uFF1A{error}",
   "settings.remoteConnect": "\u8FDE\u63A5",
   "settings.telegram": "Telegram",
-  "settings.telegramIntro": "\u7ED1\u5B9A\u4E00\u4E2A\u4F60\u81EA\u5DF1\u7684 Telegram \u673A\u5668\u4EBA\uFF0C\u4E4B\u540E\u7ED9\u5B83\u53D1\u6D88\u606F\u5C31\u548C\u5728\u4E3B\u804A\u5929\u91CC\u8BF4\u8BDD\u4E00\u6837\uFF0C\u56DE\u590D\u4F1A\u53D1\u56DE Telegram\u3002\u53EA\u8BA4\u5B8C\u6210\u914D\u5BF9\u7684\u672C\u4EBA\u3002",
-  "settings.telegramToken": "\u5728 Telegram \u91CC\u627E @BotFather\uFF0C\u53D1\u9001 /newbot \u5EFA\u4E00\u4E2A\u673A\u5668\u4EBA\uFF0C\u628A\u5B83\u7ED9\u7684 token \u7C98\u8D34\u5230\u8FD9\u91CC\uFF1A",
-  "settings.telegramTokenInvalid": "\u8FD9\u4E2A token \u4E0D\u5BF9\uFF0C\u8BF7\u4ECE @BotFather \u91CD\u65B0\u590D\u5236\u3002",
-  "settings.telegramUnreachable": "\u8FDE\u4E0D\u4E0A Telegram\uFF0C\u8BF7\u68C0\u67E5\u7F51\u7EDC\uFF08\u53EF\u80FD\u9700\u8981\u4EE3\u7406\uFF09\u540E\u91CD\u8BD5\u3002",
-  "settings.telegramPair": "\u7528\u624B\u673A\u626B\u8FD9\u4E2A\u7801\u6253\u5F00 {bot} \u5E76\u70B9\u300C\u5F00\u59CB\u300D\uFF1B\u6216\u8005\u5728 Telegram \u91CC\u7ED9 {bot} \u53D1\u9001 /start {code}\u3002\u7B2C\u4E00\u4E2A\u53D1\u6765\u914D\u5BF9\u7801\u7684\u4EBA\u4F1A\u6210\u4E3A\u5B83\u7684\u4E3B\u4EBA\u3002",
+  "settings.telegramIntro": "\u7ED1\u5B9A\u4E2A\u4EBA Telegram \u673A\u5668\u4EBA\u3002\u7ED1\u5B9A\u540E\uFF0C\u53D1\u7ED9\u673A\u5668\u4EBA\u7684\u6D88\u606F\u7B49\u540C\u4E8E\u4E3B\u804A\u5929\u6D88\u606F\uFF0C\u56DE\u590D\u540C\u6B65\u53D1\u56DE Telegram\u3002\u4EC5\u54CD\u5E94\u5B8C\u6210\u914D\u5BF9\u7684\u7528\u6237\u3002",
+  "settings.telegramToken": "\u5728 Telegram \u4E2D\u5411 @BotFather \u53D1\u9001 /newbot \u521B\u5EFA\u673A\u5668\u4EBA\uFF0C\u7136\u540E\u7C98\u8D34\u8FD4\u56DE\u7684 token\uFF1A",
+  "settings.telegramTokenInvalid": "token \u65E0\u6548\uFF0C\u8BF7\u4ECE @BotFather \u91CD\u65B0\u590D\u5236\u3002",
+  "settings.telegramUnreachable": "\u65E0\u6CD5\u8FDE\u63A5 Telegram\uFF0C\u8BF7\u68C0\u67E5\u7F51\u7EDC\u6216\u4EE3\u7406\u540E\u91CD\u8BD5\u3002",
+  "settings.telegramPair": "\u626B\u63CF\u4E8C\u7EF4\u7801\u6253\u5F00 {bot} \u5E76\u70B9\u51FB\u300C\u5F00\u59CB\u300D\uFF0C\u6216\u5728 Telegram \u4E2D\u5411 {bot} \u53D1\u9001 /start {code}\u3002\u9996\u4E2A\u53D1\u9001\u914D\u5BF9\u7801\u7684\u7528\u6237\u5C06\u6210\u4E3A\u673A\u5668\u4EBA\u7684\u6240\u6709\u8005\u3002",
   "settings.telegramPairScan": "\u626B\u7801\u6253\u5F00\u673A\u5668\u4EBA",
   "settings.telegramWaiting": "\u7B49\u5F85\u914D\u5BF9 \xB7 \u673A\u5668\u4EBA {account}",
-  "settings.telegramExpired": "\u673A\u5668\u4EBA\u7684 token \u5DF2\u5931\u6548\uFF08\u53EF\u80FD\u5728 @BotFather \u91CC\u91CD\u7F6E\u8FC7\uFF09\uFF0C\u8BF7\u91CD\u65B0\u586B\u5199\u3002",
-  "settings.telegramNote": "token \u53EA\u5B58\u5728\u8FD9\u53F0\u7535\u8111\u4E0A\u3002DSH \u5F00\u7740\u624D\u80FD\u6536\u5230\u6D88\u606F\u3002",
+  "settings.telegramExpired": "token \u5DF2\u5931\u6548\uFF0C\u8BF7\u91CD\u65B0\u586B\u5199\u3002",
+  "settings.telegramNote": "token \u4EC5\u4FDD\u5B58\u5728\u672C\u673A\u3002\u9700\u4FDD\u6301 DSH \u8FD0\u884C\u3002",
   "settings.imessage": "iMessage",
-  "settings.imessageIntro": "\u5728 Mac \u4E0A\uFF0C\u7528\u4F60\u81EA\u5DF1\u7684\u624B\u673A\u53F7\u6216 Apple ID \u53D1 iMessage \u7ED9\u8FD9\u53F0 Mac\uFF0C\u5C31\u548C\u5728\u4E3B\u804A\u5929\u91CC\u8BF4\u8BDD\u4E00\u6837\uFF0C\u56DE\u590D\u4F1A\u7528\u300C\u4FE1\u606F\u300D\u53D1\u56DE\u53BB\u3002\u53EA\u8BA4\u4F60\u586B\u7684\u8FD9\u4E2A\u53F7\u7801\u3002",
-  "settings.imessageUnsupported": "iMessage \u53EA\u80FD\u5728 macOS \u4E0A\u7528\uFF1ADSH \u9700\u8981\u8FD0\u884C\u5728\u767B\u5F55\u4E86\u300C\u4FE1\u606F\u300D\u7684 Mac \u4E0A\u3002",
-  "settings.imessageHandle": "\u4F60\u53D1\u6D88\u606F\u7528\u7684\u624B\u673A\u53F7\u6216 Apple ID\uFF1A",
-  "settings.imessageHandleInvalid": "\u8BF7\u586B\u624B\u673A\u53F7\u6216\u90AE\u7BB1\u5F62\u5F0F\u7684 Apple ID\u3002",
-  "settings.imessageNoAccess": "\u8BFB\u4E0D\u5230\u300C\u4FE1\u606F\u300D\u7684\u6570\u636E\uFF1A\u8BF7\u5728\u300C\u7CFB\u7EDF\u8BBE\u7F6E \u2192 \u9690\u79C1\u4E0E\u5B89\u5168\u6027 \u2192 \u5B8C\u5168\u78C1\u76D8\u8BBF\u95EE\u6743\u9650\u300D\u91CC\u5141\u8BB8\u8FD0\u884C DSH \u7684\u7A0B\u5E8F\uFF0C\u7136\u540E\u91CD\u8BD5\u3002",
-  "settings.imessageNote": "\u7B2C\u4E00\u6B21\u56DE\u590D\u65F6 macOS \u4F1A\u8BE2\u95EE\u662F\u5426\u5141\u8BB8\u63A7\u5236\u300C\u4FE1\u606F\u300D\uFF0C\u8BF7\u70B9\u5141\u8BB8\u3002Mac \u7761\u7720\u6216 DSH \u9000\u51FA\u65F6\u6536\u4E0D\u5230\u6D88\u606F\u3002",
+  "settings.imessageIntro": "\u5728 Mac \u4E0A\uFF0C\u7528\u624B\u673A\u53F7\u6216 Apple ID \u5411\u672C\u673A\u53D1\u9001 iMessage\uFF0C\u6D88\u606F\u7B49\u540C\u4E8E\u4E3B\u804A\u5929\u6D88\u606F\uFF0C\u56DE\u590D\u901A\u8FC7\u300C\u4FE1\u606F\u300D\u53D1\u56DE\u3002\u4EC5\u54CD\u5E94\u586B\u5199\u7684\u53F7\u7801\u3002",
+  "settings.imessageUnsupported": "iMessage \u4EC5\u652F\u6301 macOS\uFF0C\u9700\u5728\u5DF2\u767B\u5F55\u300C\u4FE1\u606F\u300D\u7684 Mac \u4E0A\u8FD0\u884C DSH\u3002",
+  "settings.imessageHandle": "\u7528\u4E8E\u53D1\u9001\u6D88\u606F\u7684\u624B\u673A\u53F7\u6216 Apple ID\uFF1A",
+  "settings.imessageHandleInvalid": "\u8BF7\u8F93\u5165\u624B\u673A\u53F7\u6216\u90AE\u7BB1\u5F62\u5F0F\u7684 Apple ID\u3002",
+  "settings.imessageNoAccess": "\u65E0\u6CD5\u8BFB\u53D6\u300C\u4FE1\u606F\u300D\u6570\u636E\u3002\u8BF7\u5728\u300C\u7CFB\u7EDF\u8BBE\u7F6E \u2192 \u9690\u79C1\u4E0E\u5B89\u5168\u6027 \u2192 \u5B8C\u5168\u78C1\u76D8\u8BBF\u95EE\u6743\u9650\u300D\u4E2D\u5141\u8BB8\u8FD0\u884C DSH \u7684\u7A0B\u5E8F\uFF0C\u7136\u540E\u91CD\u8BD5\u3002",
+  "settings.imessageNote": "\u9996\u6B21\u56DE\u590D\u65F6\uFF0C\u8BF7\u5728 macOS \u5F39\u7A97\u4E2D\u5141\u8BB8\u63A7\u5236\u300C\u4FE1\u606F\u300D\u3002Mac \u7761\u7720\u6216 DSH \u9000\u51FA\u65F6\u65E0\u6CD5\u63A5\u6536\u6D88\u606F\u3002",
   "settings.menu": "\u8BBE\u7F6E",
-  "settings.subtitle": "\u67E5\u770B\u5F53\u524D\u751F\u6548\u7684\u914D\u7F6E\u548C\u5404\u9879\u7528\u9014\u3002",
-  "settings.readOnly": "\u4FDD\u5B58\u540E\u7ACB\u5373\u751F\u6548\uFF1B\u53EA\u6709\u300C\u81EA\u52A8\u6574\u7406\u5386\u53F2\u300D\u548C\u300C\u5386\u53F2\u8865\u626B\u95F4\u9694\u300D\u9700\u8981\u91CD\u542F DSH\u3002\u6570\u636E\u5E93\u4F4D\u7F6E\u548C\u4E3B\u5165\u53E3\u6807\u8BC6\u53EA\u80FD\u901A\u8FC7\u73AF\u5883\u53D8\u91CF\u4FEE\u6539\uFF0C\u89C1\u5404\u9879\u8BF4\u660E\u3002",
   "settings.save": "\u4FDD\u5B58\u8BBE\u7F6E",
   "settings.saving": "\u6B63\u5728\u4FDD\u5B58\u2026",
   "settings.saved": "\u5DF2\u4FDD\u5B58\u3002",
-  "settings.restart": "\u5DF2\u4FDD\u5B58\u3002\u5386\u53F2\u6574\u7406\u7684\u8BBE\u7F6E\u5728\u91CD\u542F DSH \u540E\u751F\u6548\uFF0C\u5176\u4F59\u5DF2\u751F\u6548\u3002",
+  "settings.restart": "\u5DF2\u4FDD\u5B58\u3002\u90E8\u5206\u8BBE\u7F6E\u9700\u91CD\u542F DSH \u751F\u6548\u3002",
   "settings.unsaved": "\u6709\u672A\u4FDD\u5B58\u7684\u66F4\u6539",
   "settings.reset": "\u64A4\u9500\u4FEE\u6539",
   "settings.saveError": "\u4FDD\u5B58\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5\u8F93\u5165\u548C DSH \u8FDE\u63A5\u540E\u91CD\u8BD5\u3002",
-  "settings.conflict": "\u914D\u7F6E\u5DF2\u88AB\u5176\u4ED6\u9875\u9762\u4FEE\u6539\uFF0C\u8BF7\u91CD\u65B0\u8BFB\u53D6\u540E\u518D\u4FDD\u5B58\u3002",
-  "settings.contextsUnreadable": "\u65E0\u6CD5\u8BFB\u53D6\u8FD9\u4E2A\u8BDD\u9898\u76EE\u5F55\u6587\u4EF6\uFF0C\u8BF7\u68C0\u67E5\u8DEF\u5F84\u548C JSON \u683C\u5F0F\u3002",
+  "settings.conflict": "\u914D\u7F6E\u5DF2\u5728\u5176\u4ED6\u9875\u9762\u4FEE\u6539\uFF0C\u8BF7\u91CD\u65B0\u8BFB\u53D6\u540E\u518D\u4FDD\u5B58\u3002",
+  "settings.contextsUnreadable": "\u65E0\u6CD5\u8BFB\u53D6\u8BDD\u9898\u76EE\u5F55\u6587\u4EF6\uFF0C\u8BF7\u68C0\u67E5\u8DEF\u5F84\u548C JSON \u683C\u5F0F\u3002",
   "settings.reload": "\u91CD\u65B0\u8BFB\u53D6\u914D\u7F6E",
   "settings.llm": "LLM \u667A\u80FD\u5224\u65AD",
   "settings.rules": "\u89C4\u5219\u5224\u65AD",
   "settings.loading": "\u6B63\u5728\u8BFB\u53D6\u914D\u7F6E\u2026",
-  "settings.error": "\u6682\u65F6\u65E0\u6CD5\u8BFB\u53D6\u914D\u7F6E\uFF0C\u8BF7\u68C0\u67E5 DSH \u8FDE\u63A5\u3002",
-  "settings.back": "\u56DE\u5230\u4E3B\u804A\u5929",
+  "settings.error": "\u65E0\u6CD5\u8BFB\u53D6\u914D\u7F6E\uFF0C\u8BF7\u68C0\u67E5 DSH \u8FDE\u63A5\u3002",
   "settings.follow": "\u8DDF\u968F DSH",
   "settings.none": "\u672A\u8BBE\u7F6E",
   "settings.on": "\u5F00\u542F",
   "settings.off": "\u5173\u95ED",
   "settings.seconds": "{count} \u79D2",
-  "settings.model": "\u5F53\u524D\u4F7F\u7528\u6A21\u578B",
-  "settings.capacity": "\u4E0A\u4E0B\u6587\u5BB9\u91CF",
-  "settings.output": "\u9ED8\u8BA4\u8F93\u51FA\u989D\u5EA6",
-  "settings.modelUnavailable": "\u6A21\u578B\u4FE1\u606F\u6682\u65F6\u4E0D\u53EF\u7528\uFF0C\u8BF7\u68C0\u67E5 DSH \u6A21\u578B\u914D\u7F6E\u3002",
-  "settings.inherited": "\u8BED\u8A00\u3001\u4E3B\u9898\u3001API \u51ED\u636E\u548C\u538B\u7F29\u89E6\u53D1\u9608\u503C\u7531 DSH \u7BA1\u7406\u3002\u5165\u53E3\u5BB9\u91CF\u8DDF\u968F\u6A21\u578B\uFF1B\u9F20\u6807\u5149\u6655\u767D\u5929\u6A59\u8272\u3001\u591C\u95F4\u6DE1\u84DD\u8272\u3002",
-  "settings.compression": "\u538B\u7F29\u4FDD\u7559\u89C4\u5219\uFF1A\u5F53\u524D\u548C\u8FD1\u671F\u9AD8\u9891\u8BDD\u9898\u4FDD\u7559\u66F4\u591A\u7EC6\u8282\uFF1B30 \u5929\u672A\u4F7F\u7528\u7684\u8BDD\u9898\u4FDD\u7559\u77ED\u6458\u8981\u3002\u539F\u59CB\u804A\u5929\u7EE7\u7EED\u4FDD\u5B58\u5728 DSH\u3002\u8FD9\u4E9B\u89C4\u5219\u76EE\u524D\u4E0D\u53EF\u5355\u72EC\u8C03\u6574\u3002",
+  "settings.secondsUnit": "\u79D2",
+  "settings.modelUnavailable": "\u6A21\u578B\u4FE1\u606F\u4E0D\u53EF\u7528\uFF0C\u8BF7\u68C0\u67E5 DSH \u6A21\u578B\u914D\u7F6E\u3002",
   "settings.models": "\u6A21\u578B\u4E0E\u8DEF\u7531",
   "settings.history": "\u5386\u53F2\u6574\u7406",
-  "settings.limits": "\u5185\u5BB9\u9650\u5236",
   "settings.linkage": "\u8BDD\u9898\u8054\u52A8",
   "settings.linkScope": "\u8054\u52A8\u8303\u56F4",
-  "settings.help.linkScope": "\u76F8\u5173\u8BDD\u9898\u4E4B\u95F4\u5171\u4EAB\u8FDB\u5C55\u7684\u8303\u56F4\uFF1A\u5173\u95ED\u3001\u4EC5\u540C\u4E00\u8BDD\u9898\u5DE5\u4F5C\u533A\uFF0C\u6216\u6839\u636E\u4F7F\u7528\u60C5\u51B5\u81EA\u52A8\u5B66\u4E60\u3002\u624B\u52A8\u5173\u8054\u548C\u201C\u4E0D\u5171\u4EAB\u201D\u59CB\u7EC8\u4F18\u5148\u3002",
+  "settings.help.linkScope": "\u76F8\u5173\u8BDD\u9898\u5171\u4EAB\u8FDB\u5C55\u7684\u8303\u56F4\u3002\u624B\u52A8\u5173\u8054\u548C\u300C\u4E0D\u5171\u4EAB\u300D\u8BBE\u7F6E\u4F18\u5148\u3002",
   "settings.routeNotice": "\u8BDD\u9898\u63D0\u793A",
-  "settings.help.routeNotice": "\u4E3B\u804A\u5929\u91CC\u663E\u793A\u8BDD\u9898\u5207\u6362\u7684\u65B9\u5F0F\uFF1A\u9690\u85CF\u3001\u4EC5\u5207\u6362\u8BDD\u9898\u65F6\u663E\u793A\u4E00\u884C\uFF0C\u6216\u6BCF\u6761\u6D88\u606F\u90FD\u663E\u793A\u3002",
+  "settings.help.routeNotice": "\u4E3B\u804A\u5929\u4E2D\u663E\u793A\u6D88\u606F\u6240\u5C5E\u8BDD\u9898\u7684\u65B9\u5F0F\u3002",
   "settings.scope.off": "\u5173\u95ED",
   "settings.scope.workspace": "\u4EC5\u540C\u4E00\u5DE5\u4F5C\u533A",
   "settings.scope.auto": "\u81EA\u52A8\u5B66\u4E60",
   "settings.notice.hidden": "\u9690\u85CF",
   "settings.notice.switch": "\u4EC5\u5207\u6362\u65F6\u663E\u793A",
   "settings.notice.all": "\u5168\u90E8\u663E\u793A",
-  "settings.storage": "\u6570\u636E\u4E0E\u5165\u53E3",
   "settings.workerProvider": "\u56FA\u5B9A\u6A21\u578B\u670D\u52A1\u5546",
   "settings.workerModel": "\u56FA\u5B9A\u6A21\u578B\u540D\u79F0",
   "settings.routerMode": "\u8DEF\u7531\u5224\u65AD\u65B9\u5F0F",
@@ -272,16 +542,16 @@ var zh = {
   "settings.databasePath": "\u8BDD\u9898\u76EE\u5F55\u6570\u636E\u5E93\u4F4D\u7F6E",
   "settings.contextsPath": "\u4EBA\u5DE5\u8BDD\u9898\u76EE\u5F55\u6587\u4EF6",
   "settings.gatewayKey": "\u4E3B\u5165\u53E3\u6807\u8BC6",
-  "settings.help.workerProvider": "\u9009\u62E9\u670D\u52A1\u5546\u540E\u53EF\u56FA\u5B9A\u540E\u53F0\u6A21\u578B\uFF1B\u7559\u7A7A\u65F6\u8DDF\u968F\u4E3B\u804A\u5929\u548C DSH \u7684\u9009\u62E9\u3002\u5217\u8868\u5305\u542B DSH \u4E2D\u914D\u7F6E\u7684\u5168\u90E8\u6A21\u578B\u3002",
-  "settings.help.workerModel": "\u56FA\u5B9A\u8DEF\u7531\u3001\u5DE5\u4F5C\u4F1A\u8BDD\u53CA\u5165\u53E3\u5BB9\u91CF\u6240\u4F7F\u7528\u7684\u6A21\u578B\u3002",
-  "settings.help.routerMode": "llm \u4F7F\u7528\u6A21\u578B\u5224\u65AD\u8BDD\u9898\uFF1Brules \u4F7F\u7528\u89C4\u5219\u5224\u65AD\u3002",
-  "settings.help.historyCatalog": "\u4ECE\u5DF2\u6709\u4F1A\u8BDD\u63D0\u53D6\u8BDD\u9898\u76EE\u5F55\uFF0C\u5E76\u81EA\u52A8\u5206\u7EC4\u3002\u5173\u95ED\u540E\u5DF2\u6709\u76EE\u5F55\u4ECD\u4FDD\u7559\u3002",
-  "settings.help.catalogIntervalMs": "\u5B9A\u671F\u68C0\u67E5\u5386\u53F2\u53D8\u5316\u7684\u95F4\u9694\uFF0C\u6700\u5C11 10 \u79D2\u3002",
-  "settings.help.maxDescriptorChars": "\u6302\u8F7D\u5230\u5DE5\u4F5C\u4F1A\u8BDD\u7684\u8BDD\u9898\u8BF4\u660E\u5B57\u7B26\u4E0A\u9650\uFF0C\u6700\u5C11 128\u3002",
-  "settings.help.maxResponseChars": "\u540E\u53F0\u6BCF\u4E00\u6B65\u56DE\u590D\uFF08\u542B\u601D\u8003\uFF09\u7684\u5B57\u7B26\u4E0A\u9650\uFF0C\u6700\u5C11 128\uFF1B\u591A\u6B65\u4EFB\u52A1\u4E0D\u6309\u603B\u957F\u5EA6\u8BA1\u7B97\u3002",
-  "settings.help.databasePath": "\u4FDD\u5B58\u76EE\u5F55\u3001\u5206\u7EC4\u3001\u5173\u8054\u4E0E\u8DEF\u7531\u8BB0\u5F55\uFF1B\u539F\u59CB\u804A\u5929\u7531 DSH \u4FDD\u5B58\u3002\u6539\u52A8\u4F1A\u8BA9 TheOne \u6362\u7528\u53E6\u4E00\u4EFD\u6570\u636E\uFF0C\u56E0\u6B64\u4E0D\u5728\u8FD9\u91CC\u4FEE\u6539\uFF1A\u5982\u9700\u66F4\u6362\uFF0C\u7528\u73AF\u5883\u53D8\u91CF THEONE_DATABASE_PATH \u6307\u5B9A\u5E76\u91CD\u542F DSH\u3002",
-  "settings.help.contextsPath": "\u53EF\u9009 JSON \u6587\u4EF6\uFF0C\u7528\u4E8E\u5BFC\u5165\u4EBA\u5DE5\u51C6\u5907\u7684\u8BDD\u9898\u76EE\u5F55\u3002\u4FDD\u5B58\u65F6\u8BFB\u53D6\u5E76\u5BFC\u5165\uFF1B\u5DF2\u5BFC\u5165\u7684\u8BDD\u9898\u4E0D\u4F1A\u56E0\u6E05\u7A7A\u6B64\u9879\u800C\u5220\u9664\u3002",
-  "settings.help.gatewayKey": "\u533A\u5206\u4E0D\u540C\u7684\u4E3B\u804A\u5929\u5165\u53E3\u72B6\u6001\uFF08\u5F53\u524D\u8BDD\u9898\u3001\u8DEF\u7531\u8BB0\u5F55\u3001\u8BBE\u7F6E\uFF09\u3002\u6539\u52A8\u76F8\u5F53\u4E8E\u6362\u4E00\u4E2A\u65B0\u7684\u5165\u53E3\uFF0C\u56E0\u6B64\u53EA\u80FD\u7528\u73AF\u5883\u53D8\u91CF THEONE_GATEWAY_KEY \u4FEE\u6539\uFF0C\u901A\u5E38\u4FDD\u7559 default\u3002",
+  "settings.help.workerProvider": "\u56FA\u5B9A\u540E\u53F0\u4F7F\u7528\u7684\u6A21\u578B\u670D\u52A1\u5546\u3002\u7559\u7A7A\u5219\u8DDF\u968F DSH\u3002",
+  "settings.help.workerModel": "\u7528\u4E8E\u8BDD\u9898\u5206\u914D\u548C\u540E\u53F0\u4EFB\u52A1\u7684\u6A21\u578B\u3002",
+  "settings.help.routerMode": "\u9009\u62E9\u7531\u6A21\u578B\u6216\u89C4\u5219\u5224\u65AD\u6D88\u606F\u6240\u5C5E\u8BDD\u9898\u3002",
+  "settings.help.historyCatalog": "\u5C06\u4EE5\u5F80\u4F1A\u8BDD\u6574\u7406\u4E3A\u8BDD\u9898\u5E76\u5206\u7EC4\u3002\u5173\u95ED\u540E\u4FDD\u7559\u5DF2\u6574\u7406\u7684\u5185\u5BB9\u3002",
+  "settings.help.catalogIntervalMs": "\u68C0\u67E5\u65B0\u4F1A\u8BDD\u7684\u95F4\u9694\uFF0C\u6700\u5C11 10 \u79D2\u3002",
+  "settings.help.maxDescriptorChars": "\u4F20\u7ED9\u8BDD\u9898\u7684\u8BF4\u660E\u5B57\u6570\u4E0A\u9650\uFF0C\u6700\u5C11 128\u3002",
+  "settings.help.maxResponseChars": "\u540E\u53F0\u5355\u6B65\u56DE\u590D\uFF08\u542B\u601D\u8003\uFF09\u7684\u5B57\u6570\u4E0A\u9650\uFF0C\u6700\u5C11 128\u3002",
+  "settings.help.databasePath": "\u5B58\u50A8\u8BDD\u9898\u3001\u5206\u7EC4\u548C\u8DEF\u7531\u8BB0\u5F55\uFF0C\u539F\u59CB\u804A\u5929\u7531 DSH \u4FDD\u5B58\u3002\u5982\u9700\u66F4\u6362\u4F4D\u7F6E\uFF0C\u8BF7\u8BBE\u7F6E\u73AF\u5883\u53D8\u91CF THEONE_DATABASE_PATH \u5E76\u91CD\u542F DSH\u3002",
+  "settings.help.contextsPath": "\u53EF\u9009\u3002\u5BFC\u5165\u81EA\u5B9A\u4E49\u8BDD\u9898\u76EE\u5F55\uFF08JSON\uFF09\u3002\u6E05\u7A7A\u6B64\u9879\u4E0D\u4F1A\u5220\u9664\u5DF2\u5BFC\u5165\u7684\u8BDD\u9898\u3002",
+  "settings.help.gatewayKey": "\u7528\u4E8E\u533A\u5206\u4E3B\u804A\u5929\u5165\u53E3\uFF0C\u901A\u5E38\u4FDD\u6301 default\u3002\u4EC5\u53EF\u901A\u8FC7\u73AF\u5883\u53D8\u91CF THEONE_GATEWAY_KEY \u4FEE\u6539\u3002",
   "catalog.title": "\u8BDD\u9898\u5DE5\u4F5C\u533A",
   "catalog.subtitle": "\u76F8\u5173\u7684\u4E8B\u653E\u5728\u4E00\u8D77\uFF0C\u56DE\u4E3B\u804A\u5929\u63A5\u7740\u804A\u3002",
   "catalog.figTopics": "\u4E2A\u8BDD\u9898",
@@ -315,16 +585,26 @@ var zh = {
   "catalog.continueError": "\u6682\u65F6\u65E0\u6CD5\u7EE7\u7EED\u8FD9\u4E2A\u8BDD\u9898\uFF0C\u8BF7\u7B49\u5F53\u524D\u804A\u5929\u7ED3\u675F\u540E\u91CD\u8BD5\u3002",
   "catalog.sourceError": "\u539F\u4F1A\u8BDD\u6682\u65F6\u6253\u4E0D\u5F00\uFF0C\u8BF7\u7A0D\u540E\u518D\u8BD5\u3002",
   "catalog.refreshError": "\u6682\u65F6\u65E0\u6CD5\u6574\u7406\u5386\u53F2\uFF0C\u8BF7\u68C0\u67E5 DSH \u6A21\u578B\u914D\u7F6E\u3002",
-  "catalog.consentTitle": "\u8981\u4E0D\u8981\u6574\u7406\u4EE5\u524D\u7684\u804A\u5929\uFF1F",
+  "catalog.consentTitle": "\u63A5\u4E0A\u4EE5\u524D\u7684\u804A\u5929",
+  "catalog.more": "\u66F4\u591A\u64CD\u4F5C",
+  "catalog.filterLabel": "\u6309\u72B6\u6001\u7B5B\u9009",
+  "catalog.filterAll": "\u5168\u90E8",
+  "catalog.filterWaiting": "\u7B49\u4F60\u5904\u7406",
+  "catalog.filterDone": "\u5DF2\u5B8C\u6210",
+  "catalog.clearSearch": "\u6E05\u9664\u641C\u7D22",
+  "catalog.search": "\u641C\u7D22\u8BDD\u9898",
+  "catalog.noMatch": "\u6CA1\u6709\u627E\u5230\u76F8\u5173\u8BDD\u9898\u3002",
+  "catalog.emptyTitle": "\u804A\u8FC7\u7684\u4E8B\uFF0C\u4F1A\u6162\u6162\u51FA\u73B0\u5728\u8FD9\u91CC",
+  "catalog.emptyIndexingTitle": "\u6B63\u5728\u6574\u7406\u4EE5\u524D\u7684\u804A\u5929",
+  "catalog.backToMain": "\u56DE\u4E3B\u804A\u5929",
   "catalog.chooseChatsShort": "\u9009\u62E9\u4F1A\u8BDD",
-  "catalog.consentBody": "\u6574\u7406\u597D\u4E4B\u540E\uFF0C\u4F60\u5728\u4E3B\u804A\u5929\u63D0\u5230\u4EE5\u524D\u7684\u4E8B\uFF0CTheOne \u5C31\u80FD\u63A5\u4E0A\u3002",
+  "catalog.consentBody": "\u6574\u7406\u5DF2\u6709\u7684 {count} \u4E2A\u4F1A\u8BDD\uFF0C\u4E4B\u540E\u4F60\u63D0\u5230\u4EE5\u524D\u7684\u4E8B\uFF0CTheOne \u5C31\u80FD\u63A5\u4E0A\u3002",
   "catalog.consentKeep": "\u539F\u4F1A\u8BDD\u4E0D\u5220\u4E0D\u6539",
-  "catalog.consentQuota": "\u7528\u4F60\u9009\u7684\u6A21\u578B\u8BFB\u4E00\u904D\uFF0C\u82B1\u4E00\u70B9\u989D\u5EA6",
-  "catalog.consentChoose": "\u4E0D\u60F3\u7ED9\u5B83\u770B\u7684\u53EF\u4EE5\u5148\u6311\u51FA\u6765",
+  "catalog.consentQuota": "\u4F7F\u7528\u5F53\u524D\u6A21\u578B\uFF0C\u4F1A\u6D88\u8017\u5C11\u91CF\u989D\u5EA6",
   "catalog.startCount": "\u6574\u7406 {count} \u4E2A\u4F1A\u8BDD",
-  "catalog.chooseFirst": "\u5148\u6311\u4E00\u6311",
-  "catalog.doneChoosing": "\u6311\u597D\u4E86",
-  "catalog.notNow": "\u4EE5\u540E\u518D\u8BF4",
+  "catalog.chooseFirst": "\u9009\u62E9\u4F1A\u8BDD",
+  "catalog.doneChoosing": "\u9009\u597D\u4E86",
+  "catalog.notNow": "\u6682\u65F6\u8DF3\u8FC7",
   "catalog.declined": "\u4EE5\u524D\u7684\u804A\u5929\u8FD8\u6CA1\u6574\u7406\u3002",
   "catalog.reconsider": "\u73B0\u5728\u6574\u7406",
   "catalog.chooseChats": "\u9009\u62E9\u8981\u6574\u7406\u7684\u4F1A\u8BDD",
@@ -334,8 +614,8 @@ var zh = {
   "catalog.otherChats": "\u5176\u4ED6\u4F1A\u8BDD",
   "catalog.untitledChat": "\u672A\u547D\u540D\u4F1A\u8BDD",
   "topic.hiddenExcluded": "\u8FD9\u4E2A\u8BDD\u9898\u6765\u81EA\u4F60\u6392\u9664\u7684\u4F1A\u8BDD\uFF0C\u4E0D\u4F1A\u518D\u88AB\u7528\u5230\u3002",
-  "catalog.emptyIndexing": "\u6B63\u5728\u4ECE\u4EE5\u524D\u7684\u804A\u5929\u4E2D\u6574\u7406\u8BDD\u9898\u3002\u4F60\u4E5F\u53EF\u4EE5\u5148\u56DE\u5230\u4E3B\u804A\u5929\u3002",
-  "catalog.empty": "\u76EE\u524D\u8FD8\u6CA1\u6709\u6574\u7406\u51FA\u8BDD\u9898\u3002\u5F00\u59CB\u804A\u5929\u540E\uFF0C\u5B83\u4EEC\u4F1A\u81EA\u52A8\u51FA\u73B0\u5728\u8FD9\u91CC\u3002",
+  "catalog.emptyIndexing": "\u6574\u7406\u597D\u7684\u8BDD\u9898\u4F1A\u51FA\u73B0\u5728\u8FD9\u91CC\uFF0C\u4F60\u53EF\u4EE5\u5148\u56DE\u4E3B\u804A\u5929\u3002",
+  "catalog.empty": "\u4ECE\u4E3B\u804A\u5929\u5F00\u59CB\uFF0CTheOne \u4F1A\u66FF\u4F60\u6574\u7406\u8BDD\u9898\u3002",
   "catalog.unassigned": "\u5F85\u6574\u7406",
   "catalog.unassignedSummary": "\u8FD9\u4E9B\u8BDD\u9898\u8FD8\u5728\u7B49\u5F85\u81EA\u52A8\u5F52\u7C7B\u3002",
   "topic.opening": "\u6B63\u5728\u6253\u5F00\u2026",
@@ -345,7 +625,7 @@ var zh = {
   "topic.state": "\u8FDB\u5C55\uFF1A",
   "topic.constraints": "\u7EA6\u675F\uFF1A",
   "topic.project": "\u9879\u76EE\uFF1A",
-  "topic.status.waiting": "\u5728\u7B49\u4F60",
+  "topic.status.waiting": "\u7B49\u4F60\u5904\u7406",
   "topic.status.dormant": "\u6401\u7F6E",
   "topic.status.done": "\u5DF2\u5B8C\u6210",
   "topic.markDone": "\u6807\u4E3A\u5B8C\u6210",
@@ -381,7 +661,7 @@ var zh = {
   "manage.deleteHint": "\u53EA\u5220\u9664 TheOne \u7684\u76EE\u5F55\u8BB0\u5F55\uFF0C\u539F\u59CB\u4F1A\u8BDD\u4ECD\u4FDD\u7559\u5728 DSH\uFF0C\u4E4B\u540E\u4E5F\u4E0D\u4F1A\u88AB\u91CD\u65B0\u6574\u7406\u51FA\u6765\u3002",
   "manage.error": "\u64CD\u4F5C\u672A\u80FD\u5B8C\u6210\uFF0C\u8BF7\u68C0\u67E5\u8F93\u5165\u540E\u91CD\u8BD5\u3002",
   "manage.busy": "\u6709\u56DE\u590D\u6B63\u5728\u8FDB\u884C\uFF0C\u8BF7\u7B49\u5B83\u7ED3\u675F\u540E\u518D\u8BD5\u3002",
-  "manage.create": "\uFF0B \u65B0\u8BDD\u9898",
+  "manage.create": "\u65B0\u8BDD\u9898",
   "manage.createButton": "\u521B\u5EFA",
   "manage.cancel": "\u53D6\u6D88",
   "routes.title": "\u6700\u8FD1\u7684\u8BDD\u9898\u5206\u914D",
@@ -398,6 +678,62 @@ var zh = {
   "routes.removed": "\uFF08\u5DF2\u5220\u9664\u7684\u8BDD\u9898\uFF09",
   "routes.report": "\u62A5\u544A\u95EE\u9898",
   "feedback.open": "\u53CD\u9988",
+  "catalog.github": "\u5728 GitHub \u67E5\u770B\u9879\u76EE",
+  "start.title": "\u4ECE\u8FD9\u91CC\u5F00\u59CB",
+  "start.close": "\u77E5\u9053\u4E86\uFF0C\u4E0D\u518D\u663E\u793A",
+  "start.sortTitle": "\u6574\u7406\u4EE5\u524D\u7684\u804A\u5929",
+  "start.sortBody": "\u6574\u7406\u4E4B\u540E\uFF0C\u4F60\u63D0\u5230\u4EE5\u524D\u7684\u4E8B\uFF0CTheOne \u5C31\u80FD\u63A5\u4E0A\u3002\u539F\u4F1A\u8BDD\u4E0D\u5220\u4E0D\u6539\u3002",
+  "start.topicsTitle": "\u770B\u770B\u8BDD\u9898\u5DE5\u4F5C\u533A",
+  "start.topicsBody": "\u6BCF\u4EF6\u4E8B\u90FD\u5728\u8FD9\u91CC\uFF0C\u6709\u81EA\u5DF1\u7684\u8FDB\u5EA6\uFF0C\u968F\u65F6\u53EF\u4EE5\u63A5\u7740\u804A\u3002",
+  "start.groupTip": "\u52A0\u5165\u7528\u6237\u7FA4\uFF1A\u70B9\u4E00\u4E0B\u590D\u5236 QQ \u7FA4\u53F7",
+  "start.groupCopied": "\u5DF2\u590D\u5236\u7FA4\u53F7\uFF0C\u5728 QQ \u91CC\u641C\u7D22\u5373\u53EF",
+  "setup.label": "TheOne \u8BBE\u7F6E\u5411\u5BFC",
+  "setup.welcome": "\u6B22\u8FCE\u4F7F\u7528",
+  "setup.welcomeBody": "\u4E00\u4E2A\u4E3B\u804A\u5929\uFF0C\u63A5\u7740\u804A\u6BCF\u4EF6\u4E8B\u3002\n\u4F60\u8BF4\u7684\u6BCF\u4EF6\u4E8B\uFF0CTheOne \u90FD\u4F1A\u63A5\u5230\u5BF9\u5E94\u7684\u8BDD\u9898\u4E0A\u3002",
+  "setup.start": "\u5F00\u59CB",
+  "setup.later": "\u7A0D\u540E\u8BBE\u7F6E",
+  "setup.continue": "\u7EE7\u7EED",
+  "setup.back": "\u8FD4\u56DE",
+  "setup.recommended": "\u63A8\u8350\u3002",
+  "setup.sortTitle": "\u6574\u7406\u4EE5\u524D\u7684\u804A\u5929",
+  "setup.sortBody": "TheOne \u53EF\u4EE5\u628A\u4F60\u5728 DSH \u91CC\u7684\u5386\u53F2\u4F1A\u8BDD\u6574\u7406\u6210\u8BDD\u9898\u3002",
+  "setup.sortYes": "\u6574\u7406",
+  "setup.sortYesHint": "\u4E4B\u540E\u63D0\u5230\u4EE5\u524D\u7684\u4E8B\uFF0CTheOne \u4E5F\u80FD\u81EA\u7136\u63A5\u4E0A\u3002\u539F\u4F1A\u8BDD\u4FDD\u6301\u539F\u6837\uFF0C\u4E0D\u4F1A\u88AB\u5220\u9664\u6216\u4FEE\u6539\u3002",
+  "setup.sortNo": "\u6682\u65F6\u4E0D\u7528",
+  "setup.sortNoHint": "TheOne \u53EA\u4ECE\u73B0\u5728\u5F00\u59CB\u8BB0\u5F55\u3002\u4E4B\u540E\u53EF\u4EE5\u5728\u8BDD\u9898\u5DE5\u4F5C\u533A\u968F\u65F6\u5F00\u542F\u6574\u7406\u3002",
+  "setup.sideTitle": "\u8BDD\u9898\u4F1A\u8BDD\u653E\u5728\u54EA\u91CC",
+  "setup.sideBody": "\u6BCF\u4E2A\u8BDD\u9898\u90FD\u6709\u4E00\u4E2A\u4E13\u5C5E\u4F1A\u8BDD\uFF0C\u5728\u540E\u53F0\u5EF6\u7EED\u5B83\u7684\u4E0A\u4E0B\u6587\u3002",
+  "setup.sideShow": "\u4FA7\u8FB9\u680F",
+  "setup.sideShowHint": "\u8BDD\u9898\u4F1A\u8BDD\u548C\u4F60\u7684\u5176\u4ED6\u4F1A\u8BDD\u653E\u5728\u4E00\u8D77\uFF0C\u5728\u4FA7\u8FB9\u680F\u91CC\u968F\u65F6\u6253\u5F00\u3002",
+  "setup.sideHide": "\u8BDD\u9898\u5217\u8868",
+  "setup.sideHideHint": "\u4FA7\u8FB9\u680F\u53EA\u4FDD\u7559\u4F60\u81EA\u5DF1\u521B\u5EFA\u7684\u4F1A\u8BDD\uFF0C\u8BDD\u9898\u4F1A\u8BDD\u7EDF\u4E00\u6536\u5728\u8BDD\u9898\u5217\u8868\u91CC\u3002",
+  "setup.tagTitle": "\u8BDD\u9898\u63D0\u793A",
+  "setup.tagBody": "TheOne \u53EF\u4EE5\u5728\u4E3B\u804A\u5929\u91CC\u6807\u51FA\u6BCF\u6761\u6D88\u606F\u63A5\u5230\u4E86\u54EA\u4E2A\u8BDD\u9898\u3002",
+  "setup.tagSwitch": "\u5207\u6362\u65F6",
+  "setup.tagSwitchHint": "\u53EA\u5728\u8BDD\u9898\u5207\u6362\u65F6\u63D0\u793A\u4E00\u6B21\uFF0C\u4E86\u89E3\u8FDB\u5C55\uFF0C\u53C8\u4E0D\u6253\u6270\u5BF9\u8BDD\u3002",
+  "setup.tagAll": "\u6BCF\u6761",
+  "setup.tagAllHint": "\u6BCF\u6761\u6D88\u606F\u65C1\u90FD\u6807\u51FA\u6240\u5C5E\u8BDD\u9898\uFF0C\u6E05\u695A\u770B\u5230\u6BCF\u53E5\u8BDD\u7684\u53BB\u5411\u3002",
+  "setup.tagNone": "\u4E0D\u63D0\u793A",
+  "setup.tagNoneHint": "\u5BF9\u8BDD\u754C\u9762\u4FDD\u6301\u7B80\u6D01\uFF0CTheOne \u5728\u540E\u53F0\u5B89\u9759\u5730\u6574\u7406\u3002",
+  "setup.newBadge": "\u65B0\u7248\u672C",
+  "setup.newTitle": "TheOne \u6709\u54EA\u4E9B\u65B0\u53D8\u5316",
+  "setup.new.mark": "\u6D3B\u8D77\u6765\u7684\u6807\u8BC6",
+  "setup.new.markHint": "TheOne \u7684\u6807\u8BC6\u53D8\u6210\u4E86\u4E00\u4E2A\u4F1A\u547C\u5438\u7684\u7EC6\u80DE\uFF0C\u6253\u5F00\u4E3B\u804A\u5929\u65F6\u4F1A\u66F4\u6D3B\u8DC3\u4E00\u4E9B\u3002",
+  "setup.new.sessions": "\u8BDD\u9898\u4F1A\u8BDD\u53EF\u4EE5\u653E\u56DE\u4FA7\u8FB9\u680F",
+  "setup.new.sessionsHint": "\u8BDD\u9898\u4F1A\u8BDD\u53EF\u4EE5\u548C\u4F60\u7684\u5176\u4ED6\u4F1A\u8BDD\u653E\u5728\u4E00\u8D77\uFF0C\u4E5F\u53EF\u4EE5\u7EE7\u7EED\u6536\u5728\u8BDD\u9898\u5217\u8868\u91CC\u3002",
+  "setup.new.pumpkin": "\u4E07\u5723\u8282\u5C0F\u5F69\u86CB",
+  "setup.new.pumpkinHint": "10 \u6708 30 \u65E5\u548C 31 \u65E5\uFF0C\u7EC6\u80DE\u4F1A\u53D8\u6210\u4E00\u9897\u5357\u74DC\u3002",
+  "setup.doneTitle": "\u4E00\u5207\u5C31\u7EEA",
+  "setup.doneBody": "\u73B0\u5728\uFF0C\u76F4\u63A5\u8BF4\u51FA\u4F60\u60F3\u505A\u7684\u4E8B\u5427\u3002\n\u4EE5\u4E0A\u8BBE\u7F6E\u968F\u65F6\u53EF\u4EE5\u5728 TheOne \u8BBE\u7F6E\u4E2D\u66F4\u6539\u3002",
+  "setup.apps": "\u8FD8\u53EF\u4EE5\u5728 TheOne \u8BBE\u7F6E\u91CC\u8FDE\u63A5\u5FAE\u4FE1\u3001Telegram \u6216 iMessage\u3002",
+  "setup.finish": "\u5F00\u59CB\u4F7F\u7528 TheOne",
+  "setup.error": "\u90E8\u5206\u8BBE\u7F6E\u6CA1\u6709\u4FDD\u5B58\u6210\u529F\uFF0C\u53EF\u4EE5\u7A0D\u540E\u5728 TheOne \u8BBE\u7F6E\u4E2D\u8C03\u6574\u3002",
+  "settings.weixinBlurb": "\u626B\u7801\u7ED1\u5B9A\uFF0C\u5728\u5FAE\u4FE1\u4E2D\u4F7F\u7528",
+  "settings.telegramBlurb": "\u8FDE\u63A5\u4E2A\u4EBA\u673A\u5668\u4EBA",
+  "settings.imessageBlurb": "\u5728 Mac \u4E0A\u901A\u8FC7\u4FE1\u606F\u4F7F\u7528",
+  "settings.appOnline": "\u5DF2\u8FDE\u63A5",
+  "catalog.email": "\u7ED9\u4F5C\u8005\u53D1\u90AE\u4EF6\uFF1A{email}",
+  "catalog.emailCopied": "\u5DF2\u590D\u5236\u90AE\u7BB1 {email}",
   "feedback.title": "\u53CD\u9988\u95EE\u9898",
   "feedback.titleMessage": "\u62A5\u544A\u8FD9\u6761\u56DE\u590D\u7684\u95EE\u9898",
   "feedback.intro": "\u8BF4\u8BF4\u53D1\u751F\u4E86\u4EC0\u4E48\u3002\u4E0B\u9762\u80FD\u770B\u5230\u8981\u53D1\u51FA\u7684\u5168\u90E8\u5185\u5BB9\uFF0C\u70B9\u300C\u53D1\u9001\u300D\u4E4B\u524D\u4EC0\u4E48\u90FD\u4E0D\u4F1A\u53D1\u51FA\u3002",
@@ -489,12 +825,20 @@ var en = {
   "gateway.error": "Main chat could not open. Check your DSH connection and TheOne plugin status.",
   "retry": "Retry",
   "settings.other": "Other",
+  "settings.sessions": "Session visibility",
+  "settings.hideTopicSessions": "Hide topic sessions",
+  "settings.help.hideTopicSessions": "Off by default: topic sessions started from main chat appear in the sidebar. Enable to hide them; they remain accessible in the topic list. Applies when saved.",
   "settings.notices": "Show notices",
-  "settings.factLinks": "Share confirmed facts (experimental)",
-  "settings.help.factLinks": "Topics share only facts the user confirmed (figures, decisions, file locations), with version and source; when one changes or is withdrawn, topics that used it are told. Off by default; takes effect after DSH restarts.",
-  "settings.factExtraction": "Record facts automatically (experimental)",
-  "settings.help.factExtraction": "With shared facts on, one small model call after each turn records facts the topic session left out; again only facts the user confirmed are shared. Off by default; takes effect after DSH restarts.",
-  "settings.help.notices": "Show notices from TheOne's author (new versions, important reminders). TheOne only reads one notice file from yulid.org and sends none of your data.",
+  "settings.advanced": "Advanced",
+  "settings.experimental": "Experimental",
+  "settings.experimentalIntro": "Experimental, off by default. Changes take effect after a restart.",
+  "settings.factLinks": "Share confirmed facts",
+  "settings.help.factLinks": "Topics share only facts you confirmed (figures, decisions, file locations), with version and source. When a fact changes, topics that use it are notified.",
+  "settings.factExtraction": "Record facts automatically",
+  "settings.help.factExtraction": "Requires the option above. After each turn, one extra small-model call records missed facts; still only confirmed facts are shared.",
+  "settings.persistentWork": "Ongoing tasks",
+  "settings.help.persistentWork": "Track a GitHub PR's checks and notify in main chat when they change. Read-only; never changes code.",
+  "settings.help.notices": "Show new versions and important notices. No data is uploaded.",
   "notice.label": "Notice",
   "notice.more": "Read more",
   "notice.ok": "Got it",
@@ -536,115 +880,106 @@ var en = {
   "settings.title": "TheOne settings",
   "settings.update": "Updates",
   "settings.updateCurrent": "Version {current}",
-  "settings.updateLatest": "You have the latest version. TheOne also checks when DSH starts and every 6 hours after.",
+  "settings.updateLatest": "Up to date.",
   "settings.updateUnknown": "Not checked yet.",
   "settings.updateChecking": "Checking\u2026",
-  "settings.updateCheckFailed": "Could not check: the update source is unreachable. Check the network and try again.",
+  "settings.updateCheckFailed": "Check failed. Check your network and try again.",
   "settings.updateCheck": "Check for updates",
   "settings.updateInstall": "Update",
   "settings.weixin": "WeChat",
-  "settings.weixinIntro": "Scan to bind your own WeChat. Messages you send it there work like talking in main chat: they go to their topics and run in the background, and the reply comes back to WeChat. Only the person who scanned is listened to; nobody else reaches main chat.",
-  "settings.weixinNote": "Uses Tencent's iLink interface (the same one as the OpenClaw WeChat plugin). Messages arrive only while DSH is running, not while the computer sleeps or DSH is closed.",
-  "settings.weixinBind": "Scan to bind",
-  "settings.weixinScan": "Scan this code with WeChat on your phone.",
+  "settings.weixinIntro": "Scan to link your WeChat. Messages sent there count as main chat messages, and replies are sent back to WeChat. Only the account that scanned is answered.",
+  "settings.weixinNote": "Requires DSH to be running.",
+  "settings.weixinBind": "Scan to link",
+  "settings.weixinScan": "Scan the code with WeChat on your phone.",
   "settings.weixinScanned": "Scanned. Confirm on your phone.",
-  "settings.weixinVerify": "Your phone shows a verification code. Enter it here:",
+  "settings.weixinVerify": "Enter the code shown on your phone:",
   "settings.weixinVerifySubmit": "Submit",
   "settings.weixinCancel": "Cancel",
-  "settings.weixinFailed": "Binding did not work ({reason}). You can try again.",
+  "settings.weixinFailed": "Linking failed ({reason}). Try again.",
   "settings.remoteOnline": "Connected \xB7 account {account}",
   "settings.remoteConnecting": "Connecting \xB7 account {account}",
-  "settings.remotePaused": "The server refused the login for now; retrying in {minutes} min \xB7 account {account}",
+  "settings.remotePaused": "Sign-in refused for now; retrying in {minutes} min \xB7 account {account}",
   "settings.weixinExpired": "The login has expired. Scan again.",
   "settings.remoteOff": "Receiving paused \xB7 account {account}",
   "settings.remotePause": "Pause receiving",
   "settings.remoteResume": "Resume receiving",
   "settings.remoteLogout": "Log out",
   "settings.weixinRescan": "Scan again",
-  "settings.remoteError": "Could not read the connection status.",
+  "settings.remoteError": "Can't read the connection status.",
   "settings.remoteLastError": "Last error: {error}",
   "settings.remoteConnect": "Connect",
   "settings.telegram": "Telegram",
-  "settings.telegramIntro": "Bind a Telegram bot of your own. Messages you send it work like talking in main chat, and the replies come back to Telegram. Only the person who completes pairing is listened to.",
-  "settings.telegramToken": "In Telegram, message @BotFather, send /newbot to make a bot, and paste the token it gives you here:",
-  "settings.telegramTokenInvalid": "That token does not work. Copy it again from @BotFather.",
-  "settings.telegramUnreachable": "Could not reach Telegram. Check the network (a proxy may be needed) and try again.",
-  "settings.telegramPair": "Scan this code to open {bot} and tap Start, or send {bot} the message /start {code} in Telegram. The first person to send the code becomes its owner.",
+  "settings.telegramIntro": "Link your own Telegram bot. Messages sent to it count as main chat messages, and replies are sent back to Telegram. Only the paired user is answered.",
+  "settings.telegramToken": "In Telegram, send /newbot to @BotFather to create a bot, then paste the token it returns:",
+  "settings.telegramTokenInvalid": "Invalid token. Copy it again from @BotFather.",
+  "settings.telegramUnreachable": "Can't reach Telegram. Check your network or proxy and try again.",
+  "settings.telegramPair": "Scan the code to open {bot} and tap Start, or send /start {code} to {bot} in Telegram. The first user to send the code becomes the bot's owner.",
   "settings.telegramPairScan": "Scan to open the bot",
   "settings.telegramWaiting": "Waiting for pairing \xB7 bot {account}",
-  "settings.telegramExpired": "The bot's token no longer works (it may have been reset in @BotFather). Enter it again.",
-  "settings.telegramNote": "The token stays on this computer. Messages arrive only while DSH is running.",
+  "settings.telegramExpired": "The token is no longer valid. Enter it again.",
+  "settings.telegramNote": "The token is stored only on this computer. Requires DSH to be running.",
   "settings.imessage": "iMessage",
-  "settings.imessageIntro": "On a Mac: iMessage this Mac from your own phone number or Apple ID, and it works like talking in main chat; replies go back through Messages. Only the number you enter is listened to.",
-  "settings.imessageUnsupported": "iMessage works only on macOS: DSH has to run on a Mac signed in to Messages.",
-  "settings.imessageHandle": "The phone number or Apple ID you text from:",
-  "settings.imessageHandleInvalid": "Enter a phone number or an Apple ID email.",
-  "settings.imessageNoAccess": "Messages' data cannot be read. Allow the app running DSH under System Settings \u2192 Privacy & Security \u2192 Full Disk Access, then try again.",
-  "settings.imessageNote": "The first reply makes macOS ask whether DSH may control Messages; allow it. Nothing arrives while the Mac sleeps or DSH is closed.",
+  "settings.imessageIntro": "On a Mac, iMessages sent to this Mac from your phone number or Apple ID count as main chat messages, and replies go back through Messages. Only the number entered is answered.",
+  "settings.imessageUnsupported": "iMessage works only on macOS, with DSH running on a Mac signed in to Messages.",
+  "settings.imessageHandle": "Phone number or Apple ID you send from:",
+  "settings.imessageHandleInvalid": "Enter a phone number or an email-style Apple ID.",
+  "settings.imessageNoAccess": "Can't read Messages data. Allow the app running DSH under System Settings \u2192 Privacy & Security \u2192 Full Disk Access, then try again.",
+  "settings.imessageNote": "On the first reply, allow control of Messages when macOS asks. Messages can't arrive while the Mac sleeps or DSH is closed.",
   "settings.menu": "Settings",
-  "settings.subtitle": "Review active configuration and what each option does.",
-  "settings.readOnly": "Changes apply when saved; only History catalog and Rescan interval need a DSH restart. The database location and entry identifier can only be changed through environment variables; see their descriptions.",
   "settings.save": "Save settings",
   "settings.saving": "Saving\u2026",
   "settings.saved": "Saved.",
-  "settings.restart": "Saved. History catalog settings apply after DSH restarts; everything else already applies.",
+  "settings.restart": "Saved. Some settings take effect after restarting DSH.",
   "settings.unsaved": "Unsaved changes",
   "settings.reset": "Discard changes",
-  "settings.saveError": "Settings could not save. Check the inputs and DSH connection, then retry.",
-  "settings.conflict": "Another page changed these settings. Reload before saving.",
-  "settings.contextsUnreadable": "Cannot read this topic catalog file. Check the path and JSON format.",
+  "settings.saveError": "Couldn't save settings. Check the inputs and DSH connection, then try again.",
+  "settings.conflict": "Settings were changed elsewhere. Reload them before saving.",
+  "settings.contextsUnreadable": "Can't read the topic list file. Check the path and JSON format.",
   "settings.reload": "Reload settings",
-  "settings.llm": "LLM decision",
-  "settings.rules": "Rule-based decision",
-  "settings.loading": "Loading configuration\u2026",
-  "settings.error": "Configuration could not load. Check your DSH connection.",
-  "settings.back": "Back to main chat",
+  "settings.llm": "Model-based",
+  "settings.rules": "Rule-based",
+  "settings.loading": "Loading settings\u2026",
+  "settings.error": "Can't read settings. Check the DSH connection.",
   "settings.follow": "Follow DSH",
   "settings.none": "Not set",
   "settings.on": "On",
   "settings.off": "Off",
   "settings.seconds": "{count} seconds",
-  "settings.model": "Current model",
-  "settings.capacity": "Context window",
-  "settings.output": "Default output allowance",
-  "settings.modelUnavailable": "Model information is unavailable. Check your DSH model settings.",
-  "settings.inherited": "DSH manages language, theme, API credentials and compaction thresholds. Entry capacity follows the model; the pointer glow is orange in light mode and pale blue in dark mode.",
-  "settings.compression": "Retention policy: current and recently frequent topics keep more detail; topics unused for 30 days keep short summaries. Original chats remain in DSH. These rules are not individually configurable yet.",
+  "settings.secondsUnit": "s",
+  "settings.modelUnavailable": "Model information is unavailable. Check DSH's model settings.",
   "settings.models": "Models and routing",
   "settings.history": "History organization",
-  "settings.limits": "Content limits",
   "settings.linkage": "Topic linking",
   "settings.linkScope": "Linking scope",
-  "settings.help.linkScope": 'Where related topics share progress: off, within a topic workspace only, or learned from use. Manual links and "Do not share" always take precedence.',
+  "settings.help.linkScope": `How widely related topics share progress. Manual links and "don't share" take priority.`,
   "settings.routeNotice": "Topic notices",
-  "settings.help.routeNotice": "How main chat shows topic changes: hidden, one line when the topic changes, or on every message.",
+  "settings.help.routeNotice": "How main chat shows which topic a message belongs to.",
   "settings.scope.off": "Off",
   "settings.scope.workspace": "Same workspace only",
   "settings.scope.auto": "Learn automatically",
   "settings.notice.hidden": "Hidden",
   "settings.notice.switch": "Only on topic changes",
   "settings.notice.all": "Always",
-  "settings.storage": "Data and entry",
   "settings.workerProvider": "Fixed model provider",
   "settings.workerModel": "Fixed model name",
-  "settings.routerMode": "Routing decision method",
+  "settings.routerMode": "Routing method",
   "settings.historyCatalog": "Organize history automatically",
   "settings.catalogIntervalMs": "History scan interval",
-  "settings.maxDescriptorChars": "Topic descriptor character limit",
+  "settings.maxDescriptorChars": "Topic description limit",
   "settings.maxResponseChars": "Per-step reply limit",
   "settings.databasePath": "Topic database location",
-  "settings.contextsPath": "Manual topic catalog file",
+  "settings.contextsPath": "Custom topic list file",
   "settings.gatewayKey": "Main entry identifier",
-  "settings.help.workerProvider": "Pick a provider to pin the background model; leave empty to follow main chat and DSH. Lists every model configured in DSH.",
-  "settings.help.workerModel": "Pin the model used for routing, workers and entry capacity.",
-  "settings.help.routerMode": "llm uses the model to choose topics; rules uses rule-based decisions.",
-  "settings.help.historyCatalog": "Extract and group topics from existing sessions. Turning this off keeps the current catalog.",
-  "settings.help.catalogIntervalMs": "Time between checks for history changes; minimum 10 seconds.",
-  "settings.help.maxDescriptorChars": "Maximum characters in the topic descriptor mounted in a worker; minimum 128.",
-  "settings.help.maxResponseChars": "Maximum characters, thinking included, in one background step; minimum 128. Multi-step tasks are not limited by their total length.",
-  "settings.help.databasePath": "Stores the catalog, groups, links and routing records; DSH keeps the original chats. Changing it switches TheOne to a different set of data, so it is not editable here: set THEONE_DATABASE_PATH and restart DSH.",
-  "settings.help.contextsPath": "Optional JSON file with a hand-written topic catalog. It is read and imported when saved; clearing it does not remove topics already imported.",
-  "settings.help.gatewayKey": "Separates main-chat entry state (current topic, routing records, settings). Changing it amounts to a new entry, so it can only be set through THEONE_GATEWAY_KEY; usually leave it as default.",
+  "settings.help.workerProvider": "Pin the model provider used in the background. Leave empty to follow DSH.",
+  "settings.help.workerModel": "The model used for topic routing and background work.",
+  "settings.help.routerMode": "Choose whether a model or rules decide which topic a message belongs to.",
+  "settings.help.historyCatalog": "Organize earlier chats into topics and groups. Turning this off keeps what is already organized.",
+  "settings.help.catalogIntervalMs": "Interval between checks for new chats; at least 10 seconds.",
+  "settings.help.maxDescriptorChars": "Maximum length of the description passed to a topic; at least 128.",
+  "settings.help.maxResponseChars": "Maximum length of one background reply step, thinking included; at least 128.",
+  "settings.help.databasePath": "Stores topics, groups and routing records; DSH keeps the original chats. To change the location, set THEONE_DATABASE_PATH and restart DSH.",
+  "settings.help.contextsPath": "Optional. Import a custom topic list (JSON). Clearing this does not remove imported topics.",
+  "settings.help.gatewayKey": "Distinguishes main chat entries; usually default. Can only be changed with THEONE_GATEWAY_KEY.",
   "catalog.title": "Topic workspaces",
   "catalog.subtitle": "Related things together. Carry on in main chat.",
   "catalog.figTopics": "topics",
@@ -678,16 +1013,26 @@ var en = {
   "catalog.continueError": "This topic could not open. Wait for the current conversation to finish, then try again.",
   "catalog.sourceError": "The original chat could not open. Try again in a moment.",
   "catalog.refreshError": "History could not be organized. Check your DSH model settings.",
-  "catalog.consentTitle": "Sort out your earlier chats?",
+  "catalog.consentTitle": "Pick up your earlier chats",
+  "catalog.more": "More actions",
+  "catalog.filterLabel": "Filter by status",
+  "catalog.filterAll": "All",
+  "catalog.filterWaiting": "Waiting on you",
+  "catalog.filterDone": "Done",
+  "catalog.clearSearch": "Clear search",
+  "catalog.search": "Search topics",
+  "catalog.noMatch": "No matching topics.",
+  "catalog.emptyTitle": "What you talk about will show up here",
+  "catalog.emptyIndexingTitle": "Organizing your earlier chats",
+  "catalog.backToMain": "Back to main chat",
   "catalog.chooseChatsShort": "Choose chats",
-  "catalog.consentBody": "Once they're sorted, TheOne can pick up whenever you mention something from before.",
+  "catalog.consentBody": "Organize your {count} existing chat{sessionSuffix}, and TheOne can pick up whatever you mention from them.",
   "catalog.consentKeep": "Nothing deleted or changed",
-  "catalog.consentQuota": "Read once with your DSH model, a little quota",
-  "catalog.consentChoose": "Leave out anything private",
+  "catalog.consentQuota": "Uses your current model and a little quota",
   "catalog.startCount": "Sort {count} chat{sessionSuffix}",
-  "catalog.chooseFirst": "Choose chats first",
+  "catalog.chooseFirst": "Choose chats",
   "catalog.doneChoosing": "Done",
-  "catalog.notNow": "Not now",
+  "catalog.notNow": "Skip for now",
   "catalog.declined": "Your earlier chats aren't sorted yet.",
   "catalog.reconsider": "Sort them now",
   "catalog.chooseChats": "Choose chats to sort",
@@ -697,8 +1042,8 @@ var en = {
   "catalog.otherChats": "Other chats",
   "catalog.untitledChat": "Untitled chat",
   "topic.hiddenExcluded": "This topic comes from chats you left out, so it won't be used.",
-  "catalog.emptyIndexing": "Organizing topics from your earlier chats. You can return to main chat while this runs.",
-  "catalog.empty": "No topics yet. They\u2019ll appear here as you chat.",
+  "catalog.emptyIndexing": "Topics appear here as they are ready. You can go back to main chat meanwhile.",
+  "catalog.empty": "Start in main chat; TheOne sorts the topics for you.",
   "catalog.unassigned": "To organize",
   "catalog.unassignedSummary": "These topics are waiting to be grouped.",
   "topic.opening": "Opening\u2026",
@@ -744,7 +1089,7 @@ var en = {
   "manage.deleteHint": "Removes only TheOne's catalog entry. DSH keeps the original sessions, and the catalog will not extract this topic again.",
   "manage.error": "The change could not be made. Check the input and try again.",
   "manage.busy": "A reply is in progress. Try again when it finishes.",
-  "manage.create": "+ New topic",
+  "manage.create": "New topic",
   "manage.createButton": "Create",
   "manage.cancel": "Cancel",
   "routes.title": "Recent topic routing",
@@ -761,6 +1106,62 @@ var en = {
   "routes.removed": "(deleted topic)",
   "routes.report": "Report a problem",
   "feedback.open": "Feedback",
+  "catalog.github": "View the project on GitHub",
+  "start.title": "Getting started",
+  "start.close": "Got it, don't show again",
+  "start.sortTitle": "Sort your earlier chats",
+  "start.sortBody": "Once they are sorted, TheOne can pick up what you mention from before. Nothing is deleted or changed.",
+  "start.topicsTitle": "Visit Topic workspaces",
+  "start.topicsBody": "Every thing you work on lives here with its own progress, ready to pick up.",
+  "start.groupTip": "Join the user group (in Chinese): click to copy the QQ group number",
+  "start.groupCopied": "Group number copied; search for it in QQ",
+  "setup.label": "TheOne setup",
+  "setup.welcome": "Welcome to",
+  "setup.welcomeBody": "One main chat for everything.\nWhatever you bring up, TheOne picks up the right topic.",
+  "setup.start": "Get started",
+  "setup.later": "Set up later",
+  "setup.continue": "Continue",
+  "setup.back": "Back",
+  "setup.recommended": "Recommended. ",
+  "setup.sortTitle": "Organize earlier chats",
+  "setup.sortBody": "TheOne can sort your past DSH conversations into topics.",
+  "setup.sortYes": "Organize",
+  "setup.sortYesHint": "When you mention something from before, TheOne can pick it up. Your original conversations stay exactly as they are.",
+  "setup.sortNo": "Not now",
+  "setup.sortNoHint": "TheOne starts from today. You can organize earlier chats any time from the topic workspace.",
+  "setup.sideTitle": "Where topic sessions go",
+  "setup.sideBody": "Each topic has its own session that carries its context in the background.",
+  "setup.sideShow": "Sidebar",
+  "setup.sideShowHint": "Topic sessions sit with your other sessions, one click away in the sidebar.",
+  "setup.sideHide": "Topic list",
+  "setup.sideHideHint": "The sidebar keeps only the sessions you created; topic sessions stay in the topic list.",
+  "setup.tagTitle": "Topic labels",
+  "setup.tagBody": "In main chat, TheOne can show which topic each message went to.",
+  "setup.tagSwitch": "On switch",
+  "setup.tagSwitchHint": "A label only when the topic changes: you see where things go without the clutter.",
+  "setup.tagAll": "Every message",
+  "setup.tagAllHint": "Every message shows its topic, so you can see exactly where each one went.",
+  "setup.tagNone": "None",
+  "setup.tagNoneHint": "The conversation stays clean while TheOne organizes quietly in the background.",
+  "setup.newBadge": "New version",
+  "setup.newTitle": "What's new in TheOne",
+  "setup.new.mark": "A mark that comes alive",
+  "setup.new.markHint": "TheOne\u2019s mark is now a breathing cell, a little livelier while main chat is open.",
+  "setup.new.sessions": "Topic sessions in the sidebar",
+  "setup.new.sessionsHint": "Topic sessions can sit with your other sessions, or stay in the topic list.",
+  "setup.new.pumpkin": "A Halloween surprise",
+  "setup.new.pumpkinHint": "On 30 and 31 October, the cell turns into a pumpkin.",
+  "setup.doneTitle": "You're all set",
+  "setup.doneBody": "Now just say what you want to do.\nYou can change these any time in TheOne settings.",
+  "setup.apps": "You can also connect WeChat, Telegram or iMessage in TheOne settings.",
+  "setup.finish": "Start using TheOne",
+  "setup.error": "Some choices could not be saved. You can adjust them in TheOne settings.",
+  "settings.weixinBlurb": "Scan to link, then use it from WeChat",
+  "settings.telegramBlurb": "Connect your own bot",
+  "settings.imessageBlurb": "Use Messages on a Mac",
+  "settings.appOnline": "Connected",
+  "catalog.email": "Email the author: {email}",
+  "catalog.emailCopied": "Copied {email}",
   "feedback.title": "Report a problem",
   "feedback.titleMessage": "Report a problem with this reply",
   "feedback.intro": "Tell us what happened. Everything that would be sent is shown below; nothing leaves this computer until you press Send.",
@@ -2607,11 +3008,20 @@ function createWorkPanel(useText, lifetime, openMain) {
 var workCss = `.theone-tasks{padding:24px;max-width:900px;margin:auto;overflow:auto;height:100%;box-sizing:border-box;color:var(--dsw-alias-label-primary);font-size:14px;line-height:1.6}.theone-tasks form{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;padding:16px;border:1px solid var(--dsw-alias-border-l2,#8885);border-radius:12px}.theone-task-field{display:flex;flex-direction:column;gap:4px}.theone-tasks input,.theone-tasks select{color:inherit;background:transparent;padding:8px;border:1px solid #8887;border-radius:6px;min-width:0}.theone-tasks button{font:inherit;color:inherit;background:var(--dsw-specific-sidebar-fill,#8882);padding:6px 12px;border:1px solid #8886;border-radius:6px;cursor:pointer}.theone-tasks button:disabled{opacity:.5;cursor:default}.theone-task{padding:16px;margin-top:16px;border:1px solid #8885;border-radius:12px;overflow-wrap:anywhere}.theone-task h3{margin-top:0}.theone-task-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.theone-task p{white-space:pre-wrap}.theone-tasks a{color:var(--dsw-alias-label-link,#529bdb)}`;
 
 // src/client.ts
+var QQ_GROUP = "1080980184";
+var ONBOARDING = "theone-onboarding";
+var SETUP = "theone-setup-1";
+var FIRST_TURN = 1;
+var FEEDBACK_EMAIL = "theone@yulid.org";
+var PLACEHOLDERS = /* @__PURE__ */ new Set(["\u7B49\u5F85\u9996\u6B21\u6267\u884C", "\u65B0\u8BDD\u9898\uFF0C\u5C1A\u65E0\u5386\u53F2\u6458\u8981\u3002"]);
+var GITHUB_URL = "https://github.com/YunongDai2005/dsh-theone";
+var tip = (text) => ({ "data-tip": text, "aria-label": text });
 var inject = ["slots", "locale", "sessions", "workspaces", "layout", "uiWorkspace", "modelDirectories", "remote.session"];
 var panelId = "theone-gateway";
 var catalogPanelId = "theone-catalog";
-var settingsPanelId = "theone-settings";
 var tasksPanelId = "theone-tasks";
+var SETTINGS_SECTION = "theone";
+var SETTINGS_LABEL = "TheOne";
 function apply(ctx) {
   const lifetime = new AbortController();
   ctx.effect(() => ctx.locale.register("theone", { zh, en }));
@@ -2894,7 +3304,7 @@ function apply(ctx) {
       return element;
     };
     let draft;
-    let email = "theone@yulid.org";
+    let email = FEEDBACK_EMAIL;
     let direct = false;
     let sentId;
     let sending = false;
@@ -3005,7 +3415,16 @@ function apply(ctx) {
     close: ["M6 6l12 12", "M18 6L6 18"],
     layers: ["M12 3.5l8.5 4.5-8.5 4.5L3.5 8z", "M3.5 12.5l8.5 4.5 8.5-4.5", "M3.5 16.5l8.5 4.5 8.5-4.5"],
     chevron: ["M6 15l6-6 6 6"],
-    grid: ["M4 4h6.5v6.5H4z", "M13.5 4H20v6.5h-6.5z", "M4 13.5h6.5V20H4z", "M13.5 13.5H20V20h-6.5z"]
+    // Lucide "plus", "search", "messages-square" and "arrow-up-right" (ISC)
+    plus: ["M5 12h14", "M12 5v14"],
+    search: ["M11 19a8 8 0 1 0 0-16a8 8 0 0 0 0 16z", "M21 21l-4.3-4.3"],
+    chats: ["M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z", "M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"],
+    arrowUpRight: ["M7 7h10v10", "M7 17L17 7"],
+    grid: ["M4 4h6.5v6.5H4z", "M13.5 4H20v6.5h-6.5z", "M4 13.5h6.5V20H4z", "M13.5 13.5H20V20h-6.5z"],
+    // Lucide "mail", "users" and "github" (ISC)
+    mail: ["M2 6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z", "M22 7l-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"],
+    users: ["M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2", "M5 7a4 4 0 1 0 8 0a4 4 0 1 0-8 0", "M22 21v-2a4 4 0 0 0-3-3.87", "M16 3.13a4 4 0 0 1 0 7.75"],
+    github: ["M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4", "M9 18c-4.51 2-5-2-7-2"]
   };
   const icon = (name, size = 16) => (0, import_react2.createElement)(
     "svg",
@@ -3024,6 +3443,61 @@ function apply(ctx) {
     },
     ...ICONS[name].map((d) => (0, import_react2.createElement)("path", { key: d, d }))
   );
+  function EmailLink({ className, size }) {
+    const t2 = useText();
+    const [copied, setCopied] = (0, import_react2.useState)(false);
+    const copy = () => {
+      void navigator.clipboard?.writeText(FEEDBACK_EMAIL).then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2400);
+      }, () => {
+      });
+    };
+    return (0, import_react2.createElement)("a", {
+      className,
+      href: `mailto:${FEEDBACK_EMAIL}`,
+      "data-copied": copied,
+      onClick: copy,
+      ...tip(t2(copied ? "catalog.emailCopied" : "catalog.email", { email: FEEDBACK_EMAIL }))
+    }, icon("mail", size));
+  }
+  function QQGroupButton() {
+    const [copied, setCopied] = (0, import_react2.useState)(false);
+    const copy = () => {
+      void navigator.clipboard?.writeText(QQ_GROUP).then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2400);
+      }, () => {
+      });
+    };
+    return (0, import_react2.createElement)("button", { type: "button", className: "theone-quiet theone-icon-link", "data-copied": copied, onClick: copy, ...tip(t(copied ? "start.groupCopied" : "start.groupTip")) }, icon("users", 16));
+  }
+  function openSettings() {
+    const trigger = document.querySelector('[data-slot="sidebar.settings"] button[aria-haspopup="dialog"]');
+    if (trigger) trigger.click();
+    else {
+      const shortcuts = ctx.get("shortcuts");
+      const binding = shortcuts?.catalog?.getSnapshot().find((entry) => entry.id === "settings.open")?.binding;
+      if (!binding) return;
+      const held = (modifier) => binding.modifiers.includes(modifier);
+      document.body.dispatchEvent(new KeyboardEvent("keydown", {
+        code: binding.code,
+        bubbles: true,
+        cancelable: true,
+        ctrlKey: held("control"),
+        altKey: held("alt"),
+        shiftKey: held("shift"),
+        metaKey: held("meta")
+      }));
+    }
+    let tries = 0;
+    const choose = () => {
+      const entry = [...document.querySelectorAll("[role=dialog] button")].find((button) => button.textContent?.trim() === SETTINGS_LABEL);
+      if (entry) entry.click();
+      else if (++tries < 20) setTimeout(choose, 50);
+    };
+    setTimeout(choose, 0);
+  }
   function UpdateButton() {
     const t2 = useText();
     const status = (0, import_react2.useSyncExternalStore)(subscribeUpdate, () => update);
@@ -3055,12 +3529,81 @@ function apply(ctx) {
       status.state === "installing" || status.state === "reloading" ? (0, import_react2.createElement)("span", { className: "theone-update-spin", "aria-hidden": true }) : icon(status.state === "restart" ? "restart" : status.state === "failed" ? "alert" : "download", 15)
     );
   }
-  const symbol = () => (0, import_react2.createElement)(
-    "svg",
-    { className: "theone-symbol", viewBox: "0 0 20 20", width: 20, height: 20, "aria-hidden": true, focusable: false },
-    (0, import_react2.createElement)("circle", { cx: 10, cy: 10, r: 8.6, fill: "none", stroke: "currentColor", strokeWidth: 1.4 }),
-    (0, import_react2.createElement)("circle", { cx: 10, cy: 10, r: 2.4, fill: "currentColor" })
-  );
+  const cellWaves = [0.4, 0.13, 0.31, 0.17, 0.29, 0.18, -0.11, 0.25];
+  const fix = (value) => value.toFixed(3);
+  const closedCurve = (points) => {
+    const n = points.length;
+    let path = `M${fix(points[0][0])} ${fix(points[0][1])}`;
+    points.forEach((p1, i) => {
+      const p0 = points[(i + n - 1) % n], p2 = points[(i + 1) % n], p3 = points[(i + 2) % n];
+      path += `C${fix(p1[0] + (p2[0] - p0[0]) / 6)} ${fix(p1[1] + (p2[1] - p0[1]) / 6)} ${fix(p2[0] - (p3[0] - p1[0]) / 6)} ${fix(p2[1] - (p3[1] - p1[1]) / 6)} ${fix(p2[0])} ${fix(p2[1])}`;
+    });
+    return `${path}Z`;
+  };
+  const cellFrame = (t2, pace = cellWaves) => {
+    const { sin, cos, PI } = Math;
+    const points = Array.from({ length: 44 }, (_, i) => {
+      const a = i / 44 * 2 * PI, r = 7.4 + 0.12 * sin(pace[7] * t2) + 0.22 * sin(2 * a + pace[5] * t2) + 0.07 * sin(3 * a + pace[6] * t2);
+      return [10 + r * cos(a), 10 + r * sin(a)];
+    });
+    return { membrane: closedCurve(points), x: 10 + 0.6 * sin(pace[1] * t2) + 0.25 * sin(pace[2] * t2), y: 10 + 0.55 * sin(pace[3] * t2) + 0.2 * sin(pace[4] * t2), r: 2.9 + 0.12 * sin(pace[0] * t2) };
+  };
+  const pumpkinY = 10.9;
+  const pumpkinRibs = `M6.6 ${pumpkinY - 5.2}C5.2 ${pumpkinY - 2} 5.2 ${pumpkinY + 2} 6.6 ${pumpkinY + 5.2}M13.4 ${pumpkinY - 5.2}C14.8 ${pumpkinY - 2} 14.8 ${pumpkinY + 2} 13.4 ${pumpkinY + 5.2}`;
+  const pumpkinFrame = (t2, pace = cellWaves) => {
+    const { sin, cos, exp, abs, max, atan2, PI } = Math, swell = 0.1 * sin(pace[7] * t2);
+    const points = Array.from({ length: 64 }, (_, i) => {
+      const a = i / 64 * 2 * PI, fromTop = atan2(sin(a + PI / 2), cos(a + PI / 2)), shape = sin(2 * a + pace[5] * t2);
+      const dent = 0.55 * abs(sin(a)) * max(0, -cos(4 * a)) + 0.45 * exp(-fromTop * fromTop / 0.06);
+      return [10 + (7.9 + swell + 0.12 * shape - dent) * cos(a), pumpkinY + (6.8 + swell + 0.1 * shape - dent) * sin(a)];
+    });
+    const top = pumpkinY - 6.35 - swell, sway = 0.25 * sin(pace[2] * t2);
+    return {
+      membrane: closedCurve(points),
+      stem: `M10 ${fix(top + 0.2)}C${fix(10 + sway * 0.3)} ${fix(top - 1)} ${fix(10.4 + sway)} ${fix(top - 1.9)} ${fix(11.5 + sway)} ${fix(top - 2.3)}`,
+      x: 10 + 0.45 * sin(pace[1] * t2),
+      y: pumpkinY + 0.4 * sin(pace[3] * t2),
+      r: 2.6 + 0.1 * sin(pace[0] * t2)
+    };
+  };
+  function CellSymbol({ state, spooky = false }) {
+    const svg = (0, import_react2.useRef)(null), tempo = (0, import_react2.useRef)(0.7), pose = spooky ? pumpkinFrame : cellFrame, still = pose(0), live = !!state;
+    tempo.current = state === "active" ? 1 : 0.7;
+    (0, import_react2.useEffect)(() => {
+      if (!live || !svg.current || typeof matchMedia !== "function" || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+      const part = (name) => svg.current.querySelector(`[data-part="${name}"]`);
+      const membrane = part("membrane"), nucleus = part("nucleus"), stem = spooky ? part("stem") : void 0;
+      const paint = (frame2) => {
+        membrane.setAttribute("d", frame2.membrane);
+        if (stem && frame2.stem) stem.setAttribute("d", frame2.stem);
+        nucleus.setAttribute("cx", fix(frame2.x));
+        nucleus.setAttribute("cy", fix(frame2.y));
+        nucleus.setAttribute("r", fix(frame2.r));
+      };
+      const pace = cellWaves.map((wave) => wave * (0.85 + Math.random() * 0.3));
+      let t2 = 0, speed = tempo.current, last = performance.now(), frame = requestAnimationFrame(function step(now) {
+        const dt = Math.min(0.05, (now - last) / 1e3);
+        last = now;
+        speed += (tempo.current - speed) * Math.min(1, dt * 2);
+        t2 += dt * speed;
+        paint(pose(t2, pace));
+        frame = requestAnimationFrame(step);
+      });
+      return () => {
+        cancelAnimationFrame(frame);
+        paint(pose(0));
+      };
+    }, [live, spooky]);
+    return (0, import_react2.createElement)(
+      "svg",
+      { ref: svg, className: "theone-symbol", "data-spooky": spooky, viewBox: "0 0 20 20", width: 20, height: 20, "aria-hidden": true, focusable: false },
+      spooky && (0, import_react2.createElement)("path", { d: pumpkinRibs, fill: "none", stroke: "currentColor", strokeWidth: 0.9, strokeLinecap: "round", opacity: 0.38 }),
+      (0, import_react2.createElement)("path", { "data-part": "membrane", d: still.membrane, fill: "none", stroke: "currentColor", strokeWidth: 1.4, strokeLinejoin: "round" }),
+      spooky && (0, import_react2.createElement)("path", { "data-part": "stem", className: "theone-symbol-stem", d: still.stem, fill: "none", strokeWidth: 1.5, strokeLinecap: "round" }),
+      (0, import_react2.createElement)("circle", { "data-part": "nucleus", cx: fix(still.x), cy: fix(still.y), r: fix(still.r), fill: "currentColor" })
+    );
+  }
+  const symbol = (state, spooky = false) => (0, import_react2.createElement)(CellSymbol, { state, spooky });
   function SidebarEntry({ size }) {
     const t2 = useText();
     const marker = (0, import_react2.useRef)(null);
@@ -3069,6 +3612,7 @@ function apply(ctx) {
     const sessions = (0, import_react2.useSyncExternalStore)(ctx.sessions.list.subscribe, ctx.sessions.list.getSnapshot);
     const panel = (0, import_react2.useSyncExternalStore)(ctx.layout.panelInfo.subscribe, ctx.layout.panelInfo.getSnapshot);
     const active = panel.activePanelId === panelId || panel.activePanelId === null && !!id && !!sessions.byId[id]?.retainedBy.mainView;
+    const spooky = halloween();
     (0, import_react2.useEffect)(() => {
       const button = marker.current?.closest("button");
       if (!button) return;
@@ -3108,7 +3652,7 @@ function apply(ctx) {
         item.textContent = t2("settings.menu");
         item.addEventListener("click", () => {
           close();
-          ctx.layout.selectPanel(settingsPanelId);
+          openSettings();
         });
         menu.append(item);
         document.body.append(menu);
@@ -3171,7 +3715,7 @@ function apply(ctx) {
     return (0, import_react2.createElement)(
       "span",
       { ref: marker, className: "theone-nav", translate: "no", "data-wide": size === 16, "data-active": active },
-      (0, import_react2.createElement)("span", { className: "theone-symbol-wrap" }, symbol(), size !== 16 && pending ? (0, import_react2.createElement)("span", { className: "theone-update-dot", "aria-hidden": true }) : null),
+      (0, import_react2.createElement)("span", { className: "theone-symbol-wrap" }, symbol(active ? "active" : "idle", spooky), size !== 16 && pending ? (0, import_react2.createElement)("span", { className: "theone-update-dot", "aria-hidden": true }) : null),
       size === 16 && (0, import_react2.createElement)(
         "span",
         { className: "theone-entry-copy" },
@@ -3386,10 +3930,10 @@ function apply(ctx) {
       (0, import_react2.createElement)("span", { className: "theone-bg-chevron", "aria-hidden": true }, saving ? "\u2026" : icon("chevron", 12))
     );
   }
-  let notices = [];
+  let notices2 = [];
   const noticeListeners = /* @__PURE__ */ new Set();
   const setNotices = (value) => {
-    notices = value;
+    notices2 = value;
     for (const listener of noticeListeners) listener();
   };
   const subscribeNotices = (listener) => {
@@ -3401,7 +3945,7 @@ function apply(ctx) {
   const localized = (value) => localeSnapshot().active.startsWith("zh") ? value.zh ?? value.en ?? "" : value.en ?? value.zh ?? "";
   const shownDialogs = /* @__PURE__ */ new Set();
   const dismissNotice = (id) => {
-    setNotices(notices.filter((notice) => notice.id !== id));
+    setNotices(notices2.filter((notice) => notice.id !== id));
     void fetch("/api/theone/notices", {
       method: "POST",
       signal: lifetime.signal,
@@ -3462,12 +4006,31 @@ function apply(ctx) {
     document.body.append(backdrop);
     ok.focus();
   }
+  let onboarding = false, setupShown = false;
   const readNotices = async () => {
     try {
       const response = await fetch("/api/theone/notices", { signal: lifetime.signal, cache: "no-store" });
       if (!response.ok) return;
-      setNotices((await response.json()).notices);
-      const important = notices.find((notice) => notice.level === "important" && !shownDialogs.has(notice.id));
+      const value = await response.json();
+      onboarding = value.onboarding === true;
+      setNotices(value.notices);
+      if (value.setup === true && !setupShown) {
+        setupShown = true;
+        void openSetup({
+          t: (key) => t(key),
+          cellFrame,
+          signal: lifetime.signal,
+          onClose: () => {
+            dismissNotice(SETUP);
+            if (onboarding) {
+              onboarding = false;
+              dismissNotice(ONBOARDING);
+            }
+          }
+        });
+        return;
+      }
+      const important = notices2.find((notice) => notice.level === "important" && !shownDialogs.has(notice.id));
       if (important && !document.querySelector(".theone-dialog-backdrop")) openNoticeDialog(important);
     } catch {
     }
@@ -3476,13 +4039,13 @@ function apply(ctx) {
     void readNotices();
     const timer = setInterval(() => {
       void readNotices();
-    }, 3 * 36e5);
+    }, 18e5);
     return () => clearInterval(timer);
   });
   function NoticeStrip({ directory }) {
     const t2 = useText();
     const state = (0, import_react2.useSyncExternalStore)((listener) => directory.subscribe(listener), () => directory.getSnapshot());
-    const list = (0, import_react2.useSyncExternalStore)(subscribeNotices, () => notices);
+    const list = (0, import_react2.useSyncExternalStore)(subscribeNotices, () => notices2);
     const notice = list.find((item) => item.level === "info");
     if ((state.pending ?? state.current)?.provider !== "theone" || !notice) return null;
     const title = localized(notice.title), body = localized(notice.body);
@@ -3504,6 +4067,45 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
       (0, import_react2.createElement)("button", { type: "button", className: "theone-notice-close", "aria-label": t2("notice.close"), title: t2("notice.close"), onClick: () => dismissNotice(notice.id) }, icon("close", 14))
     );
   }
+  function OnboardingCard({ directory, turn }) {
+    const t2 = useText();
+    const state = (0, import_react2.useSyncExternalStore)((listener) => directory.subscribe(listener), () => directory.getSnapshot());
+    (0, import_react2.useSyncExternalStore)(subscribeNotices, () => notices2);
+    const [consent, setConsent] = (0, import_react2.useState)();
+    const [copied, setCopied] = (0, import_react2.useState)(false);
+    const welcome = turn.turn === FIRST_TURN && (state.pending ?? state.current)?.provider === "theone";
+    const shown = onboarding && welcome && turn.status === "closed";
+    (0, import_react2.useEffect)(() => {
+      if (!shown) return;
+      void fetch("/api/theone/catalog", { signal: lifetime.signal, cache: "no-store" }).then((response) => response.ok ? response.json() : void 0).then((value) => {
+        if (value) setConsent(value.status.consent);
+      }, () => {
+      });
+    }, [shown]);
+    const mark = welcome ? (0, import_react2.createElement)("span", { className: "theone-welcome-mark", hidden: true }) : null;
+    if (!shown) return mark;
+    const close = () => {
+      onboarding = false;
+      dismissNotice(ONBOARDING);
+    };
+    const sorted = consent === "granted";
+    const chip = (glyph, label2, hint, action, primary = false) => (0, import_react2.createElement)("button", { type: "button", className: "theone-start-chip", "data-primary": primary, title: hint, onClick: action }, icon(glyph, 14), label2);
+    return (0, import_react2.createElement)(import_react2.Fragment, null, mark, (0, import_react2.createElement)(
+      "div",
+      { className: "theone-start", role: "group", "aria-label": t2("start.title"), translate: "no" },
+      chip("grid", t2(sorted ? "start.topicsTitle" : "start.sortTitle"), t2(sorted ? "start.topicsBody" : "start.sortBody"), () => ctx.layout.selectPanel(catalogPanelId), true),
+      (0, import_react2.createElement)("button", { type: "button", className: "theone-start-chip theone-start-icon", "data-copied": copied, ...tip(t2(copied ? "start.groupCopied" : "start.groupTip")), onClick: () => {
+        void navigator.clipboard?.writeText(QQ_GROUP).then(() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2400);
+        }, () => {
+        });
+      } }, icon("users", 15)),
+      (0, import_react2.createElement)(EmailLink, { className: "theone-start-chip theone-start-icon", size: 15 }),
+      (0, import_react2.createElement)("a", { className: "theone-start-chip theone-start-icon", href: GITHUB_URL, target: "_blank", rel: "noopener", ...tip(t2("catalog.github")) }, icon("github", 15)),
+      (0, import_react2.createElement)("button", { type: "button", className: "theone-start-close", ...tip(t2("start.close")), onClick: close }, icon("close", 12))
+    ));
+  }
   ctx.inject(["slots", "modelDirectories"], (scope) => {
     const slots = scope.slots;
     slots.inject("conversation.input.right", () => slots.register({
@@ -3518,6 +4120,12 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
       order: 100,
       inject: (sessionId) => ({ directory: scope.modelDirectories.directoryFor(sessionId).store })
     }, NoticeStrip));
+    slots.inject("conversation.chat.turnTail", () => slots.register({
+      name: "conversation.chat.turnTail",
+      id: "theone.onboarding",
+      order: 10,
+      inject: (sessionId) => ({ directory: scope.modelDirectories.directoryFor(sessionId).store })
+    }, OnboardingCard));
   });
   function GatewayPanel() {
     const t2 = useText();
@@ -3526,10 +4134,16 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
     (0, import_react2.useEffect)(() => {
       let mounted = true;
       setError(void 0);
-      void navigation.open().catch((error2) => {
-        console.warn("TheOne gateway navigation failed:", error2 instanceof Error ? error2.message : "Unknown navigation error");
-        if (mounted) setError("gateway.error");
-      });
+      const still = () => mounted && ctx.layout.panelInfo.getSnapshot().activePanelId === panelId;
+      const run = (left) => {
+        void navigation.open().then((opened) => {
+          if (!opened && left > 0 && still()) run(left - 1);
+        }, (error2) => {
+          console.warn("TheOne gateway navigation failed:", error2 instanceof Error ? error2.message : "Unknown navigation error");
+          if (mounted) setError("gateway.error");
+        });
+      };
+      run(5);
       return () => {
         mounted = false;
       };
@@ -3556,26 +4170,35 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
     const busy = status?.state === "installing" || status?.state === "reloading";
     const pending = !!status && (status.available || waiting || !!status.state);
     const line = checking ? t2("settings.updateChecking") : failed ? t2("settings.updateCheckFailed") : !status ? t2("settings.updateUnknown") : pending ? updateHint(status) : t2("settings.updateLatest");
+    const settled = !!status && !pending;
     return (0, import_react2.createElement)(
       "section",
       { className: "theone-settings-group theone-settings-update" },
       (0, import_react2.createElement)("h2", null, t2("settings.update")),
-      status && !pending ? (0, import_react2.createElement)("p", { className: "theone-settings-update-version" }, t2("settings.updateCurrent", { current: status.current })) : null,
-      (0, import_react2.createElement)("p", { role: "status" }, line),
       (0, import_react2.createElement)(
         "div",
-        { className: "theone-settings-update-actions" },
-        (0, import_react2.createElement)("button", { type: "button", disabled: checking || busy, onClick: () => {
-          void check();
-        } }, t2("settings.updateCheck")),
-        (0, import_react2.createElement)("button", {
-          type: "button",
-          className: "theone-settings-save",
-          disabled: checking || busy || !status || !pending || status.state === "restart",
-          onClick: () => {
-            if (status) startUpdate(status);
-          }
-        }, t2(status?.state === "installing" ? "update.installing" : status?.state === "reloading" ? "update.reloading" : "settings.updateInstall"))
+        { className: "theone-settings-row" },
+        (0, import_react2.createElement)(
+          "div",
+          null,
+          (0, import_react2.createElement)("strong", settled ? null : { role: "status" }, status && settled ? t2("settings.updateCurrent", { current: status.current }) : line),
+          settled ? (0, import_react2.createElement)("p", { role: "status" }, line) : null
+        ),
+        (0, import_react2.createElement)(
+          "div",
+          { className: "theone-settings-update-actions" },
+          (0, import_react2.createElement)("button", { type: "button", disabled: checking || busy, onClick: () => {
+            void check();
+          } }, t2("settings.updateCheck")),
+          (0, import_react2.createElement)("button", {
+            type: "button",
+            className: "theone-settings-save",
+            disabled: checking || busy || !status || !pending || status.state === "restart",
+            onClick: () => {
+              if (status) startUpdate(status);
+            }
+          }, t2(status?.state === "installing" ? "update.installing" : status?.state === "reloading" ? "update.reloading" : "settings.updateInstall"))
+        )
       )
     );
   }
@@ -3780,9 +4403,87 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
       status?.supported ? (0, import_react2.createElement)("p", { className: "theone-settings-update-version" }, t2("settings.imessageNote")) : null
     );
   }
+  const REMOTE_APPS = [
+    {
+      id: "weixin",
+      label: "settings.weixin",
+      blurb: "settings.weixinBlurb",
+      color: "#07c160",
+      Section: WeixinSection,
+      glyph: () => [
+        (0, import_react2.createElement)("ellipse", { key: "a", cx: 9.2, cy: 9.3, rx: 7, ry: 5.9, fill: "currentColor" }),
+        (0, import_react2.createElement)("path", { key: "b", d: "M4.6 13.4l-1.1 3.1 3.4-1.7z", fill: "currentColor" }),
+        (0, import_react2.createElement)("ellipse", { key: "c", cx: 15.8, cy: 14.6, rx: 5.7, ry: 4.8, fill: "currentColor", stroke: "#fff", strokeOpacity: 0.85, strokeWidth: 1.3 }),
+        (0, import_react2.createElement)("path", { key: "d", d: "M19.3 18.3l1.1 2.3-2.8-1.2z", fill: "currentColor" }),
+        ...[[6.8, 8.3, 0.95], [11.5, 8.3, 0.95], [14, 13.9, 0.8], [17.6, 13.9, 0.8]].map(([cx, cy, r]) => (0, import_react2.createElement)("circle", { key: `${cx}`, cx, cy, r, fill: "#fff" }))
+      ]
+    },
+    {
+      id: "telegram",
+      label: "settings.telegram",
+      blurb: "settings.telegramBlurb",
+      color: "#2aabee",
+      Section: TelegramSection,
+      glyph: () => [
+        (0, import_react2.createElement)("path", { key: "a", d: "M20.6 4.2L3.4 10.9c-1.1.4-1.1 1.5-.2 1.8l4.4 1.4 1.7 5.2c.2.6.9.8 1.4.4l2.5-2.1 4.7 3.5c.7.5 1.6.1 1.8-.7l3-14.3c.2-1-.8-1.8-1.7-1.5z", fill: "currentColor" }),
+        (0, import_react2.createElement)("path", { key: "b", d: "M8.1 14.1l9.5-6.5", stroke: "#fff", strokeOpacity: 0.9, strokeWidth: 1.3, strokeLinecap: "round", fill: "none" })
+      ]
+    },
+    {
+      id: "imessage",
+      label: "settings.imessage",
+      blurb: "settings.imessageBlurb",
+      color: "#34c759",
+      Section: IMessageSection,
+      glyph: () => [(0, import_react2.createElement)("path", { key: "a", d: "M12 3.2c-5.4 0-9.8 3.6-9.8 8 0 2.4 1.3 4.6 3.4 6.1-.2 1.4-.9 2.7-2 3.6 2 0 3.8-.7 5.2-1.8 1 .3 2.1.4 3.2.4 5.4 0 9.8-3.6 9.8-8.3S17.4 3.2 12 3.2z", fill: "currentColor" })]
+    }
+  ];
+  function RemoteCard({ app, open, onChoose }) {
+    const t2 = useText();
+    const { status } = useRemote(app.id, () => false);
+    const online = status?.state === "online";
+    return (0, import_react2.createElement)(
+      "button",
+      {
+        type: "button",
+        className: "theone-app-card",
+        "data-open": open,
+        "aria-expanded": open,
+        "aria-controls": "theone-app-panel",
+        style: { "--app": app.color },
+        onClick: onChoose
+      },
+      (0, import_react2.createElement)("span", { className: "theone-app-logo" }, (0, import_react2.createElement)("svg", { viewBox: "0 0 24 24", width: 22, height: 22, "aria-hidden": true, focusable: false }, ...app.glyph())),
+      (0, import_react2.createElement)("strong", null, t2(app.label)),
+      (0, import_react2.createElement)("span", { className: "theone-app-blurb" }, t2(app.blurb)),
+      online ? (0, import_react2.createElement)("span", { className: "theone-app-online" }, t2("settings.appOnline")) : null
+    );
+  }
+  function RemoteApps() {
+    const [open, setOpen] = (0, import_react2.useState)();
+    const app = REMOTE_APPS.find((item) => item.id === open);
+    (0, import_react2.useEffect)(() => {
+      if (!open) return;
+      const key = (event) => {
+        if (event.key === "Escape") setOpen(void 0);
+      };
+      document.addEventListener("keydown", key);
+      return () => document.removeEventListener("keydown", key);
+    }, [open]);
+    return (0, import_react2.createElement)(
+      "div",
+      { className: "theone-apps" },
+      (0, import_react2.createElement)("div", { className: "theone-app-row" }, ...REMOTE_APPS.map((item) => (0, import_react2.createElement)(RemoteCard, {
+        key: item.id,
+        app: item,
+        open: item.id === open,
+        onChoose: () => setOpen((current) => current === item.id ? void 0 : item.id)
+      }))),
+      app ? (0, import_react2.createElement)("div", { id: "theone-app-panel", key: app.id, className: "theone-app-panel" }, (0, import_react2.createElement)(app.Section)) : null
+    );
+  }
   function SettingsPanel() {
     const t2 = useText();
-    const heading = (0, import_react2.useRef)(null);
     const [snapshot, setSnapshot] = (0, import_react2.useState)();
     const [draft, setDraft] = (0, import_react2.useState)();
     const [saving, setSaving] = (0, import_react2.useState)(false);
@@ -3792,7 +4493,6 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
     const [error, setError] = (0, import_react2.useState)(false);
     const [attempt, setAttempt] = (0, import_react2.useState)(0);
     (0, import_react2.useEffect)(() => {
-      heading.current?.focus();
       const controller = new AbortController();
       const signal = AbortSignal.any([controller.signal, lifetime.signal]);
       setError(false);
@@ -3813,12 +4513,13 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
       return () => controller.abort();
     }, [attempt]);
     const groups = [
+      ["sessions", ["hideTopicSessions"]],
       ["models", ["workerProvider", "workerModel", "routerMode"]],
       ["history", ["historyCatalog", "catalogIntervalMs"]],
-      ["linkage", ["linkScope", "routeNotice", "factLinks", "factExtraction"]],
-      ["limits", ["maxDescriptorChars", "maxResponseChars"]],
-      ["storage", ["contextsPath", "databasePath", "gatewayKey"]],
-      ["other", ["notices"]]
+      ["linkage", ["linkScope", "routeNotice"]],
+      ["other", ["notices"]],
+      ["advanced", ["maxDescriptorChars", "maxResponseChars", "contextsPath", "databasePath", "gatewayKey"]],
+      ["experimental", ["factLinks", "factExtraction", "persistentWork"]]
     ];
     const display = (key) => {
       const value = snapshot.values[key];
@@ -3859,6 +4560,7 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
           setSnapshot(value);
           setDraft(value.savedValues);
           setMessage(value.restartRequired ? "settings.restart" : "settings.saved");
+          window.dispatchEvent(new Event("theone-settings-changed"));
         }
       } catch {
         if (!signal.aborted) setMessage("settings.saveError");
@@ -3870,12 +4572,13 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
       if (!draft || !snapshot || !EDITABLE_SETTINGS_KEYS.includes(key)) return display(key);
       const field = key;
       const props = { "aria-label": t2(`settings.${key}`), disabled: saving, id: `theone-setting-${key}` };
-      const select = (value, choices, selectValue) => (0, import_react2.createElement)(
-        "select",
-        { ...props, value, required: field === "workerModel" && !!draft.workerProvider, onChange: (event) => selectValue(event.target.value) },
-        ...choices.map((choice) => (0, import_react2.createElement)("option", { key: choice.value, value: choice.value }, choice.label))
-      );
-      if (field === "historyCatalog" || field === "notices" || field === "factLinks" || field === "factExtraction") return select(String(draft[field]), [{ value: "true", label: t2("settings.on") }, { value: "false", label: t2("settings.off") }], (v) => change(field, v === "true"));
+      const select = (value, choices, selectValue) => (0, import_react2.createElement)(Dropdown, { id: props.id, label: props["aria-label"], disabled: props.disabled, value, choices, onChange: selectValue });
+      if (field === "hideTopicSessions" || field === "historyCatalog" || field === "notices" || field === "factLinks" || field === "factExtraction" || field === "persistentWork")
+        return (0, import_react2.createElement)(
+          "button",
+          { ...props, type: "button", role: "switch", "aria-checked": draft[field], className: "theone-switch", onClick: () => change(field, !draft[field]) },
+          (0, import_react2.createElement)("span", { className: "theone-switch-thumb" })
+        );
       if (field === "linkScope" || field === "routeNotice") {
         const values = field === "linkScope" ? ["auto", "workspace", "off"] : ["switch", "hidden", "all"];
         return select(draft[field], values.map((value) => ({ value, label: t2(`settings.${field === "linkScope" ? "scope" : "notice"}.${value}`) })), (v) => change(field, v));
@@ -3921,17 +4624,8 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
     return (0, import_react2.createElement)(
       "section",
       { className: "theone-settings", translate: "no" },
-      (0, import_react2.createElement)(
-        "header",
-        { className: "theone-settings-header" },
-        (0, import_react2.createElement)("div", null, (0, import_react2.createElement)("h1", { ref: heading, tabIndex: -1 }, t2("settings.title")), (0, import_react2.createElement)("p", null, t2("settings.subtitle"))),
-        (0, import_react2.createElement)("button", { type: "button", disabled: saving, onClick: () => ctx.layout.selectPanel(panelId) }, t2("settings.back"))
-      ),
-      (0, import_react2.createElement)("p", { className: "theone-settings-notice" }, t2("settings.readOnly")),
       (0, import_react2.createElement)(UpdateSection),
-      (0, import_react2.createElement)(WeixinSection),
-      (0, import_react2.createElement)(TelegramSection),
-      (0, import_react2.createElement)(IMessageSection),
+      (0, import_react2.createElement)(RemoteApps),
       !snapshot && !error ? (0, import_react2.createElement)("p", { role: "status" }, t2("settings.loading")) : null,
       error ? (0, import_react2.createElement)("p", { role: "alert" }, t2("settings.error"), " ", (0, import_react2.createElement)("button", { type: "button", onClick: () => setAttempt((n) => n + 1) }, t2("retry"))) : null,
       snapshot && draft && (0, import_react2.createElement)(
@@ -3940,31 +4634,29 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
           event.preventDefault();
           void save();
         } },
-        (0, import_react2.createElement)(
-          "section",
-          { className: "theone-settings-summary" },
-          (0, import_react2.createElement)(
-            "dl",
-            null,
-            (0, import_react2.createElement)("div", null, (0, import_react2.createElement)("dt", null, t2("settings.model")), (0, import_react2.createElement)("dd", null, snapshot.model ? `${snapshot.model.provider} / ${snapshot.model.model}` : t2("settings.none"))),
-            (0, import_react2.createElement)("div", null, (0, import_react2.createElement)("dt", null, t2("settings.capacity")), (0, import_react2.createElement)("dd", null, snapshot.model?.contextWindow?.toLocaleString(localeSnapshot().active) ?? t2("settings.none"))),
-            (0, import_react2.createElement)("div", null, (0, import_react2.createElement)("dt", null, t2("settings.output")), (0, import_react2.createElement)("dd", null, snapshot.model?.defaultMaxTokens?.toLocaleString(localeSnapshot().active) ?? t2("settings.none")))
-          ),
-          snapshot.modelUnavailable ? (0, import_react2.createElement)("p", { role: "status" }, t2("settings.modelUnavailable")) : null,
-          (0, import_react2.createElement)("p", null, t2("settings.inherited")),
-          (0, import_react2.createElement)("p", null, t2("settings.compression"))
-        ),
-        ...groups.map(([group, keys]) => (0, import_react2.createElement)(
-          "section",
-          { className: "theone-settings-group", key: group },
-          (0, import_react2.createElement)("h2", null, t2(`settings.${group}`)),
-          (0, import_react2.createElement)("dl", null, ...keys.map((key) => (0, import_react2.createElement)(
+        ...groups.map(([group, keys]) => {
+          const rows = (0, import_react2.createElement)("dl", null, ...keys.map((key) => (0, import_react2.createElement)(
             "div",
             { className: "theone-settings-row", key },
-            (0, import_react2.createElement)("dt", null, (0, import_react2.createElement)("strong", null, t2(`settings.${key}`)), (0, import_react2.createElement)("p", null, t2(`settings.help.${key}`)), (0, import_react2.createElement)("code", null, key)),
-            (0, import_react2.createElement)("dd", null, control(key), key === "catalogIntervalMs" && Number.isFinite(draft.catalogIntervalMs) ? (0, import_react2.createElement)("small", null, t2("settings.seconds", { count: draft.catalogIntervalMs / 1e3 })) : null)
-          )))
-        )),
+            (0, import_react2.createElement)("dt", null, (0, import_react2.createElement)("strong", null, t2(`settings.${key}`)), (0, import_react2.createElement)("p", null, t2(`settings.help.${key}`))),
+            // A number with its unit beside it, as DSH writes "14 px".
+            (0, import_react2.createElement)("dd", null, key === "catalogIntervalMs" ? (0, import_react2.createElement)("span", { className: "theone-settings-unit" }, control(key), t2("settings.secondsUnit")) : control(key))
+          )));
+          if (group === "advanced") return (0, import_react2.createElement)(
+            "details",
+            { className: "theone-settings-group theone-settings-advanced", key: group },
+            (0, import_react2.createElement)("summary", null, (0, import_react2.createElement)("h2", null, t2("settings.advanced"))),
+            rows
+          );
+          return (0, import_react2.createElement)(
+            "section",
+            { className: "theone-settings-group", key: group },
+            (0, import_react2.createElement)("h2", null, t2(`settings.${group}`)),
+            group === "models" && snapshot.modelUnavailable ? (0, import_react2.createElement)("p", { className: "theone-settings-help", role: "status" }, t2("settings.modelUnavailable")) : null,
+            group === "experimental" ? (0, import_react2.createElement)("p", { className: "theone-settings-help" }, t2("settings.experimentalIntro")) : null,
+            rows
+          );
+        }),
         (0, import_react2.createElement)(
           "footer",
           { className: "theone-settings-footer" },
@@ -4048,13 +4740,13 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
       field("manage.workspace", (0, import_react2.createElement)(
         "div",
         { className: "theone-manage-row" },
-        (0, import_react2.createElement)(
-          "select",
-          { value: group, disabled: busy, onChange: (event) => setGroup(event.target.value) },
-          (0, import_react2.createElement)("option", { value: "" }, t2("manage.unassigned")),
-          ...groups.map((item) => (0, import_react2.createElement)("option", { key: item.id, value: item.id }, item.title)),
-          (0, import_react2.createElement)("option", { value: "__new" }, t2("manage.newWorkspace"))
-        ),
+        (0, import_react2.createElement)(Dropdown, {
+          label: t2("manage.workspace"),
+          value: group,
+          disabled: busy,
+          onChange: setGroup,
+          choices: [{ value: "", label: t2("manage.unassigned") }, ...groups.map((item) => ({ value: item.id, label: item.title })), { value: "__new", label: t2("manage.newWorkspace") }]
+        }),
         group === "__new" ? (0, import_react2.createElement)("input", { value: groupTitle, maxLength: 80, placeholder: t2("manage.newWorkspaceName"), disabled: busy, onChange: (event) => setGroupTitle(event.target.value) }) : null,
         (0, import_react2.createElement)("button", {
           type: "button",
@@ -4067,12 +4759,14 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
       field("manage.attach", (0, import_react2.createElement)(
         "div",
         { className: "theone-manage-row" },
-        (0, import_react2.createElement)(
-          "select",
-          { value: session, disabled: busy || !sessions, onChange: (event) => setSession(event.target.value) },
-          (0, import_react2.createElement)("option", { value: "" }, sessions ? t2("manage.attachPick") : t2("manage.loadingSessions")),
-          ...(sessions ?? []).filter((item) => !own.has(item.id)).map((item) => (0, import_react2.createElement)("option", { key: item.id, value: item.id }, item.title))
-        ),
+        (0, import_react2.createElement)(Dropdown, {
+          label: t2("manage.attach"),
+          value: session,
+          disabled: busy || !sessions,
+          onChange: setSession,
+          placeholder: sessions ? t2("manage.attachPick") : t2("manage.loadingSessions"),
+          choices: (sessions ?? []).filter((item) => !own.has(item.id)).map((item) => ({ value: item.id, label: item.title }))
+        }),
         (0, import_react2.createElement)("button", { type: "button", disabled: busy || !session, onClick: () => {
           void post("/api/theone/topics", { action: "attach", id: topic.id, sessionId: session }).then((ok) => {
             if (ok) setSession("");
@@ -4083,15 +4777,17 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
       field("manage.merge", (0, import_react2.createElement)(
         "div",
         { className: "theone-manage-row" },
-        (0, import_react2.createElement)(
-          "select",
-          { value: into, disabled: busy, onChange: (event) => {
-            setInto(event.target.value);
+        (0, import_react2.createElement)(Dropdown, {
+          label: t2("manage.merge"),
+          value: into,
+          disabled: busy,
+          onChange: (value) => {
+            setInto(value);
             setConfirm(void 0);
-          } },
-          (0, import_react2.createElement)("option", { value: "" }, t2("manage.mergePick")),
-          ...contexts.filter((item) => item.id !== topic.id).map((item) => (0, import_react2.createElement)("option", { key: item.id, value: item.id }, item.title))
-        ),
+          },
+          placeholder: t2("manage.mergePick"),
+          choices: contexts.filter((item) => item.id !== topic.id).map((item) => ({ value: item.id, label: item.title }))
+        }),
         (0, import_react2.createElement)(
           "button",
           {
@@ -4125,6 +4821,133 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
         ),
         confirm === "delete" ? (0, import_react2.createElement)("span", { className: "theone-manage-hint" }, t2("manage.deleteHint")) : null
       )
+    );
+  }
+  function Dropdown({ id, label: label2, disabled, value, choices, onChange, placeholder }) {
+    const [open, setOpen] = (0, import_react2.useState)(false);
+    const [active, setActive] = (0, import_react2.useState)(0);
+    const [up, setUp] = (0, import_react2.useState)(false);
+    const root = (0, import_react2.useRef)(null);
+    const menu = (0, import_react2.useRef)(null);
+    const selected = choices.findIndex((choice) => choice.value === value);
+    (0, import_react2.useEffect)(() => {
+      if (!open) return;
+      menu.current?.querySelector("[data-active=true]")?.scrollIntoView({ block: "nearest" });
+      const outside = (event) => {
+        if (!root.current?.contains(event.target)) setOpen(false);
+      };
+      document.addEventListener("pointerdown", outside, true);
+      return () => document.removeEventListener("pointerdown", outside, true);
+    }, [open, active]);
+    const show = () => {
+      const bounds = root.current?.getBoundingClientRect();
+      setUp(!!bounds && window.innerHeight - bounds.bottom < 300 && bounds.top > window.innerHeight - bounds.bottom);
+      setActive(Math.max(0, selected));
+      setOpen(true);
+    };
+    const pick = (index) => {
+      setOpen(false);
+      root.current?.querySelector("button")?.focus();
+      if (choices[index] && choices[index].value !== value) onChange(choices[index].value);
+    };
+    const keydown = (event) => {
+      if (!open) {
+        if (["ArrowDown", "ArrowUp", "Enter", " "].includes(event.key)) {
+          event.preventDefault();
+          show();
+        }
+        return;
+      }
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        setActive((index) => Math.min(choices.length - 1, Math.max(0, index + (event.key === "ArrowDown" ? 1 : -1))));
+      } else if (event.key === "Home" || event.key === "End") {
+        event.preventDefault();
+        setActive(event.key === "Home" ? 0 : choices.length - 1);
+      } else if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        pick(active);
+      } else if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        setOpen(false);
+      } else if (event.key === "Tab") setOpen(false);
+    };
+    return (0, import_react2.createElement)(
+      "div",
+      { ref: root, className: "theone-dropdown", "data-up": up, onKeyDown: keydown },
+      (0, import_react2.createElement)(
+        "button",
+        {
+          type: "button",
+          id,
+          className: "theone-dropdown-button",
+          disabled,
+          "aria-haspopup": "listbox",
+          "aria-expanded": open,
+          "aria-label": label2,
+          onClick: () => open ? setOpen(false) : show()
+        },
+        (0, import_react2.createElement)("span", { className: "theone-dropdown-value", "data-placeholder": selected < 0 }, choices[selected]?.label ?? placeholder ?? ""),
+        icon("chevron", 12)
+      ),
+      open ? (0, import_react2.createElement)(
+        "div",
+        { ref: menu, className: "theone-dropdown-menu", role: "listbox", "aria-label": label2 },
+        ...choices.map((choice, index) => (0, import_react2.createElement)("div", {
+          key: choice.value,
+          role: "option",
+          className: "theone-dropdown-option",
+          "aria-selected": index === selected,
+          "data-active": index === active,
+          onPointerEnter: () => setActive(index),
+          onClick: () => pick(index)
+        }, (0, import_react2.createElement)("span", null, choice.label), index === selected ? icon("check", 14) : null))
+      ) : null
+    );
+  }
+  function MoreMenu({ items, disabled }) {
+    const t2 = useText();
+    const [open, setOpen] = (0, import_react2.useState)(false);
+    const root = (0, import_react2.useRef)(null);
+    (0, import_react2.useEffect)(() => {
+      if (!open) return;
+      const outside = (event) => {
+        if (!root.current?.contains(event.target)) setOpen(false);
+      };
+      const key = (event) => {
+        if (event.key === "Escape") setOpen(false);
+      };
+      document.addEventListener("pointerdown", outside, true);
+      document.addEventListener("keydown", key);
+      return () => {
+        document.removeEventListener("pointerdown", outside, true);
+        document.removeEventListener("keydown", key);
+      };
+    }, [open]);
+    return (0, import_react2.createElement)(
+      "div",
+      { ref: root, className: "theone-more" },
+      (0, import_react2.createElement)("button", {
+        type: "button",
+        className: "theone-icon-button",
+        "aria-haspopup": "menu",
+        "aria-expanded": open,
+        "aria-label": t2("catalog.more"),
+        title: t2("catalog.more"),
+        onClick: () => setOpen((value) => !value)
+      }, icon("more", 16)),
+      open ? (0, import_react2.createElement)("div", { className: "theone-menu", role: "menu" }, ...items.map((item) => (0, import_react2.createElement)("button", {
+        key: item.label,
+        type: "button",
+        role: "menuitem",
+        title: item.hint,
+        disabled: disabled || item.disabled,
+        onClick: () => {
+          setOpen(false);
+          item.run();
+        }
+      }, item.label))) : null
     );
   }
   const label = (text) => text.replace(/\s*[:：]\s*$/, "");
@@ -4181,19 +5004,16 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
               import_react2.Fragment,
               null,
               ...(route.decision.alternateIds ?? []).filter((id) => id !== target && contexts.some((context) => context.id === id)).slice(0, 2).map((id) => (0, import_react2.createElement)("button", { key: id, type: "button", className: "theone-quiet", disabled: busy, onClick: () => void post("/api/theone/routes", { messageId: route.messageId, contextId: id }) }, t2("routes.moveTo", { title: titleOf(id) }))),
-              (0, import_react2.createElement)(
-                "select",
-                {
-                  value: "",
-                  disabled: busy,
-                  "aria-label": t2("routes.move"),
-                  onChange: (event) => {
-                    if (event.target.value) void post("/api/theone/routes", { messageId: route.messageId, contextId: event.target.value });
-                  }
+              (0, import_react2.createElement)(Dropdown, {
+                label: t2("routes.move"),
+                value: "",
+                disabled: busy,
+                onChange: (value) => {
+                  if (value) void post("/api/theone/routes", { messageId: route.messageId, contextId: value });
                 },
-                (0, import_react2.createElement)("option", { value: "" }, t2("routes.move")),
-                ...contexts.filter((context) => context.id !== target).map((context) => (0, import_react2.createElement)("option", { key: context.id, value: context.id }, context.title))
-              )
+                placeholder: t2("routes.move"),
+                choices: contexts.filter((context) => context.id !== target).map((context) => ({ value: context.id, label: context.title }))
+              })
             )
           )
         );
@@ -4214,6 +5034,8 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
     const [choosing, setChoosing] = (0, import_react2.useState)(false);
     const [choices, setChoices] = (0, import_react2.useState)();
     const [reconsidering, setReconsidering] = (0, import_react2.useState)(false);
+    const [query, setQuery] = (0, import_react2.useState)("");
+    const [filter, setFilter] = (0, import_react2.useState)("all");
     const choosingRef = (0, import_react2.useRef)(false);
     const reload = (0, import_react2.useRef)(async () => {
     });
@@ -4469,19 +5291,16 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
             }
           }, "\xD7")
         )),
-        others.length ? (0, import_react2.createElement)(
-          "select",
-          {
-            "aria-label": t2("link.add"),
-            value: "",
-            disabled: !!busy,
-            onChange: (event) => {
-              if (event.target.value) void editLinks({ action: "link", a: id, b: event.target.value });
-            }
+        others.length ? (0, import_react2.createElement)(Dropdown, {
+          label: t2("link.add"),
+          value: "",
+          disabled: !!busy,
+          onChange: (value) => {
+            if (value) void editLinks({ action: "link", a: id, b: value });
           },
-          (0, import_react2.createElement)("option", { value: "" }, t2("link.add")),
-          ...others.map((context) => (0, import_react2.createElement)("option", { key: context.id, value: context.id }, context.title))
-        ) : null,
+          placeholder: t2("link.add"),
+          choices: others.map((context) => ({ value: context.id, label: context.title }))
+        }) : null,
         (0, import_react2.createElement)(
           "label",
           { className: "theone-link-private", title: t2("link.privateHint") },
@@ -4516,7 +5335,29 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
     const unconsented = status?.consent === "ask" || status?.consent === "declined";
     const total = choices ? choices.sessions.length : (status?.waiting ?? 0) + (status?.excluded ?? 0);
     const included = choices ? choices.sessions.filter((session) => !session.excluded).length : status?.waiting ?? 0;
-    const figure = (value, name) => (0, import_react2.createElement)("div", { key: name }, (0, import_react2.createElement)("dd", null, value), (0, import_react2.createElement)("dt", null, name));
+    const progress = !snapshot ? t2("catalog.reading") : unconsented ? "" : status?.running ? t2("catalog.indexing") : status?.pending ? t2("catalog.pending", { count: status.pending, sessionSuffix: status.pending === 1 ? "" : "s" }) : "";
+    const occasional = [
+      // Before consent there is no history to refresh, so the action would only confuse.
+      unconsented ? null : { label: t2("catalog.refresh"), disabled: !!status?.running, run: () => void refresh() },
+      status?.consent === "granted" ? { label: t2("catalog.chooseChatsShort"), run: () => choosing ? closeChoices() : void chooseChats() } : null,
+      snapshot?.linkage && snapshot.linkage.scope !== "off" ? { label: t2("link.clearLearned"), hint: t2("link.clearLearnedHint"), run: () => void editLinks({ action: "clearLearned" }) } : null
+    ].filter((item) => item !== null);
+    const byId = new Map((snapshot?.contexts ?? []).map((context) => [context.id, context]));
+    const needle = query.trim().toLowerCase();
+    const narrowed = !!needle || filter !== "all";
+    const counts = { waiting: snapshot?.contexts.filter((c) => c.topicStatus === "waiting").length ?? 0, done: snapshot?.contexts.filter((c) => c.topicStatus === "done").length ?? 0 };
+    const rank = { waiting: 0, active: 1, dormant: 2, done: 3 };
+    const shown = (ids) => ids.filter((id) => {
+      const topic = byId.get(id);
+      if (!topic || filter !== "all" && topic.topicStatus !== filter) return false;
+      return !needle || [topic.title, topic.summary, topic.lastState, topic.projectInfo?.name].some((text) => text?.toLowerCase().includes(needle));
+    }).sort((a, b) => rank[byId.get(a).topicStatus ?? "active"] - rank[byId.get(b).topicStatus ?? "active"]);
+    const visible = groups.map((group) => ({ group, ids: shown(group.contextIds) })).filter((entry) => !narrowed || entry.ids.length);
+    const filters = [
+      { id: "all", label: t2("catalog.filterAll"), count: snapshot?.contexts.length ?? 0 },
+      ...counts.waiting || filter === "waiting" ? [{ id: "waiting", label: t2("catalog.filterWaiting"), count: counts.waiting }] : [],
+      ...counts.done || filter === "done" ? [{ id: "done", label: t2("catalog.filterDone"), count: counts.done }] : []
+    ];
     return (0, import_react2.createElement)(
       "section",
       { className: "theone-catalog", translate: "no" },
@@ -4526,50 +5367,50 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
         (0, import_react2.createElement)(
           "div",
           { className: "theone-catalog-heading" },
-          (0, import_react2.createElement)("p", { className: "theone-overline" }, "TheOne"),
           (0, import_react2.createElement)("h1", null, t2("catalog.title")),
-          (0, import_react2.createElement)("p", { className: "theone-catalog-lede" }, t2("catalog.subtitle"))
+          (0, import_react2.createElement)("p", { className: "theone-catalog-lede" }, t2("catalog.subtitle")),
+          (0, import_react2.createElement)("p", { className: "theone-catalog-status", role: "status" }, progress)
         ),
-        // One number is enough here; how often routing was right lives with the routing list.
-        snapshot?.contexts.length ? (0, import_react2.createElement)("dl", { className: "theone-figures" }, figure(snapshot.contexts.length, t2("catalog.figTopics"))) : null
-      ),
-      (0, import_react2.createElement)(
-        "div",
-        { className: "theone-toolbar" },
-        // Only work in progress is worth a line; "up to date" is the normal state.
-        (0, import_react2.createElement)("p", { className: "theone-catalog-status", role: "status" }, snapshot ? unconsented ? "" : status?.running ? t2("catalog.indexing") : status?.pending ? t2("catalog.pending", { count: status.pending, sessionSuffix: status.pending === 1 ? "" : "s" }) : "" : t2("catalog.reading")),
         (0, import_react2.createElement)(
           "div",
           { className: "theone-catalog-tools" },
-          (0, import_react2.createElement)("button", { type: "button", className: "theone-primary", disabled: !!busy, onClick: () => setCreating((open) => !open) }, t2("manage.create")),
-          // Before consent there is no history to refresh, so the button would only confuse.
-          unconsented ? null : (0, import_react2.createElement)("button", { type: "button", onClick: refresh, disabled: !!busy || status?.running }, t2("catalog.refresh")),
-          status?.consent === "granted" ? (0, import_react2.createElement)("button", {
-            type: "button",
-            className: "theone-quiet",
-            disabled: !!busy,
-            "aria-expanded": choosing,
-            onClick: () => choosing ? closeChoices() : void chooseChats()
-          }, t2("catalog.chooseChatsShort")) : null,
-          snapshot?.linkage && snapshot.linkage.scope !== "off" ? (0, import_react2.createElement)("button", {
-            type: "button",
-            className: "theone-quiet",
-            disabled: !!busy,
-            title: t2("link.clearLearnedHint"),
-            onClick: () => {
-              void editLinks({ action: "clearLearned" });
-            }
-          }, t2("link.clearLearned")) : null,
-          (0, import_react2.createElement)("button", { type: "button", className: "theone-quiet", onClick: () => openFeedbackDialog() }, t2("feedback.open"))
+          occasional.length ? (0, import_react2.createElement)(MoreMenu, { items: occasional, disabled: !!busy }) : null,
+          (0, import_react2.createElement)("button", { type: "button", className: "theone-primary", disabled: !!busy, "aria-expanded": creating, onClick: () => setCreating((open) => !open) }, icon("plus", 14), t2("manage.create"))
         )
       ),
+      snapshot?.contexts.length ? (0, import_react2.createElement)(
+        "div",
+        { className: "theone-toolbar" },
+        filters.length > 1 ? (0, import_react2.createElement)("div", { className: "theone-filters", role: "group", "aria-label": t2("catalog.filterLabel") }, ...filters.map((item) => (0, import_react2.createElement)(
+          "button",
+          { key: item.id, type: "button", className: "theone-filter", "aria-pressed": filter === item.id, onClick: () => setFilter(item.id) },
+          item.label,
+          (0, import_react2.createElement)("span", { className: "theone-filter-count" }, item.count)
+        ))) : null,
+        (0, import_react2.createElement)(
+          "label",
+          { className: "theone-search" },
+          icon("search", 14),
+          (0, import_react2.createElement)("input", {
+            type: "search",
+            value: query,
+            placeholder: t2("catalog.search"),
+            "aria-label": t2("catalog.search"),
+            onChange: (event) => setQuery(event.target.value),
+            onKeyDown: (event) => {
+              if (event.key === "Escape") setQuery("");
+            }
+          }),
+          query ? (0, import_react2.createElement)("button", { type: "button", className: "theone-search-clear", "aria-label": t2("catalog.clearSearch"), title: t2("catalog.clearSearch"), onClick: () => setQuery("") }, icon("close", 12)) : null
+        )
+      ) : null,
       // One card from question to choice: the list opens inside it and the button counts what will be read.
       asking ? (0, import_react2.createElement)(
         "section",
         { className: "theone-consent", "aria-labelledby": "theone-consent-title" },
         (0, import_react2.createElement)("h2", { id: "theone-consent-title" }, t2("catalog.consentTitle")),
         (0, import_react2.createElement)("p", { className: "theone-consent-body" }, t2("catalog.consentBody", { count: total, sessionSuffix: total === 1 ? "" : "s" })),
-        (0, import_react2.createElement)("ul", { className: "theone-consent-points" }, ...["catalog.consentKeep", "catalog.consentQuota", "catalog.consentChoose"].map((key) => (0, import_react2.createElement)("li", { key }, icon("check", 14), (0, import_react2.createElement)("span", null, t2(key))))),
+        (0, import_react2.createElement)("ul", { className: "theone-consent-points" }, ...["catalog.consentKeep", "catalog.consentQuota"].map((key) => (0, import_react2.createElement)("li", { key }, icon("check", 14), (0, import_react2.createElement)("span", null, t2(key))))),
         choosing ? chatPicker() : null,
         (0, import_react2.createElement)(
           "div",
@@ -4621,11 +5462,21 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
       status?.failed ? (0, import_react2.createElement)("p", { className: "theone-catalog-warning" }, t2("catalog.failed", { count: status.failed, sessionSuffix: status.failed === 1 ? "" : "s" })) : null,
       status?.searchUnavailable ? (0, import_react2.createElement)("p", { className: "theone-catalog-warning" }, t2("catalog.searchUnavailable")) : null,
       error ? (0, import_react2.createElement)("p", { role: "alert", className: "theone-catalog-warning" }, t2(error)) : null,
-      snapshot ? (0, import_react2.createElement)(RouteList, { routes, stats: routeStats, contexts: snapshot.contexts, post, busy: !!busy }) : null,
-      snapshot && !snapshot.contexts.length && !unconsented ? (0, import_react2.createElement)("p", { className: "theone-catalog-empty" }, t2(status?.running ? "catalog.emptyIndexing" : "catalog.empty")) : null,
+      // Nothing yet: say what will be here and offer the way back, as an empty page should.
+      snapshot && !snapshot.contexts.length ? (0, import_react2.createElement)(
+        "div",
+        { className: "theone-empty" },
+        (0, import_react2.createElement)("span", { className: "theone-empty-icon" }, icon("chats", 20)),
+        (0, import_react2.createElement)("h2", null, t2(status?.running ? "catalog.emptyIndexingTitle" : "catalog.emptyTitle")),
+        (0, import_react2.createElement)("p", null, t2(status?.running ? "catalog.emptyIndexing" : "catalog.empty")),
+        (0, import_react2.createElement)("button", { type: "button", className: "theone-quiet theone-empty-back", onClick: () => {
+          void navigation.open();
+        } }, icon("arrowUpRight", 14), t2("catalog.backToMain"))
+      ) : null,
+      narrowed && !visible.length ? (0, import_react2.createElement)("p", { className: "theone-catalog-note theone-no-match" }, t2("catalog.noMatch")) : null,
       // Laid out like DSH's built-in plugins: foldable groups of two-column cards; a card opens to full width.
-      (0, import_react2.createElement)("div", { className: "theone-catalog-groups" }, ...groups.map((group) => {
-        const shut = folded.has(group.id);
+      (0, import_react2.createElement)("div", { className: "theone-catalog-groups" }, ...visible.map(({ group, ids }) => {
+        const shut = folded.has(group.id) && !narrowed;
         return (0, import_react2.createElement)(
           "section",
           { key: group.id, className: "theone-topic-group" },
@@ -4646,16 +5497,17 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
               },
               icon("chevron", 12),
               (0, import_react2.createElement)("h2", null, group.title),
-              (0, import_react2.createElement)("span", { className: "theone-group-count" }, group.contextIds.length)
+              (0, import_react2.createElement)("span", { className: "theone-group-count" }, ids.length)
             )
           ),
           group.summary ? (0, import_react2.createElement)("p", { className: "theone-group-summary" }, group.summary) : null,
-          shut ? null : (0, import_react2.createElement)("ol", { className: "theone-topic-list" }, ...group.contextIds.flatMap((id) => {
-            const topic = snapshot?.contexts.find((c) => c.id === id);
+          shut ? null : (0, import_react2.createElement)("ol", { className: "theone-topic-list" }, ...ids.flatMap((id) => {
+            const topic = byId.get(id);
             if (!topic) return [];
             const constraints = snapshot?.linkage?.topics[id]?.constraints ?? "";
             const open = managing === id;
-            const summary = topic.summary && topic.summary.trim() !== topic.title.trim() ? topic.summary : "";
+            const summary = topic.summary && topic.summary.trim() !== topic.title.trim() && !PLACEHOLDERS.has(topic.summary) ? topic.summary : "";
+            const lastState = PLACEHOLDERS.has(topic.lastState) ? "" : topic.lastState;
             const stuck = topic.hidden === "orphaned" || topic.hidden === "excluded";
             return [(0, import_react2.createElement)(
               "li",
@@ -4680,8 +5532,8 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
                 // Closed, a card answers one question, where it left off; open, it shows everything.
                 open ? [
                   summary ? (0, import_react2.createElement)("p", { key: "s", className: "theone-topic-summary" }, summary) : null,
-                  topic.lastState ? (0, import_react2.createElement)("p", { key: "l", className: "theone-topic-state" }, (0, import_react2.createElement)("span", null, label(t2("topic.state"))), topic.lastState) : null
-                ] : topic.lastState || summary ? (0, import_react2.createElement)("p", { className: "theone-topic-summary" }, topic.lastState || summary) : null,
+                  lastState ? (0, import_react2.createElement)("p", { key: "l", className: "theone-topic-state" }, (0, import_react2.createElement)("span", null, label(t2("topic.state"))), lastState) : null
+                ] : lastState || summary ? (0, import_react2.createElement)("p", { className: "theone-topic-summary" }, lastState || summary) : null,
                 topic.hidden ? (0, import_react2.createElement)("p", { className: "theone-topic-warning" }, t2(topic.hidden === "excluded" ? "topic.hiddenExcluded" : topic.hidden === "archived" ? "topic.hiddenArchived" : "topic.hiddenOrphaned")) : null,
                 ...(snapshot?.merges ?? []).filter((merge) => merge.targetId === id).map((merge) => (0, import_react2.createElement)(
                   "p",
@@ -4738,13 +5590,24 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
             )];
           }))
         );
-      }))
+      })),
+      // How messages were sorted is for checking now and then, so it comes after the topics.
+      snapshot && routes.length ? (0, import_react2.createElement)(RouteList, { routes, stats: routeStats, contexts: snapshot.contexts, post, busy: !!busy }) : null,
+      // Where to find people and the project, for whoever wants them: quiet links at the foot, no prompt.
+      (0, import_react2.createElement)(
+        "footer",
+        { className: "theone-catalog-footer" },
+        (0, import_react2.createElement)("button", { type: "button", className: "theone-quiet", onClick: () => openFeedbackDialog() }, t2("feedback.open")),
+        (0, import_react2.createElement)(QQGroupButton),
+        (0, import_react2.createElement)(EmailLink, { className: "theone-quiet theone-icon-link", size: 16 }),
+        (0, import_react2.createElement)("a", { className: "theone-quiet theone-icon-link", href: GITHUB_URL, target: "_blank", rel: "noopener", ...tip(t2("catalog.github")) }, icon("github", 16))
+      )
     );
   }
   ctx.effect(() => {
     const style = document.createElement("style");
     style.dataset.plugin = "dsh-theone";
-    style.textContent = sidebarCss + catalogCss + settingsCss + composerCss;
+    style.textContent = sidebarCss + catalogCss + settingsCss + composerCss + setupCss;
     document.head.append(style);
     return () => {
       lifetime.abort();
@@ -4755,6 +5618,8 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
     const style = document.createElement("style");
     style.dataset.plugin = "dsh-theone-gateway-row";
     let owned = [];
+    let mainSessionIds = [];
+    let hideTopicSessions = false;
     const onlyOursUnassigned = (ids) => {
       const workspaces = ctx.workspaces.list.getSnapshot();
       const list = ctx.sessions.list.getSnapshot();
@@ -4768,7 +5633,7 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
       return stray.length > 0 && stray.every((id) => ids.has(id));
     };
     const update2 = () => {
-      const ids = new Set(owned);
+      const ids = new Set(hideTopicSessions ? owned : mainSessionIds);
       const id = navigation.getSnapshot();
       if (id) ids.add(id);
       const rules = [...ids].map((sessionId) => `[role="treeitem"][data-row-key="${CSS.escape(`session:${sessionId}`)}"]{display:none!important}`);
@@ -4782,6 +5647,8 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
         void fetch("/api/theone/owned", { signal: lifetime.signal, cache: "no-store" }).then((response) => response.ok ? response.json() : void 0).then((value) => {
           if (value && !lifetime.signal.aborted) {
             owned = value.sessionIds;
+            mainSessionIds = value.mainSessionIds ?? [];
+            hideTopicSessions = value.hideTopicSessions === true;
             update2();
           }
         }).catch(() => {
@@ -4801,6 +5668,8 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
     });
     const unsubscribeWorkspaces = ctx.workspaces.list.subscribe(update2);
     window.addEventListener("storage", update2);
+    window.addEventListener("theone-settings-changed", readOwned);
+    window.addEventListener("focus", readOwned);
     document.head.append(style);
     return () => {
       unsubscribe();
@@ -4808,6 +5677,8 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
       unsubscribeWorkspaces();
       clearTimeout(timer);
       window.removeEventListener("storage", update2);
+      window.removeEventListener("theone-settings-changed", readOwned);
+      window.removeEventListener("focus", readOwned);
       style.remove();
     };
   });
@@ -4864,16 +5735,23 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
   });
   const WorkPanel = createWorkPanel(useText, lifetime.signal, () => ctx.layout.selectPanel(panelId));
   ctx.slots.inject("main", () => [
-    ctx.slots.register({ name: "main", key: tasksPanelId }, WorkPanel),
     ctx.slots.register({ name: "main", key: panelId }, GatewayPanel),
-    ctx.slots.register({ name: "main", key: catalogPanelId }, CatalogPanel),
-    ctx.slots.register({ name: "main", key: settingsPanelId }, SettingsPanel)
+    ctx.slots.register({ name: "main", key: catalogPanelId }, CatalogPanel)
   ]);
+  const settingsLabel = (() => (0, import_react2.createElement)("span", { className: "theone-settings-nav" }, symbol(), SETTINGS_LABEL));
+  ctx.slots.inject("settings.section", () => ctx.slots.register({ name: "settings.section", id: SETTINGS_SECTION, order: 1e3, label: settingsLabel }, SettingsPanel));
+  void fetch("/api/theone/settings", { signal: lifetime.signal, cache: "no-store" }).then((response) => response.ok ? response.json() : void 0).then((value) => {
+    if (!value?.values.persistentWork || lifetime.signal.aborted) return;
+    ctx.slots.inject("main", () => [ctx.slots.register({ name: "main", key: tasksPanelId }, WorkPanel)]);
+    ctx.slots.inject("sidebar.panellist", () => [
+      ctx.slots.register({ name: "sidebar.panellist", id: tasksPanelId, order: -998, label: () => t("tasks.title") }, ({ size }) => {
+        const t2 = useText();
+        return (0, import_react2.createElement)("span", { className: "theone-catalog-entry", translate: "no" }, icon("grid", 16), size === 16 ? (0, import_react2.createElement)("span", null, t2("tasks.title")) : null);
+      })
+    ]);
+  }).catch(() => {
+  });
   ctx.slots.inject("sidebar.panellist", () => [
-    ctx.slots.register({ name: "sidebar.panellist", id: tasksPanelId, order: -998, label: () => t("tasks.title") }, ({ size }) => {
-      const t2 = useText();
-      return (0, import_react2.createElement)("span", { className: "theone-catalog-entry", translate: "no" }, icon("grid", 16), size === 16 ? (0, import_react2.createElement)("span", null, t2("tasks.title")) : null);
-    }),
     ctx.slots.register({ name: "sidebar.panellist", id: panelId, order: -1e3, label: () => t("gateway.title") }, SidebarEntry),
     ctx.slots.register({ name: "sidebar.panellist", id: catalogPanelId, order: -999, label: () => t("catalog.title") }, ({ size }) => {
       const t2 = useText();
@@ -4893,13 +5771,15 @@ button:has(.theone-nav):hover{background:var(--one-tint);border-color:color-mix(
 button:has(.theone-nav[data-active=true]){border-color:color-mix(in srgb,var(--one-accent) 40%,var(--one-line))}
 .theone-nav{display:flex;align-items:center;gap:10px;color:var(--one-accent);font-family:inherit;position:relative;z-index:1}
 .theone-symbol-wrap{position:relative;display:inline-flex;flex:none;width:20px;height:20px}
-.theone-nav .theone-symbol{display:block;width:20px;height:20px;flex:none;overflow:visible;border:0;border-radius:0;background:none}
+.theone-nav .theone-symbol{display:block;width:20px;height:20px;flex:none;overflow:visible;border:0;border-radius:0;background:none;position:relative}
+.theone-symbol[data-spooky=true]{color:#d9600c}.theone-symbol-stem{stroke:#5f7a2e}
+[data-ds-dark-theme] .theone-symbol[data-spooky=true]{color:#f39a4a}[data-ds-dark-theme] .theone-symbol-stem{stroke:#8fae55}
 .theone-nav[data-wide=true] .theone-symbol-wrap{margin:0 2px}
-.theone-update-dot{position:absolute;top:-2px;right:-2px;width:7px;height:7px;border-radius:50%;background:#e8590c;box-shadow:0 0 0 2px var(--one-tint)}
+.theone-update-dot{position:absolute;top:-2px;right:-2px;width:7px;height:7px;border-radius:50%;corner-shape:round;background:#e8590c;box-shadow:0 0 0 2px var(--one-tint)}
 button:has(.theone-nav[data-wide=true])>span:has(.theone-nav){flex:1;min-width:0}
 .theone-nav[data-wide=true]{width:100%}
 .theone-icon{display:block;flex:none;overflow:visible}
-.theone-update{margin-left:auto;align-self:center;flex:none;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;box-sizing:border-box;padding:0;border-radius:50%;border:1px solid color-mix(in srgb,var(--one-accent) 45%,transparent);background:color-mix(in srgb,var(--one-accent) 12%,transparent);color:var(--one-accent);font-size:12px;line-height:16px;white-space:nowrap;cursor:pointer;transition:background 150ms ease}
+.theone-update{margin-left:auto;align-self:center;flex:none;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;box-sizing:border-box;padding:0;border-radius:50%;corner-shape:round;border:1px solid color-mix(in srgb,var(--one-accent) 45%,transparent);background:color-mix(in srgb,var(--one-accent) 12%,transparent);color:var(--one-accent);font-size:12px;line-height:16px;white-space:nowrap;cursor:pointer;transition:background 150ms ease}
 .theone-update:hover{background:color-mix(in srgb,var(--one-accent) 22%,transparent)}
 .theone-update:focus-visible{outline:2px solid var(--one-accent);outline-offset:2px}
 .theone-update[data-state=installing],.theone-update[data-state=reloading],.theone-update[data-state=restart]{cursor:default}
@@ -4913,8 +5793,8 @@ button:has(.theone-nav[data-wide=true])>span:has(.theone-nav){flex:1;min-width:0
 .theone-dialog-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:16px}
 .theone-dialog-actions button{padding:8px 14px;border:1px solid var(--dsw-alias-border-l2,#ffffff1f);border-radius:9px;background:transparent;color:inherit;font:inherit;cursor:pointer}
 .theone-dialog-actions button:hover{background:var(--dsw-alias-interactive-bg-hover,#ffffff12)}
-.theone-dialog-actions .theone-dialog-primary{border-color:transparent;background:var(--one-accent);color:var(--one-on-accent)}
-.theone-dialog-actions .theone-dialog-primary:hover{background:var(--one-accent-hover)}
+.theone-dialog-actions .theone-dialog-primary{border-color:var(--one-line);background:var(--one-tint);color:var(--one-accent);font-weight:500}
+.theone-dialog-actions .theone-dialog-primary:hover{border-color:color-mix(in srgb,var(--one-accent) 40%,var(--one-line));background:var(--one-tint)}
 .theone-dialog-actions button:focus-visible{outline:2px solid var(--one-accent);outline-offset:2px}
 .theone-dialog .theone-dialog-body{white-space:pre-wrap;color:var(--dsw-alias-label-primary,#e8e8ea)}
 .theone-feedback{width:min(560px,100%);max-height:calc(100vh - 32px);overflow:auto}
@@ -4923,6 +5803,23 @@ button:has(.theone-nav[data-wide=true])>span:has(.theone-nav){flex:1;min-width:0
 .theone-feedback-preview{margin:0 0 10px;font-size:13px}
 .theone-feedback-preview summary{cursor:pointer;color:var(--dsw-alias-label-secondary,#a0a0a6)}
 .theone-feedback-preview pre{max-height:220px;overflow:auto;margin:6px 0 0;padding:8px 10px;border-radius:9px;background:#0000001f;font-size:12px;line-height:1.5;white-space:pre-wrap;word-break:break-word}
+.theone-start{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:2px 0 10px}
+.theone-start-chip{box-sizing:border-box;text-decoration:none;display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;border:.5px solid var(--dsw-alias-border-l2,#ffffff24);border-radius:999px;corner-shape:round;background:transparent;color:var(--dsw-alias-label-secondary,#a0a0a6);font:inherit;font-size:13px;line-height:18px;white-space:nowrap;cursor:pointer;transition:background 140ms ease,color 140ms ease,border-color 140ms ease}
+.theone-start-chip .theone-icon{opacity:.75}
+.theone-start-chip[data-primary=true]{color:var(--one-accent);border-color:var(--one-line);background:var(--one-tint)}
+.theone-start-chip[data-primary=true] .theone-icon{opacity:1}
+.theone-start-chip[data-primary=true]:hover{color:var(--one-accent);border-color:color-mix(in srgb,var(--one-accent) 40%,var(--one-line));background:var(--one-tint)}
+.theone-start-chip:not([data-primary=true]):hover{background:var(--dsw-alias-interactive-bg-hover,#ffffff0f);color:var(--dsw-alias-label-primary,inherit);border-color:var(--dsw-alias-border-l3,#ffffff38)}
+.theone-start-chip:focus-visible,.theone-start-close:focus-visible{outline:2px solid var(--dsw-focus-ring-color,#4176e6);outline-offset:2px}
+.theone-start-close{display:grid;place-items:center;width:24px;height:24px;padding:0;border:0;border-radius:6px;background:none;color:var(--dsw-alias-label-tertiary,#6f6f76);cursor:pointer;opacity:0;transition:opacity 140ms ease}
+.theone-start:hover .theone-start-close,.theone-start-close:focus-visible{opacity:1}
+.theone-start-close:hover{color:var(--dsw-alias-label-secondary,#a0a0a6)}
+.theone-start-icon{position:relative;width:30px;padding:0;justify-content:center}
+.theone-start-close{position:relative}
+:is(.theone-start,.theone-catalog) [data-tip]::after{content:attr(data-tip);position:absolute;left:50%;bottom:calc(100% + 6px);z-index:5;padding:4px 8px;border:.5px solid var(--dsw-alias-border-l2,#ffffff24);border-radius:6px;background:var(--dsw-specific-sidebar-fill,#232326);box-shadow:0 4px 14px #0003;color:var(--dsw-alias-label-primary,#e8e8ea);font-size:12px;line-height:18px;font-weight:400;white-space:nowrap;pointer-events:none;opacity:0;transform:translate(-50%,2px);transition:opacity 120ms ease,transform 120ms ease}
+:is(.theone-start,.theone-catalog) :is([data-tip]:hover,[data-tip]:focus-visible,[data-copied=true])::after{opacity:1;transform:translate(-50%,0)}
+.theone-start-icon[data-copied=true]{color:var(--one-accent);border-color:var(--one-line)}
+@media(prefers-reduced-motion:reduce){.theone-start-chip,.theone-start-close,[data-tip]::after{transition:none}}
 .theone-notice{display:flex;align-items:center;gap:8px;margin:6px 4px 0;padding:6px 8px 6px 10px;border:1px solid var(--dsw-alias-border-l2,#ffffff1f);border-radius:10px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary,#a0a0a6);min-width:0}
 .theone-notice-tag{flex:none;display:inline-flex;padding:3px;border-radius:6px;background:var(--one-tint);box-shadow:inset 0 0 0 .5px var(--one-line);color:var(--one-accent)}
 .theone-notice-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -4930,7 +5827,7 @@ button:has(.theone-nav[data-wide=true])>span:has(.theone-nav){flex:1;min-width:0
 .theone-notice button{flex:none;display:inline-flex;border:0;background:transparent;color:inherit;font:inherit;cursor:pointer;padding:4px;border-radius:6px}
 .theone-notice button:hover{background:var(--dsw-alias-interactive-bg-hover,#ffffff12)}
 .theone-notice-link{color:var(--one-accent)!important}
-.theone-update-spin{width:12px;height:12px;border-radius:50%;border:1.5px solid currentColor;border-right-color:transparent;animation:theone-spin 800ms linear infinite}
+.theone-update-spin{width:12px;height:12px;border-radius:50%;corner-shape:round;border:1.5px solid currentColor;border-right-color:transparent;animation:theone-spin 800ms linear infinite}
 @keyframes theone-spin{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){.theone-update-spin{animation:none}}
 .theone-entry-copy{display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-width:0}
@@ -4938,7 +5835,7 @@ button:has(.theone-nav[data-wide=true])>span:has(.theone-nav){flex:1;min-width:0
 .theone-wordmark{display:inline-flex;align-items:baseline;gap:1px;white-space:nowrap}
 .theone-word-the{font-size:12px;font-weight:400;letter-spacing:-.25px;color:var(--dsw-alias-label-secondary)}
 .theone-word-one{position:relative;font-family:ui-rounded,'SF Pro Rounded','Avenir Next',sans-serif;font-size:19px;line-height:1.15;font-weight:500;letter-spacing:-1px;transform:rotate(-4deg);padding-right:7px}
-.theone-word-dot{position:absolute;right:0;top:2px;width:4px;height:4px;border-radius:50%;background:currentColor}
+.theone-word-dot{position:absolute;right:0;top:2px;width:4px;height:4px;border-radius:50%;corner-shape:round;background:currentColor}
 .theone-entry-label{font-size:12px;font-weight:400;white-space:nowrap}
 .theone-entry-sub{font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary)}
 .theone-opening{padding:32px;color:var(--dsw-alias-label-primary);font:inherit}
@@ -4946,54 +5843,183 @@ button:has(.theone-nav[data-wide=true])>span:has(.theone-nav){flex:1;min-width:0
 `;
 var catalogCss = `
 button:has(.theone-catalog-entry)>span:not(:has(.theone-catalog-entry)){display:none}
-body{--one-accent:#a75b1e;--one-accent-hover:#8c4a15;--one-on-accent:#fff;--one-tint:#fff5ec;--one-line:#eed3bb;--one-soft:#a75b1e14}
-body[data-ds-dark-theme]{--one-accent:#93c8f3;--one-accent-hover:#b6dbf8;--one-on-accent:#0e1a24;--one-tint:#1d2a37;--one-line:#344d64;--one-soft:#93c8f31a}
-.theone-catalog{--t-fg:var(--dsw-alias-label-primary,#18181b);--t-muted:var(--dsw-alias-label-secondary,#5c6370);--t-caption:var(--dsw-alias-label-caption,#9aa0aa);--t-rule:var(--dsw-alias-border-l2,#0000001a);--t-line:var(--dsw-alias-border-l3,#0000001f);--t-hover:var(--dsw-alias-interactive-bg-hover,#26314810);--t-base:var(--dsw-alias-bg-base,#fff);--t-accent:var(--one-accent);--t-warn:var(--dsw-alias-state-error-primary,#d9480f);--t-field:var(--t-hover);
-  container-type:inline-size;box-sizing:border-box;height:100%;overflow:auto;padding:0 clamp(24px,4vw,48px) 64px;color:var(--t-fg);font-family:var(--dsw-font-family,inherit);font-size:14px;line-height:22px}
-.theone-catalog>*{max-width:960px;margin-left:auto;margin-right:auto}
-.theone-catalog button{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;gap:4px;height:28px;padding:0 10px;border:.5px solid var(--t-line);border-radius:var(--dsw-radius-sm,8px);background:transparent;color:inherit;font:inherit;font-size:12px;line-height:18px;font-weight:400;cursor:pointer;white-space:nowrap}
+body{--one-accent:#a75b1e;--one-tint:#fff5ec;--one-line:#eed3bb;--one-soft:#a75b1e14;--one-halo:#ff780066}
+body[data-ds-dark-theme]{--one-accent:#93c8f3;--one-tint:#1d2a37;--one-line:#344d64;--one-soft:#93c8f31a;--one-halo:#80caff80}
+/* The brand word in main chat's greeting: TheOne's colour with the same soft halo as the main chat entry. */
+[data-slot="conversation.chat.flow"]:has(.theone-welcome-mark)>[data-chat-turn="1"][data-chat-flow-kind="assistant-step"] strong{color:var(--one-accent);font-weight:600;text-shadow:0 0 10px var(--one-halo),0 0 22px var(--one-halo)}
+.theone-catalog{--t-fg:var(--dsw-alias-label-primary,#18181b);--t-muted:var(--dsw-alias-label-secondary,#5c6370);--t-subtle:var(--dsw-alias-label-tertiary,var(--t-muted));--t-caption:var(--dsw-alias-label-caption,#9aa0aa);--t-rule:var(--dsw-alias-border-l2,#0000001a);--t-line:var(--dsw-alias-border-l3,#0000001f);--t-hover:var(--dsw-alias-interactive-bg-hover,#26314810);--t-base:var(--dsw-alias-bg-base,#fff);--t-fill:var(--dsw-alias-bg-module-platform,#f2f3f5);--t-card:var(--dsw-alias-settings-card-fill,var(--t-base));--t-accent:var(--one-accent);--t-warn:var(--dsw-alias-state-error-primary,#d9480f);
+  container-type:inline-size;box-sizing:border-box;display:flex;flex-direction:column;height:100%;overflow:auto;padding:0 clamp(24px,4vw,48px) 24px;color:var(--t-fg);font-family:var(--dsw-font-family,inherit);font-size:14px;line-height:22px}
+.theone-catalog>*{flex:none;box-sizing:border-box;width:100%;max-width:960px;margin-left:auto;margin-right:auto}
+.theone-catalog button{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 12px;border:.5px solid var(--t-line);border-radius:var(--dsw-radius-md,10px);background:transparent;color:inherit;font:inherit;font-size:13px;line-height:20px;font-weight:400;cursor:pointer;white-space:nowrap;transition:background 120ms ease,color 120ms ease,border-color 120ms ease}
 .theone-catalog button:hover:not(:disabled){background:var(--t-hover)}
 .theone-catalog button:disabled{opacity:.4;cursor:not-allowed}
-.theone-catalog button:focus-visible{outline:2px solid var(--t-accent);outline-offset:2px}
-.theone-catalog .theone-primary{border-color:transparent;background:var(--one-accent);color:var(--one-on-accent)}
-.theone-catalog .theone-primary:hover:not(:disabled){background:var(--one-accent-hover)}
+.theone-catalog :is(button,a,input,summary):focus-visible{outline:2px solid var(--t-accent);outline-offset:2px}
+.theone-catalog .theone-primary{border-color:var(--one-line);background:var(--one-tint);color:var(--one-accent);font-weight:500}
+.theone-catalog .theone-primary:hover:not(:disabled){border-color:color-mix(in srgb,var(--one-accent) 40%,var(--one-line));background:var(--one-tint)}
 .theone-catalog .theone-quiet{border-color:transparent;color:var(--t-muted)}
 .theone-catalog .theone-quiet:hover:not(:disabled){color:var(--t-fg)}
-.theone-catalog-header{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:8px 24px;padding-top:28px}
-.theone-catalog-header .theone-overline{display:none}
-.theone-overline{margin:0 0 4px;font-size:12px;line-height:18px;font-weight:500;color:var(--t-accent)}
-.theone-catalog h1{margin:0;font-size:20px;line-height:28px;font-weight:600}
+.theone-catalog .theone-icon-button{width:32px;padding:0;border-color:transparent;color:var(--t-caption)}
+.theone-catalog .theone-icon-button:hover:not(:disabled),.theone-catalog .theone-icon-button[aria-expanded=true]{color:var(--t-muted);background:var(--t-hover)}
+.theone-catalog .theone-icon-link{position:relative;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;padding:0;border-radius:var(--dsw-radius-md,10px);color:var(--t-caption);text-decoration:none}
+.theone-catalog .theone-icon-link:hover{background:var(--t-hover);color:var(--t-muted)}
+.theone-catalog .theone-icon-link[data-copied=true]{color:var(--t-accent)}
+.theone-catalog-header{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:12px 24px;padding:28px 0 24px}
+.theone-catalog h1{margin:0;font-size:20px;line-height:28px;font-weight:500}
 .theone-catalog-lede{margin:4px 0 0;font-size:13px;line-height:20px;color:var(--t-muted)}
-.theone-figures{display:flex;gap:16px;margin:0;padding-top:4px}
-.theone-figures>div{display:flex;align-items:baseline;gap:4px}
-.theone-figures dd{margin:0;font-size:13px;line-height:20px;font-weight:500;font-variant-numeric:tabular-nums}
-.theone-figures dt{font-size:13px;line-height:20px;color:var(--t-muted)}
-.theone-toolbar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px;padding:20px 0 24px}
-.theone-catalog-status{margin:0;font-size:13px;line-height:20px;color:var(--dsw-alias-label-tertiary,var(--t-muted))}
+.theone-catalog-status{display:flex;align-items:center;gap:6px;margin:8px 0 0;font-size:12px;line-height:18px;color:var(--t-subtle)}
 .theone-catalog-status:empty{display:none}
-.theone-catalog-tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-left:auto}
-.theone-catalog .theone-catalog-tools .theone-primary{border-color:var(--t-line);background:transparent;color:inherit}
-.theone-catalog .theone-catalog-tools .theone-primary:hover:not(:disabled){background:var(--t-hover)}
-.theone-catalog-note,.theone-catalog-empty{margin:0 0 24px;color:var(--t-muted);font-size:13px;line-height:20px}
-.theone-catalog-empty{padding:40px 0;text-align:center}
-.theone-consent{box-sizing:border-box;margin:0 auto 32px;padding:20px 24px;border:1px solid var(--one-line);border-radius:var(--dsw-radius-lg,16px);background:var(--one-tint)}
-.theone-consent .theone-overline{display:flex;align-items:center;gap:6px}
-.theone-consent .theone-overline::before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor}
+.theone-catalog-status::before{content:'';flex:none;width:6px;height:6px;border-radius:50%;corner-shape:round;background:var(--t-accent);animation:theone-pulse 1.6s ease-in-out infinite}
+@keyframes theone-pulse{50%{opacity:.3}}
+.theone-catalog-tools{display:flex;align-items:center;gap:8px;margin-left:auto}
+.theone-more{position:relative}
+.theone-menu{position:absolute;top:calc(100% + 6px);right:0;z-index:20;box-sizing:border-box;min-width:184px;padding:4px;border:.5px solid var(--t-line);border-radius:var(--dsw-radius-lg,12px);background:var(--dsw-specific-menu,var(--dsw-alias-bg-layer-2,#232326));backdrop-filter:blur(24px) saturate(1.4);box-shadow:var(--dsw-elevation-prominent,0 8px 30px #0003)}
+.theone-catalog .theone-menu button{display:flex;justify-content:flex-start;width:100%;height:36px;padding:0 12px;border:0;border-radius:var(--dsw-radius-md,8px);font-size:14px;line-height:22px}
+.theone-toolbar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin-bottom:28px}
+.theone-filters{display:inline-flex;gap:2px;padding:2px;border-radius:var(--dsw-radius-md,10px);background:var(--t-fill)}
+.theone-catalog .theone-filter{height:28px;padding:0 10px;gap:6px;border:0;border-radius:var(--dsw-radius-sm,8px);color:var(--t-muted)}
+.theone-catalog .theone-filter:hover:not(:disabled){background:transparent;color:var(--t-fg)}
+.theone-catalog .theone-filter[aria-pressed=true],.theone-catalog .theone-filter[aria-pressed=true]:hover:not(:disabled){background:var(--t-card);color:var(--t-fg);box-shadow:0 1px 2px #0000001a,inset 0 0 0 .5px var(--t-rule)}
+.theone-filter-count{color:var(--t-caption);font-variant-numeric:tabular-nums}
+.theone-search{display:flex;align-items:center;gap:8px;box-sizing:border-box;width:240px;height:32px;margin-left:auto;padding:0 12px;border-radius:var(--dsw-radius-md,10px);background:var(--t-fill);color:var(--t-caption);cursor:text}
+.theone-search:focus-within{box-shadow:inset 0 0 0 1px var(--t-line)}
+.theone-catalog .theone-search input:not([type=checkbox]){flex:1;min-width:0;height:100%;min-height:0;padding:0;border:0;background:none;box-shadow:none;outline:none;color:var(--t-fg);font-size:13px}
+.theone-catalog .theone-search input::placeholder{color:var(--t-caption)}
+.theone-catalog .theone-search input:not([type=checkbox]):is(:focus,:focus-visible){border-color:transparent;box-shadow:none;outline:none}
+.theone-catalog .theone-search input::-webkit-search-cancel-button{-webkit-appearance:none;appearance:none}
+.theone-catalog .theone-search-clear{flex:none;width:20px;height:20px;margin-right:-6px;padding:0;border:0;border-radius:50%;corner-shape:round;color:var(--t-caption)}
+.theone-catalog .theone-search-clear:hover:not(:disabled){color:var(--t-fg);background:var(--t-hover)}
+[data-ds-dark-theme] .theone-catalog .theone-filter[aria-pressed=true],[data-ds-dark-theme] .theone-catalog .theone-filter[aria-pressed=true]:hover:not(:disabled){background:color-mix(in srgb,var(--t-fg) 14%,transparent);box-shadow:none}
+.theone-consent{box-sizing:border-box;margin:0 auto 40px;padding:24px 28px;border:.5px solid var(--one-line);border-radius:var(--dsw-radius-xl,20px);background:linear-gradient(135deg,var(--one-tint),transparent 80%)}
 .theone-consent h2{margin:0;font-size:16px;line-height:24px;font-weight:600}
-.theone-consent-body{margin:4px 0 0;max-width:640px;font-size:14px;line-height:22px;color:var(--t-muted)}
-.theone-consent-points{list-style:none;margin:10px 0 0;padding:0;display:flex;flex-wrap:wrap;gap:4px 16px;font-size:12px;line-height:18px;color:var(--t-muted)}
+.theone-consent-body{margin:6px 0 0;max-width:640px;font-size:14px;line-height:22px;color:var(--t-muted)}
+.theone-consent-points{list-style:none;margin:12px 0 0;padding:0;display:flex;flex-wrap:wrap;gap:6px 20px;font-size:13px;line-height:20px;color:var(--t-subtle)}
 .theone-consent-points li{display:flex;gap:6px;align-items:center}
-.theone-consent-points .theone-icon{flex:none;color:var(--t-accent)}
-.theone-consent-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:20px}
-.theone-catalog .theone-consent-actions button{height:32px;padding:0 14px;font-size:13px}
-.theone-catalog .theone-consent-actions button:not(.theone-primary):not(.theone-quiet){background:var(--t-base)}
-.theone-consent-strip{box-sizing:border-box;display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px;margin:0 auto 32px;padding:8px 8px 8px 16px;border:1px solid var(--one-line);border-radius:var(--dsw-radius-md,12px);font-size:13px;line-height:20px;color:var(--t-muted)}
+.theone-consent-points .theone-icon{flex:none}
+.theone-consent-actions{display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin-top:24px}
+.theone-catalog .theone-consent-actions button{height:36px;padding:0 16px;font-size:14px}
+.theone-catalog .theone-consent-actions .theone-primary{margin-right:8px}
+.theone-catalog .theone-consent-actions button:not(.theone-primary){border-color:transparent;color:var(--t-muted)}
+.theone-catalog .theone-consent-actions button:not(.theone-primary):hover:not(:disabled){color:var(--t-fg)}
+.theone-consent-strip{box-sizing:border-box;display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px;margin:0 auto 28px;padding:6px 6px 6px 16px;border:.5px solid var(--t-rule);border-radius:var(--dsw-radius-lg,12px);font-size:13px;line-height:20px;color:var(--t-muted)}
 .theone-consent-strip>span{display:flex;align-items:center;gap:8px}
-.theone-consent-strip>span::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--t-accent)}
+.theone-consent-strip>span::before{content:'';width:6px;height:6px;border-radius:50%;corner-shape:round;background:var(--t-accent)}
 .theone-catalog .theone-consent-strip button{margin-left:auto;color:var(--t-accent)}
+.theone-empty{display:flex;flex-direction:column;align-items:center;gap:6px;padding:56px 16px 64px;text-align:center}
+.theone-empty-icon{display:grid;place-items:center;width:44px;height:44px;margin-bottom:8px;border-radius:14px;color:var(--t-accent);background:var(--one-soft)}
+.theone-empty h2{margin:0;font-size:15px;line-height:22px;font-weight:500}
+.theone-empty p{margin:0;max-width:420px;font-size:13px;line-height:20px;color:var(--t-subtle)}
+.theone-catalog .theone-empty-back{margin-top:14px}
+.theone-catalog-note{margin:0 0 24px;color:var(--t-subtle);font-size:13px;line-height:20px}
+.theone-no-match{padding:40px 0;text-align:center}
+.theone-catalog-warning{box-sizing:border-box;margin:0 auto 24px;padding:10px 16px;border:.5px solid color-mix(in srgb,var(--t-warn) 35%,transparent);border-radius:var(--dsw-radius-lg,12px);background:color-mix(in srgb,var(--t-warn) 6%,transparent);font-size:13px;line-height:20px}
+.theone-catalog-entry{display:flex;align-items:center;gap:10px;font-size:14px}
+.theone-catalog-groups{display:flex;flex-direction:column;gap:32px}
+.theone-topic-group{display:flex;flex-direction:column;gap:12px}
+.theone-group-head{display:flex;align-items:center;min-height:28px}
+.theone-catalog .theone-group-toggle{height:28px;gap:8px;margin-left:-8px;padding:0 8px;border:0;border-radius:var(--dsw-radius-sm,8px);background:none;font-size:14px;line-height:22px}
+.theone-catalog .theone-group-toggle:hover:not(:disabled){background:var(--t-hover)}
+.theone-group-toggle .theone-icon{color:var(--t-caption);transform:rotate(90deg);transition:transform 150ms ease}
+.theone-group-toggle[aria-expanded=true] .theone-icon{transform:rotate(180deg)}
+.theone-topic-group h2{margin:0;font-size:14px;line-height:22px;font-weight:500}
+.theone-group-count{color:var(--t-caption);font-variant-numeric:tabular-nums}
+.theone-group-summary{margin:-8px 0 0 20px;font-size:12px;line-height:18px;color:var(--t-subtle)}
+.theone-topic-list{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.theone-topic-card{position:relative;display:flex;flex-direction:column;min-width:0;overflow:hidden;border:.5px solid var(--t-rule);border-radius:var(--dsw-radius-xl,20px);background:var(--t-card);transition:border-color 120ms ease,background 120ms ease}
+.theone-topic-card[data-open=true]{grid-column:1/-1;border-color:var(--t-line)}
+.theone-topic-card:not(.theone-hidden):hover{border-color:var(--t-line);background-image:linear-gradient(var(--t-hover),var(--t-hover))}
+.theone-topic-card:not(.theone-hidden):hover .theone-continue{background:var(--one-soft)}
+.theone-catalog .theone-stretch::after{content:'';position:absolute;inset:0;border-radius:inherit}
+.theone-catalog .theone-stretch:focus-visible{outline:none}
+.theone-catalog .theone-stretch:focus-visible::after{outline:2px solid var(--t-accent);outline-offset:-2px}
+.theone-topic-main{display:flex;flex-direction:column;gap:4px;padding:16px 16px 0}
+.theone-topic-main:last-child{padding-bottom:16px}
+.theone-topic-card.theone-hidden .theone-topic-main{opacity:.55}
+.theone-topic-row{display:flex;align-items:center;gap:8px;min-width:0}
+.theone-topic-card h3{flex:1;min-width:0;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;line-height:22px;font-weight:500}
+.theone-topic-summary{margin:0;font-size:13px;line-height:20px;color:var(--t-subtle);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;text-wrap:pretty}
+.theone-topic-card[data-open=true] .theone-topic-summary{display:block}
+.theone-topic-state{margin:4px 0 0;font-size:13px;line-height:20px;color:var(--t-subtle)}
+.theone-topic-state>span{margin-right:6px;color:var(--t-caption)}
+.theone-topic-foot{display:flex;align-items:center;gap:8px;min-height:32px;margin-top:auto;padding:10px 10px 12px 16px}
+.theone-topic-chip{min-width:0;max-width:55%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 8px;border-radius:var(--dsw-radius-xs,6px);background:var(--t-fill);color:var(--t-subtle);font-family:var(--ds-font-family-code,ui-monospace,SFMono-Regular,Consolas,monospace);font-size:12px;line-height:20px}
+.theone-tag{flex:none;display:inline-flex;align-items:center;height:20px;padding:0 8px;border-radius:999px;corner-shape:round;background:var(--t-fill);font-size:11px;line-height:1;font-weight:500;color:var(--t-subtle)}
+.theone-status-waiting{color:var(--one-accent);background:var(--one-tint);box-shadow:inset 0 0 0 .5px var(--one-line)}
+.theone-topic-warning{margin:6px 0 0;font-size:12px;line-height:18px;color:var(--t-subtle)}
+.theone-topic-merged{margin:4px 0 0;font-size:12px;line-height:18px;color:var(--t-subtle)}
+.theone-catalog .theone-topic-merged .theone-quiet{height:22px;padding:0 6px;color:var(--t-accent)}
+.theone-catalog .theone-continue{margin-left:auto;height:28px;padding:0 10px;gap:6px;border-color:transparent;color:var(--t-accent);font-weight:500}
+.theone-catalog .theone-topic-more{position:relative;z-index:1;flex:none;width:28px;height:28px;margin:-3px -6px -3px 0;padding:0;border-color:transparent;color:var(--t-caption)}
+.theone-catalog .theone-topic-more:hover:not(:disabled),.theone-catalog .theone-topic-more[aria-expanded=true]{color:var(--t-fg);background:var(--t-hover)}
+.theone-topic-merged button{position:relative;z-index:1}
+.theone-topic-edit{display:flex;flex-direction:column;gap:16px;margin:4px 16px 16px;padding-top:16px;border-top:.5px solid var(--t-rule)}
+.theone-topic-quick{display:flex;flex-wrap:wrap;gap:8px}
+.theone-topic-links{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin:0;font-size:13px}
+.theone-links-label,.theone-links-empty{color:var(--t-subtle)}
+.theone-link-chip{display:inline-flex;align-items:center;gap:2px;height:24px;padding:0 2px 0 10px;border-radius:999px;corner-shape:round;background:var(--t-fill);font-size:12px}
+.theone-catalog .theone-link-chip button{height:20px;border:0;padding:0 6px;font-size:14px;line-height:1;color:var(--t-muted);border-radius:999px;corner-shape:round}
+.theone-link-private{display:inline-flex;align-items:center;gap:6px;color:var(--t-muted);cursor:pointer}
+.theone-catalog input:not([type=checkbox]),.theone-catalog textarea,.theone-catalog select{box-sizing:border-box;min-width:0;min-height:32px;padding:5px 10px;border:.5px solid transparent;border-radius:var(--dsw-radius-md,10px);background:var(--t-fill);color:inherit;font:inherit;font-size:13px;line-height:20px}
+.theone-catalog input:not([type=checkbox]):focus,.theone-catalog textarea:focus,.theone-catalog select:focus{outline:none;border-color:var(--one-line);box-shadow:0 0 0 3px var(--one-soft)}
+.theone-manage{display:flex;flex-direction:column;gap:14px;font-size:13px}
+.theone-create{box-sizing:border-box;flex-direction:row;flex-wrap:wrap;align-items:center;gap:8px;margin:0 auto 28px;padding:12px;border:.5px solid var(--t-rule);border-radius:var(--dsw-radius-xl,20px);background:var(--t-card)}
+.theone-create input{flex:1;min-width:200px}
+.theone-manage-field{display:flex;flex-direction:column;gap:6px}
+.theone-manage-field>span{font-size:12px;line-height:18px;color:var(--t-subtle)}
+.theone-manage textarea{resize:vertical;width:100%}
+.theone-manage-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.theone-manage-row input,.theone-manage-row .theone-dropdown{flex:1;min-width:160px}
+.theone-catalog .theone-dropdown-button{justify-content:space-between;gap:10px;min-width:132px;max-width:280px;border-color:transparent;background:var(--t-fill)}
+.theone-catalog .theone-dropdown-button:hover:not(:disabled){background:var(--t-hover)}
+.theone-manage-row .theone-dropdown-button{width:100%;max-width:none}
+.theone-manage-row .theone-dropdown-menu{left:0;right:auto}
+.theone-catalog :is(.theone-routes,.theone-topic-links) .theone-dropdown-button{height:28px;padding:0 10px;font-size:12px}
+.theone-catalog .theone-dropdown-option{font-size:13px;min-height:32px}
+.theone-manage-hint{margin:0;font-size:12px;line-height:18px;color:var(--t-subtle)}
+.theone-catalog .theone-danger{color:var(--t-warn);border-color:color-mix(in srgb,var(--t-warn) 35%,transparent)}
+.theone-routes{box-sizing:border-box;margin:48px auto 0;padding-top:16px;border-top:.5px solid var(--t-rule)}
+.theone-routes summary{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;width:fit-content;min-height:32px;margin-left:-8px;padding:0 8px;border-radius:var(--dsw-radius-sm,8px);cursor:pointer;font-size:14px;line-height:22px;font-weight:500;list-style:none}
+.theone-routes summary:hover{background:var(--t-hover)}
+.theone-routes summary::-webkit-details-marker{display:none}
+.theone-routes summary::before{content:'';width:5px;height:5px;margin:0 3px 0 1px;border-right:1.5px solid var(--t-caption);border-bottom:1.5px solid var(--t-caption);transform:rotate(-45deg);transition:transform 150ms ease}
+.theone-routes[open] summary::before{transform:rotate(45deg) translate(-2px,-1px)}
+.theone-routes summary>span{color:var(--t-caption);font-weight:400}
+.theone-route-stats{font-weight:400;color:var(--t-subtle);font-size:12px}
+.theone-routes .theone-manage-hint{margin:4px 0 8px 12px;max-width:46em}
+.theone-routes ol{list-style:none;margin:0 0 0 12px;padding:0}
+.theone-routes li{display:grid;grid-template-columns:auto minmax(0,1fr) minmax(0,1fr) auto;gap:4px 16px;align-items:center;min-height:48px;padding:8px 0;border-top:.5px solid var(--t-rule);font-size:13px;line-height:20px}
+.theone-routes time{min-width:40px;color:var(--t-caption);font-variant-numeric:tabular-nums;white-space:nowrap}
+.theone-routes q{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;quotes:none}
+.theone-route-target{display:flex;flex-direction:column;min-width:0}
+.theone-route-target strong{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.theone-route-target small{color:var(--t-subtle);font-size:12px;line-height:18px}
+.theone-route-actions{display:flex;gap:8px;align-items:center;justify-content:flex-end}
+.theone-route-fixed{color:var(--t-subtle);font-size:12px}
+.theone-catalog .theone-routes button{height:28px;padding:0 8px;font-size:12px}
+.theone-catalog-footer{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:2px;margin-top:auto;padding-top:40px}
+.theone-catalog [data-tip]::after{top:auto;bottom:calc(100% + 6px);left:50%;right:auto;transform:translate(-50%,2px)}
+.theone-catalog :is([data-tip]:hover,[data-tip]:focus-visible,[data-copied=true])::after{transform:translate(-50%,0)}
+@container (max-width:640px){.theone-catalog-tools{margin-left:0}.theone-search{width:100%;margin-left:0}.theone-topic-list{grid-template-columns:1fr}.theone-consent{padding:20px}.theone-routes li{grid-template-columns:auto minmax(0,1fr)}.theone-route-target,.theone-route-actions{grid-column:2}.theone-route-actions{justify-content:flex-start}}
+@media(max-width:640px){.theone-catalog{padding:0 16px 40px}}
+@media(prefers-reduced-motion:reduce){.theone-catalog-status::before{animation:none}.theone-catalog button,.theone-topic-card{transition:none}}
+.theone-apps{margin:0 0 20px}
+.theone-app-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+@container theone-settings (max-width:460px){.theone-app-row{grid-template-columns:1fr}}
+.theone-settings .theone-app-card{height:auto;position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:16px;text-align:left;white-space:normal;cursor:pointer;color:inherit;font:inherit;border-radius:16px;border:1px solid var(--dsw-alias-border-l2);background:transparent;transition:background 140ms ease,border-color 140ms ease}
+.theone-settings .theone-app-card:hover{background:var(--dsw-alias-interactive-bg-hover)}
+.theone-settings .theone-app-card[data-open=true],.theone-settings .theone-app-card[data-open=true]:hover:not(:disabled){border-color:var(--one-line);background:var(--one-tint)}
+.theone-settings .theone-app-card:focus-visible{outline:2px solid var(--one-accent);outline-offset:2px}
+.theone-app-logo{display:grid;place-items:center;width:36px;height:36px;margin-bottom:10px;border-radius:10px;color:var(--app);background:color-mix(in srgb,var(--app) 12%,transparent)}
+.theone-app-card strong{font-size:14px;line-height:20px;font-weight:500}
+.theone-app-blurb{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary))}
+.theone-app-online{position:absolute;top:16px;right:16px;display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--dsw-alias-label-secondary)}
+.theone-app-online::before{content:'';width:6px;height:6px;border-radius:50%;corner-shape:round;background:var(--app)}
+.theone-app-panel{margin-top:12px;padding:22px;border-radius:16px;border:1px solid var(--dsw-alias-border-l2)}
+.theone-app-panel>section{margin:0;padding:0;border:0;background:none;box-shadow:none}
+.theone-app-panel h2{margin-top:0}
+@media(prefers-reduced-motion:reduce){.theone-settings .theone-app-card{transition:none}}
 .theone-picker{margin-top:16px}
 .theone-picker-hint{margin:0 0 8px;font-size:13px;line-height:20px;color:var(--t-muted)}
-.theone-picker-list{max-height:min(400px,55vh);overflow:auto;border:.5px solid var(--t-line);border-radius:var(--dsw-radius-md,12px);background:var(--t-base)}
+.theone-picker-list{max-height:min(400px,55vh);overflow:auto;border:.5px solid var(--t-line);border-radius:var(--dsw-radius-lg,12px);background:var(--t-base)}
 .theone-picker-group+.theone-picker-group{border-top:.5px solid var(--t-line)}
 .theone-picker-group>header{position:sticky;top:0;z-index:1;display:flex;align-items:center;gap:8px;height:36px;padding:0 12px 0 16px;border-bottom:.5px solid var(--t-rule);background:var(--t-base);font-size:12px;line-height:18px}
 .theone-picker-folder{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
@@ -5007,88 +6033,7 @@ body[data-ds-dark-theme]{--one-accent:#93c8f3;--one-accent-hover:#b6dbf8;--one-o
 .theone-picker-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .theone-picker-off .theone-picker-title{color:var(--t-caption)}
 .theone-picker time{color:var(--t-caption);font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}
-@container (max-width:560px){.theone-consent{padding:16px}.theone-picker time{display:none}}
-.theone-catalog-warning{box-sizing:border-box;margin:0 auto 24px;padding:10px 16px;border:.5px solid color-mix(in srgb,var(--t-warn) 40%,transparent);border-radius:var(--dsw-radius-md,12px);background:color-mix(in srgb,var(--t-warn) 6%,transparent);font-size:13px;line-height:20px}
-.theone-catalog-entry{display:flex;align-items:center;gap:10px;font-size:14px}
-.theone-routes{box-sizing:border-box;margin:0 auto 32px;padding:0 16px;border:.5px solid var(--t-line);border-radius:var(--dsw-radius-md,12px)}
-.theone-routes summary{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;min-height:44px;cursor:pointer;font-size:14px;line-height:22px;font-weight:500;list-style:none}
-.theone-routes summary::-webkit-details-marker{display:none}
-.theone-routes summary::before{content:'';width:6px;height:6px;margin:0 4px 0 2px;border-right:1.5px solid var(--t-muted);border-bottom:1.5px solid var(--t-muted);transform:rotate(-45deg);transition:transform 150ms ease}
-.theone-routes[open] summary::before{transform:rotate(45deg) translate(-2px,-1px)}
-.theone-routes summary>span{color:var(--t-caption);font-weight:400}
-.theone-route-stats{font-weight:400;color:var(--t-caption);font-size:13px}
-.theone-routes .theone-manage-hint{margin:0 0 8px 20px;max-width:46em}
-.theone-routes ol{list-style:none;margin:0;padding:0 0 8px}
-.theone-routes li{display:grid;grid-template-columns:48px minmax(0,1fr) minmax(0,1fr) 248px;gap:4px 16px;align-items:center;min-height:44px;padding:6px 0;border-top:.5px solid var(--t-rule);font-size:13px;line-height:20px}
-.theone-routes time{color:var(--t-caption);font-variant-numeric:tabular-nums}
-.theone-routes q{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;quotes:none}
-.theone-route-target{display:flex;flex-direction:column;min-width:0}
-.theone-route-target strong{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.theone-route-target small{color:var(--t-caption);font-size:12px;line-height:18px}
-.theone-route-actions{display:flex;gap:8px;align-items:center;justify-content:flex-end}
-.theone-route-fixed{color:var(--t-caption);font-size:12px}
-.theone-routes select{width:auto;width:132px;height:28px;min-height:28px;padding-top:0;padding-bottom:0;font-size:12px}
-.theone-catalog-groups{display:flex;flex-direction:column;gap:14px}
-.theone-topic-group{display:flex;flex-direction:column;gap:10px}
-.theone-topic-group+.theone-topic-group{padding-top:14px;border-top:.5px solid var(--t-rule)}
-.theone-group-head{display:flex;align-items:center;min-height:36px}
-.theone-catalog .theone-group-toggle{height:auto;gap:8px;padding:0;border:0;background:none;font-size:14px;line-height:22px}
-.theone-catalog .theone-group-toggle:hover:not(:disabled){background:none}
-.theone-group-toggle .theone-icon{color:var(--t-caption);transform:rotate(90deg);transition:transform 150ms ease}
-.theone-group-toggle[aria-expanded=true] .theone-icon{transform:rotate(180deg)}
-.theone-topic-group h2{margin:0;font-size:14px;line-height:22px;font-weight:400}
-.theone-group-count{color:var(--t-caption);font-variant-numeric:tabular-nums}
-.theone-group-summary{margin:-6px 0 0 20px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary,var(--t-muted))}
-.theone-topic-list{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
-.theone-topic-card{position:relative;display:flex;flex-direction:column;min-width:0;overflow:hidden;border:.5px solid var(--dsw-alias-settings-card-stroke,var(--dsw-alias-border-l4,#00000029));border-radius:var(--dsw-radius-xl,20px);background:var(--dsw-alias-settings-card-fill,var(--t-base));transition:background 120ms ease}
-.theone-topic-card[data-open=true]{grid-column:1/-1;border-color:var(--t-line)}
-.theone-topic-card:not(.theone-hidden):hover{background-image:linear-gradient(var(--t-hover),var(--t-hover))}
-.theone-topic-card:not(.theone-hidden):hover .theone-continue{background:var(--one-soft)}
-.theone-catalog .theone-stretch::after{content:'';position:absolute;inset:0;border-radius:inherit}
-.theone-catalog .theone-stretch:focus-visible{outline:none}
-.theone-catalog .theone-stretch:focus-visible::after{outline:2px solid var(--t-accent);outline-offset:-2px}
-.theone-topic-main{display:flex;flex-direction:column;gap:2px;padding:12px 14px 0}
-.theone-topic-main:last-child{padding-bottom:14px}
-.theone-topic-card.theone-hidden .theone-topic-main{opacity:.55}
-.theone-topic-row{display:flex;align-items:center;gap:12px;min-width:0}
-.theone-topic-card h3{flex:1;min-width:0;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;line-height:20px;font-weight:500}
-.theone-topic-summary{margin:0;font-size:13px;line-height:20px;color:var(--t-muted);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;text-wrap:pretty}
-.theone-topic-card[data-open=true] .theone-topic-summary{display:block}
-.theone-topic-state{margin:4px 0 0;font-size:13px;line-height:20px;color:var(--t-muted)}
-.theone-topic-state>span{margin-right:6px;color:var(--t-caption)}
-.theone-topic-foot{display:flex;align-items:center;gap:8px;min-height:28px;margin-top:auto;padding:8px 8px 10px 14px}
-.theone-topic-chip{min-width:0;max-width:50%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:1px 6px;border-radius:var(--dsw-radius-xs,4px);background:var(--dsw-alias-bg-module-platform,#f2f3f5);color:var(--t-muted);font-family:var(--ds-font-family-code,ui-monospace,SFMono-Regular,Consolas,monospace);font-size:12px;line-height:18px}
-.theone-tag{flex:none;display:inline-flex;align-items:center;height:18px;padding:0 7px;border-radius:999px;background:var(--dsw-alias-bg-module-platform,#f2f3f5);font-size:10px;line-height:1;font-weight:400;color:var(--t-muted)}
-.theone-status-waiting{color:var(--t-warn);background:color-mix(in srgb,var(--t-warn) 10%,transparent)}
-.theone-status-done{color:var(--t-accent);background:var(--one-soft)}
-.theone-topic-warning{margin:6px 0 0;padding-left:8px;border-left:2px solid var(--t-warn);font-size:12px;line-height:18px;color:var(--t-muted)}
-.theone-topic-merged{margin:4px 0 0;font-size:12px;line-height:18px;color:var(--t-muted)}
-.theone-catalog .theone-topic-merged .theone-quiet{height:22px;padding:0 6px;color:var(--t-accent)}
-.theone-catalog .theone-continue{margin-left:auto;height:26px;gap:6px;border-color:transparent;color:var(--t-accent);font-weight:500}
-.theone-catalog .theone-topic-more{position:relative;z-index:1;flex:none;width:26px;height:26px;margin:-3px -6px -3px 0;padding:0;border-color:transparent;color:var(--t-caption)}
-.theone-catalog .theone-topic-more:hover:not(:disabled),.theone-catalog .theone-topic-more[aria-expanded=true]{color:var(--t-fg);background:var(--t-hover)}
-.theone-topic-merged button{position:relative;z-index:1}
-.theone-topic-edit{display:flex;flex-direction:column;gap:14px;margin:2px 14px 14px;padding-top:14px;border-top:.5px solid var(--t-rule)}
-.theone-topic-quick{display:flex;flex-wrap:wrap;gap:8px}
-.theone-topic-links{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin:0 0 16px;font-size:13px}
-.theone-links-label,.theone-links-empty{color:var(--t-muted)}
-.theone-link-chip{display:inline-flex;align-items:center;gap:2px;height:24px;padding:0 2px 0 10px;border:.5px solid var(--t-line);border-radius:999px;font-size:12px}
-.theone-catalog .theone-link-chip button{height:20px;border:0;padding:0 6px;font-size:14px;line-height:1;color:var(--t-muted);border-radius:999px}
-.theone-link-private{display:inline-flex;align-items:center;gap:6px;color:var(--t-muted);cursor:pointer}
-.theone-catalog input:not([type=checkbox]),.theone-catalog textarea,.theone-catalog select{box-sizing:border-box;min-width:0;min-height:32px;padding:5px 10px;border:.5px solid var(--t-line);border-radius:var(--dsw-radius-sm,8px);background:var(--t-base);color:inherit;font:inherit;font-size:13px;line-height:20px}
-.theone-catalog input:not([type=checkbox]):focus,.theone-catalog textarea:focus,.theone-catalog select:focus{outline:none;border-color:var(--t-accent);box-shadow:0 0 0 3px var(--one-soft)}
-.theone-manage{display:flex;flex-direction:column;gap:14px;font-size:13px}
-.theone-create{box-sizing:border-box;flex-direction:row;flex-wrap:wrap;align-items:center;gap:8px;margin:0 auto 32px;padding:12px;border:.5px solid var(--t-line);border-radius:var(--dsw-radius-md,12px)}
-.theone-create input{flex:1;min-width:200px}
-.theone-manage-field{display:flex;flex-direction:column;gap:6px}
-.theone-manage-field>span{font-size:12px;line-height:18px;color:var(--t-muted)}
-.theone-manage textarea{resize:vertical;width:100%}
-.theone-manage-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
-.theone-manage-row select,.theone-manage-row input{flex:1;min-width:160px}
-.theone-manage-hint{margin:0;font-size:12px;line-height:18px;color:var(--t-muted)}
-.theone-catalog .theone-danger{color:var(--t-warn);border-color:color-mix(in srgb,var(--t-warn) 40%,transparent)}
-@container (max-width:640px){.theone-catalog-tools{margin-left:0}.theone-topic-list{grid-template-columns:1fr}.theone-routes li{grid-template-columns:40px minmax(0,1fr)}.theone-route-target,.theone-route-actions{grid-column:2}.theone-route-actions{justify-content:flex-start}}
-@media(max-width:640px){.theone-catalog{padding:0 16px 48px}}
+@container (max-width:560px){.theone-picker time{display:none}}
 `;
 var composerCss = `
 .theone-bg{display:inline-flex;align-items:center;gap:5px;height:32px;padding:0 10px;border:0;border-radius:10px;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:14px;white-space:nowrap;cursor:pointer;max-width:220px}
@@ -5113,19 +6058,49 @@ var composerCss = `
 .theone-bg-empty{margin:8px 10px;font-size:13px;color:var(--dsw-alias-label-secondary)}
 `;
 var settingsCss = `
-.theone-settings{--one-settings-accent:#a75b1e}[data-ds-dark-theme] .theone-settings{--one-settings-accent:#93c8f3}
-.theone-settings input,.theone-settings select{width:100%;box-sizing:border-box;min-height:38px;padding:8px 11px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;font:inherit;color:inherit;background:var(--dsw-specific-sidebar-fill)}.theone-settings input:focus-visible,.theone-settings select:focus-visible{outline:2px solid var(--one-settings-accent);outline-offset:2px}.theone-settings input:disabled,.theone-settings select:disabled,.theone-settings button:disabled{opacity:.5;cursor:default}.theone-settings small{display:block;margin-top:5px;color:var(--dsw-alias-label-secondary);font-size:12px}
-.theone-settings-footer{position:sticky;bottom:0;display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:15px 16px;margin-top:22px;border:1px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-specific-sidebar-fill);box-shadow:0 -4px 20px #00007;z-index:2}.theone-settings-footer p{flex:1;min-width:180px;margin:0;font-size:13px;line-height:1.6}.theone-settings .theone-settings-save{color:var(--one-settings-accent);border-color:color-mix(in srgb,var(--one-settings-accent) 35%,transparent);background:color-mix(in srgb,var(--one-settings-accent) 9%,var(--dsw-specific-sidebar-fill))}
+button:has(.theone-settings-nav)>svg:first-child{display:none}
+.theone-settings-nav{display:inline-flex;align-items:center;gap:8px;vertical-align:top}
+.theone-settings-nav .theone-symbol{display:block;flex:none;width:16px;height:16px}
+.theone-dropdown{position:relative;display:inline-block;max-width:100%}
+.theone-settings .theone-dropdown-button{display:inline-flex;align-items:center;justify-content:space-between;gap:12px;min-width:140px;max-width:260px}
+.theone-dropdown-value{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.theone-dropdown-value[data-placeholder=true]{color:var(--dsw-alias-label-secondary)}
+.theone-dropdown-button .theone-icon{flex:none;transform:rotate(180deg);color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary));transition:transform 150ms ease}
+.theone-dropdown-button[aria-expanded=true] .theone-icon{transform:none}
+.theone-dropdown-menu{position:absolute;top:calc(100% + 4px);right:0;z-index:30;box-sizing:border-box;min-width:100%;max-width:min(360px,80vw);max-height:280px;overflow:auto;padding:4px;border:.5px solid var(--dsw-alias-border-l3);border-radius:var(--dsw-radius-lg,12px);background:var(--dsw-specific-menu,var(--dsw-alias-bg-layer-2));backdrop-filter:blur(24px) saturate(1.4);box-shadow:var(--dsw-elevation-prominent,0 8px 30px #0003)}
+.theone-dropdown[data-up=true] .theone-dropdown-menu{top:auto;bottom:calc(100% + 4px)}
+.theone-dropdown-option{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:36px;padding:0 10px 0 12px;border-radius:var(--dsw-radius-md,8px);font-size:14px;line-height:22px;white-space:nowrap;cursor:pointer;color:var(--dsw-alias-label-primary)}
+.theone-dropdown-option>span{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.theone-dropdown-option[data-active=true]{background:var(--dsw-alias-interactive-bg-hover)}
+.theone-dropdown-option .theone-icon{flex:none;color:var(--dsw-alias-label-secondary)}
+@media(prefers-reduced-motion:reduce){.theone-dropdown-button .theone-icon{transition:none}}
 .theone-context-menu{position:fixed;z-index:10000;min-width:160px;padding:5px;border:1px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-specific-sidebar-fill);color:var(--dsw-alias-label-primary);box-shadow:0 8px 30px #0002;font:inherit}
 .theone-context-menu button{display:block;width:100%;padding:9px 14px;border:0;border-radius:8px;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}
 .theone-context-menu button:hover,.theone-context-menu button:focus-visible{outline:none;background:var(--dsw-alias-interactive-bg-hover)}
-.theone-settings{height:100%;overflow:auto;box-sizing:border-box;padding:32px max(24px,calc((100% - 980px)/2));color:var(--dsw-alias-label-primary);font:inherit}
-.theone-settings-header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.theone-settings h1{font-size:26px;margin:0 0 8px;outline:none}.theone-settings h2{font-size:17px;margin:0 0 16px}.theone-settings-header p,.theone-settings-help{color:var(--dsw-alias-label-secondary);line-height:1.6;margin:0 0 18px}
-.theone-settings button{border:1px solid var(--dsw-alias-border-l2);border-radius:9px;padding:9px 14px;background:var(--dsw-alias-interactive-bg-hover);color:inherit;font:inherit;cursor:pointer;white-space:nowrap}.theone-settings button:focus-visible{outline:2px solid var(--dsw-focus-ring-color);outline-offset:2px}
-.theone-settings-notice{padding:13px 16px;border:1px solid #ed9b412a;background:#f3940710;border-radius:12px;font-size:13px;line-height:1.7;margin:0 0 22px}
-.theone-weixin-login{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin:6px 0 12px}.theone-weixin-qr{background:#fff;border-radius:12px;padding:6px;image-rendering:pixelated}.theone-weixin input{min-width:8em}.theone-weixin .theone-settings-update-actions+p{margin-top:12px}.theone-settings-update p{margin:0 0 10px;line-height:1.7}.theone-settings-update-version{color:var(--dsw-alias-label-secondary);font-size:13px}.theone-settings-update-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:6px}
-.theone-settings-summary,.theone-settings-group{border:1px solid var(--dsw-alias-border-l2);border-radius:16px;padding:22px;margin-bottom:20px}.theone-settings-summary{background:#88804}.theone-settings-summary dl{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px}.theone-settings dl{margin:0}.theone-settings-summary dt{font-size:12px;color:var(--dsw-alias-label-secondary);margin-bottom:8px}.theone-settings dd{margin:0;overflow-wrap:anywhere;line-height:1.6}.theone-settings-summary dd{font-size:15px}.theone-settings-summary p{font-size:13px;line-height:1.7;color:var(--dsw-alias-label-secondary);margin:16px 0 0}
-.theone-settings-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(160px,42%);gap:24px;padding:16px 0;border-top:1px solid var(--dsw-alias-border-l2)}.theone-settings-row:first-child{border-top:0;padding-top:0}.theone-settings-row:last-child{padding-bottom:0}.theone-settings-row strong{font-size:14px;font-weight:500}.theone-settings-row p{font-size:13px;line-height:1.6;color:var(--dsw-alias-label-secondary);margin:6px 0}.theone-settings-row code{font-size:11px;color:var(--dsw-alias-label-secondary)}.theone-settings-row dd{font-size:13px;padding-top:1px}.theone-settings-row[data-inactive=true]{opacity:.6}
-@media(max-width:640px){.theone-settings{padding:20px 16px}.theone-settings-header{flex-wrap:wrap}.theone-settings-summary,.theone-settings-group{padding:18px}.theone-settings-summary dl{grid-template-columns:1fr}.theone-settings-row{grid-template-columns:1fr;gap:10px}}
+.theone-settings{container:theone-settings/inline-size;color:var(--dsw-alias-label-primary);font:inherit;font-size:14px;line-height:22px}
+.theone-settings h2{margin:0;font-size:12px;line-height:18px;font-weight:600;color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary))}
+.theone-settings-help{margin:4px 0 0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary))}
+.theone-settings-group{display:block;margin:0 0 24px}.theone-settings dl{margin:0}.theone-settings dt,.theone-settings dd{margin:0}
+.theone-settings-row{display:flex;align-items:center;gap:8px;padding:16px 0;border-bottom:.5px solid var(--dsw-alias-border-l2)}.theone-settings-row:last-child{border-bottom:0}
+.theone-settings-row>:first-child{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px;padding-right:48px}.theone-settings-row>:last-child{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:4px;overflow-wrap:anywhere;max-width:50%}
+.theone-settings-row strong{font-size:14px;line-height:22px;font-weight:400}.theone-settings-row p{margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary))}.theone-settings-row[data-inactive=true]{opacity:.6}
+.theone-settings-unit{display:inline-flex;align-items:center;gap:10px;color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary))}.theone-settings input[type=number]{width:112px;text-align:center}
+.theone-settings small{display:block;color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary));font-size:12px;line-height:18px}
+.theone-settings button,.theone-settings select,.theone-settings input{box-sizing:border-box;height:36px;padding:0 14px;border:0;border-radius:var(--dsw-radius-md,10px);background:var(--dsw-alias-bg-module-platform);color:var(--dsw-alias-label-primary);font:inherit;font-size:14px;line-height:22px;white-space:nowrap}
+.theone-settings button{cursor:pointer}.theone-settings button:hover:not(:disabled),.theone-settings select:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}
+.theone-settings select{min-width:140px;max-width:260px;padding-right:10px;cursor:pointer}.theone-settings input{width:180px}.theone-settings input:focus{outline:none;box-shadow:inset 0 0 0 1px var(--dsw-alias-border-l3)}
+.theone-settings :is(button,select,input):focus-visible{outline:var(--dsw-focus-ring-width,2px) solid var(--dsw-focus-ring-color,var(--one-accent));outline-offset:2px}
+.theone-settings :is(button,select,input):disabled{opacity:.4;cursor:default}
+.theone-settings .theone-switch{position:relative;flex:none;width:36px;height:20px;padding:2px;border-radius:999px;corner-shape:round;background:var(--dsw-alias-border-l3)}
+.theone-settings .theone-switch:hover:not(:disabled){background:var(--dsw-alias-border-l3)}.theone-settings .theone-switch[aria-checked=true],.theone-settings .theone-switch[aria-checked=true]:hover:not(:disabled){background:var(--dsw-alias-brand-primary)}
+.theone-switch-thumb{display:block;width:16px;height:16px;border-radius:50%;corner-shape:round;background:var(--dsw-alias-switch-thumb,#fff);transition:transform 120ms}.theone-switch[aria-checked=true] .theone-switch-thumb{background:var(--dsw-alias-label-primary-foreground,#fff);transform:translateX(16px)}
+.theone-settings-footer{position:sticky;bottom:0;display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:12px 0 0;border-top:.5px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2,var(--dsw-specific-sidebar-fill));box-shadow:0 24px 0 var(--dsw-alias-bg-layer-2,var(--dsw-specific-sidebar-fill));z-index:2}.theone-settings-footer p{flex:1;min-width:180px;margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary))}
+.theone-settings .theone-settings-save:not(:disabled){color:var(--one-accent);background:var(--one-tint);box-shadow:inset 0 0 0 .5px var(--one-line)}
+.theone-settings-update-actions{display:flex;gap:8px;flex-wrap:wrap;flex-direction:row!important}
+.theone-weixin-login{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin:6px 0 12px}.theone-weixin-qr{background:#fff;border-radius:12px;padding:6px;image-rendering:pixelated}.theone-weixin input{min-width:8em}.theone-weixin .theone-settings-update-actions+p{margin-top:12px}
+.theone-app-panel p{margin:8px 0;font-size:13px;line-height:20px}.theone-app-panel h2{margin:0 0 4px}
+.theone-settings-advanced>summary{display:flex;align-items:center;gap:8px;list-style:none;cursor:pointer}.theone-settings-advanced>summary::-webkit-details-marker{display:none}.theone-settings-advanced>summary::before{content:'';width:5px;height:5px;margin:0 2px;border-right:1.5px solid var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary));border-bottom:1.5px solid var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary));transform:rotate(-45deg);transition:transform 150ms ease}.theone-settings-advanced[open]>summary::before{transform:rotate(45deg) translate(-2px,-1px)}.theone-settings-advanced>summary:focus-visible{outline:2px solid var(--dsw-focus-ring-color);outline-offset:4px;border-radius:4px}
+@container theone-settings (max-width:520px){.theone-settings-row{flex-wrap:wrap}.theone-settings-row>:first-child{flex-basis:100%;padding-right:0}.theone-settings-row>:last-child{align-items:flex-start;max-width:100%}}
+@media(prefers-reduced-motion:reduce){.theone-switch-thumb{transition:none}}
 `;
 return module.exports;}});

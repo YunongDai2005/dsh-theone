@@ -23,11 +23,13 @@ export class GatewayNavigation {
     return () => { this.listeners.delete(listener) }
   }
 
-  async open(): Promise<string> {
+  /** Main chat's id once it is open, or undefined when a later navigation took over first. */
+  async open(): Promise<string | undefined> {
     const signal = this.host.beginNavigation()
     this.pending ??= this.ensure().finally(() => { this.pending = undefined })
     const id = await this.pending
-    if (!signal.aborted) this.host.open(id)
+    if (signal.aborted) return undefined
+    this.host.open(id)
     return id
   }
 
