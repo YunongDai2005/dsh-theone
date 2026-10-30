@@ -53,7 +53,7 @@ export async function openSetup({ t, cellFrame, signal, onClose }) {
         return;
     const questions = [];
     // Someone who already agreed to sorting is not asked again; a disabled catalog cannot be asked about at all.
-    if (catalog && catalog.status.consent !== 'granted')
+    if (catalog?.status.consent === 'ask' || catalog?.status.consent === 'declined')
         questions.push({ key: 'sort', title: t('setup.sortTitle'), body: t('setup.sortBody'), pick: 0, options: [
                 { icon: 'absorb', hero: 0, label: t('setup.sortYes'), hint: t('setup.sortYesHint'), recommended: true },
                 { icon: 'loose', hero: 1, label: t('setup.sortNo'), hint: t('setup.sortNoHint') }

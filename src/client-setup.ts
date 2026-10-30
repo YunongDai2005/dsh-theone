@@ -65,11 +65,11 @@ export async function openSetup({ t, cellFrame, signal, onClose }: SetupOptions)
     try { const response = await fetch(path, { signal, cache: 'no-store' }); return response.ok ? await response.json() as T : undefined } catch { return undefined }
   }
   const [catalog, settings] = await Promise.all([
-    read<{ status: { consent: 'ask' | 'granted' | 'declined' } }>('/api/theone/catalog'), read<SettingsSnapshot>('/api/theone/settings')])
+    read<{ status: { consent?: 'ask' | 'granted' | 'declined' } }>('/api/theone/catalog'), read<SettingsSnapshot>('/api/theone/settings')])
   if (signal.aborted) return
   const questions: Question[] = []
   // Someone who already agreed to sorting is not asked again; a disabled catalog cannot be asked about at all.
-  if (catalog && catalog.status.consent !== 'granted') questions.push({ key: 'sort', title: t('setup.sortTitle'), body: t('setup.sortBody'), pick: 0, options: [
+  if (catalog?.status.consent === 'ask' || catalog?.status.consent === 'declined') questions.push({ key: 'sort', title: t('setup.sortTitle'), body: t('setup.sortBody'), pick: 0, options: [
     { icon: 'absorb', hero: 0, label: t('setup.sortYes'), hint: t('setup.sortYesHint'), recommended: true },
     { icon: 'loose', hero: 1, label: t('setup.sortNo'), hint: t('setup.sortNoHint') }] })
   if (settings) {
