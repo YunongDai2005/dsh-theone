@@ -27,6 +27,29 @@ Open `http://127.0.0.1:3047`. The UI shows whether model and Sandbox credentials
 3. Configure a trusted OpenAI-compatible model provider with `MODEL_BASE_URL`, `MODEL_API_KEY` and `MODEL_NAME`. The model receives synthetic input and topic descriptions, **not the configured recipient addresses**. For Nebius Nemotron, set `MODEL_DISABLE_THINKING=true`; omit this option for incompatible providers. Inference uses your provider quota. No paid subscription is required by this app.
 4. Keep credentials, test emails, databases and raw API evidence private. `.env`, `.data/` and the supplied private catalog filename are ignored. Use synthetic messages for demonstrations.
 
+The October 11 recorded demo used this non-secret model configuration, together with its separately supplied model API key:
+
+```dotenv
+MODEL_BASE_URL=https://api.tokenfactory.nebius.com/v1
+MODEL_NAME=nvidia/nemotron-3-super-120b-a12b
+MODEL_DISABLE_THINKING=true
+```
+
+These values describe the recorded integration; they do not supply credentials or establish current free inference allowance.
+
+## Judge walkthrough and access
+
+The [competition rules](https://paypalaihackathon.devpost.com/rules) allow a locally runnable build with complete instructions. The loopback URL above is opened on the machine running the app; it is not a publicly hosted demo. Necessary Sandbox and model access must be arranged separately through the submission's testing instructions or another authorized private channel. This README does not confirm that such access has been supplied. Do not put credentials in the public repository or video.
+
+With genuine Sandbox access and confirmed free model allowance configured:
+
+1. Open the local page and confirm that both credential indicators say `configured`. These indicators check configuration presence, not successful authentication or provider balance.
+2. Enter `Draft a 480 EUR invoice for the design client for website assets.` A real model response should produce a `REVIEW` card; check the project, Sandbox recipient, amount and line before proceeding. No PayPal invoice exists at this step.
+3. Select **Create reviewed Sandbox draft** once. A successful result displays `CREATED` and a Sandbox invoice ID after the app reads it back and verifies the reviewed fields. The remote invoice remains `DRAFT`; no invoice is sent or paid.
+4. Refresh or restart the app, reload the page, and check that the ledger retains the same draft. Do not create another proposal merely to check persistence. To inspect correction without another remote invoice, make a separate proposal, use **Correct project**, and leave it in `REVIEW`.
+
+If required access or free allowance is unavailable, the offline tests below can still inspect the implementation, but they do not replace the working-demo requirement. The recorded October 11 run is historical evidence, not a current account-access check.
+
 ## Workflow
 
 - “Draft a 480 EUR invoice for the design client for website assets.” makes an actual model call. Strict JSON validation produces a local **REVIEW** card; no PayPal request occurs yet.
