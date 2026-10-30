@@ -20,13 +20,14 @@ const prefix = cli.endsWith('.js') || cli.endsWith('.mjs') ? [cli] : []
 const command = prefix.length ? process.execPath : cli
 export function run(args) {
   const result = spawnSync(command,[...prefix,...args],{cwd:root,env,stdio:'inherit'})
-  if (result.error) throw new Error('无法启动 DSH，请先安装 @deepseek-ai/dsh@0.2.1-rc.2，或设置 DSH_BIN。')
+  if (result.error) throw new Error('无法启动 DSH，请先安装 @deepseek-ai/dsh，或设置 DSH_BIN。')
   if (result.status !== 0) throw new Error(`DSH 命令失败（${result.status}）`)
 }
 export function checkRuntime() {
   if (Number(process.versions.node.split('.')[0]) < 24) throw new Error('TheOne 需要 Node.js 24 或更新版本。')
   const version = spawnSync(command,[...prefix,'--version'],{cwd:root,env,encoding:'utf8'})
-  if (version.error || !/^0\.2\.[01]-rc\.2\s*$/.test(version.stdout.trim())) throw new Error('需要 DSH 0.2.0-rc.2 或 0.2.1-rc.2；运行 npm install -g @deepseek-ai/dsh@0.2.1-rc.2。')
+  // Any DSH 0.2, as package.json's engines.dsh says.
+  if (version.error || !/^0\.2\.\d/.test(version.stdout.trim())) throw new Error('需要 DSH 0.2；运行 npm install -g @deepseek-ai/dsh。')
 }
 export function start(args) {
   const child = spawn(command,[...prefix,...args],{cwd:root,env,stdio:'inherit'})
