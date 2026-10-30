@@ -35,7 +35,7 @@ test('version ranges, dates and links are checked before a notice is shown', () 
   assert.deepEqual(applicableNotices('not json', '0.3.16'), [])
 })
 
-test('the notice file is read at most every three hours, and an unreachable one shows nothing', async () => {
+test('the notice file is read at most every half hour, and an unreachable one shows nothing', async () => {
   let time = Date.now(), reads = 0, fail = false
   const board = new NoticeBoard('0.3.13', 'https://example.test/notice.json', (async () => {
     reads++
@@ -44,6 +44,10 @@ test('the notice file is read at most every three hours, and an unreachable one 
   }) as typeof fetch, () => time)
   assert.equal((await board.notices()).length, 2)
   await board.notices(); assert.equal(reads, 1)
+  time += 20 * 60000
+  await board.notices(); assert.equal(reads, 1)
+  time += 15 * 60000
+  await board.notices(); assert.equal(reads, 2)
   time += 4 * 3600000; fail = true
   // Offline: what was read before stays.
   assert.equal((await board.notices()).length, 2)
@@ -69,5 +73,29 @@ test('closed notices stay closed, and the setting turns notices off', { timeout:
       body: JSON.stringify({ values: { ...initial.savedValues, notices: false }, revision: initial.revision }) }))
     assert.equal(saved.status, 200)
     assert.deepEqual((await read()).notices, [])
+  } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
+})
+
+test('the getting-started card shows until closed, also with notices turned off', { timeout: 30000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'theone-onboarding-'))
+  const app = await harness(root)
+  try {
+    Object.defineProperty(app.ctx.theone, 'noticeBoard', { value: new NoticeBoard('0.3.13', 'https://example.test/n.json', (async () => new Response(JSON.stringify(file))) as typeof fetch) })
+    const connection = new HostConnectionService(app.ctx, [], undefined as never)
+    const handler = peered(connection)
+    await new Promise<void>(resolve => setImmediate(resolve))
+    const read = async (init?: RequestInit) => (await (await handler.fetch(new Request('http://dsh.internal/api/theone/notices', init))).json()) as { notices: { id: string }[]; onboarding: boolean; setup: boolean }
+    assert.equal((await read()).onboarding, true)
+    const initial = await app.ctx.theone.settingsSnapshot()
+    await handler.fetch(new Request('http://dsh.internal/api/theone/settings', { method: 'PUT', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ values: { ...initial.savedValues, notices: false }, revision: initial.revision }) }))
+    assert.deepEqual(await read(), { notices: [], onboarding: true, setup: true })
+    const closed = await read({ method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ dismiss: 'theone-onboarding' }) })
+    assert.equal(closed.onboarding, false)
+    assert.equal((await read()).onboarding, false)
+    // The full-window setup is closed on its own, for new and updating users alike.
+    assert.equal((await read()).setup, true)
+    const setupDone = await read({ method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ dismiss: 'theone-setup-1' }) })
+    assert.equal(setupDone.setup, false)
   } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
 })

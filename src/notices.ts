@@ -68,7 +68,7 @@ export function applicableNotices(file: unknown, version: string, now = Date.now
   return result
 }
 
-/** Reads the notice file at most every three hours; a failure simply means no notices. */
+/** Reads the notice file at most every half hour, so a new notice shows the same session; a failure simply means no notices. */
 export class NoticeBoard {
   private cache?: { at: number; file?: unknown }
   private pending?: Promise<void>
@@ -77,7 +77,7 @@ export class NoticeBoard {
     private readonly fetcher: typeof fetch = fetch, private readonly now: () => number = Date.now) {}
 
   async notices(): Promise<Notice[]> {
-    if (!this.cache || this.now() - this.cache.at > 3 * HOUR) {
+    if (!this.cache || this.now() - this.cache.at > HOUR / 2) {
       this.pending ??= this.read().finally(() => { this.pending = undefined })
       await this.pending
     }
@@ -93,8 +93,8 @@ export class NoticeBoard {
       if (body.length > 64000) throw new Error('Notice file too large')
       this.cache = { at: this.now(), file: JSON.parse(body) }
     } catch {
-      // Try again in half an hour, keeping what was read before.
-      this.cache = { at: this.now() - 2.5 * HOUR, file: this.cache?.file }
+      // Try again in ten minutes, keeping what was read before.
+      this.cache = { at: this.now() - HOUR / 3, file: this.cache?.file }
     }
   }
 }

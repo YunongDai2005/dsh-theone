@@ -4,7 +4,7 @@ This demo uses NVIDIA Nemotron 3 Super (`nvidia/nemotron-3-super-120b-a12b`) thr
 
 ## Source and demonstration versions
 
-The existing contest branch was updated on October 25 to TheOne **0.4.1**, based on release commit `5e6f4e9b190c7773d080885bcdcbe02e033e2ffe`. The original Nebius launcher and separate local profile are retained. The 95-second submitted demonstration and October 10 live integration evidence were recorded with **0.3.31**; they do not demonstrate the new 0.4.1 topic-choice controls. The updated source passes 416 offline plugin tests, type checking and plugin packaging. The isolated DSH 0.2.1-rc.2 CLI successfully resolves the Nebius/plugin configuration with `--dump-config`; that check starts no chat or model call. This source update does not replace the existing video or assert a new model run. Codex assisted the merge, compatibility checks and documentation.
+The existing contest branch was updated on October 30 to TheOne **0.4.5**, based on release commit `10f196d70d69dd5e44ffe8bbdac64bc70b57f0c7`. This includes the current setup flow, topic-session sidebar setting and DSH compatibility fixes. The original Nebius launcher and separate local profile are retained. The 95-second submitted demonstration and October 10 live integration evidence were recorded with **0.3.31**; they do not demonstrate the later 0.4.x controls or appearance. The updated source passes 423 offline plugin tests, type checking and plugin packaging. The isolated DSH 0.2.1-rc.2 CLI successfully resolves the updated Nebius/plugin configuration with `--dump-config`; that check starts no chat or model call. This source update does not replace the existing video or assert a new model run. Codex assisted the merge, compatibility checks and documentation.
 
 ## Setup
 
@@ -25,6 +25,8 @@ node scripts/start-nebius-demo.mjs
 ```
 
 Open the authenticated local URL printed by DSH. Open **TheOne · Main chat** and choose **Off** for reasoning. The backend model selector should show **Nemotron 3 Super**.
+
+Version 0.4.5 displays a setup flow on its first open. For this isolated demonstration, choose **Set up later** to retain the launcher's settings. If completing the flow, decline organizing earlier chats; enabling that option changes the demo's bounded history configuration. Topic sessions now appear in the sidebar by default. Choose **Topic list** in setup, or enable **Hide topic sessions** in TheOne settings, if you prefer the earlier layout. These are setup instructions, not additional live model validation.
 
 The launcher creates a separate profile and topic database under `~/.theone-nebius-demo`. It binds only to `127.0.0.1:3019`. To choose another data directory or port, set `THEONE_NEBIUS_HOME` or `THEONE_NEBIUS_PORT`. Existing DSH conversations are not imported into this demo. Historical indexing and topic grouping are disabled to keep background inference bounded; normal TheOne installations support those features.
 

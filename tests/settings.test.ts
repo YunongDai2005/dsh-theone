@@ -35,7 +35,7 @@ test('settings expose all public runtime options without credentials, writes or 
     assert.equal(response.status, 200)
     assert.equal(response.headers.get('cache-control'), 'no-store')
     const settings: SettingsSnapshot = await response.json()
-    assert.equal(Object.keys(settings.values).length, 15)
+    assert.equal(Object.keys(settings.values).length, 17)
     // Shared facts are experimental and stay off unless turned on.
     assert.deepEqual([settings.values.factLinks, settings.values.factExtraction], [false, false])
     assert.equal(settings.values.catalogIntervalMs, 45000)
@@ -56,6 +56,37 @@ test('settings expose all public runtime options without credentials, writes or 
     if (previous === undefined) delete process.env.THEONE_SETTINGS_SECRET_TEST
     else process.env.THEONE_SETTINGS_SECRET_TEST = previous
   }
+})
+
+test('session visibility defaults to visible, saves live, and survives reload', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'theone-visibility-'))
+  let app = await harness(root)
+  try {
+    const connection = new HostConnectionService(app.ctx, [], undefined as never)
+    const handler = peered(connection)
+    await new Promise<void>(resolve => setImmediate(resolve))
+    const initial = await app.ctx.theone.settingsSnapshot()
+    assert.equal(initial.values.hideTopicSessions, false)
+    app.ctx.theone.store.rememberGateway('test-gateway', 'main-chat')
+    const listing = await (await handler.fetch(new Request('http://dsh.internal/api/theone/owned'))).json()
+    assert.deepEqual(listing.mainSessionIds, ['main-chat'])
+    assert.ok(listing.sessionIds.includes(app.ctx.theone.store.contexts()[0].workingSessionId))
+    const owned = async () => (await (await handler.fetch(new Request('http://dsh.internal/api/theone/owned'))).json()).hideTopicSessions
+    assert.equal(await owned(), false)
+    for (const hidden of [true, false, true]) {
+      const before = await app.ctx.theone.settingsSnapshot()
+      const response = await handler.fetch(new Request('http://dsh.internal/api/theone/settings', {
+        method: 'PUT', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ values: { ...before.savedValues, hideTopicSessions: hidden }, revision: before.revision }),
+      }))
+      assert.equal(response.status, 200)
+      assert.equal((await response.json()).restartRequired, false)
+      assert.equal(await owned(), hidden)
+    }
+    await app.close()
+    app = await harness(root)
+    assert.equal((await app.ctx.theone.settingsSnapshot()).values.hideTopicSessions, true)
+  } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
 })
 
 test('settings follow a remembered DSH model and remain readable when metadata is unavailable', async () => {
@@ -96,7 +127,7 @@ test('settings save atomically, reject stale or invalid forms, and apply when sa
       workerProvider: 'fixture', workerModel: 'fixture-b', catalogIntervalMs: 120000, contextsPath: catalogFile }
     for (const invalid of [
       { ...desired, databasePath: '/another/database.db' }, { ...desired, gatewayKey: 'another' }, { ...desired, maxResponseChars: 127 },
-      { ...desired, historyCatalog: 'false' }, { ...desired, routerMode: 'unknown' },
+      { ...desired, historyCatalog: 'false' }, { ...desired, hideTopicSessions: 'false' }, { ...desired, routerMode: 'unknown' },
       { ...desired, workerProvider: 'theone', workerModel: 'gateway' },
       { ...desired, workerProvider: 'fixture', workerModel: null },
       { ...desired, contextsPath: join(root, 'missing.json') }, { ...desired, contextsPath: '' },

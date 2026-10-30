@@ -44,6 +44,8 @@ export class PersistentWork {
         if (job.kind !== 'research')
             return this.host.memory(job, scope);
         const task = job.payload;
+        if (this.host.enabled && !this.host.enabled())
+            return { waiting: 'TASKS_OFF' };
         if (this.host.available && !this.host.available(task))
             return { waiting: 'TASK_SOURCE_UNAVAILABLE' };
         if (this.now() >= task.deadline || job.runs > task.maxChecks)
@@ -77,6 +79,10 @@ export class PersistentWork {
     start() {
         if (this.timer || this.stopped)
             return;
+        if (!this.host.enabled || this.host.enabled())
+            for (const job of this.store.list())
+                if (job.state === 'waiting' && job.error === 'TASKS_OFF')
+                    this.store.control(job.id, 'resume', this.now());
         this.timer = setInterval(() => { void this.tick().catch(() => { }); }, 5000);
         this.timer.unref();
     }
@@ -87,7 +93,7 @@ export class PersistentWork {
         if (this.stopped)
             return;
         for (const job of this.store.list())
-            if (job.kind === 'research' && ['failed', 'waiting'].includes(job.state)) {
+            if (job.kind === 'research' && ['failed', 'waiting'].includes(job.state) && job.error !== 'TASKS_OFF') {
                 const reason = job.error === 'WORK_BUDGET_REACHED' ? '已达到时间或检查次数上限。' : job.error === 'TASK_SOURCE_UNAVAILABLE' ? '来源话题已不可用，任务已暂停。' : '连续检查失败，已停止自动重试。';
                 this.store.attention(job, `持续任务：${job.payload.objective}\n${reason}请在「持续任务」查看处理。`, this.now());
             }

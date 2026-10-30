@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ContextStore } from '../src/store.ts'
 import { harness } from './harness.ts'
+import type { EditableSettings } from '../src/settings-types.ts'
 
 test('main chat picking TheOne leaves the user’s default model as it was', { timeout: 30000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'theone-default-model-'))
@@ -57,7 +58,7 @@ test('TheOne lists only the sessions it made: main chats and topic sessions, nev
 
 test('off and on again: only TheOne’s own sessions go to the archive, and only those it put there come back', { timeout: 30000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'theone-stow-'))
-  const app = await harness(root)
+  const app = await harness(root, undefined, { theoneConfig: { hideTopicSessions: true } })
   try {
     const theone = app.ctx.theone as unknown as {
       store: ContextStore
@@ -85,7 +86,49 @@ test('off and on again: only TheOne’s own sessions go to the archive, and only
     assert.ok(archived.has(topicSession))
     assert.ok(archived.has('users-archived-chat'))
     assert.ok(!calls.includes('unarchive users-archived-chat'))
+    assert.ok(store.stowedSessionIds().includes(topicSession))
+  } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
+})
+
+test('visible sessions are not auto-archived; disabling hiding restores only plugin-stowed sessions', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'theone-visible-'))
+  const app = await harness(root)
+  try {
+    const service = app.ctx.theone as unknown as {
+      ownArchive: unknown
+      stowOwnSessions(registry: unknown): Promise<void>
+      unstowOwnSessions(registry: unknown): Promise<void>
+      stowWhenIdle(id: string): void
+      applySettings(values: EditableSettings, descriptors: []): Promise<void>
+    }
+    const store = app.ctx.theone.store
+    const id = store.contexts()[0].workingSessionId
+    const archived = new Set(['users-archived-chat'])
+    const registry = {
+      get archivedSessionIds() { return [...archived] },
+      async archiveSession(id: string) { archived.add(id) },
+      async unarchiveSession(id: string) { archived.delete(id) },
+    }
+    service.ownArchive = registry
+    service.stowWhenIdle(id)
+    await service.stowOwnSessions(registry)
+    assert.deepEqual([...archived], ['users-archived-chat'])
+    archived.add(id); store.markStowed(id, true)
+    await service.unstowOwnSessions(registry)
+    assert.deepEqual([...archived], ['users-archived-chat'])
     assert.deepEqual(store.stowedSessionIds(), [])
+    // Once old automatic archives have been migrated, manual archives stay put.
+    archived.add(id)
+    await service.unstowOwnSessions(registry)
+    assert.ok(archived.has(id))
+    archived.delete(id)
+    const values = (await app.ctx.theone.settingsSnapshot()).savedValues
+    await service.applySettings({ ...values, hideTopicSessions: true }, [])
+    service.stowWhenIdle(id)
+    await new Promise<void>(resolve => setImmediate(resolve))
+    assert.ok(archived.has(id))
+    await service.applySettings({ ...values, hideTopicSessions: false }, [])
+    assert.deepEqual([...archived], ['users-archived-chat'])
   } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
 })
 
