@@ -1,3 +1,7 @@
+> **JigJoy Freestyle branch — Topic Council**
+>
+> The event application is in [examples/jigjoy-topic-council](./examples/jigjoy-topic-council). Start with its README for the local Mozaik setup, two-agent workflow, and actual run evidence. It is a new standalone application built after the October 30 kickoff; the DSH plugin documentation below describes the pre-existing repository.
+
 <h1 align="center">TheOne</h1>
 
 <p align="center"><b>DSH 会话多到翻不到？以后只在一个对话框里说，它自己接上。</b><br>每句话自动分到对应的那件事，每件事有自己的会话和项目文件夹，隔几天回来也能接着做。</p>

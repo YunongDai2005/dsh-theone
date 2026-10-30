@@ -1,0 +1,19 @@
+{
+  "checked_at": "2026-10-30T11:35:31.169Z",
+  "actual_server_stop_and_restart": true,
+  "runs": [
+    {
+      "id": "5352cacd-9e05-422e-b67a-fa0af8d54986",
+      "status": "completed",
+      "result_present": true,
+      "model_calls": 3
+    },
+    {
+      "id": "d50bd9bf-fbc0-4b0c-adb4-4ca7170ba2de",
+      "status": "completed",
+      "result_present": true,
+      "model_calls": 3
+    }
+  ],
+  "additional_model_calls": 0
+}

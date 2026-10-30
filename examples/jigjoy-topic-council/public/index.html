@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>TheOne · Topic Council</title>
+  <link rel="stylesheet" href="/style.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Topic Council home"><span class="brand-mark" aria-hidden="true">tc</span><span><strong>Topic Council</strong><small>THEONE · LOCAL WORKSPACE</small></span></a>
+    <div class="connection"><span id="connection-dot" class="dot"></span><span id="connection-label">Checking local model…</span></div>
+  </header>
+  <main class="workspace">
+    <aside class="sidebar">
+      <section class="intro">
+        <p class="eyebrow">A SECOND POINT OF VIEW</p>
+        <h1>One brief.<br> Two perspectives.</h1>
+        <p>An action planner and a risk reviewer work on your topic, then bring their findings together.</p>
+      </section>
+      <form id="run-form" class="brief-form">
+        <label for="topic">Topic <span>Give this run a name</span></label>
+        <input id="topic" name="topic" maxlength="100" placeholder="A small weekend project" autocomplete="off" required>
+        <label for="brief">Your brief <span>Goal, constraints, and what you know</span></label>
+        <textarea id="brief" name="brief" rows="7" maxlength="3000" placeholder="What would you like to plan? Include the time, resources, or uncertainties that matter." required></textarea>
+        <p class="data-note">Your brief is processed by the local model and saved with its outputs and event trace on this machine, in the app’s <code>.data</code> directory by default. This app does not send it to a cloud model.</p>
+        <button id="start-button" class="primary" type="submit" disabled><span>Run council</span><span aria-hidden="true">↗</span></button>
+        <p id="form-message" class="form-message" role="status"></p>
+      </form>
+      <section class="history-section" aria-labelledby="history-title">
+        <div class="section-heading"><h2 id="history-title">Local runs</h2><button id="refresh-history" class="text-button" type="button">Refresh</button></div>
+        <p id="history-empty" class="muted small">No runs saved yet.</p>
+        <div id="history" class="history-list"></div>
+      </section>
+      <details class="runtime-details"><summary>Local runtime</summary><dl><dt>Model</dt><dd id="runtime-model">Checking…</dd><dt>Endpoint</dt><dd id="runtime-endpoint">Checking…</dd></dl><p id="runtime-warning" class="muted small">Availability checks do not prove a successful inference run.</p></details>
+    </aside>
+    <section class="run-workspace" aria-labelledby="run-title">
+      <div class="run-heading"><div><p class="eyebrow">COUNCIL WORKSPACE</p><h2 id="run-title">Start with a topic</h2><p id="run-subtitle" class="muted">The workspace will show actual progress and outputs from your run.</p></div><span id="run-status" class="badge neutral">No run selected</span></div>
+      <div id="run-actions" class="run-actions" hidden><button id="cancel-button" class="secondary" type="button" hidden>Cancel run</button><button id="export-button" class="secondary" type="button">Export run JSON</button><span id="run-id" class="mono muted"></span></div>
+      <div id="run-error" class="notice error" role="alert" hidden></div>
+      <div class="agent-grid">
+        <article class="agent-card planner" aria-labelledby="planner-title"><header><span class="agent-number">01</span><div><p class="eyebrow">TURN THE BRIEF INTO STEPS</p><h3 id="planner-title">Action Planner</h3></div><span id="planner-state" class="agent-state" role="status">Waiting</span></header><p id="planner-message" class="agent-message">No output yet. Start a run to see the planner’s work.</p><div id="planner-output" class="agent-output" hidden></div></article>
+        <article class="agent-card reviewer" aria-labelledby="reviewer-title"><header><span class="agent-number">02</span><div><p class="eyebrow">EXAMINE RISKS AND ASSUMPTIONS</p><h3 id="reviewer-title">Risk Reviewer</h3></div><span id="reviewer-state" class="agent-state" role="status">Waiting</span></header><p id="reviewer-message" class="agent-message">No output yet. The reviewer’s findings will appear here.</p><div id="reviewer-output" class="agent-output" hidden></div></article>
+      </div>
+      <section class="synthesis" aria-labelledby="synthesis-title"><div class="section-heading"><div><p class="eyebrow">BRING THE FINDINGS TOGETHER</p><h3 id="synthesis-title">Combined plan</h3></div><button id="copy-result" class="text-button" type="button" disabled>Copy result</button></div><p id="result-empty" class="muted">The combined result will appear when the council finishes.</p><div id="result-output" class="result-output" hidden></div><p id="result-note" class="small muted" hidden>Model output can be incomplete or wrong. Check the assumptions before acting on it.</p></section>
+      <details id="timeline-details" class="timeline"><summary><span>Event timeline <span id="event-count" class="count">0</span></span><span class="muted small">Actual backend events</span></summary><p id="overlap-note" class="small muted" hidden></p><p id="timeline-empty" class="muted small">No events yet. Agent names, timestamps, and raw fields will be shown as received.</p><ol id="event-list"></ol></details>
+      <footer class="workspace-footer"><span>Local inference · Local history · Inspectable trace</span><span>Your runs stay on this machine.</span></footer>
+    </section>
+  </main>
+</body>
+</html>
