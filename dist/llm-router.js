@@ -66,7 +66,7 @@ export function routingPayload(input) {
 }
 function buildPayload(input, text, offeredContexts, step) {
     const order = new Map(input.catalogOrder?.map((id, rank) => [id, rank]));
-    const ordered = input.catalogOrder ? [...offeredContexts].sort((a, b) => (order.get(a.id) ?? Infinity) - (order.get(b.id) ?? Infinity)) : offeredContexts;
+    const ordered = input.catalogOrder ? [...offeredContexts].sort((a, b) => (order.get(a.id) ?? order.size) - (order.get(b.id) ?? order.size)) : offeredContexts;
     const contexts = ordered.map(context => ({
         id: context.id, title: redactRoutingText(context.title).slice(0, 120),
         summary: redactRoutingText(context.summary).slice(0, step.summary),
