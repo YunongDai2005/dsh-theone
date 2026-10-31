@@ -43,7 +43,7 @@ function world() {
     if (options.system?.startsWith(ROUTING_PROMPT)) {
       const payload = JSON.parse((options.messages[0] as unknown as { content: { text: string }[] }).content[0].text)
       payloads.push(payload)
-      assert.equal(options.system.includes(FACTS_PROMPT), !!payload.symbols?.length, 'the fact instructions come only with facts')
+      assert.ok(options.system.includes(FACTS_PROMPT), 'fact instructions stay fixed even when there are no offered facts')
       const contextId = /qwen/i.test(payload.text) ? QWEN : /论文/.test(payload.text) ? THESIS : payload.currentId ?? QWEN
       const imports = /预算|budget/i.test(payload.text) ? (payload.symbols ?? []).map((s: { id: string }) => s.id) : []
       yield* textResponse(JSON.stringify({ action: 'EXISTING', contextId, title: null, question: null, reason: 'named', historyIndependent: null, candidateIds: [], relatedIds: [], imports }))
@@ -196,7 +196,7 @@ test('secrets never reach storage or the router; notices and facts stay within t
   } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
 })
 
-test('with shared facts off, nothing changes: no fact tools, no candidates, no fact instructions', { timeout: 60000 }, async () => {
+test('with shared facts off, no fact tools or candidates are exposed under the same fixed routing instructions', { timeout: 60000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'theone-facts-off-'))
   const { model, payloads } = world()
   const app = await harness(root, model, { routerMode: 'llm' })

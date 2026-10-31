@@ -24,13 +24,15 @@ test('a file sent without words stays with the current topic, or starts one name
   try {
     app.model.behavior = async function* (options) {
       // No words to classify: routing must not call the model for an attachment.
-      assert.notEqual(options.system, ROUTING_PROMPT)
+      assert.ok(!options.system?.startsWith(ROUTING_PROMPT))
       yield* textResponse('收到附件')
     }
     const first = await sendFile(app.gateway, '预算表.xlsx')
     const created = app.ctx.theone.store.route(first.id)?.decision
     assert.equal(created?.action, 'CREATE')
     assert.equal(created?.title, '预算表.xlsx')
+    const receipt = () => app.ctx.theone.store.recentRoutes('test-gateway', 1)[0].receipt as Record<string, unknown>
+    assert.deepEqual([receipt().tier, receipt().calls, receipt().cacheHitTokens], ['rules', 0, 0])
     const current = app.ctx.theone.store.current('test-gateway')
     assert.ok(current)
     const second = await sendFile(app.gateway, '截图.png')
@@ -38,6 +40,7 @@ test('a file sent without words stays with the current topic, or starts one name
     assert.equal(kept?.action, 'KEEP')
     assert.equal(kept?.contextId, current)
     assert.equal(kept?.reason, 'attachment-only')
+    assert.deepEqual([receipt().tier, receipt().calls, receipt().cacheHitTokens], ['rules', 0, 0])
   } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
 })
 

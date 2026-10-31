@@ -5,7 +5,7 @@ import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import {randomUUID} from 'node:crypto'
 import {SessionId} from '@deepseek-ai/dsh-session'
-import {DshRouter,RouterFailure,ROUTING_PROMPT,validateRoutingDecision,routingPayload} from '../src/llm-router.ts'
+import {DshRouter,RouterFailure,ROUTING_PROMPT,validateRoutingDecision,routingPayload,routingPrompt} from '../src/llm-router.ts'
 import {harness,ask,FixtureModel,textResponse} from './harness.ts'
 const catalog=[{id:'topic',title:'研究',summary:'研究工作',entities:['研究'],keywords:[],lastState:'进行中'},
  {id:'other',title:'购物',summary:'购物清单',entities:['购物'],keywords:[],lastState:'进行中'}]
@@ -157,6 +157,8 @@ test('gateway reserves admission during LLM classification; cancellation preserv
   const invalidNotice=invalid.events.find(event=>event.type==='user/message' && event.data.source.kind==='theone-route')
   assert.ok(invalidNotice?.type==='user/message' && invalidNotice.data.source.kind==='theone-route')
   assert.equal(invalidNotice.data.source.router?.errorCode,'ROUTER_INVALID_DECISION')
+  assert.equal(invalidNotice.data.source.router?.tier,'rules')
+  assert.equal(invalidNotice.data.source.router?.calls,1)
   behavior='valid'
   const valid=await ask(app.gateway,'Qwen')
   assert.equal(valid.output,'模拟回答：ctx_qwen_9070xt')
@@ -164,6 +166,13 @@ test('gateway reserves admission during LLM classification; cancellation preserv
   assert.ok(notice?.type==='user/message' && notice.data.source.kind==='theone-route')
   assert.equal(notice.data.source.router?.model,'fixture')
   assert.equal(notice.data.source.router?.promptTokens,10)
+  assert.equal(notice.data.source.router?.tier,'quick')
+  assert.equal(notice.data.source.router?.calls,1)
+  assert.equal(notice.data.source.router?.cacheHitTokens,0)
+  const fast = await ask(app.gateway,'继续')
+  const saved = app.ctx.theone.store.recentRoutes('test-gateway',1)[0].receipt as Record<string,unknown>
+  assert.equal(app.ctx.theone.store.route(fast.input.id)?.decision.action,'KEEP')
+  assert.deepEqual([saved.tier,saved.calls,saved.cacheHitTokens],['rules',0,0])
  }finally{
   await app.close()
   await rm(root,{recursive:true,force:true})
@@ -219,4 +228,53 @@ test('a request too large for the classifier is cut down, keeping the current to
  assert.ok(many.contexts.some(context => context.id === 'ctx_59') && many.contexts.some(context => context.id === 'ctx_0'))
  assert.ok(many.contexts.length < 60)
  assert.throws(() => routingPayload({ text: '   ', contexts, recent }), RouterFailure)
+})
+
+
+test('routing puts stable catalog fields first, paired states next, and the message last', () => {
+ const contexts = [{ ...catalog[0], activity: '刚刚', status: 'done' as const, project: 'paper' },
+  { ...catalog[1], lastState: '' }]
+ const payload = routingPayload({ ...input, contexts, projects: [{ id: 'p', name: 'paper' }], historyIncomplete: true,
+  corrections: [{ text: '购物', rightId: 'other' }], facts: [{ id: 'f', topic: '购物', label: '预算', kind: 'fact', value: '300' }],
+  recent: [{ role: 'user', text: '之前的问题' }], running: { topicId: 'topic', request: '写论文', progress: '在写' }, recheck: { previous: 'CREATE' } })
+ assert.deepEqual(Object.keys(payload), ['contexts', 'states', 'projects', 'historyIncomplete', 'corrections', 'symbols', 'recent', 'running', 'recheck', 'currentId', 'text'])
+ assert.deepEqual(payload.contexts[0], { id: 'topic', title: '研究', summary: '研究工作', entities: ['研究'], keywords: [], project: 'paper' })
+ assert.deepEqual(payload.states, [{ id: 'topic', lastState: '进行中', activity: '刚刚', status: 'done' }])
+ assert.equal('states' in routingPayload({ text: 'x', contexts: [{ ...catalog[0], lastState: '' }] }), false)
+})
+
+test('catalog order stabilizes output only after ranked candidates have been trimmed', () => {
+ const contexts = [catalog[1], catalog[0]]
+ assert.deepEqual(routingPayload({ ...input, contexts }).contexts.map(c => c.id), ['other', 'topic'])
+ const ordered = routingPayload({ ...input, contexts, currentId: 'other', catalogOrder: ['topic', 'other'] })
+ assert.deepEqual(ordered.contexts.map(c => c.id), ['topic', 'other'])
+ assert.deepEqual(ordered.states?.map(c => c.id), ['topic', 'other'])
+ const many = Array.from({ length: 80 }, (_, i) => ({ id: `rank-${i}`, title: `Topic ${i}`, summary: 's'.repeat(600),
+  entities: Array(24).fill('entity'), keywords: Array(24).fill('keyword'), lastState: 'state'.repeat(80) }))
+ const original = routingPayload({ text: 'which topic', contexts: many })
+ const sorted = routingPayload({ text: 'which topic', contexts: many, catalogOrder: many.map(c => c.id).reverse() })
+ assert.ok(sorted.contexts.length < 80)
+ assert.deepEqual(new Set(sorted.contexts.map(c => c.id)), new Set(original.contexts.map(c => c.id)), 'catalog order never promotes a low-ranked candidate into the budget')
+ assert.deepEqual(sorted.contexts.map(c => c.id), original.contexts.map(c => c.id).reverse())
+ assert.deepEqual(sorted.states?.map(c => c.id), sorted.contexts.map(c => c.id))
+ assert.ok(JSON.stringify(sorted).length <= 24000)
+})
+
+test('every routing request uses identical instructions, including the second thinking look', () => {
+ const plain = routingPrompt(routingPayload(input))
+ for (const payload of [{}, { symbols: [{ id: 'f' }] }, { projects: [{ id: 'p' }] }, { running: { topicId: 'topic' } }, { recheck: { previous: 'CREATE' } }])
+  assert.equal(routingPrompt(payload), plain)
+ const schema = JSON.parse(ROUTING_PROMPT.match(/输出 JSON：(\{[^\n]+\})。/)![1])
+ assert.deepEqual(Object.keys(schema), ['action', 'contextId', 'relatedIds', 'imports', 'title', 'historyIndependent', 'projectId', 'candidateIds', 'question', 'reason'])
+ assert.match(schema.reason, /40/)
+})
+
+test('the new output order accepts occasional long reasons without changing validation tolerance', () => {
+ const row = { action: 'EXISTING', contextId: 'topic', relatedIds: ['other'], imports: [], title: null, historyIndependent: null,
+  projectId: null, candidateIds: [], question: null, reason: '长'.repeat(600) }
+ const result = validateRoutingDecision(row, input)
+ assert.equal(result.action, 'KEEP')
+ assert.deepEqual(result.relatedIds, ['other'])
+ assert.equal(result.reason.length, 240)
+ assert.throws(() => validateRoutingDecision({ ...row, reason: '长'.repeat(601) }, input), RouterFailure)
 })

@@ -56,7 +56,10 @@ test('a decision against a clue is asked once more with thinking on, and the sec
       routed.push({ payload, maxTokens: options.maxTokens })
       // The first message goes to the thesis (against the clue) until asked again; later ones go where the clue points.
       const contextId = payload.recheck || routed.length > 2 ? 'ctx_qwen_9070xt' : 'ctx_thesis'
-      yield* textResponse(JSON.stringify({ action: 'EXISTING', contextId, title: null, question: null, reason: 'test', historyIndependent: null, candidateIds: [], relatedIds: [] }))
+      for (const chunk of textResponse(JSON.stringify({ action: 'EXISTING', contextId, title: null, question: null, reason: 'test', historyIndependent: null, candidateIds: [], relatedIds: [] }))) {
+        if (chunk.type === 'usage') yield { type: 'usage', usage: { inputTokens: 100, outputTokens: 10, cacheReadTokens: payload.recheck ? 23 : 17 } }
+        else yield chunk
+      }
       return
     }
     yield* textResponse('好')
@@ -69,6 +72,8 @@ test('a decision against a clue is asked once more with thinking on, and the sec
     assert.deepEqual(routed[1].payload.recheck, { previous: 'ctx_thesis', contextId: 'ctx_qwen_9070xt', terms: ['fp8'] })
     assert.ok((routed[1].maxTokens ?? 0) > (routed[0].maxTokens ?? 0), 'the second call leaves room to think')
     assert.equal(app.ctx.theone.store.route(input.id)?.decision.contextId, 'ctx_qwen_9070xt')
+    const receipt = app.ctx.theone.store.recentRoutes('test-gateway', 1)[0].receipt as Record<string, unknown>
+    assert.deepEqual([receipt.tier, receipt.calls, receipt.cacheHitTokens, receipt.promptTokens], ['recheck', 2, 40, 240])
     // The first pick comes along as reference, in case it was right.
     assert.deepEqual(app.ctx.theone.store.route(input.id)?.decision.alternateIds, ['ctx_thesis'])
     // Agreeing with the clue needs no second call.

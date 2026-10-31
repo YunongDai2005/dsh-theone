@@ -73,6 +73,6 @@ export function secondLook(decision: Decision, evidence: readonly Evidence[]): R
   return decision.action === 'CREATE' || decision.action === 'CLARIFY' ? { previous } : undefined
 }
 
-/** Added when a quick decision is asked again, with thinking on. */
+/** Fixed instructions for an optional second look, with thinking on. */
 export const RECHECK_PROMPT = `
-recheck 表示这是第二次判断：上一次快速判断的结论是 recheck.previous（已有话题的 ID，或 CREATE / CLARIFY）。如果有 recheck.contextId，是因为 text 里的 recheck.terms 只在话题 recheck.contextId 里出现过，和上次的结论不一致。这次逐个比较目录里的话题再下结论：同一件事的后续步骤、子任务和细节问题属于原来的话题；确实是另一件事才新建；只有规则允许时才澄清。结论可以和上次相同。`
+recheck（可能没有）表示这是第二次判断：上一次快速判断的结论是 recheck.previous（已有话题的 ID，或 CREATE / CLARIFY）。如果有 recheck.contextId，是因为 text 里的 recheck.terms 只在话题 recheck.contextId 里出现过，和上次的结论不一致。这次逐个比较目录里的话题再下结论：同一件事的后续步骤、子任务和细节问题属于原来的话题；确实是另一件事才新建；只有规则允许时才澄清。结论可以和上次相同。没有 recheck 时按常规判断。`

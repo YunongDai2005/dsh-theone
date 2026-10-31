@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { buildSchedule } from '../lib/schedule.mjs'
 import { createClient } from '../lib/llm.mjs'
 import { generate } from '../generate.mjs'
@@ -71,7 +71,7 @@ test('a malformed answer is asked again and never cached; a good one is served f
 
 test('an OpenAI-compatible endpoint works too: chat/completions, bearer key, usage with cached tokens', async () => {
   const { createServer } = await import('node:http')
-  const answer = (await import(fake)).default
+  const answer = (await import(pathToFileURL(fake).href)).default
   const seen = []
   const server = createServer(async (request, response) => {
     let raw = ''

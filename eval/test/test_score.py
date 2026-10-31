@@ -68,3 +68,68 @@ class BurstScoreTest(unittest.TestCase):
         self.assertAlmostEqual(r["waited_share"], 2 / 7, places=3)
         self.assertAlmostEqual(r["model_calls_share"], 6 / 7, places=3)
         self.assertIn("in a burst", score.table([("x", r)]))
+
+
+class MetricsScoreTest(unittest.TestCase):
+    def test_calls_tiers_cache_latency_harm_and_cost_are_token_weighted(self):
+        s = session()
+        predictions = rows(['t1', 'n1', 't2', 'CLARIFY', 'n2', 't2', 't2'], 'closed')
+        for i, row in enumerate(predictions):
+            row.update(calls=0 if i == 0 else 2 if i == 6 else 1,
+                       tier='fast' if i == 0 else 'recheck' if i == 6 else 'quick', latency_ms=i * 10)
+        predictions[1]['usage'] = {'input': 100, 'output': 10, 'cache_hit': 90}
+        predictions[6]['usage'] = {'input': 900, 'output': 20, 'cache_hit': 10}
+        r = score.evaluate([s], predictions)
+        self.assertEqual(r['calls_per_message'], 1.0)
+        self.assertEqual(r['by_tier']['fast'], {'n': 1, 'share': 0.1429})
+        self.assertEqual(r['by_tier']['quick'], {'n': 5, 'share': 0.7143})
+        self.assertEqual(r['by_tier']['recheck'], {'n': 1, 'share': 0.1429})
+        self.assertEqual(r['cache_hit_rate'], 0.1)
+        self.assertEqual(r['latency_ms'], {'p50': 30, 'p90': 60})
+        self.assertAlmostEqual(r['harm_per_100_messages'], 500 / 6, places=4)
+        # Same default per-million token prices as eval/lib/llm.mjs.
+        self.assertAlmostEqual(r['usd_per_1000_messages'], (900 * .30 + 100 * .006 + 30 * 1.20) / 1e6 * 1000 / 7, places=6)
+        text = score.table([('measured', r)])
+        for label in ['calls/msg', 'fast', 'quick', 'recheck', 'cache hit', 'p50 ms', 'p90 ms', 'harm/100', '$/1k msg']:
+            self.assertIn(label, text)
+        self.assertEqual(json.loads(json.dumps(r))['by_tier'], r['by_tier'])
+
+    def test_old_predictions_never_mistake_elapsed_time_for_model_latency(self):
+        predictions = rows(['t1', 't1', 't2', 't2', 'n1', 't1', 't2'], 'closed')
+        for row in predictions:
+            row.update(elapsed_ms=100, via='llm')
+        r = score.evaluate([session()], predictions)
+        for key in ['calls_per_message', 'by_tier', 'cache_hit_rate', 'latency_ms', 'usd_per_1000_messages']:
+            self.assertIsNone(r[key])
+        self.assertIn('–', score.table([('legacy', r)]))
+        self.assertEqual(r['harm_per_100_messages'], 0)
+
+    def test_latency_median_uses_both_middle_values_and_fast_rows_are_zero(self):
+        s = session()
+        s['turns'] = s['turns'][:4]
+        predictions = rows(['t1', 't1', 't2', 't2'], 'closed')
+        for row, delay in zip(predictions, [0, 10, 20, 30]):
+            row.update(latency_ms=delay, tier='quick' if delay else 'fast', calls=bool(delay))
+        r = score.evaluate([s], predictions)
+        self.assertEqual(r['latency_ms'], {'p50': 15.0, 'p90': 30})
+
+
+class BillingScoreTest(unittest.TestCase):
+    def test_card_tokens_affect_only_the_bill(self):
+        predictions = rows(['t1', 't1', 't2', 't2', 'n1', 't1', 't2'], 'closed')
+        for row in predictions:
+            row.update(calls=0, tier='fast', latency_ms=0)
+        predictions[0]['card_usage'] = [{'input': 1000, 'output': 30, 'cache_hit': 100}]
+        r = score.evaluate([session()], predictions)
+        self.assertEqual(r['calls_per_message'], 0)
+        self.assertIsNone(r['cache_hit_rate'])
+        self.assertEqual(r['latency_ms'], {'p50': 0, 'p90': 0})
+        self.assertAlmostEqual(r['usd_per_1000_messages'], .0438, places=6)
+        self.assertEqual(r['usd_per_1000_messages'], r['card_usd_per_1000_messages'])
+
+    def test_an_entirely_fast_run_has_zero_cost_rather_than_unknown_cost(self):
+        predictions = rows(['t1', 't1', 't2', 't2', 'n1', 't1', 't2'], 'closed')
+        for row in predictions:
+            row.update(calls=0, tier='fast', latency_ms=0)
+        r = score.evaluate([session()], predictions)
+        self.assertEqual(r['usd_per_1000_messages'], 0)

@@ -299,6 +299,8 @@ export default class TheOne extends Service {
     private registerFactTools;
     /** Mirror the routed Worker's steps into the main chat; tools execute exclusively in the Worker. */
     answer(options: GenerateOptions): AsyncIterable<StreamChunk>;
+    /** Count every request that ran, including failed or unused concurrent review pages. */
+    private decideRouting;
     /**
      * Which topic a message is about: candidate search, then the classifier (with a review of the rest
      * of the catalog before a new topic), or rules when there is none. `running` describes a reply

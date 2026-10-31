@@ -60,12 +60,14 @@ test('a new topic about one of the user\'s projects works in that project\'s fol
 test('each topic knows its project, routing sees it, and a topic the user marked done reopens when a message goes to it', { timeout: 30000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'theone-project-status-'))
   const model = new FixtureModel()
-  type Offered = { id: string; title: string; project?: string; status?: string }
+  type Offered = { id: string; title: string; project?: string }
   const seen: Offered[][] = []
+  const states: { id: string; status?: string }[][] = []
   model.behavior = async function* (options) {
     if (typeof options.system === 'string' && options.system.startsWith(ROUTING_PROMPT)) {
-      const payload = JSON.parse(words(options)) as { text: string; contexts: Offered[]; projects?: { id: string; name: string }[] }
+      const payload = JSON.parse(words(options)) as { text: string; contexts: Offered[]; states?: { id: string; status?: string }[]; projects?: { id: string; name: string }[] }
       seen.push(payload.contexts)
+      states.push(payload.states ?? [])
       const existing = payload.contexts.find(context => /发票/.test(payload.text) && context.title === '发票 PDF 导出')
       if (existing) { yield* textResponse(JSON.stringify({ action: 'EXISTING', contextId: existing.id, title: null, question: null, reason: '测试', relatedIds: [] })); return }
       const project = /发票/.test(payload.text) ? payload.projects?.find(item => item.name === 'invoice-app')?.id ?? null : null
@@ -101,7 +103,7 @@ test('each topic knows its project, routing sees it, and a topic the user marked
     await service.editTopics({ action: 'status', id: invoice.id, done: true })
     assert.equal(service.topicStates().get(invoice.id)?.status, 'done')
     await ask(app.gateway, '发票导出再加一个水印')
-    assert.equal(seen.at(-1)!.find(context => context.id === invoice.id)?.status, 'done')
+    assert.equal(states.at(-1)!.find(state => state.id === invoice.id)?.status, 'done')
     // A message to it takes the matter up again.
     assert.equal(service.topicStates().get(invoice.id)?.status, 'active')
   } finally { await app.close(); await rm(root, { recursive: true, force: true }) }

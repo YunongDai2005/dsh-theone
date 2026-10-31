@@ -31,7 +31,7 @@ import { resolveContext } from './router.ts'
 import { DshRouter, RouterFailure } from './llm-router.ts'
 import { continuesCurrent, mergeSimilarity, newIndependentTopic, redactRoutingText, settleUnclear, similarity, spokenCorrection, textFeatures, topicTerms } from './routing-policy.ts'
 import { modelJson } from './model-json.ts'
-import type { RecentMessage, RouterReceipt, RoutingInput, RoutingRouter } from './llm-router.ts'
+import type { RecentMessage, RouterReceipt, RouterUsage, RoutingInput, RoutingRouter } from './llm-router.ts'
 import type { ContextDescriptor, Decision, RouteView, StoredContext, SourceRange } from './types.ts'
 import type { CatalogSessions, LinkageSnapshot } from './catalog-types.ts'
 import { EDITABLE_SETTINGS_KEYS, RESTART_SETTINGS_KEYS, type EditableSettings, type SettingsSnapshot } from './settings-types.ts'
@@ -835,7 +835,7 @@ export default class TheOne extends Service {
       // Reserve before asynchronous classification so a second gateway cannot race it.
       this.reservedGateway = agent.id
       let route
-      const receipt: RouterReceipt = early?.receipt ?? {mode:this.router?'llm':'rules'}
+      const receipt: RouterReceipt = early?.receipt ?? {mode:this.router?'llm':'rules',tier:'rules',calls:0,cacheHitTokens:0}
       const known = this.store.route(input.id)
       // Taken up in the background (now, or before a restart cut it off): it is not classified again.
       const adopted = known && (early || known.status === 'running') ? known : undefined
@@ -2441,6 +2441,29 @@ export default class TheOne extends Service {
     }
   }
 
+  /** Count every request that ran, including failed or unused concurrent review pages. */
+  private async decideRouting(input: RoutingInput, signal: AbortSignal, receipt: RouterReceipt, sessionId?: SessionId, options?: { think?: boolean }) {
+    receipt.calls = (receipt.calls ?? 0) + 1
+    const record = (usage?: RouterUsage) => {
+      receipt.cacheHitTokens = (receipt.cacheHitTokens ?? 0) + (usage?.prompt_cache_hit_tokens ?? 0)
+      if (!usage) return
+      receipt.promptTokens = (receipt.promptTokens ?? 0) + usage.prompt_tokens
+      receipt.completionTokens = (receipt.completionTokens ?? 0) + usage.completion_tokens
+    }
+    try {
+      const result = await this.router!.decide(input, signal, sessionId, options)
+      record(result.usage)
+      return result
+    } catch (error) {
+      if (error instanceof RouterFailure) {
+        record(error.meta?.usage)
+        // These failures happen before a model request can be sent.
+        if (['ROUTER_MODEL_MISSING', 'ROUTER_CIRCUIT_OPEN', 'ROUTER_INPUT_INVALID', 'ROUTER_RECURSION_BLOCKED'].includes(error.code)) receipt.calls--
+      }
+      throw error
+    }
+  }
+
   /**
    * Which topic a message is about: candidate search, then the classifier (with a review of the rest
    * of the catalog before a new topic), or rules when there is none. `running` describes a reply
@@ -2448,6 +2471,10 @@ export default class TheOne extends Service {
    */
   private async classify(agent: Agent, inputId: string, text: string, currentId: string | undefined, allContexts: StoredContext[],
     signal: AbortSignal, receipt: RouterReceipt, running?: RoutingInput['running']): Promise<Decision> {
+    receipt.tier = 'rules'
+    receipt.calls ??= 0
+    receipt.cacheHitTokens ??= 0
+    const catalogOrder = allContexts.map(context => context.id)
     let contexts: ContextDescriptor[] = allContexts
     const projects = this.projectFolders()
     const folders = projects.length ? { projects: projects.map(({ id, name }) => ({ id, name })) } : {}
@@ -2465,22 +2492,21 @@ export default class TheOne extends Service {
         const corrections = this.similarCorrections(text)
         const offered = this.config.factLinks ? this.factCandidates(text, recent, currentId) : []
         const facts = offered.length ? { facts: offered } : {}
-        const result = await this.router.decide({text,contexts,currentId,recent,historyIncomplete: this.catalog?.incomplete,corrections,...facts,running,...folders},signal,agent.id)
+        const result = await this.decideRouting({text,contexts,catalogOrder,currentId,recent,historyIncomplete: this.catalog?.incomplete,corrections,...facts,running,...folders},signal,receipt,agent.id)
         proposed = result.decision
+        receipt.tier = 'quick'
         // A new topic, a question, or a decision against a strong clue is asked once more with thinking on; if that fails, the first stands.
         // Clues: numbers, codes and names of the message that only one topic was sent or knows.
         const evidence = this.routingEvidence(text, allContexts).filter(item => contexts.some(context => context.id === item.contextId))
         const recheck = secondLook(proposed, evidence)
         if (recheck) {
           try {
-            const second = await this.router.decide({text,contexts,currentId,recent,historyIncomplete: this.catalog?.incomplete,corrections,...facts,running,...folders,recheck},signal,agent.id,{think:true})
+            const second = await this.decideRouting({text,contexts,catalogOrder,currentId,recent,historyIncomplete: this.catalog?.incomplete,corrections,...facts,running,...folders,recheck},signal,receipt,agent.id,{think:true})
             // Changed its mind from one topic to another: the first comes along as reference, in case it was right.
             const first = contexts.some(context => context.id === recheck.previous) ? recheck.previous : undefined
             proposed = first && second.decision.contextId && second.decision.contextId !== first ? { ...second.decision, alternateIds: [first] } : second.decision
+            receipt.tier = 'recheck'
             result.elapsedMs += second.elapsedMs
-            if (second.usage) result.usage = { prompt_tokens: (result.usage?.prompt_tokens ?? 0) + second.usage.prompt_tokens,
-              completion_tokens: (result.usage?.completion_tokens ?? 0) + second.usage.completion_tokens,
-              total_tokens: (result.usage?.total_tokens ?? 0) + second.usage.total_tokens }
           } catch (error) { signal.throwIfAborted(); if (!(error instanceof RouterFailure)) throw error }
         }
         // A miss in a short candidate list is not proof that the whole catalog has no match.
@@ -2493,29 +2519,26 @@ export default class TheOne extends Service {
           for (let offset = 0; offset < remaining.length && pages.length < 3; offset += pageSize)
             pages.push([...(current ? [current] : []), ...remaining.slice(offset, offset + pageSize)])
           // Review pages concurrently, then read them in order exactly as a sequential pass would.
-          const router = this.router, incomplete = this.catalog.incomplete
-          const reviews = await Promise.allSettled(pages.map(page => router.decide({text,contexts:page,currentId,recent,historyIncomplete: incomplete,corrections,...facts,running,...folders},signal,agent.id)))
+          const incomplete = this.catalog.incomplete
+          const reviews = await Promise.allSettled(pages.map(page => this.decideRouting({text,contexts:page,catalogOrder,currentId,recent,historyIncomplete: incomplete,corrections,...facts,running,...folders},signal,receipt,agent.id)))
           const firstElapsed = result.elapsedMs
           for (const settled of reviews) {
             if (settled.status === 'rejected') throw settled.reason
             const review = settled.value
             result.elapsedMs = Math.max(result.elapsedMs, firstElapsed + review.elapsedMs)
-            if (review.usage) result.usage = { prompt_tokens: (result.usage?.prompt_tokens ?? 0) + review.usage.prompt_tokens,
-              completion_tokens: (result.usage?.completion_tokens ?? 0) + review.usage.completion_tokens,
-              total_tokens: (result.usage?.total_tokens ?? 0) + review.usage.total_tokens }
-            if (review.decision.action !== 'CREATE') { proposed = review.decision; break }
+            if (review.decision.action !== 'CREATE') { proposed = review.decision; receipt.tier = 'review'; break }
             // Every review must agree that execution needs no missing history.
-            if (proposed.historyIndependent && review.decision.historyIndependent !== true)
+            if (proposed.historyIndependent && review.decision.historyIndependent !== true) {
               proposed = { ...proposed, historyIndependent: false }
+              receipt.tier = 'review'
+            }
           }
         }
-        Object.assign(receipt,{model:result.model,elapsedMs:result.elapsedMs,
-          promptTokens:result.usage?.prompt_tokens,completionTokens:result.usage?.completion_tokens})
+        Object.assign(receipt,{model:result.model,elapsedMs:result.elapsedMs})
       } catch (error) {
         signal.throwIfAborted()
         if (!(error instanceof RouterFailure)) throw error
-        Object.assign(receipt,{errorCode:error.code,elapsedMs:error.meta?.elapsedMs,
-          promptTokens:error.meta?.usage?.prompt_tokens,completionTokens:error.meta?.usage?.completion_tokens})
+        Object.assign(receipt,{tier:'rules',errorCode:error.code,elapsedMs:error.meta?.elapsedMs})
         if (error.code === 'ROUTER_MODEL_MISSING') proposed = {action:'CLARIFY' as const,reason:error.code,question:'请先在 DSH 中选择一个已配置的聊天模型，再打开 TheOne。无需另配 API Key。'}
         else {
           // The classifier is unavailable: route by rules, and when they are unsure stay with the
@@ -2578,7 +2601,7 @@ export default class TheOne extends Service {
    */
   private sortMidReply(gateway: Agent, run: WorkerRun, message: UserMessage, interjection: boolean): void {
     const abort = new AbortController()
-    const receipt: RouterReceipt = { mode: 'llm' }
+    const receipt: RouterReceipt = { mode: 'llm', tier: 'rules', calls: 0, cacheHitTokens: 0 }
     const decided = this.otherMatter(gateway, run, message, receipt, abort.signal).catch(() => undefined)
     const pending = () => gateway.inbox.nextStep.some(item => item.id === message.id)
     const settled = decided.then(async decision => {
@@ -2660,7 +2683,7 @@ export default class TheOne extends Service {
       { action: current === contextId ? 'KEEP' : current ? 'SWAP' : 'MOUNT', contextId, reason: 'topic-continues' }, false)
     this.store.claim(note.id)
     this.store.startTopicRun(note.id, contextId, worker.id)
-    this.background.set(note.id, { run, receipt: { mode: 'rules' } })
+    this.background.set(note.id, { run, receipt: { mode: 'rules', tier: 'rules', calls: 0, cacheHitTokens: 0 } })
     gateway.followup(note)
   }
 
@@ -2962,6 +2985,9 @@ export default class TheOne extends Service {
 
   /** Route a misrouted message again, never back to the topic it was wrongly given. */
   private async reroute(previous: { text: string; contextId: string; id: string }, hint: string, signal: AbortSignal, receipt: RouterReceipt): Promise<Decision> {
+    receipt.tier = 'rules'
+    receipt.calls ??= 0
+    receipt.cacheHitTokens ??= 0
     const query = hint || previous.text
     const unclear: Decision = { action: 'CLARIFY', reason: 'correction-unclear', question: '应该放到哪个话题？可以说「分错了，是 某某 的」，我会把上一条交给它重新处理。' }
     if (!query.trim()) return unclear
@@ -2974,9 +3000,9 @@ export default class TheOne extends Service {
     if (this.router) {
       try {
         const gatewayId = this.store.route(previous.id)?.gatewayId
-        const result = await this.router.decide({ text: query, contexts, recent: [{ role: 'user', text: previous.text }] }, signal,
+        const result = await this.decideRouting({ text: query, contexts, catalogOrder: allContexts.map(context => context.id), recent: [{ role: 'user', text: previous.text }] }, signal, receipt,
           gatewayId ? SessionId(gatewayId) : undefined)
-        Object.assign(receipt, { model: result.model, elapsedMs: result.elapsedMs })
+        Object.assign(receipt, { tier: 'quick', model: result.model, elapsedMs: result.elapsedMs })
         decision = result.decision
       } catch (error) {
         signal.throwIfAborted()

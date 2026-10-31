@@ -40,8 +40,8 @@ export class Usage {
 export async function createClient({ model = process.env.EVAL_MODEL ?? 'deepseek-flash', cacheDir, concurrency = Number(process.env.EVAL_CONCURRENCY ?? 4), fake } = {}) {
   const usage = new Usage()
   const fakeAnswer = fake ? (await import(pathToFileURL(fake).href)).default : undefined
-  const openai = !process.env.DEEPSEEK_API_KEY && !!process.env.OPENAI_API_KEY
-  const key = openai ? process.env.OPENAI_API_KEY : process.env.DEEPSEEK_API_KEY
+  const openai = !fakeAnswer && !process.env.DEEPSEEK_API_KEY && !!process.env.OPENAI_API_KEY
+  const key = fakeAnswer ? undefined : openai ? process.env.OPENAI_API_KEY : process.env.DEEPSEEK_API_KEY
   if (!fakeAnswer && !key) throw new Error('Set DEEPSEEK_API_KEY, or OPENAI_API_KEY with OPENAI_BASE_URL, or use --dry-run to try the pipeline with a fake model.')
   if (!fakeAnswer && openai && !process.env.OPENAI_BASE_URL) throw new Error('Set OPENAI_BASE_URL to the provider\'s OpenAI-compatible address (usually ending in /v1).')
   if (!fakeAnswer && openai && model === 'deepseek-flash' && !process.env.EVAL_MODEL) throw new Error('Name the provider\'s model with --model (or EVAL_MODEL).')
@@ -54,58 +54,79 @@ export async function createClient({ model = process.env.EVAL_MODEL ?? 'deepseek
   const slot = () => active < concurrency ? (active++, Promise.resolve()) : new Promise(resolve => queue.push(resolve))
   const release = () => { const next = queue.shift(); if (next) next(); else active-- }
 
+  const rowUsage = used => ({ input: used?.input ?? 0, output: used?.output ?? 0, cache_hit: used?.cached ?? 0 })
+  const providerUsage = response => {
+    const u = response?.usage ?? {}
+    return openai
+      ? { input: u.prompt_tokens ?? 0, cached: u.prompt_tokens_details?.cached_tokens ?? u.prompt_cache_hit_tokens ?? 0, output: u.completion_tokens ?? 0 }
+      // Anthropic-style input_tokens leaves out tokens read from cache.
+      : { input: (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0), cached: u.cache_read_input_tokens ?? 0, output: u.output_tokens ?? 0 }
+  }
+  const measuredUsage = metrics => metrics.usage_by_call.reduce((sum, used) => ({ input: sum.input + used.input,
+    output: sum.output + used.output, cached: sum.cached + used.cache_hit }), { input: 0, output: 0, cached: 0 })
+
   /**
    * One completion. Returns the text; JSON is parsed when json is true (a fenced block is accepted).
    * @param request - { system, user, maxTokens, temperature, json, tag }
    */
   /** @param request.override - fields merged over EVAL_EXTRA_BODY for this call; null removes one (e.g. to keep thinking on). */
   async function complete({ system, user, maxTokens = 2048, temperature, json = false, tag = '', details = false, override }) {
-    // No temperature means the provider's default, as TheOne's own calls do.
     const sampling = { model, max_tokens: maxTokens, ...(temperature === undefined ? {} : { temperature }) }
     const fields = Object.fromEntries(Object.entries({ ...extra, ...override }).filter(([, value]) => value !== null))
     const body = openai
       ? { ...sampling, messages: [{ role: 'system', content: system }, { role: 'user', content: user }], ...fields }
       : { ...sampling, system, messages: [{ role: 'user', content: user }], ...(override?.thinking === null ? {} : { thinking: { type: 'disabled' } }), ...fields }
-    // Reasoning some models write before the answer (<think>…</think>, or only its end) is set aside, as TheOne does.
     const answer = text => text.includes('</think>') ? text.slice(text.lastIndexOf('</think>') + '</think>'.length) : text
     const parse = text => JSON.parse(answer(text).trim().replace(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/, '$1').trim())
-    // A malformed answer is never cached, so asking again can succeed.
-    for (let attempt = 0; ; attempt++) {
-      const hash = createHash('sha256').update(JSON.stringify([fake ? 'fake' : base, body, tag])).digest('hex').slice(0, 24)
-      const file = cacheDir && join(cacheDir, `${hash}.json`)
-      let text, used, cached = false
-      // EVAL_REFRESH=1 asks the model again (to measure tokens and latency) but still saves the answers.
-      if (file && existsSync(file) && !process.env.EVAL_REFRESH) { ({ text, usage: used } = JSON.parse(readFileSync(file, 'utf8'))); cached = true; usage.add({}, true) }
-      else {
-        await slot()
-        try {
-          if (fakeAnswer) { text = await fakeAnswer({ system, user, tag }); used = { input: Math.ceil((system.length + user.length) / 3), output: Math.ceil(text.length / 3) } }
-          else if (openai) {
-            const response = await send(body)
-            text = String(response.choices?.[0]?.message?.content ?? '')
-            const u = response.usage ?? {}
-            used = { input: u.prompt_tokens, cached: u.prompt_tokens_details?.cached_tokens ?? u.prompt_cache_hit_tokens, output: u.completion_tokens }
-          } else {
-            const response = await send(body)
-            text = response.content.filter(block => block.type === 'text').map(block => block.text).join('')
-            const u = response.usage ?? {}
-            // Anthropic-style input_tokens leaves out the tokens read from cache.
-            used = { input: (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0), cached: u.cache_read_input_tokens, output: u.output_tokens }
-          }
-          usage.add(used)
-        } finally { release() }
-      }
-      let value = text
-      if (json) {
-        try { value = parse(text) }
-        catch {
-          if (attempt >= 2) throw new Error(`Model did not return JSON (${tag}): ${text.slice(0, 200)}`)
-          continue
+    const metrics = { calls: 0, latency_ms: 0, usage_by_call: [] }
+    try {
+      // A malformed answer is never cached, so asking again can succeed.
+      for (let attempt = 0; ; attempt++) {
+        const hash = createHash('sha256').update(JSON.stringify([fake ? 'fake' : base, body, tag])).digest('hex').slice(0, 24)
+        const file = cacheDir && join(cacheDir, `${hash}.json`)
+        let text, used, cached = false
+        if (file && existsSync(file) && !process.env.EVAL_REFRESH) {
+          ({ text, usage: used } = JSON.parse(readFileSync(file, 'utf8')))
+          cached = true
+          usage.add({}, true)
+        } else {
+          await slot()
+          try {
+            if (fakeAnswer) {
+              const started = performance.now()
+              try {
+                text = await fakeAnswer({ system, user, tag })
+                used = { input: Math.ceil((system.length + user.length) / 3), output: Math.ceil(text.length / 3) }
+              } finally {
+                metrics.calls++
+                metrics.latency_ms += performance.now() - started
+                metrics.usage_by_call.push(rowUsage(used))
+              }
+            } else {
+              const response = await send(body, metrics)
+              text = openai ? String(response.choices?.[0]?.message?.content ?? '')
+                : response.content.filter(block => block.type === 'text').map(block => block.text).join('')
+              used = providerUsage(response)
+            }
+            usage.add(used)
+          } finally { release() }
         }
+        let value = text
+        if (json) {
+          try { value = parse(text) }
+          catch {
+            if (attempt >= 2) throw new Error(`Model did not return JSON (${tag}): ${text.slice(0, 200)}`)
+            continue
+          }
+        }
+        if (file && !cached) writeFileSync(file, JSON.stringify({ text, usage: used }))
+        // Keep the original token estimate on disk-cache replays, as before. No request or latency
+        // is charged to this replay; usage_by_call describes only requests actually sent now.
+        return details ? { value, usage: metrics.calls ? measuredUsage(metrics) : used, cached,
+          ...metrics, latency_ms: Math.round(metrics.latency_ms) } : value
       }
-      if (file && !cached) writeFileSync(file, JSON.stringify({ text, usage: used }))
-      // With details, this call's own tokens (as first measured, for a cached answer) and whether it was cached.
-      return details ? { value, usage: used, cached } : value
+    } catch (error) {
+      throw Object.assign(error, metrics, { latency_ms: Math.round(metrics.latency_ms), usage: measuredUsage(metrics) })
     }
   }
 
@@ -119,22 +140,28 @@ export async function createClient({ model = process.env.EVAL_MODEL ?? 'deepseek
     if (at > Date.now()) await new Promise(resolve => setTimeout(resolve, at - Date.now()))
   }
 
-  async function send(body) {
+  async function send(body, metrics) {
     for (let attempt = 0; ; attempt++) {
       let status = 0
       await paced()
+      const started = performance.now()
+      let decoded
       try {
         const response = await fetch(openai ? `${base}/chat/completions` : `${base}/v1/messages`, { method: 'POST', signal: AbortSignal.timeout(120000),
           headers: openai ? { 'content-type': 'application/json', authorization: `Bearer ${key}` }
             : { 'content-type': 'application/json', 'x-api-key': key, authorization: `Bearer ${key}`, 'anthropic-version': '2023-06-01' },
           body: JSON.stringify(body) })
         status = response.status
-        if (response.ok) return await response.json()
+        if (response.ok) { decoded = await response.json(); return decoded }
         const detail = (await response.text()).slice(0, 300)
         // A rate limit is waited out longer than other failures: aggregators often allow only so many calls a minute.
         if (![408, 429, 500, 502, 503, 504].includes(status) || attempt >= (status === 429 ? 10 : 4)) throw Object.assign(new Error(`${base} answered ${status}: ${detail}`), { fatal: true })
       } catch (error) {
         if (error.fatal || (attempt >= 4 && status !== 429)) throw error
+      } finally {
+        metrics.calls++
+        metrics.latency_ms += performance.now() - started
+        metrics.usage_by_call.push(rowUsage(providerUsage(decoded)))
       }
       await new Promise(resolve => setTimeout(resolve, Math.min(30000, 2000 * 2 ** attempt) * (0.75 + Math.random() / 2)))
     }

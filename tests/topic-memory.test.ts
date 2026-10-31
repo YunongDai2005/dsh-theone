@@ -39,8 +39,8 @@ test('a card adds names and entities, replaces only a placeholder summary, and r
   assert.equal(routingSummary(topic.summary, store.settled('cafe'), store.openItems('cafe')), '咖啡店秋季新品上线：定价、上新日期、宣传 待定：上新日期')
   assert.deepEqual(topic.entities, ['桂花冷萃'])
   const payload = routingPayload({ text: '上新日期得改', contexts: [{ ...topic, activity: '3 小时前' }] })
-  assert.equal(payload.contexts[0].activity, '3 小时前')
-  assert.ok(!('activity' in routingPayload({ text: 'x', contexts: [topic] }).contexts[0]))
+  assert.equal(payload.states?.[0].activity, '3 小时前')
+  assert.ok(!routingPayload({ text: 'x', contexts: [topic] }).states?.some(state => 'activity' in state))
 })
 
 test('new names are added, not pushed out: an old name stays searchable while the newest come first, and compaction does not freeze settled values', () => {
@@ -79,7 +79,7 @@ test('settled values keep when they were recorded and what they replaced; routin
 test('after a topic’s first reply a card is written in the background, and routing sees it with the topic’s activity', { timeout: 60000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'theone-cards-'))
   const model = new FixtureModel()
-  const routed: { contexts: { id: string; keywords: string[]; activity?: string }[] }[] = []
+  const routed: ReturnType<typeof routingPayload>[] = []
   let cards = 0
   model.behavior = async function* (options) {
     const payload = () => JSON.parse((options.messages[0] as unknown as { content: { text: string }[] }).content[0].text)
@@ -108,7 +108,7 @@ test('after a topic’s first reply a card is written in the background, and rou
     await app.ctx.theone.extracting
     const qwen = routed.at(-1)!.contexts.find(context => context.id === 'ctx_qwen_9070xt')!
     assert.ok(qwen.keywords.includes('显卡那件事'))
-    assert.equal(qwen.activity, '刚刚')
+    assert.equal(routed.at(-1)!.states?.find(state => state.id === qwen.id)?.activity, '刚刚')
     // Only after the first reply, and later once more (the fourth); not on every turn.
     assert.equal(cards, 1)
   } finally { await app.close(); await rm(root, { recursive: true, force: true }) }

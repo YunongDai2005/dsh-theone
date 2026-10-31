@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import json
 import math
+import os
+from statistics import median
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -158,7 +160,9 @@ def evaluate(sessions, predictions, split="dev"):
     switch, refs = Counter(), [0, 0]
     fragments, merges, pairs = [], [], []
     tokens = Counter()
-    latency = []
+    latency, calls = [], []
+    tiers, card_tokens = Counter(), Counter()
+    usage_known = cache_known = False
     covered = 0
     for session in sessions:
         rows = rows_by_session.get(session["session_id"], [])
@@ -176,11 +180,20 @@ def evaluate(sessions, predictions, split="dev"):
             tokens["cache_hit"] += usage.get("cache_hit", 0)
             tokens["calls"] += 1 if usage else 0
             tokens["messages"] += 1
+            usage_known |= bool(usage)
+            cache_known |= "cache_hit" in usage
+            if isinstance(row.get("calls"), (int, float)):
+                calls.append(row["calls"])
+            if row.get("tier") in ("fast", "quick", "recheck"):
+                tiers[row["tier"]] += 1
+            for card in row.get("card_usage") or []:
+                for key in ("input", "output", "cache_hit"):
+                    card_tokens[key] += card.get(key, 0)
             if "burst" in row:
                 waited[0] += bool(row.get("waited"))
                 waited[1] += 1
-            if "elapsed_ms" in row and row.get("via", "llm") == "llm":
-                latency.append(row["elapsed_ms"])
+            if isinstance(row.get("latency_ms"), (int, float)):
+                latency.append(row["latency_ms"])
             kinds[kind] += 1
             if not t["ambiguous"]:
                 strict_kinds[kind] += 1
@@ -234,10 +247,20 @@ def evaluate(sessions, predictions, split="dev"):
     sp, sr, sf = prf(switch["tp"], switch["fp"], switch["fn"])
     bp, br, bf = bcubed(pairs)
     latency.sort()
+    # Same configurable USD / million token prices as eval/lib/llm.mjs. Cards have their own
+    # usage and stay out of routing calls/cache/latency, but do count toward the total bill.
+    prices = tuple(float(value) for value in os.environ.get("EVAL_PRICES", "0.30,0.006,1.20").split(","))
+    def usd_per_1000(used):
+        bill = ((used["input"] - used["cache_hit"]) * prices[0] + used["cache_hit"] * prices[1] + used["output"] * prices[2]) / 1e6
+        return round(bill * 1000 / tokens["messages"], 6) if tokens["messages"] else None
+
+    measured = tokens["messages"]
+    routing_cost_known = usage_known or (measured > 0 and tiers["fast"] == measured)
     result = {
         "mode": mode, "split": split, "sessions": covered, "messages": tokens["messages"],
         "accuracy": rate(strict), "accuracy_lenient": rate(lenient),
         "weighted_error": round(weighted / thread_messages, 4) if thread_messages else None,
+        "harm_per_100_messages": round(100 * weighted / thread_messages, 4) if thread_messages else None,
         "ambiguous_share": round(1 - strict[1] / lenient[1], 4) if lenient[1] else None,
         "outcomes": dict(kinds),
         "oneoff_into_topic": round(kinds["oneoff_into_topic"] / oneoffs, 4) if oneoffs else None,
@@ -252,7 +275,14 @@ def evaluate(sessions, predictions, split="dev"):
         **({"by_burst": {k: {"accuracy": rate(v), "n": v[1]} for k, v in sorted(by_burst.items())}, "waited_share": rate(waited)} if waited[1] else {}),
         "tokens_per_message": {k: round(tokens[k] / tokens["messages"], 1) for k in ("input", "output", "cache_hit")} if tokens["messages"] else {},
         "model_calls_share": round(tokens["calls"] / tokens["messages"], 3) if tokens["messages"] else None,
-        "latency_ms": {"p50": latency[len(latency) // 2], "p90": latency[int(len(latency) * 0.9)]} if latency else None,
+        "calls_per_message": round(sum(calls) / measured, 4) if measured and len(calls) == measured else None,
+        "by_tier": {key: {"n": tiers[key], "share": round(tiers[key] / measured, 4)} for key in ("fast", "quick", "recheck")} if measured and sum(tiers.values()) == measured else None,
+        "cache_hit_rate": round(tokens["cache_hit"] / tokens["input"], 4) if cache_known and tokens["input"] else None,
+        # Nearest-rank p90; an even-sized median averages the two middle samples.
+        "latency_ms": {"p50": median(latency), "p90": latency[math.ceil(len(latency) * 0.9) - 1]} if measured and len(latency) == measured else None,
+        "usd_per_1000_messages": usd_per_1000(tokens + card_tokens) if routing_cost_known or card_tokens else None,
+        "routing_usd_per_1000_messages": usd_per_1000(tokens) if routing_cost_known else None,
+        "card_usd_per_1000_messages": usd_per_1000(card_tokens) if card_tokens else None,
     }
     return result
 
@@ -268,6 +298,17 @@ def table(results):
         cells = ["–" if r.get(k) is None else f"{r[k]:.3f}" if isinstance(r[k], float) else str(r[k]) for k, _ in cols]
         lines.append(f"| {name} | {r['mode']} | " + " | ".join(cells)
                      + f" | {r['switch']['f1']:.3f} | {r['bcubed']['f1']:.3f} | {r['tokens_per_message'].get('input', 0):.0f} |")
+    lines += ["", "| system | calls/msg | fast | quick | recheck | cache hit | p50 ms | p90 ms | harm/100 | $/1k msg |",
+              "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
+    def number(value, digits=3):
+        return "–" if value is None else f"{value:.{digits}f}"
+    for name, r in results:
+        tiers = r.get("by_tier") or {}
+        tier_cells = [f"{tiers[key]['n']} ({tiers[key]['share']:.1%})" if key in tiers else "–" for key in ("fast", "quick", "recheck")]
+        latency = r.get("latency_ms") or {}
+        lines.append(f"| {name} | {number(r.get('calls_per_message'))} | " + " | ".join(tier_cells)
+                     + f" | {number(r.get('cache_hit_rate'))} | {number(latency.get('p50'), 1)} | {number(latency.get('p90'), 1)}"
+                     + f" | {number(r.get('harm_per_100_messages'))} | {number(r.get('usd_per_1000_messages'), 6)} |")
     bursts = [(name, r) for name, r in results if r.get("by_burst")]
     if bursts:
         lines += ["", "| system | alone | in a burst | burst across threads | replies held | model calls/msg |", "|---|---|---|---|---|---|"]

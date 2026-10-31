@@ -20,7 +20,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
-import { ROUTING_PROMPT, routingPrompt, routingPayload, validateRoutingDecision, redactRoutingText } from '../dist/llm-router.js'
+import { routingPrompt, routingPayload, validateRoutingDecision, redactRoutingText } from '../dist/llm-router.js'
 import { continuesCurrent, topicTerms } from '../dist/routing-policy.js'
 import { resolveContext } from '../dist/router.js'
 import * as memory from '../dist/topic-memory.js'
@@ -99,6 +99,20 @@ export async function routeSession(session, { mode, policy, client, merge = 'non
   let current, created = 0
   const arrivals = planArrivals(session.turns, bursts)
   const usageOf = answer => answer.usage ? { input: answer.usage.input ?? 0, output: answer.usage.output ?? 0, cache_hit: answer.usage.cached ?? 0 } : undefined
+  const emptyMetrics = () => ({ calls: 0, latency_ms: 0, usage_by_call: [] })
+  const addUsage = (first, extra) => first || extra ? Object.fromEntries(['input', 'output', 'cache_hit'].map(key => [key, (first?.[key] ?? 0) + (extra?.[key] ?? 0)])) : undefined
+  const mergeMetrics = (target, extra) => {
+    target.calls += extra.calls
+    target.latency_ms += extra.latency_ms
+    target.usage_by_call.push(...extra.usage_by_call)
+    target.usage = addUsage(target.usage, extra.usage)
+  }
+  const complete = async (request, metrics) => {
+    const record = answer => mergeMetrics(metrics, { calls: answer.calls ?? (answer.cached ? 0 : 1), latency_ms: answer.cached && !answer.calls ? 0 : answer.latency_ms ?? 0,
+      usage_by_call: answer.usage_by_call ?? (answer.cached ? [] : [usageOf(answer) ?? { input: 0, output: 0, cache_hit: 0 }]), usage: usageOf(answer) })
+    try { const answer = await client.complete(request); record(answer); return answer }
+    catch (error) { record(error); throw error }
+  }
   /** Apply one decision for `members`: create the topic it names, move to it, remember the messages. */
   const apply = (decision, members, text, batchIds) => {
     let pred = 'ERROR'
@@ -126,14 +140,14 @@ export async function routeSession(session, { mode, policy, client, merge = 'non
     const clues = withRecheck && looks ? looks.routingEvidence(text, topics.map(topic => ({ id: topic.id,
       texts: [topic.title, topic.summary, ...topic.entities, ...topic.keywords, ...topic.texts] }))) : []
     const input = { text, contexts, currentId: current, recent: recent.slice(-12) }
-    let decision, usage, error, via = 'llm', rechecked
-    if (policy === 'theone' && current && continuesCurrent(text)) { decision = { action: 'KEEP', contextId: current, reason: 'fast path' }; via = 'fast' }
+    const metrics = emptyMetrics()
+    let decision, error, via = 'llm', tier = 'quick', rechecked
+    if (policy === 'theone' && current && continuesCurrent(text)) { decision = { action: 'KEEP', contextId: current, reason: 'fast path' }; via = 'fast'; tier = 'fast' }
     else {
       try {
         const payload = routingPayload(input)
         // Calls run concurrently, so each call's tokens come from its own response, not the running total.
-        const answer = await client.complete({ system: routingPrompt(payload), user: JSON.stringify(payload), maxTokens: 2048, json: true, details: true, tag })
-        usage = usageOf(answer)
+        const answer = await complete({ system: routingPrompt(payload), user: JSON.stringify(payload), maxTokens: 2048, json: true, details: true, tag }, metrics)
         if (answer.cached) via = 'cache'
         decision = validateRoutingDecision(answer.value, input)
         const look = withRecheck && looks ? looks.secondLook(decision, clues) : undefined
@@ -141,13 +155,12 @@ export async function routeSession(session, { mode, policy, client, merge = 'non
           const again = { ...input, recheck: look }
           const repeat = routingPayload(again)
           try {
-            const second = await client.complete({ system: routingPrompt(repeat), user: JSON.stringify(repeat), maxTokens: 8192, json: true, details: true,
-              tag: `${tag}:recheck`, override: { reasoning_effort: null, thinking: null } })
+            const second = await complete({ system: routingPrompt(repeat), user: JSON.stringify(repeat), maxTokens: 8192, json: true, details: true,
+              tag: `${tag}:recheck`, override: { reasoning_effort: null, thinking: null } }, metrics)
             const first = decision
             decision = validateRoutingDecision(second.value, again)
+            tier = 'recheck'
             rechecked = { from: first.contextId ?? first.action, to: decision.contextId ?? decision.action }
-            const extra = usageOf(second)
-            if (usage && extra) usage = Object.fromEntries(Object.keys(usage).map(key => [key, usage[key] + (extra[key] ?? 0)]))
           } catch { /* the first decision stands, as in TheOne */ }
         }
       } catch (failure) {
@@ -156,7 +169,7 @@ export async function routeSession(session, { mode, policy, client, merge = 'non
       }
     }
     const pred = apply(decision, members, text)
-    return members.map(() => ({ pred, decision, via, usage, error, rechecked }))
+    return members.map((_, k) => ({ pred, decision, via, tier, ...(k === 0 ? metrics : emptyMetrics()), error, rechecked }))
   }
   /** Route a burst in one call that decides each message; malformed answers fall back to one by one. */
   const routeEach = async (members, tag) => {
@@ -164,27 +177,26 @@ export async function routeSession(session, { mode, policy, client, merge = 'non
     if (policy === 'theone' && current && texts.every(text => continuesCurrent(text))) return routeJoint(members, tag)
     const contexts = topics.map(describe)
     let answer
+    const metrics = emptyMetrics()
     try {
       const payload = routingPayload({ text: texts.join('\n'), contexts, currentId: current, recent: recent.slice(-12) })
       delete payload.text
       payload.texts = texts.map(text => redactRoutingText(text).slice(0, 2000))
-      answer = await client.complete({ system: ROUTING_PROMPT + BATCH_PROMPT, user: JSON.stringify(payload), maxTokens: 4096, json: true, details: true, tag: `${tag}:each` })
+      answer = await complete({ system: routingPrompt(payload) + BATCH_PROMPT, user: JSON.stringify(payload), maxTokens: 4096, json: true, details: true, tag: `${tag}:each` }, metrics)
       const decisions = batchDecisions(answer.value, texts, contexts, current)
       const batchIds = new Map()
       const via = answer.cached ? 'cache' : 'llm'
       return decisions.map((decision, k) => {
         const pred = apply(decision, [members[k]], texts[k], batchIds)
         if (decision.action === 'CREATE') batchIds.set(`new:${k}`, pred)
-        return { pred, decision, via, usage: k === 0 ? usageOf(answer) : undefined }
+        return { pred, decision, via, tier: 'quick', ...(k === 0 ? metrics : emptyMetrics()) }
       })
     } catch (failure) {
       const rows = []
       for (const turn of members) rows.push(...(await routeJoint([turn], `route:${session.session_id}:${turn.i}:${mode}:${policy}`)))
-      // The failed batch call's tokens still count, on the first message.
-      const spent = answer && usageOf(answer)
-      const first = rows[0].usage
-      const usage = spent && first ? Object.fromEntries(Object.keys(spent).map(key => [key, spent[key] + (first[key] ?? 0)])) : spent ?? first
-      rows[0] = { ...rows[0], usage, error: String(failure.code ?? failure.message).slice(0, 120) }
+      // The rejected batch's measurements precede the single-message fallback calls.
+      mergeMetrics(metrics, rows[0])
+      rows[0] = { ...rows[0], ...metrics, error: String(failure.code ?? failure.message).slice(0, 120) }
       return rows.map(row => ({ ...row, via: `fallback-${row.via}` }))
     }
   }
@@ -201,10 +213,10 @@ export async function routeSession(session, { mode, policy, client, merge = 'non
     // `mixed` (gold labels, for reporting only) marks a burst that spanned more than one thread.
     const mixed = new Set(members.map(turn => turn.gold.thread ?? 'none')).size > 1
     members.forEach((turn, k) => {
-      const { pred, decision, via, usage, error, rechecked } = results[k]
+      const { pred, decision, via, usage, error, rechecked, tier, calls, latency_ms, usage_by_call } = results[k]
       out.push({ session_id: session.session_id, i: turn.i, mode, policy, pred, action: decision?.action ?? null, refs: decision?.relatedIds ?? [],
         ...(decision?.action === 'CREATE' ? { title: decision.title, reason: decision.reason } : {}), ...(rechecked ? { rechecked } : {}),
-        via, ...(usage && (k === 0 || decide === 'each') ? { usage } : {}), elapsed_ms: elapsed, ...(error ? { error } : {}),
+        via, tier, calls, latency_ms, usage_by_call, ...(usage && (k === 0 || decide === 'each') ? { usage } : {}), elapsed_ms: elapsed, ...(error ? { error } : {}),
         ...(k === members.length - 1 && cardUsage.length ? { card_usage: cardUsage } : {}),
         ...(merge !== 'none' ? { merge, decide, burst: members.length, waited: unit.waited, ...(mixed ? { mixed } : {}) } : {}) })
     })

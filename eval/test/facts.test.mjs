@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { buildSchedule, factState, planFactEpisodes } from '../lib/schedule.mjs'
 import { buildProbes } from '../lib/probes.mjs'
 import { createClient } from '../lib/llm.mjs'
@@ -22,7 +22,7 @@ test('an exchange the step check turns down, even after a rewrite, never becomes
   try {
     // The fake writer, with a checker that turns every fact step down.
     const strict = join(root, 'strict.mjs')
-    await writeFile(strict, `import answer from ${JSON.stringify(fake)}\nexport default async request => request.tag.startsWith('check1:') ? JSON.stringify({ ok: false }) : answer(request)\n`)
+    await writeFile(strict, `import answer from ${JSON.stringify(pathToFileURL(fake).href)}\nexport default async request => request.tag.startsWith('check1:') ? JSON.stringify({ ok: false }) : answer(request)\n`)
     const [session] = await generate({ sessions: 1, seed: 3, client: await createClient({ fake: strict }) })
     const steps = session.turns.filter(turn => turn.fact)
     assert.ok(steps.length > 0 && steps.every(turn => turn.tags.includes('fact-miss')))

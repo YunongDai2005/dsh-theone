@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { DshRouter, RouterFailure, ROUTING_PROMPT } from '../src/llm-router.ts'
+import { DshRouter, RouterFailure, ROUTING_PROMPT, routingPrompt } from '../src/llm-router.ts'
 import type { LlmResolvedModelInfo } from '@deepseek-ai/dsh-llm'
 import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import { harness, ask, FixtureModel, textResponse } from './harness.ts'
@@ -22,7 +22,7 @@ test('DSH router uses its configured adapter with transport identity but no conv
       assert.equal(options.tools, undefined)
       assert.ok(options.sessionId)
       assert.notEqual(options.sessionId, app.gateway.id)
-      assert.equal(options.system, ROUTING_PROMPT)
+      assert.equal(options.system, routingPrompt({}))
       assert.equal(options.messages.length, 1)
       assert.ok(!JSON.stringify(options.messages).includes('sk-syntheticsecret012345678901'))
       yield* textResponse('```json\n' + JSON.stringify(decision) + '\n```')
