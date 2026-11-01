@@ -6,6 +6,7 @@ import { randomUUID, createHash } from 'node:crypto'
 import type { ExtractedTopic, HiddenReason, HistoryPart, TopicGroup } from './catalog-types.ts'
 import type { ContextDescriptor, ContextUsage, Decision, Progress, RouteRecord, RouteView, StoredContext, SourceRange, TopicLink } from './types.ts'
 import { FACT_KINDS, FACT_LIMITS, factKey, safe, type FactEvidence, type FactKind, type FactStatus, type FactView } from './facts.ts'
+import { LearningJournal, uniqueSources, type LearningSource } from './learning-journal.ts'
 import { mergeSettled, type Settled, type TopicCard } from './topic-memory.ts'
 
 /** A write to a topic's facts, after its evidence was checked against the session. */
@@ -87,6 +88,7 @@ const runOf = (row: Record<string, unknown>): TopicRun => ({ messageId: String(r
 
 export class ContextStore {
   private readonly db: DatabaseSync
+  readonly learningJournal: LearningJournal
 
   constructor(path: string) {
     if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true })
@@ -205,6 +207,7 @@ export class ContextStore {
         message_id TEXT PRIMARY KEY, context_id TEXT NOT NULL, session_id TEXT NOT NULL, start_seq INTEGER NOT NULL, end_seq INTEGER NOT NULL,
         moved_to TEXT NOT NULL, request TEXT NOT NULL, at INTEGER NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS misroute_effects (message_id TEXT NOT NULL, context_id TEXT NOT NULL, changes TEXT NOT NULL, PRIMARY KEY(message_id,context_id));
       CREATE TABLE IF NOT EXISTS stowed_sessions (session_id TEXT PRIMARY KEY, stowed_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS topic_names (
         context_id TEXT NOT NULL, name_key TEXT NOT NULL, name TEXT NOT NULL, first_at INTEGER NOT NULL, last_at INTEGER NOT NULL,
@@ -242,6 +245,12 @@ export class ContextStore {
         context_id TEXT PRIMARY KEY REFERENCES contexts(id), reason TEXT NOT NULL, detected_at INTEGER NOT NULL
       );
     `)
+    this.learningJournal = new LearningJournal(this.db, stream => this.learningSnapshot(stream),
+      (stream, snapshot) => this.restoreLearning(stream, snapshot),
+      (kind, args) => {
+        if (!['learnLink', 'setManualLink', 'markSeen'].includes(kind) && !this.contexts().some(topic => topic.id === args[0])) return
+        return (this as unknown as Record<string, (...args: unknown[]) => unknown>)[kind](...args)
+      })
   }
 
   settings(gatewayKey: string): { values: unknown; revision: number } | undefined {
@@ -300,9 +309,10 @@ export class ContextStore {
   /** Successful uses only: retries, failed work and clarification never heat a topic. */
   contextUsage(gatewayKey: string, now = Date.now()): ContextUsage[] {
     const cutoff = new Date(now - 30 * 86400000).toISOString().slice(0, 19).replace('T', ' ')
-    return this.db.prepare(`SELECT json_extract(r.decision, '$.contextId') AS context_id,
+    return this.db.prepare(`SELECT COALESCE(d.corrected_to, json_extract(r.decision, '$.contextId')) AS context_id,
       COUNT(*) AS calls, SUM(r.created_at >= ?) AS recent_calls, MAX(r.created_at) AS last_used
       FROM routing_events r JOIN gateway_sessions gs ON gs.gateway_id = r.gateway_id
+      LEFT JOIN route_details d ON d.message_id = r.message_id
       WHERE gs.gateway_key = ? AND r.status = 'completed'
         AND json_extract(r.decision, '$.action') != 'CLARIFY'
         AND json_extract(r.decision, '$.contextId') IS NOT NULL
@@ -329,10 +339,14 @@ export class ContextStore {
    * routing reads the current settled values and open items beside it (see routingSummary).
    */
   applyCard(contextId: string, card: TopicCard, now = Date.now()): boolean {
-    this.db.exec('BEGIN IMMEDIATE')
+    return this.learningJournal.record(`topic:${contextId}`, 'applyCard', [contextId, card, now], () => this.applyCardValue(contextId, card, now), false)
+  }
+
+  private applyCardValue(contextId: string, card: TopicCard, now = Date.now()): boolean {
+    this.db.exec('SAVEPOINT store_write')
     try {
       const context = this.contexts().find(item => item.id === contextId)
-      if (!context) { this.db.exec('COMMIT'); return false }
+      if (!context) { this.db.exec('RELEASE store_write'); return false }
       const first = !this.db.prepare('SELECT 1 FROM topic_open WHERE context_id = ?').get(contextId)
       const { workingSessionId: _, ...descriptor } = context
       for (const name of card.aliases) this.db.prepare(`INSERT INTO topic_names VALUES (?, ?, ?, ?, ?)
@@ -345,9 +359,9 @@ export class ContextStore {
       const entities = [...card.entities, ...descriptor.entities].filter(term => { const key = term.toLowerCase(); return term && !seen.has(key) && seen.add(key) }).slice(0, 48)
       const compacted = this.summaryUpdates(contextId).length > 0
       this.db.prepare('UPDATE contexts SET descriptor = ? WHERE id = ?').run(JSON.stringify({ ...descriptor, summary: compacted ? descriptor.summary : card.summary, entities }), contextId)
-      this.db.exec('COMMIT')
+      this.db.exec('RELEASE store_write')
       return first
-    } catch (error) { this.db.exec('ROLLBACK'); throw error }
+    } catch (error) { this.db.exec('ROLLBACK TO store_write; RELEASE store_write'); throw error }
   }
 
   /** A route-created topic, never manually moved or already involved in a merge; use its latest main chat. */
@@ -487,7 +501,7 @@ export class ContextStore {
 
   /** One validated batch commits descriptors, groups and exact source ranges atomically. */
   importTopics(sessionId: string, cwd: string | undefined, parts: HistoryPart[], topics: ExtractedTopic[]): void {
-    this.db.exec('BEGIN IMMEDIATE')
+    this.db.exec('SAVEPOINT store_write')
     try {
       for (const topic of topics) {
         const id = topic.contextId ?? randomUUID()
@@ -499,7 +513,7 @@ export class ContextStore {
         const descriptor: ContextDescriptor = { id, title: existing?.title ?? topic.title,
           summary: summarized ? existing.summary : topic.summary, entities: topic.entities, keywords: topic.keywords,
           lastState: stated ? existing.lastState : topic.lastState, ...(stated && existing.progress ? { progress: existing.progress } : {}) }
-        if (existing) this.db.prepare('UPDATE contexts SET descriptor = ? WHERE id = ?').run(JSON.stringify(descriptor), id)
+        if (existing) this.catalogDescriptor(id, descriptor)
         else {
           this.seed([descriptor])
           this.db.prepare('INSERT INTO context_origins VALUES (?, ?, ?)').run(id, sessionId, cwd ?? null)
@@ -511,7 +525,7 @@ export class ContextStore {
           groupId = 'group-' + createHash('sha256').update(normalized).digest('hex').slice(0, 20)
           this.db.prepare('INSERT OR IGNORE INTO topic_groups VALUES (?, ?, ?, ?)').run(groupId, title, topic.groupSummary, normalized)
         }
-        this.db.prepare('INSERT OR REPLACE INTO topic_group_members VALUES (?, ?)').run(id, groupId)
+        this.assignGroup(id, groupId)
         for (const seq of topic.turns) {
           const part = parts.find(part => part.seq === seq)!
           const old = this.db.prepare('SELECT * FROM history_turns WHERE session_id = ? AND user_seq = ?').get(sessionId, seq)
@@ -521,8 +535,14 @@ export class ContextStore {
           this.db.prepare('INSERT OR REPLACE INTO history_turns VALUES (?, ?, ?, ?, ?)').run(sessionId, seq, part.endSeq, part.fingerprint, id)
         }
       }
-      this.db.exec('COMMIT')
-    } catch (error) { this.db.exec('ROLLBACK'); throw error }
+      this.db.exec('RELEASE store_write')
+    } catch (error) { this.db.exec('ROLLBACK TO store_write; RELEASE store_write'); throw error }
+  }
+
+  private catalogDescriptor(id: string, descriptor: ContextDescriptor): void {
+    this.learningJournal.record(`topic:${id}`, 'catalogDescriptor', [id, descriptor], () => {
+      this.db.prepare('UPDATE contexts SET descriptor=? WHERE id=?').run(JSON.stringify(descriptor), id)
+    }, undefined)
   }
 
   mount(gatewayKey: string, contextId: string): void {
@@ -540,6 +560,10 @@ export class ContextStore {
    * Given in three parts, it is kept as such and `lastState` is written from it; a free note replaces both.
    */
   updateState(contextId: string, state: string | Progress, sessionId: string, throughSeq: number): void {
+    return this.learningJournal.record(`topic:${contextId}`, 'updateState', [contextId, state, sessionId, throughSeq], () => this.updateStateValue(contextId, state, sessionId, throughSeq), undefined)
+  }
+
+  private updateStateValue(contextId: string, state: string | Progress, sessionId: string, throughSeq: number): void {
     const context = this.contexts().find(item => item.id === contextId)
     if (!context || context.workingSessionId !== sessionId) throw new Error('State requires the owned Worker')
     let progress: Progress | undefined
@@ -551,13 +575,13 @@ export class ContextStore {
     if (!text || (!progress && text.length > 800) || !Number.isSafeInteger(throughSeq) || throughSeq < 0) throw new Error('Invalid project state')
     if (/\bsk-[a-zA-Z0-9_-]{16,}|\bBearer\s+\S+|(?:api[_ -]?key|password|密码|密钥)\s*[:=：]\s*\S+/i.test(text)) throw new Error('Project state must not contain credentials')
     const { workingSessionId: _, progress: __, ...descriptor } = context
-    this.db.exec('BEGIN IMMEDIATE')
+    this.db.exec('SAVEPOINT store_write')
     try {
       this.db.prepare('UPDATE contexts SET descriptor = ? WHERE id = ?').run(JSON.stringify({ ...descriptor, lastState: text, ...(progress ? { progress } : {}) }), contextId)
       this.db.prepare('INSERT INTO context_state_updates(context_id, session_id, through_seq, state) VALUES (?, ?, ?, ?)')
         .run(contextId, sessionId, throughSeq, text)
-      this.db.exec('COMMIT')
-    } catch (error) { this.db.exec('ROLLBACK'); throw error }
+      this.db.exec('RELEASE store_write')
+    } catch (error) { this.db.exec('ROLLBACK TO store_write; RELEASE store_write'); throw error }
   }
 
   stateUpdates(contextId: string) {
@@ -566,18 +590,22 @@ export class ContextStore {
 
   /** Reuse a completed DSH compaction checkpoint once, without another model call. */
   updateSummary(contextId: string, summary: string, sessionId: string, summarySeq: number, endSeq: number): void {
+    return this.learningJournal.record(`topic:${contextId}`, 'updateSummary', [contextId, summary, sessionId, summarySeq, endSeq], () => this.updateSummaryValue(contextId, summary, sessionId, summarySeq, endSeq), undefined)
+  }
+
+  private updateSummaryValue(contextId: string, summary: string, sessionId: string, summarySeq: number, endSeq: number): void {
     const context = this.contexts().find(item => item.id === contextId)
     if (!context || context.workingSessionId !== sessionId) throw new Error('Summary requires the owned Worker')
     if (!summary.trim() || summary.length > 1200 || !Number.isSafeInteger(summarySeq) || summarySeq < 0 || !Number.isSafeInteger(endSeq) || endSeq <= summarySeq) throw new Error('Invalid compaction reference')
     const { workingSessionId: _, ...descriptor } = context
-    this.db.exec('BEGIN IMMEDIATE')
+    this.db.exec('SAVEPOINT store_write')
     try {
       const inserted = this.db.prepare('INSERT OR IGNORE INTO context_summary_updates(context_id, session_id, summary_seq, end_seq, summary) VALUES (?, ?, ?, ?, ?)')
         .run(contextId, sessionId, summarySeq, endSeq, summary.trim())
       if (inserted.changes) this.db.prepare('UPDATE contexts SET descriptor = ? WHERE id = ?')
         .run(JSON.stringify({ ...descriptor, summary: summary.trim() }), contextId)
-      this.db.exec('COMMIT')
-    } catch (error) { this.db.exec('ROLLBACK'); throw error }
+      this.db.exec('RELEASE store_write')
+    } catch (error) { this.db.exec('ROLLBACK TO store_write; RELEASE store_write'); throw error }
   }
 
   summaryUpdates(contextId: string) {
@@ -599,6 +627,10 @@ export class ContextStore {
 
   /** Add learned evidence; a pair the user unlinked never learns back. */
   learnLink(a: string, b: string, delta: number, now = Date.now()): void {
+    return this.learningJournal.record(`link:${JSON.stringify(this.pair(a, b))}`, 'learnLink', [a, b, delta, now], () => this.learnLinkValue(a, b, delta, now), undefined)
+  }
+
+  private learnLinkValue(a: string, b: string, delta: number, now = Date.now()): void {
     if (a === b) return
     const [x, y] = this.pair(a, b)
     const existing = this.links(x, now).find(link => link.a === x && link.b === y)
@@ -610,6 +642,10 @@ export class ContextStore {
 
   /** 1 links a pair permanently, -1 keeps it apart, 0 returns it to learning. */
   setManualLink(a: string, b: string, manual: TopicLink['manual'], now = Date.now()): void {
+    return this.learningJournal.record(`link:${JSON.stringify(this.pair(a, b))}`, 'setManualLink', [a, b, manual, now], () => this.setManualLinkValue(a, b, manual, now), undefined)
+  }
+
+  private setManualLinkValue(a: string, b: string, manual: TopicLink['manual'], now = Date.now()): void {
     if (a === b) throw new Error('A topic cannot link to itself')
     const [x, y] = this.pair(a, b)
     this.db.prepare(`INSERT INTO topic_links(a, b, weight, manual, updated_at) VALUES (?, ?, 0, ?, ?)
@@ -618,7 +654,7 @@ export class ContextStore {
 
   /** Forget learned relatedness; the user's own links and separations stay. */
   clearLearnedLinks(): void {
-    this.db.exec('DELETE FROM topic_links WHERE manual = 0; UPDATE topic_links SET weight = 0')
+    this.db.exec("DELETE FROM topic_links WHERE manual = 0; UPDATE topic_links SET weight = 0; DELETE FROM learning_events WHERE stream LIKE 'link:%'; DELETE FROM learning_bases WHERE stream LIKE 'link:%'")
   }
 
   setPrivate(contextId: string, value: boolean): void {
@@ -641,6 +677,10 @@ export class ContextStore {
 
   /** Standing rules for a topic, kept apart from summaries so compaction cannot drop them. */
   setConstraints(contextId: string, text: string | null, now = Date.now()): void {
+    return this.learningJournal.record(`topic:${contextId}`, 'setConstraints', [contextId, text, now], () => this.setConstraintsValue(contextId, text, now), undefined)
+  }
+
+  private setConstraintsValue(contextId: string, text: string | null, now = Date.now()): void {
     const value = text?.trim() || null
     if (value && (value.length > 400 || /\bsk-[a-zA-Z0-9_-]{16,}|\bBearer\s+\S+/i.test(value))) throw new Error('Invalid topic constraints')
     this.db.prepare(`INSERT INTO topic_flags(context_id, constraints, constraints_at) VALUES (?, ?, ?)
@@ -654,6 +694,10 @@ export class ContextStore {
 
   /** The latest full compaction summary of a topic's Worker and how far it covers. */
   saveDigest(contextId: string, summary: string, throughSeq: number, now = Date.now()): void {
+    return this.learningJournal.record(`topic:${contextId}`, 'saveDigest', [contextId, summary, throughSeq, now], () => this.saveDigestValue(contextId, summary, throughSeq, now), undefined)
+  }
+
+  private saveDigestValue(contextId: string, summary: string, throughSeq: number, now = Date.now()): void {
     this.db.prepare(`INSERT INTO compaction_digests VALUES (?, ?, ?, ?) ON CONFLICT(context_id) DO UPDATE SET
       summary = excluded.summary, through_seq = excluded.through_seq, created_at = excluded.created_at
       WHERE excluded.through_seq > compaction_digests.through_seq`).run(contextId, summary.slice(0, 16000), throughSeq, now)
@@ -671,6 +715,10 @@ export class ContextStore {
   }
 
   markSeen(reader: string, source: string, at: number): void {
+    return this.learningJournal.record(`seen:${JSON.stringify([reader, source])}`, 'markSeen', [reader, source, at], () => this.markSeenValue(reader, source, at), undefined)
+  }
+
+  private markSeenValue(reader: string, source: string, at: number): void {
     this.db.prepare(`INSERT INTO briefing_seen VALUES (?, ?, ?) ON CONFLICT(reader, source) DO UPDATE SET seen_at = excluded.seen_at`).run(reader, source, at)
   }
 
@@ -705,14 +753,14 @@ export class ContextStore {
    * reply runs (`mount` false) leaves the topic in use as it is until main chat gets to it.
    */
   plan(messageId: string, gatewayId: string, gatewayKey: string, proposed: Decision, mount = true): RouteRecord {
-    this.db.exec('BEGIN IMMEDIATE')
+    this.db.exec('SAVEPOINT store_write')
     try {
       const existing = this.route(messageId)
       if (existing) {
-        this.db.exec('COMMIT')
+        this.db.exec('RELEASE store_write')
         return existing
       }
-      const decision = this.topicFor(proposed)
+      const decision = this.topicFor(proposed, messageId)
       if (decision.contextId && mount) {
         this.db.prepare('INSERT INTO gateway_state VALUES (?, ?) ON CONFLICT(gateway_key) DO UPDATE SET context_id = excluded.context_id')
           .run(gatewayKey, decision.contextId)
@@ -720,29 +768,31 @@ export class ContextStore {
       this.db.prepare('INSERT INTO routing_events(message_id, gateway_id, decision, status) VALUES (?, ?, ?, ?)')
         .run(messageId, gatewayId, JSON.stringify(decision), 'planned')
       this.db.prepare('INSERT OR IGNORE INTO gateway_sessions VALUES (?, ?)').run(gatewayKey, gatewayId)
-      this.db.exec('COMMIT')
+      if (decision.contextId) this.learningJournal.source(messageId, decision.contextId)
+      this.db.exec('RELEASE store_write')
       return { messageId, gatewayId, decision, status: 'planned' }
     } catch (error) {
-      this.db.exec('ROLLBACK')
+      this.db.exec('ROLLBACK TO store_write; RELEASE store_write')
       throw error
     }
   }
 
   /** A decision with its topic: a CREATE makes the topic (in its project's folder, when it has one). */
-  private topicFor(proposed: Decision): Decision {
+  private topicFor(proposed: Decision, messageId: string): Decision {
     if (proposed.action !== 'CREATE') return { ...proposed }
     const context: ContextDescriptor = {
       id: randomUUID(), title: proposed.title!, summary: '新话题，尚无历史摘要。',
       entities: [], keywords: [proposed.title!], lastState: '等待首次执行',
     }
-    this.seed([context])
+    this.seed([{ ...context, title: '待整理话题', keywords: [] }])
+    this.withLearning([this.learningJournal.source(messageId, context.id)], () => this.catalogDescriptor(context.id, context))
     // A new topic about one of the user's projects works in that project's folder.
     if (proposed.folder) {
       const working = this.db.prepare('SELECT working_session_id FROM contexts WHERE id = ?').get(context.id)
       this.db.prepare('INSERT OR IGNORE INTO context_origins VALUES (?, ?, ?)').run(context.id, String(working?.working_session_id), proposed.folder)
     }
     const group = this.groupForNew(proposed)
-    if (group) this.db.prepare('INSERT OR IGNORE INTO topic_group_members VALUES (?, ?)').run(context.id, group)
+    if (group) this.withLearning([this.learningJournal.source(messageId, context.id)], () => this.assignGroup(context.id, group))
     return { ...proposed, contextId: context.id }
   }
 
@@ -767,18 +817,19 @@ export class ContextStore {
    * Give a message being answered to another topic (its first topic handed it back), and make that
    * topic the one in use. Returns the decision it now has, or undefined when the message has no route.
    */
-  moveRoute(messageId: string, gatewayKey: string, proposed: Decision): Decision | undefined {
-    this.db.exec('BEGIN IMMEDIATE')
+  moveRoute(messageId: string, gatewayKey: string, proposed: Decision, commitLearning = true): Decision | undefined {
+    this.db.exec('SAVEPOINT store_write')
     try {
-      if (!this.route(messageId)) { this.db.exec('COMMIT'); return undefined }
-      const decision = this.topicFor(proposed)
+      if (!this.route(messageId)) { this.db.exec('RELEASE store_write'); return undefined }
+      const decision = this.topicFor(proposed, messageId)
       this.db.prepare('UPDATE routing_events SET decision = ? WHERE message_id = ?').run(JSON.stringify(decision), messageId)
       if (decision.contextId) this.db.prepare('INSERT INTO gateway_state VALUES (?, ?) ON CONFLICT(gateway_key) DO UPDATE SET context_id = excluded.context_id')
         .run(gatewayKey, decision.contextId)
-      this.db.exec('COMMIT')
+      if (commitLearning && decision.contextId) this.reassignLearning(messageId, decision.contextId)
+      this.db.exec('RELEASE store_write')
       return decision
     } catch (error) {
-      this.db.exec('ROLLBACK')
+      this.db.exec('ROLLBACK TO store_write; RELEASE store_write')
       throw error
     }
   }
@@ -796,6 +847,8 @@ export class ContextStore {
 
   finish(messageId: string, status: 'completed' | 'failed'): void {
     this.db.prepare('UPDATE routing_events SET status = ? WHERE message_id = ?').run(status, messageId)
+    const contextId = this.route(messageId)?.decision.contextId
+    if (status === 'completed' && contextId) this.learningJournal.settle(messageId, contextId)
   }
 
   /** Whole-session access is allowed only for this Context's dedicated worker. */
@@ -867,8 +920,11 @@ export class ContextStore {
   correctRoute(messageId: string, contextId: string, now = Date.now()): void {
     if (!this.route(messageId)) throw new Error('Unknown route')
     if (!this.contexts().some(context => context.id === contextId)) throw new Error('Unknown Context')
+    this.inTransaction(() => {
     this.db.prepare(`INSERT INTO route_details(message_id, excerpt, corrected_to, corrected_at) VALUES (?, '', ?, ?)
       ON CONFLICT(message_id) DO UPDATE SET corrected_to = excluded.corrected_to, corrected_at = excluded.corrected_at`).run(messageId, contextId, now)
+      this.reassignLearning(messageId, contextId)
+    })
   }
 
   /**
@@ -876,6 +932,10 @@ export class ContextStore {
    * over time, stay within 0–5, and a term that falls to nothing is forgotten.
    */
   learnTerms(contextId: string, terms: string[], delta: number, now = Date.now()): void {
+    return this.learningJournal.record(`topic:${contextId}`, 'learnTerms', [contextId, terms, delta, now], () => this.learnTermsValue(contextId, terms, delta, now), undefined)
+  }
+
+  private learnTermsValue(contextId: string, terms: string[], delta: number, now = Date.now()): void {
     if (!this.contexts().some(context => context.id === contextId)) return
     for (const raw of new Set(terms.map(term => term.trim()).filter(term => term.length >= 2 && term.length <= 24))) {
       const row = this.db.prepare('SELECT weight, updated_at FROM learned_terms WHERE context_id = ? AND term = ?').get(contextId, raw) as { weight: number; updated_at: number } | undefined
@@ -933,6 +993,10 @@ export class ContextStore {
 
   /** Terms a correction showed belong to this topic, newest kept first. */
   addKeywords(contextId: string, terms: string[]): void {
+    return this.learningJournal.record(`topic:${contextId}`, 'addKeywords', [contextId, terms], () => this.addKeywordsValue(contextId, terms), undefined)
+  }
+
+  private addKeywordsValue(contextId: string, terms: string[]): void {
     const context = this.context(contextId)
     const seen = new Set<string>()
     const keywords = [...terms, ...context.keywords].filter(term => {
@@ -945,6 +1009,10 @@ export class ContextStore {
 
   /** The user's own wording for a topic outranks what the catalog extracted. */
   editTopic(contextId: string, change: { title?: string; summary?: string; lastState?: string }): void {
+    return this.learningJournal.record(`topic:${contextId}`, 'editTopic', [contextId, change], () => this.editTopicValue(contextId, change), undefined)
+  }
+
+  private editTopicValue(contextId: string, change: { title?: string; summary?: string; lastState?: string }): void {
     const context = this.context(contextId)
     const title = change.title?.trim()
     if (title !== undefined && (!title || title.length > 80 || this.contexts().some(other => other.id !== contextId && other.title.toLowerCase() === title.toLowerCase())))
@@ -971,12 +1039,19 @@ export class ContextStore {
   branchTopic(sourceId: string, title: string, workingSessionId: string, cwd?: string): string {
     const source = this.context(sourceId)
     const id = randomUUID()
-    this.db.prepare('INSERT INTO contexts VALUES (?, ?, ?)').run(id, JSON.stringify({ ...source, id, title, workingSessionId: undefined }), workingSessionId)
+    this.db.prepare('INSERT INTO contexts VALUES (?, ?, ?)').run(id, JSON.stringify({ id, title, summary: '新话题，尚无历史摘要。', entities: [], keywords: [title], lastState: '' }), workingSessionId)
     this.db.prepare('INSERT INTO context_origins VALUES (?, ?, ?)').run(id, workingSessionId, cwd ?? this.origin(sourceId)?.cwd ?? null)
     const group = this.db.prepare('SELECT group_id FROM topic_group_members WHERE context_id = ?').get(sourceId)
     if (group) this.db.prepare('INSERT OR REPLACE INTO topic_group_members VALUES (?, ?)').run(id, String(group.group_id))
-    const constraints = this.constraints(sourceId)
-    if (constraints) this.setConstraints(id, constraints.text)
+    const inherited = this.learningJournal.dependencies(`topic:${sourceId}`)
+    this.withLearning(inherited, () => {
+      const { workingSessionId: _, ...descriptor } = source
+      this.catalogDescriptor(id, { ...descriptor, id, title })
+      const constraints = this.constraints(sourceId)
+      if (constraints) this.setConstraints(id, constraints.text)
+    })
+    this.db.prepare(`INSERT OR IGNORE INTO learning_turns SELECT ?,input_id,message_id,context_id,start_seq,end_seq,revision,parents
+      FROM learning_turns WHERE session_id=?`).run(workingSessionId, source.workingSessionId)
     if (this.isPrivate(sourceId)) this.setPrivate(id, true)
     return id
   }
@@ -984,7 +1059,7 @@ export class ContextStore {
   /** Put a topic in another topic workspace, or a new one named `title`; null leaves it unassigned. */
   moveTopic(contextId: string, target: { groupId: string } | { title: string } | null): void {
     this.context(contextId)
-    if (target === null) { this.db.prepare('DELETE FROM topic_group_members WHERE context_id = ?').run(contextId); this.markOnce(`merge-moved:${contextId}`); return }
+    if (target === null) { this.assignGroup(contextId, null); this.markOnce(`merge-moved:${contextId}`); return }
     let groupId: string
     if ('groupId' in target) {
       if (!this.db.prepare('SELECT 1 FROM topic_groups WHERE id = ?').get(target.groupId)) throw new Error('Unknown topic workspace')
@@ -996,8 +1071,15 @@ export class ContextStore {
       groupId = 'group-' + createHash('sha256').update(normalized).digest('hex').slice(0, 20)
       this.db.prepare('INSERT OR IGNORE INTO topic_groups VALUES (?, ?, ?, ?)').run(groupId, title, '', normalized)
     }
-    this.db.prepare('INSERT OR REPLACE INTO topic_group_members VALUES (?, ?)').run(contextId, groupId)
+    this.assignGroup(contextId, groupId)
     this.markOnce(`merge-moved:${contextId}`)
+  }
+
+  private assignGroup(contextId: string, groupId: string | null): void {
+    this.learningJournal.record(`group:${contextId}`, 'assignGroup', [contextId, groupId], () => {
+      if (groupId === null) this.db.prepare('DELETE FROM topic_group_members WHERE context_id=?').run(contextId)
+      else this.db.prepare('INSERT OR REPLACE INTO topic_group_members VALUES (?,?)').run(contextId, groupId)
+    }, undefined)
   }
 
   /** Attach a whole existing session to a topic as reviewed history its Worker may search. */
@@ -1011,6 +1093,13 @@ export class ContextStore {
    * directory, but everything the merge did is written down so `unmergeTopic` can take it apart.
    */
   mergeTopics(sourceId: string, targetId: string, now = Date.now()): void {
+    const sources = this.learningJournal.dependencies(`topic:${sourceId}`)
+    const projection = this.learningSnapshot(`topic:${sourceId}`)
+    this.withLearning(sources, () => this.learningJournal.record(`topic:${targetId}`, 'mergeLearning', [targetId, sourceId, projection],
+      () => this.mergeTopicsValue(sourceId, targetId, now), undefined))
+  }
+
+  private mergeTopicsValue(sourceId: string, targetId: string, now = Date.now()): void {
     if (sourceId === targetId) throw new Error('Cannot merge a topic into itself')
     const source = this.context(sourceId), target = this.context(targetId)
     const journal: MergeJournal = { at: now, moved: {}, added: {}, purged: {}, terms: { entities: [], keywords: [] }, corrected: [], facts: [], removedDependencies: [], links: [] }
@@ -1027,7 +1116,7 @@ export class ContextStore {
       this.db.prepare(sql).run(...params)
       journal.added[table] = rowids(table, 'context_id = ?', targetId).filter(id => !before.has(id))
     }
-    this.db.exec('BEGIN IMMEDIATE')
+    this.db.exec('SAVEPOINT store_write')
     try {
       this.markOnce(`merge-handled:${sourceId}`); this.markOnce(`merge-handled:${targetId}`)
       const merged = (a: string[], b: string[]) => [...new Map([...a, ...b].map(term => [term.toLowerCase(), term])).values()].slice(0, 40)
@@ -1061,16 +1150,23 @@ export class ContextStore {
         if (other === targetId) continue
         const [a, b] = targetId < other ? [targetId, other] : [other, targetId]
         journal.links.push({ a, b, row: this.db.prepare('SELECT * FROM topic_links WHERE a = ? AND b = ?').get(a, b) ?? null })
-        if (link.manual) this.setManualLink(targetId, other, link.manual)
-        if (link.weight > 0) this.learnLink(targetId, other, link.weight)
+        this.withLearning(this.learningJournal.dependencies(`link:${JSON.stringify(this.pair(sourceId, other))}`), () =>
+          this.mergeLink(targetId, sourceId, other, link.weight, link.manual, now))
       }
       this.mergeFacts(sourceId, targetId, source.title, journal)
       // What is left of the source is kept in the journal before it goes.
       journal.purged = { ...this.snapshot(sourceId), fact_dependencies: journal.purged.fact_dependencies ?? [] }
       this.purge(sourceId)
       this.db.prepare('INSERT OR REPLACE INTO topic_merges VALUES (?, ?, ?, ?)').run(sourceId, targetId, now, JSON.stringify(journal))
-      this.db.exec('COMMIT')
-    } catch (error) { this.db.exec('ROLLBACK'); throw error }
+      this.db.exec('RELEASE store_write')
+    } catch (error) { this.db.exec('ROLLBACK TO store_write; RELEASE store_write'); throw error }
+  }
+
+  private mergeLink(targetId: string, sourceId: string, other: string, weight: number, manual: -1 | 0 | 1, now: number): void {
+    this.learningJournal.record(`link:${JSON.stringify(this.pair(targetId, other))}`, 'mergeLink', [targetId, sourceId, other, weight, manual, now], () => {
+      if (manual) this.setManualLinkValue(targetId, other, manual, now)
+      if (weight > 0) this.learnLinkValue(targetId, other, weight, now)
+    }, undefined)
   }
 
   /** Topics merged into others that can still be taken apart, newest first. */
@@ -1104,7 +1200,7 @@ export class ContextStore {
       }
     }
     const ids = (list: readonly number[]) => list.length ? list.join(', ') : 'NULL'
-    this.db.exec('BEGIN IMMEDIATE')
+    this.db.exec('SAVEPOINT store_write')
     try {
       insert('contexts', journal.purged.contexts)
       for (const [table, rows] of Object.entries(journal.purged)) if (table !== 'contexts') insert(table, rows)
@@ -1128,8 +1224,12 @@ export class ContextStore {
         if (journal.index.row) insert('history_index', [journal.index.row])
       }
       this.db.prepare('DELETE FROM topic_merges WHERE source_id = ?').run(sourceId)
-      this.db.exec('COMMIT')
-    } catch (error) { this.db.exec('ROLLBACK'); throw error }
+      this.db.prepare("UPDATE learning_events SET active=0 WHERE kind IN ('mergeLearning','mergeLink') AND json_extract(args,'$[1]')=?").run(sourceId)
+      const linkStreams = this.db.prepare("SELECT stream FROM learning_bases WHERE stream LIKE 'link:%'").all()
+        .map(row => String(row.stream)).filter(stream => (JSON.parse(stream.slice(5)) as string[]).some(id => id === sourceId || id === targetId))
+      this.learningJournal.rebuild([`topic:${sourceId}`, `topic:${targetId}`, ...linkStreams])
+      this.db.exec('RELEASE store_write')
+    } catch (error) { this.db.exec('ROLLBACK TO store_write; RELEASE store_write'); throw error }
     return targetId
   }
 
@@ -1151,7 +1251,7 @@ export class ContextStore {
   /** Remove a topic and everything TheOne kept about it. DSH keeps the conversations themselves. */
   deleteTopic(contextId: string): void {
     const context = this.context(contextId)
-    this.db.exec('BEGIN IMMEDIATE')
+    this.db.exec('SAVEPOINT store_write')
     try {
       // The catalog would otherwise find the same conversation again and bring the topic back.
       this.db.prepare('INSERT OR REPLACE INTO dismissed_turns SELECT session_id, user_seq, fingerprint FROM history_turns WHERE context_id = ?').run(contextId)
@@ -1160,9 +1260,9 @@ export class ContextStore {
       this.db.prepare('DELETE FROM topic_merges WHERE target_id = ? OR source_id = ?').run(contextId, contextId)
       this.db.prepare('DELETE FROM merge_prompts WHERE a = ? OR b = ?').run(contextId, contextId)
       this.db.prepare('DELETE FROM plugin_flags WHERE name IN (?, ?)').run(`merge-moved:${contextId}`, `merge-handled:${contextId}`)
-      this.purge(contextId); this.db.exec('COMMIT')
+      this.purge(contextId); this.db.exec('RELEASE store_write')
     }
-    catch (error) { this.db.exec('ROLLBACK'); throw error }
+    catch (error) { this.db.exec('ROLLBACK TO store_write; RELEASE store_write'); throw error }
   }
 
   private purge(contextId: string): void {
@@ -1208,7 +1308,9 @@ export class ContextStore {
   /** A topic's live facts; include withdrawn identities when taking a write/extraction baseline. */
   facts(contextId: string, includeRetracted = false): FactView[] {
     return (this.db.prepare(this.factQuery(`f.context_id = ? AND f.deleted_at IS NULL ${includeRetracted ? '' : "AND v.status != 'retracted'"} ORDER BY COALESCE(f.last_used_at, v.created_at) DESC`)).all(contextId) as Record<string, unknown>[])
-      .map(row => this.factFrom(row))
+      .map(row => this.factFrom(row)).filter(fact => fact.status !== 'retracted' || !this.db.prepare(`SELECT 1 FROM learning_fact_versions
+        WHERE fact_id=? AND invalid=1 AND NOT EXISTS (SELECT 1 FROM fact_versions v LEFT JOIN learning_fact_versions p
+          ON p.fact_id=v.fact_id AND p.version=v.version WHERE v.fact_id=? AND v.status!='retracted' AND COALESCE(p.invalid,0)=0)`).get(fact.id, fact.id))
   }
 
   /** Confirmed facts of every other live topic, the pool other topics may draw from. */
@@ -1239,14 +1341,17 @@ export class ContextStore {
   }
 
   private inTransaction<T>(work: () => T): T {
-    this.db.exec('BEGIN IMMEDIATE')
-    try { const result = work(); this.db.exec('COMMIT'); return result }
-    catch (error) { this.db.exec('ROLLBACK'); throw error }
+    this.db.exec('SAVEPOINT store_write')
+    try { const result = work(); this.db.exec('RELEASE store_write'); return result }
+    catch (error) { this.db.exec('ROLLBACK TO store_write; RELEASE store_write'); throw error }
   }
 
-  private addVersion(factId: string, version: number, status: FactStatus, value: string | null, evidence: FactEvidence, origin: FactView['origin'], now: number): void {
+  private addVersion(factId: string, version: number, status: FactStatus, value: string | null, evidence: FactEvidence, origin: FactView['origin'], now: number, intended: FactStatus = status): void {
     this.db.prepare('INSERT INTO fact_versions VALUES (?, ?, ?, ?, ?, ?, ?)').run(factId, version, status, value, JSON.stringify(evidence), origin, now)
     this.db.prepare('UPDATE facts SET current_version = ? WHERE id = ?').run(version, factId)
+    const aliases = this.db.prepare('SELECT aliases FROM facts WHERE id=?').get(factId)!.aliases
+    this.db.prepare('INSERT INTO learning_fact_versions(fact_id,version,sources,aliases,intended) VALUES (?,?,?,?,?)')
+      .run(factId, version, JSON.stringify(this.factSources(evidence)), String(aliases), intended)
   }
 
   /**
@@ -1256,9 +1361,11 @@ export class ContextStore {
    */
   recordFact(contextId: string, write: FactWrite, now = Date.now()): FactResult {
     this.context(contextId)
+    if (!this.learningJournal.valid(this.factSources(write.evidence))) return { outcome: 'rejected', reason: 'excluded-route' }
     const label = safe(write.label, FACT_LIMITS.label), key = factKey(label), value = safe(write.value, FACT_LIMITS.value)
     if (!key || !value || !FACT_KINDS.includes(write.kind)) return { outcome: 'rejected', reason: 'invalid' }
     const evidence = { ...write.evidence, quote: safe(write.evidence.quote, FACT_LIMITS.quote) }
+    const status = write.status === 'confirmed' && !this.canShareLearning(this.factSources(evidence)) ? 'proposed' : write.status
     const aliasKeys = (names: string[], exclude = key) => [...new Set(names.map(name => factKey(safe(name, FACT_LIMITS.alias))).filter(alias => alias && alias !== exclude))].slice(0, FACT_LIMITS.aliases)
     return this.inTransaction(() => {
       const current = write.factId ? this.fact(write.factId) : this.factByName(contextId, key)
@@ -1268,24 +1375,29 @@ export class ContextStore {
         const id = 'fact_' + randomUUID().replaceAll('-', '').slice(0, 20)
         this.db.prepare('INSERT INTO facts (id, context_id, key, label, aliases, kind, current_version) VALUES (?, ?, ?, ?, ?, ?, 0)')
           .run(id, contextId, key, label, JSON.stringify(aliasKeys(write.aliases ?? [])), write.kind)
-        this.addVersion(id, 1, write.status, value, evidence, write.origin, now)
+        this.recordFactAliases(id, aliasKeys(write.aliases ?? []), this.factSources(evidence))
+        this.addVersion(id, 1, status, value, evidence, write.origin, now, write.status)
         return { outcome: 'created', fact: this.fact(id)! } as FactResult
       }
       const refused = this.staleWrite(current, evidence, write.expectedVersion)
-        ?? (current.status === 'confirmed' && write.status === 'proposed' ? 'keeps-confirmed' : undefined)
+        ?? (current.status === 'confirmed' && status === 'proposed' ? 'keeps-confirmed' : undefined)
       if (refused) return { outcome: 'rejected', reason: refused, fact: current } as FactResult
+      // Pre-upgrade aliases are an unsourced baseline; new contributions retain their own evidence.
+      if (!this.db.prepare('SELECT 1 FROM learning_fact_versions WHERE fact_id=?').get(current.id)) this.recordFactAliases(current.id, current.aliases, [])
+      this.recordFactAliases(current.id, aliasKeys([...(write.aliases ?? []), ...(key !== current.key ? [label] : [])], current.key), this.factSources(evidence))
       const aliases = [...new Set([...current.aliases, ...aliasKeys([...(write.aliases ?? []), ...(key !== current.key ? [label] : [])], current.key)])]
         .filter(alias => alias !== current.key).slice(0, FACT_LIMITS.aliases)
       this.db.prepare('UPDATE facts SET aliases = ? WHERE id = ?').run(JSON.stringify(aliases), current.id)
       // A later reaffirmation is a new version too: delayed writes must not undo the user's latest words.
-      if (current.status === write.status && current.value === value && !this.newerEvidence(current, evidence)) return { outcome: 'unchanged', fact: this.fact(current.id)! } as FactResult
-      this.addVersion(current.id, current.version + 1, write.status, value, evidence, write.origin, now)
+      if (current.status === status && current.value === value && !this.newerEvidence(current, evidence) && JSON.stringify(aliases) === JSON.stringify(current.aliases)) return { outcome: 'unchanged', fact: this.fact(current.id)! } as FactResult
+      this.addVersion(current.id, current.version + 1, status, value, evidence, write.origin, now, write.status)
       return { outcome: 'updated', fact: this.fact(current.id)!, previous: current } as FactResult
     })
   }
 
   /** The user said a fact no longer holds (or is not decided yet): a new version without a value. */
   retractFact(contextId: string, factId: string, evidence: FactEvidence, origin: FactView['origin'], expectedVersion?: number, now = Date.now()): FactResult {
+    if (!this.learningJournal.valid(this.factSources(evidence))) return { outcome: 'rejected', reason: 'excluded-route' }
     return this.inTransaction(() => {
       const current = this.fact(factId)
       if (!current || current.contextId !== contextId || current.deletedAt !== undefined) return { outcome: 'rejected', reason: 'unknown-fact' } as FactResult
@@ -1463,29 +1575,39 @@ export class ContextStore {
   uncorrectRoute(messageId: string, now = Date.now()): string | undefined {
     const row = this.db.prepare('SELECT corrected_to FROM route_details WHERE message_id = ?').get(messageId)
     if (!row?.corrected_to) return undefined
-    this.db.exec('BEGIN IMMEDIATE')
+    this.db.exec('SAVEPOINT store_write')
     try {
       this.db.prepare('UPDATE route_details SET corrected_to = NULL, corrected_at = NULL WHERE message_id = ?').run(messageId)
-      for (const taught of this.db.prepare('SELECT context_id, term, delta FROM correction_terms WHERE message_id = ?').all(messageId))
+      const journalled = this.learningJournal.audit().some(event => event.kind === 'learnTerms' && event.sources.some(source => source.messageId === messageId))
+      if (!journalled) for (const taught of this.db.prepare('SELECT context_id, term, delta FROM correction_terms WHERE message_id = ?').all(messageId))
         this.learnTerms(String(taught.context_id), [String(taught.term)], -Number(taught.delta), now)
       this.db.prepare('DELETE FROM correction_terms WHERE message_id = ?').run(messageId)
+      const original = this.route(messageId)?.decision.contextId
+      if (original) {
+        this.reassignLearning(messageId, original)
+        const source = this.learningJournal.source(messageId, original)
+        this.db.prepare('UPDATE learning_turns SET revision=? WHERE message_id=? AND context_id=?').run(source.revision, messageId, original)
+      }
       this.db.prepare('DELETE FROM misrouted_turns WHERE message_id = ?').run(messageId)
       this.db.prepare("UPDATE topic_runs SET outcome = 'completed' WHERE message_id = ? AND outcome = 'moved'").run(messageId)
-      this.db.exec('COMMIT')
+      this.db.exec('RELEASE store_write')
       return String(row.corrected_to)
-    } catch (error) { this.db.exec('ROLLBACK'); throw error }
+    } catch (error) { this.db.exec('ROLLBACK TO store_write; RELEASE store_write'); throw error }
   }
 
   /** A topic's turn for a message that was not its own: later reads of its history leave it out. */
-  recordMisroute(turn: { messageId: string; contextId: string; sessionId: string; startSeq: number; endSeq: number; movedTo: string; request: string }, now = Date.now()): void {
+  recordMisroute(turn: { messageId: string; contextId: string; sessionId: string; startSeq: number; endSeq: number; movedTo: string; request: string; changes?: string[] }, now = Date.now()): void {
     this.db.prepare('INSERT OR REPLACE INTO misrouted_turns VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
       .run(turn.messageId, turn.contextId, turn.sessionId, turn.startSeq, turn.endSeq, turn.movedTo, turn.request.slice(0, 600), now)
+    this.db.prepare('INSERT OR REPLACE INTO misroute_effects VALUES (?,?,?)').run(turn.messageId, turn.contextId, JSON.stringify(turn.changes ?? []))
   }
 
   /** Event ranges of a session that belong to other topics' messages. */
   excludedRanges(sessionId: string): { startSeq: number; endSeq: number }[] {
-    return this.db.prepare('SELECT start_seq, end_seq FROM misrouted_turns WHERE session_id = ?').all(sessionId)
-      .map(row => ({ startSeq: Number(row.start_seq), endSeq: Number(row.end_seq) }))
+    return [...this.db.prepare('SELECT start_seq, end_seq FROM misrouted_turns WHERE session_id = ?').all(sessionId)
+      .map(row => ({ startSeq: Number(row.start_seq), endSeq: Number(row.end_seq) })),
+      ...this.learningJournal.turns(sessionId).filter(turn => !this.learningJournal.valid(turn.sources))
+        .map(({ startSeq, endSeq }) => ({ startSeq, endSeq }))]
   }
 
   /** Messages that reached a topic by mistake, oldest first. */
@@ -1523,14 +1645,181 @@ export class ContextStore {
 
   /** Replace the hidden set in one write, so a scan never leaves a stale entry behind. */
   replaceHidden(entries: readonly { id: string; reason: string }[], now = Date.now()): void {
-    this.db.exec('BEGIN IMMEDIATE')
+    this.db.exec('SAVEPOINT store_write')
     try {
       this.db.prepare('DELETE FROM hidden_contexts').run()
       const insert = this.db.prepare('INSERT OR REPLACE INTO hidden_contexts VALUES (?, ?, ?)')
       for (const entry of entries) insert.run(entry.id, entry.reason, now)
-      this.db.exec('COMMIT')
-    } catch (error) { this.db.exec('ROLLBACK'); throw error }
+      this.db.exec('RELEASE store_write')
+    } catch (error) { this.db.exec('ROLLBACK TO store_write; RELEASE store_write'); throw error }
   }
 
   close(): void { this.db.close() }
+  /** Bind every model-derived write to the input(s) that supplied its evidence. Synchronous only. */
+  withLearning<T>(sources: readonly LearningSource[], work: () => T): T { return this.learningJournal.using(sources, work) }
+
+  reassignLearning(messageId: string, contextId: string): void {
+    this.inTransaction(() => {
+      this.learningJournal.move(messageId, contextId)
+      this.reconcileLearningFacts()
+      this.rebuildDependencies()
+      for (const row of this.db.prepare('SELECT DISTINCT session_id FROM learning_turns').all()) {
+        const sessionId = String(row.session_id)
+        const excluded = this.excludedRanges(sessionId)
+        if (!excluded.length) continue
+        for (const range of excluded) {
+          this.db.prepare('DELETE FROM history_turns WHERE session_id=? AND user_seq BETWEEN ? AND ?').run(sessionId, range.startSeq, range.endSeq)
+          this.db.prepare('DELETE FROM context_source_ranges WHERE session_id=? AND start_seq BETWEEN ? AND ?').run(sessionId, range.startSeq, range.endSeq)
+        }
+        this.db.prepare("UPDATE history_index SET through_seq=-1 WHERE session_id=? AND status='ready'").run(sessionId)
+      }
+    })
+  }
+
+  wasReassigned(messageId: string): boolean {
+    return this.learningJournal.excludedMessage(messageId) || !!this.db.prepare("SELECT 1 FROM learning_routes WHERE message_id=? AND stage='excluded'").get(messageId) ||
+      !!this.db.prepare(`SELECT 1 FROM route_details d JOIN routing_events r ON r.message_id=d.message_id
+        WHERE d.message_id=? AND d.corrected_to IS NOT NULL AND d.corrected_to!=json_extract(r.decision,'$.contextId')`).get(messageId)
+  }
+
+  private learningSnapshot(stream: string): unknown {
+    if (stream.startsWith('group:')) return this.db.prepare('SELECT group_id FROM topic_group_members WHERE context_id=?').get(stream.slice(6))?.group_id ?? null
+    if (stream.startsWith('link:')) {
+      const [a, b] = JSON.parse(stream.slice(5)) as string[]
+      return this.db.prepare('SELECT * FROM topic_links WHERE a=? AND b=?').get(a, b) ?? null
+    }
+    if (stream.startsWith('seen:')) {
+      const [reader, source] = JSON.parse(stream.slice(5)) as string[]
+      return this.db.prepare('SELECT * FROM briefing_seen WHERE reader=? AND source=?').get(reader, source) ?? null
+    }
+    const id = stream.slice(6)
+    const context = this.contexts().find(item => item.id === id)
+    return { descriptor: context && JSON.parse(JSON.stringify(context)), constraints: this.constraints(id) ?? null,
+      tables: Object.fromEntries(['topic_names', 'topic_settled', 'topic_open', 'context_state_updates',
+        'context_summary_updates', 'compaction_digests', 'learned_terms'].map(table =>
+        [table, this.db.prepare(`SELECT * FROM ${table} WHERE context_id=?`).all(id)])) }
+  }
+
+  private restoreLearning(stream: string, snapshot: unknown): void {
+    if (stream.startsWith('group:')) { this.assignGroup(stream.slice(6), snapshot as string | null); return }
+    const insert = (table: string, row: Record<string, string | number | null>) => {
+      const keys = Object.keys(row)
+      this.db.prepare(`INSERT OR REPLACE INTO ${table} (${keys.join(',')}) VALUES (${keys.map(() => '?').join(',')})`).run(...Object.values(row))
+    }
+    if (stream.startsWith('link:') || stream.startsWith('seen:')) {
+      const [a, b] = JSON.parse(stream.slice(5)) as string[]
+      const link = stream.startsWith('link:')
+      this.db.prepare(link ? 'DELETE FROM topic_links WHERE a=? AND b=?' : 'DELETE FROM briefing_seen WHERE reader=? AND source=?').run(a, b)
+      if (snapshot) insert(link ? 'topic_links' : 'briefing_seen', snapshot as Record<string, string | number | null>)
+      return
+    }
+    const id = stream.slice(6)
+    if (!this.contexts().some(item => item.id === id)) return
+    const base = snapshot as { descriptor?: StoredContext; constraints: { text: string; at: number } | null;
+      tables: Record<string, Record<string, string | number | null>[]> }
+    if (base.descriptor) this.writeDescriptor(base.descriptor)
+    this.db.prepare('UPDATE topic_flags SET constraints=?,constraints_at=? WHERE context_id=?')
+      .run(base.constraints?.text ?? null, base.constraints?.at ?? null, id)
+    for (const [table, rows] of Object.entries(base.tables)) {
+      this.db.prepare(`DELETE FROM ${table} WHERE context_id=?`).run(id)
+      for (const row of rows) insert(table, row)
+    }
+  }
+
+  private canShareLearning(sources: readonly LearningSource[]): boolean {
+    return this.learningJournal.valid(sources) && sources.every(source => {
+      if (this.learningJournal.stage(source) === 'confirmed') return true
+      const decision = this.route(source.messageId)?.decision
+      return !decision?.alternateIds?.length && !/unclear|fallback/.test(decision?.reason ?? '')
+    })
+  }
+
+  /** Positive user target confirmation releases verified facts, without waiting for another turn. */
+  confirmLearning(messageId: string, contextId: string): void {
+    this.learningJournal.settle(messageId, contextId, true)
+    for (const fact of this.facts(contextId)) {
+      if (fact.status !== 'proposed') continue
+      const row = this.db.prepare('SELECT sources,intended FROM learning_fact_versions WHERE fact_id=? AND version=? AND invalid=0').get(fact.id, fact.version)
+      if (row?.intended !== 'confirmed') continue
+      const sources = JSON.parse(String(row.sources)) as LearningSource[]
+      if (!this.canShareLearning(sources)) continue
+      this.withLearning(sources, () => this.addVersion(fact.id, fact.version + 1, 'confirmed', fact.value, fact.evidence, fact.origin, Date.now()))
+    }
+  }
+
+  private mergeLearning(targetId: string, _sourceId: string, snapshot: unknown): void {
+    const base = snapshot as { descriptor: StoredContext; constraints: { text: string } | null;
+      tables: Record<string, Record<string, string | number | null>[]> }
+    const target = this.context(targetId)
+    const merged = (a: string[], b: string[]) => [...new Map([...a, ...b].map(term => [term.toLowerCase(), term])).values()].slice(0, 40)
+    this.writeDescriptor({ ...target, entities: merged(target.entities, base.descriptor.entities), keywords: merged(target.keywords, base.descriptor.keywords) })
+    for (const table of ['context_state_updates', 'context_summary_updates', 'learned_terms', 'topic_names', 'topic_settled']) {
+      for (const row of base.tables[table] ?? []) {
+        const value = { ...row, context_id: targetId }, keys = Object.keys(value)
+        this.db.prepare(`INSERT OR IGNORE INTO ${table} (${keys.join(',')}) VALUES (${keys.map(() => '?').join(',')})`).run(...Object.values(value))
+      }
+    }
+    if (base.constraints) this.setConstraints(targetId, [this.constraints(targetId)?.text, base.constraints.text].filter(Boolean).join('\n').slice(0, 400))
+  }
+
+  factLearningSources(factId: string, version: number): LearningSource[] {
+    const row = this.db.prepare('SELECT sources FROM learning_fact_versions WHERE fact_id=? AND version=?').get(factId, version)
+    return row ? JSON.parse(String(row.sources)) : []
+  }
+
+  misrouteEffects(messageId: string): { contextId: string; changes: string[] }[] {
+    return this.db.prepare('SELECT context_id,changes FROM misroute_effects WHERE message_id=?').all(messageId)
+      .map(row => ({ contextId: String(row.context_id), changes: JSON.parse(String(row.changes)) }))
+  }
+
+  private factSources(evidence: FactEvidence): LearningSource[] {
+    return uniqueSources([...this.learningJournal.activeSources,
+      ...(evidence.seq === null ? [] : this.learningJournal.sources(evidence.sessionId, evidence.seq, evidence.seq)),
+      ...(evidence.accepts ? this.learningJournal.sources(evidence.sessionId, evidence.accepts.seq, evidence.accepts.seq) : [])])
+  }
+
+  private recordFactAliases(factId: string, aliases: string[], sources: LearningSource[]): void {
+    for (const alias of aliases) this.db.prepare('INSERT OR IGNORE INTO learning_fact_aliases VALUES (?,?,?)').run(factId, alias, JSON.stringify(sources))
+  }
+
+  /** Repair by appending a version, so readers see a withdrawal/change, never a reused version number. */
+  private reconcileLearningFacts(): void {
+    const affected = new Set<string>()
+    for (const row of this.db.prepare('SELECT * FROM learning_fact_versions WHERE invalid=0').all()) {
+      if (this.learningJournal.valid(JSON.parse(String(row.sources)))) continue
+      this.db.prepare('UPDATE learning_fact_versions SET invalid=1 WHERE fact_id=? AND version=?').run(String(row.fact_id), Number(row.version))
+      affected.add(String(row.fact_id))
+    }
+    for (const id of affected) {
+      const current = this.fact(id)
+      if (!current || current.deletedAt !== undefined) continue
+      const bad = this.db.prepare('SELECT invalid FROM learning_fact_versions WHERE fact_id=? AND version=?').get(id, current.version)
+      const good = this.db.prepare(`SELECT v.version,p.aliases,p.sources FROM fact_versions v LEFT JOIN learning_fact_versions p
+        ON p.fact_id=v.fact_id AND p.version=v.version WHERE v.fact_id=? AND COALESCE(p.invalid,0)=0 ORDER BY v.version DESC LIMIT 1`).get(id)
+      const previous = bad?.invalid ? good && this.factVersion(id, Number(good.version)) : current
+      const aliases = [...new Set(this.db.prepare('SELECT alias,sources FROM learning_fact_aliases WHERE fact_id=? ORDER BY rowid').all(id)
+        .filter(row => this.learningJournal.valid(JSON.parse(String(row.sources)))).map(row => String(row.alias)))].slice(0, FACT_LIMITS.aliases)
+      if (!bad?.invalid && JSON.stringify(aliases) === JSON.stringify(current.aliases)) continue
+      const evidence: FactEvidence = previous?.evidence ?? { sessionId: '', seq: null, speaker: 'unverified', quote: '' }
+      this.db.prepare('UPDATE facts SET aliases=? WHERE id=?').run(JSON.stringify(aliases), id)
+      this.withLearning(previous ? this.factLearningSources(id, previous.version) : [], () =>
+        this.addVersion(id, current.version + 1, previous?.status ?? 'retracted', previous?.value ?? null, evidence, current.origin, Date.now()))
+    }
+  }
+
+  /** Delivery rows remain audit records; the derived dependencies and usage exclude moved inputs. */
+  private rebuildDependencies(): void {
+    this.db.exec('DELETE FROM fact_dependencies; UPDATE facts SET last_used_at=NULL')
+    for (const row of this.db.prepare('SELECT * FROM fact_deliveries ORDER BY id').all()) {
+      if (row.input_id) {
+        const source = this.learningJournal.source(String(row.input_id), String(row.context_id))
+        if (!this.learningJournal.valid([source])) continue
+      }
+      this.db.prepare(`INSERT INTO fact_dependencies VALUES (?,?,?,?,?) ON CONFLICT(context_id,fact_id)
+        DO UPDATE SET version_seen=excluded.version_seen,last_at=excluded.last_at`)
+        .run(String(row.context_id), String(row.fact_id), Number(row.version), Number(row.at), Number(row.at))
+      if (row.via !== 'notice') this.db.prepare('UPDATE facts SET last_used_at=? WHERE id=?').run(Number(row.at), String(row.fact_id))
+    }
+  }
+
 }

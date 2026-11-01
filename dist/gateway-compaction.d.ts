@@ -22,6 +22,7 @@ export declare function gatewayCheckpoint(input: {
     usage: ContextUsage[];
     currentId?: string;
     route: (messageId: string) => RouteRecord | undefined;
+    excluded?: (messageId: string) => boolean;
     contextWindow?: number;
     maxTokens?: number;
     now?: number;

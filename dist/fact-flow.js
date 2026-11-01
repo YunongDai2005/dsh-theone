@@ -58,7 +58,7 @@ export function factDelivery(store, scope, contextId, imports, inputId) {
             continue;
         facts.push({ line: factLine(fact, titles.get(fact.contextId)), commit: () => {
                 store.recordDelivery(contextId, fact, 'route', inputId);
-                store.learnLink(contextId, fact.contextId, LINK_SIGNAL.mention);
+                store.withLearning([...(inputId ? [store.learningJournal.source(inputId, contextId)] : []), ...store.factLearningSources(fact.id, fact.version)], () => store.learnLink(contextId, fact.contextId, LINK_SIGNAL.mention));
             } });
     }
     const fit = (items, budget) => items.slice(0, within(items.map(item => item.line), budget).length);

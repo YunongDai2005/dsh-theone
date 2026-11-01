@@ -88,6 +88,7 @@ declare module '@deepseek-ai/dsh-llm' {
             kind: 'theone-note';
             form: 'notice';
             noticeId?: string;
+            excludedRoute?: boolean;
         };
     }
 }
@@ -406,6 +407,13 @@ export default class TheOne extends Service {
     private queueExtraction;
     /** Queue a routing card for this topic, after any extraction already queued for it. */
     private queueCard;
+    /** Append a native surface replacement; original DSH logs and external effects remain intact. */
+    private excludeWorkerSurface;
+    private validMainEvents;
+    private referenceSources;
+    private workerLearning;
+    private memorySources;
+    private learningEvents;
     private queueMemory;
     private runMemory;
     /** Check exactly the first successful card of a route-created topic, with no classifier call. */

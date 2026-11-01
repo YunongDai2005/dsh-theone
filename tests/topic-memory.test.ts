@@ -137,7 +137,7 @@ test('a topic taken up after a long break starts from its last record, said as t
     const store = app.ctx.theone.store
     store.startTopicRun('m-old', 'ctx_qwen_9070xt', 's1', now - 40 * DAY)
     store.startTopicRun('m-now', 'ctx_qwen_9070xt', 's1', now)
-    const worker = (time?: number) => ({ session: { snapshotEvents: () => time === undefined ? [] : [{ time }] } })
+    const worker = (time?: number) => ({ id: 's1', session: { snapshotEvents: () => time === undefined ? [] : [{ seq: 1, time }] } })
     assert.equal(service.lastActive('ctx_qwen_9070xt', worker(), 'm-now'), now - 40 * DAY)
     // The user worked in the topic directly last week.
     assert.equal(service.lastActive('ctx_qwen_9070xt', worker(now - 7 * DAY), 'm-now'), now - 7 * DAY)

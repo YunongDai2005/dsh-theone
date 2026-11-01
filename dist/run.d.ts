@@ -30,6 +30,7 @@ export declare class WorkerRun {
     failure?: Error;
     outcome?: TurnEndReason;
     done: boolean;
+    private cancelled;
     settled: Promise<void>;
     constructor(ctx: Context, worker: Agent, gateway: Agent, inputId: string, maxChars: number, beforeToolCalls: (names: string[]) => void);
     /** The Worker recorded facts itself this run, so no extraction is needed afterwards. */
@@ -39,7 +40,7 @@ export declare class WorkerRun {
     /** The end of what the Worker has written so far, for judging messages sent meanwhile. */
     progress(limit?: number): string;
     /** Give the Worker its context and input; the run ends when the Worker is idle again. */
-    start(contexts: UserMessage[], input: UserMessage): void;
+    start(contexts: UserMessage[], input: UserMessage, after?: Promise<void>): void;
     /** Follow work the Worker took up on its own (a subagent reporting back, say) until it is idle again. */
     follow(): void;
     /** Steering sent to the main chat during the reply reaches the Worker at its next step. */

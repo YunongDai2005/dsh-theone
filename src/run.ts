@@ -32,6 +32,7 @@ export class WorkerRun {
   failure?: Error
   outcome?: TurnEndReason
   done = false
+  private cancelled = false
   settled: Promise<void> = Promise.resolve()
 
   constructor(ctx: Context, readonly worker: Agent, readonly gateway: Agent, readonly inputId: string,
@@ -91,7 +92,15 @@ export class WorkerRun {
   }
 
   /** Give the Worker its context and input; the run ends when the Worker is idle again. */
-  start(contexts: UserMessage[], input: UserMessage): void {
+  start(contexts: UserMessage[], input: UserMessage, after?: Promise<void>): void {
+    if (after) {
+      this.settled = after.then(async () => {
+        if (this.cancelled) { this.done = true; this.wake(); return }
+        this.start(contexts, input)
+        await this.settled
+      }).catch(error => { this.failure = error; this.done = true; this.wake() })
+      return
+    }
     for (const context of contexts) this.worker.inject(context)
     this.worker.followup(input)
     this.follow()
@@ -128,7 +137,7 @@ export class WorkerRun {
     while (!this.done && !this.unshown) await new Promise<void>(resolve => this.waiters.push(resolve))
   }
 
-  cancel(): void { if (this.worker.status !== 'idle') this.worker.cancel({ kind: 'parent' }) }
+  cancel(): void { this.cancelled = true; if (this.worker.status !== 'idle') this.worker.cancel({ kind: 'parent' }) }
   dispose(): void { for (const dispose of this.disposers.splice(0)) dispose() }
 
   /** Whether one of this Worker's steps made tool call `callId` (main chat may ask after a hand-back moved on). */

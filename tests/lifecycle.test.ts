@@ -159,7 +159,9 @@ test('after "wrong topic", the wrong topic leaves that turn out of its history, 
       return briefing && 'content' in briefing && Array.isArray(briefing.content) ? briefing.content.map(block => block.type === 'text' ? block.text : '').join('') : ''
     }
     await ask(app.gateway, 'Qwen 换个问题，驱动版本多少')
-    assert.match(textOf(model.requests.at(-1)!), new RegExp(`之前交给你的这条消息分错了，已经转给「${thesis.title}」处理：「Qwen 的显存设置调低」`))
+    assert.match(textOf(model.requests.at(-1)!), new RegExp(`之前交给你的这条消息分错了，已经转给「${thesis.title}」处理`))
+    assert.ok(!textOf(model.requests.at(-1)!).includes('Qwen 的显存设置调低'), 'the notice must not reintroduce the excluded request')
+    assert.deepEqual(store.misrouteEffects(first.input.id), [{ contextId: 'ctx_qwen_9070xt', changes: ['修改 config/qwen.yaml'] }])
     await ask(app.gateway, 'Qwen 还有一个问题')
     assert.equal(textOf(model.requests.at(-1)!).includes('分错了'), false)
   } finally { await app.close(); await rm(root, { recursive: true, force: true }) }

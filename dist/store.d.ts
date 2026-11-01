@@ -2,6 +2,7 @@ import type { ModelSelection } from '@deepseek-ai/dsh-agent';
 import type { ExtractedTopic, HiddenReason, HistoryPart, TopicGroup } from './catalog-types.ts';
 import type { ContextDescriptor, ContextUsage, Decision, Progress, RouteRecord, RouteView, StoredContext, SourceRange, TopicLink } from './types.ts';
 import { type FactEvidence, type FactKind, type FactView } from './facts.ts';
+import { LearningJournal, type LearningSource } from './learning-journal.ts';
 import { type Settled, type TopicCard } from './topic-memory.ts';
 /** A write to a topic's facts, after its evidence was checked against the session. */
 export interface FactWrite {
@@ -49,6 +50,7 @@ export interface TopicRun {
 }
 export declare class ContextStore {
     private readonly db;
+    readonly learningJournal: LearningJournal;
     constructor(path: string);
     settings(gatewayKey: string): {
         values: unknown;
@@ -77,6 +79,7 @@ export declare class ContextStore {
      * routing reads the current settled values and open items beside it (see routingSummary).
      */
     applyCard(contextId: string, card: TopicCard, now?: number): boolean;
+    private applyCardValue;
     /** A route-created topic, never manually moved or already involved in a merge; use its latest main chat. */
     mergeSuggestionGateway(contextId: string): string | undefined;
     mergePrompt(a: string, b: string): {
@@ -130,6 +133,7 @@ export declare class ContextStore {
     } | undefined;
     /** One validated batch commits descriptors, groups and exact source ranges atomically. */
     importTopics(sessionId: string, cwd: string | undefined, parts: HistoryPart[], topics: ExtractedTopic[]): void;
+    private catalogDescriptor;
     mount(gatewayKey: string, contextId: string): void;
     contextsForSessions(sessionIds: string[]): string[];
     /**
@@ -137,9 +141,11 @@ export declare class ContextStore {
      * Given in three parts, it is kept as such and `lastState` is written from it; a free note replaces both.
      */
     updateState(contextId: string, state: string | Progress, sessionId: string, throughSeq: number): void;
+    private updateStateValue;
     stateUpdates(contextId: string): Record<string, import("node:sqlite").SQLOutputValue>[];
     /** Reuse a completed DSH compaction checkpoint once, without another model call. */
     updateSummary(contextId: string, summary: string, sessionId: string, summarySeq: number, endSeq: number): void;
+    private updateSummaryValue;
     summaryUpdates(contextId: string): Record<string, import("node:sqlite").SQLOutputValue>[];
     /** Learned relatedness halves every two weeks without new evidence. */
     static readonly LINK_HALF_LIFE_MS: number;
@@ -148,8 +154,10 @@ export declare class ContextStore {
     links(contextId?: string, now?: number): TopicLink[];
     /** Add learned evidence; a pair the user unlinked never learns back. */
     learnLink(a: string, b: string, delta: number, now?: number): void;
+    private learnLinkValue;
     /** 1 links a pair permanently, -1 keeps it apart, 0 returns it to learning. */
     setManualLink(a: string, b: string, manual: TopicLink['manual'], now?: number): void;
+    private setManualLinkValue;
     /** Forget learned relatedness; the user's own links and separations stay. */
     clearLearnedLinks(): void;
     setPrivate(contextId: string, value: boolean): void;
@@ -159,12 +167,14 @@ export declare class ContextStore {
     isPrivate(contextId: string): boolean;
     /** Standing rules for a topic, kept apart from summaries so compaction cannot drop them. */
     setConstraints(contextId: string, text: string | null, now?: number): void;
+    private setConstraintsValue;
     constraints(contextId: string): {
         text: string;
         at: number;
     } | undefined;
     /** The latest full compaction summary of a topic's Worker and how far it covers. */
     saveDigest(contextId: string, summary: string, throughSeq: number, now?: number): void;
+    private saveDigestValue;
     digest(contextId: string): {
         summary: string;
         throughSeq: number;
@@ -173,6 +183,7 @@ export declare class ContextStore {
     /** When `reader` last received `source`'s state in a briefing. */
     seen(reader: string, source: string): number | undefined;
     markSeen(reader: string, source: string, at: number): void;
+    private markSeenValue;
     route(messageId: string): RouteRecord | undefined;
     /** The main chat used last (by its latest routed message), else the newest one; shared by every browser. */
     latestGateway(gatewayKey: string): string | undefined;
@@ -194,7 +205,7 @@ export declare class ContextStore {
      * Give a message being answered to another topic (its first topic handed it back), and make that
      * topic the one in use. Returns the decision it now has, or undefined when the message has no route.
      */
-    moveRoute(messageId: string, gatewayKey: string, proposed: Decision): Decision | undefined;
+    moveRoute(messageId: string, gatewayKey: string, proposed: Decision, commitLearning?: boolean): Decision | undefined;
     /** Only a planned route may execute. Ambiguous interrupted work is never replayed automatically. */
     claim(messageId: string): void;
     /** Drop the route of a message main chat never got to (the user deleted it from the queue). */
@@ -221,6 +232,7 @@ export declare class ContextStore {
      * over time, stay within 0–5, and a term that falls to nothing is forgotten.
      */
     learnTerms(contextId: string, terms: string[], delta: number, now?: number): void;
+    private learnTermsValue;
     /** Each topic's learned terms that still count (weight > 0.5 after fading), strongest first. */
     learnedTerms(now?: number, limit?: number): Map<string, string[]>;
     /** How routing has gone lately: of the last `limit` messages, how many were moved, asked about or routed by rules after a failure. */
@@ -240,12 +252,14 @@ export declare class ContextStore {
     private context;
     /** Terms a correction showed belong to this topic, newest kept first. */
     addKeywords(contextId: string, terms: string[]): void;
+    private addKeywordsValue;
     /** The user's own wording for a topic outranks what the catalog extracted. */
     editTopic(contextId: string, change: {
         title?: string;
         summary?: string;
         lastState?: string;
     }): void;
+    private editTopicValue;
     createTopic(title: string, summary?: string): string;
     /**
      * A branch of a topic: a new topic with the same descriptor, constraints, privacy, workspace and
@@ -258,6 +272,7 @@ export declare class ContextStore {
     } | {
         title: string;
     } | null): void;
+    private assignGroup;
     /** Attach a whole existing session to a topic as reviewed history its Worker may search. */
     attachSession(contextId: string, sessionId: string): void;
     /**
@@ -266,6 +281,8 @@ export declare class ContextStore {
      * directory, but everything the merge did is written down so `unmergeTopic` can take it apart.
      */
     mergeTopics(sourceId: string, targetId: string, now?: number): void;
+    private mergeTopicsValue;
+    private mergeLink;
     /** Topics merged into others that can still be taken apart, newest first. */
     merges(): {
         sourceId: string;
@@ -392,6 +409,7 @@ export declare class ContextStore {
         endSeq: number;
         movedTo: string;
         request: string;
+        changes?: string[];
     }, now?: number): void;
     /** Event ranges of a session that belong to other topics' messages. */
     excludedRanges(sessionId: string): {
@@ -424,4 +442,25 @@ export declare class ContextStore {
         reason: string;
     }[], now?: number): void;
     close(): void;
+    /** Bind every model-derived write to the input(s) that supplied its evidence. Synchronous only. */
+    withLearning<T>(sources: readonly LearningSource[], work: () => T): T;
+    reassignLearning(messageId: string, contextId: string): void;
+    wasReassigned(messageId: string): boolean;
+    private learningSnapshot;
+    private restoreLearning;
+    private canShareLearning;
+    /** Positive user target confirmation releases verified facts, without waiting for another turn. */
+    confirmLearning(messageId: string, contextId: string): void;
+    private mergeLearning;
+    factLearningSources(factId: string, version: number): LearningSource[];
+    misrouteEffects(messageId: string): {
+        contextId: string;
+        changes: string[];
+    }[];
+    private factSources;
+    private recordFactAliases;
+    /** Repair by appending a version, so readers see a withdrawal/change, never a reused version number. */
+    private reconcileLearningFacts;
+    /** Delivery rows remain audit records; the derived dependencies and usage exclude moved inputs. */
+    private rebuildDependencies;
 }

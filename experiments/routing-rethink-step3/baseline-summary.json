@@ -1,0 +1,90 @@
+[
+  {
+    "mode": "open",
+    "split": "dev",
+    "rows": 1971,
+    "path": "eval/data/interleave-v0/predictions/product-v1-open-dev-cards-deepseek-v4.1-flash.jsonl",
+    "accuracy": 0.9773,
+    "recheck": {
+      "n": 275,
+      "share": 0.1395
+    },
+    "harm_per_100_messages": 7.1122,
+    "usd_per_1000_messages": 0.420634,
+    "routing_usd_per_1000_messages": 0.371084,
+    "card_usd_per_1000_messages": 0.04955,
+    "auxiliary_usd_per_1000_messages": null,
+    "scoring_prices_usd_per_million": {
+      "input": 0.3,
+      "cache_hit": 0.006,
+      "output": 1.2
+    },
+    "sha256": "1d9daa0edae3f71d64bd33358e30a8860cda7992effd6f3f8f0a673e5679db0f"
+  },
+  {
+    "mode": "open",
+    "split": "test",
+    "rows": 495,
+    "path": "eval/data/interleave-v0/predictions/product-v1-open-test-cards-deepseek-v4.1-flash.jsonl",
+    "accuracy": 0.9881,
+    "recheck": {
+      "n": 57,
+      "share": 0.1152
+    },
+    "harm_per_100_messages": 3.8095,
+    "usd_per_1000_messages": 0.405121,
+    "routing_usd_per_1000_messages": 0.355718,
+    "card_usd_per_1000_messages": 0.049403,
+    "auxiliary_usd_per_1000_messages": null,
+    "scoring_prices_usd_per_million": {
+      "input": 0.3,
+      "cache_hit": 0.006,
+      "output": 1.2
+    },
+    "sha256": "079706579fdaa453c79ddee6b991a458bffbd7f81e083ae883440e71ccbb5b63"
+  },
+  {
+    "mode": "closed",
+    "split": "dev",
+    "rows": 1971,
+    "path": "eval/data/interleave-v0/predictions/product-v1-closed-dev-cards-deepseek-v4.1-flash.jsonl",
+    "accuracy": 0.9534,
+    "recheck": {
+      "n": 138,
+      "share": 0.07
+    },
+    "harm_per_100_messages": 3.4948,
+    "usd_per_1000_messages": 0.328563,
+    "routing_usd_per_1000_messages": 0.279734,
+    "card_usd_per_1000_messages": 0.048828,
+    "auxiliary_usd_per_1000_messages": null,
+    "scoring_prices_usd_per_million": {
+      "input": 0.3,
+      "cache_hit": 0.006,
+      "output": 1.2
+    },
+    "sha256": "e8224d175d0ac006e0e5e89abfe3be11c3d57983608a95448e006a34bc2afd18"
+  },
+  {
+    "mode": "closed",
+    "split": "test",
+    "rows": 495,
+    "path": "eval/data/interleave-v0/predictions/product-v1-closed-test-cards-deepseek-v4.1-flash.jsonl",
+    "accuracy": 0.9857,
+    "recheck": {
+      "n": 28,
+      "share": 0.0566
+    },
+    "harm_per_100_messages": 0.7143,
+    "usd_per_1000_messages": 0.318423,
+    "routing_usd_per_1000_messages": 0.266697,
+    "card_usd_per_1000_messages": 0.051726,
+    "auxiliary_usd_per_1000_messages": null,
+    "scoring_prices_usd_per_million": {
+      "input": 0.3,
+      "cache_hit": 0.006,
+      "output": 1.2
+    },
+    "sha256": "d7958c536596f710f6f94767aec8f6d196c24da6092aafae1bec81264a158c4a"
+  }
+]

@@ -1,0 +1,224 @@
+{
+  "date": "2026-11-01",
+  "branch": "routing-depth",
+  "base_commit": "0a628b7",
+  "delivery": "workspace only; task explicitly prohibits commit",
+  "runtime": {
+    "node": "24.21.0",
+    "typescript": "5.9.3",
+    "python": "3.14.2"
+  },
+  "real_model_calls": 0,
+  "keys_accessed": false,
+  "deployed": false,
+  "typechecks": {
+    "backend": {
+      "command": "node node_modules/typescript/bin/tsc -p tsconfig.json",
+      "exit_code": 0
+    },
+    "tests": {
+      "command": "node node_modules/typescript/bin/tsc -p tsconfig.tests.json",
+      "exit_code": 0
+    },
+    "client": {
+      "command": "node node_modules/typescript/bin/tsc -p tsconfig.client.json --noEmit",
+      "exit_code": 0
+    }
+  },
+  "native_full": {
+    "log": "C:\\Users\\Administrator\\AppData\\Local\\Temp\\routing-rethink-step3-validation\\tests-release.tap",
+    "sha256": "2d05068220c4e6e0e470bd6e8efa53af860c3677cee0d17cf0a361452ad15267",
+    "summary": {
+      "tests": 480,
+      "pass": 476,
+      "fail": 4,
+      "cancelled": 0,
+      "skipped": 0
+    },
+    "failures": [
+      {
+        "test": "not ok 50 - tests\\\\client-topic-folder.test.ts",
+        "error": "'spawn EPERM'"
+      },
+      {
+        "test": "not ok 51 - tests\\\\client-update.test.ts",
+        "error": "'spawn EPERM'"
+      },
+      {
+        "test": "not ok 256 - the release archive includes ongoing-task documentation and excludes local data",
+        "error": "'spawn EPERM'"
+      },
+      {
+        "test": "not ok 328 - route statistics count bursts, topic changes and unrouted steering without printing any text",
+        "error": "'spawnSync C:\\\\Program Files\\\\nodejs\\\\node.exe EPERM'"
+      }
+    ],
+    "command": "node --experimental-transform-types --test --test-isolation=none --test-reporter=tap tests/*.test.ts",
+    "exit_code": 1,
+    "note": "Four subprocess EPERM failures; not an all-green standard suite."
+  },
+  "targeted": {
+    "log": "C:\\Users\\Administrator\\AppData\\Local\\Temp\\routing-rethink-step3-validation\\targeted-final.tap",
+    "sha256": "0b6d2fc6b11d3d74c469a0f1bd9a8598859e76c1e63aa4a22ab6575a62d17fc9",
+    "summary": {
+      "tests": 45,
+      "pass": 45,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0
+    },
+    "failures": [],
+    "exit_code": 0
+  },
+  "eval_node": {
+    "log": "C:\\Users\\Administrator\\AppData\\Local\\Temp\\routing-rethink-step3-validation\\eval-final.tap",
+    "sha256": "e23aeb09ab3da1f87b12d1f4e97c0c373c1d06345ba2c9a8ef1a1cac291f1755",
+    "summary": {
+      "tests": 30,
+      "pass": 30,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0
+    },
+    "failures": [],
+    "exit_code": 0
+  },
+  "eval_python": {
+    "command": "py -X utf8 -B -m unittest discover -s eval/test",
+    "tests": 22,
+    "pass": 22,
+    "exit_code": 0
+  },
+  "client_direct_bundle": {
+    "log": "C:\\Users\\Administrator\\AppData\\Local\\Temp\\routing-rethink-step3-validation\\client-final.tap",
+    "sha256": "0a25d0dab202dcf868c01d96dfa2ec5663a23ad3fba32b15dcab0a8414b3e967",
+    "summary": {
+      "tests": 7,
+      "pass": 7,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0
+    },
+    "failures": [],
+    "method": "shell esbuild with same options; temporary test copies replace only build call, keep original assertions",
+    "exit_code": 0
+  },
+  "new_tests": [
+    "correcting a completed route removes its usage prior from the wrong topic",
+    "correction retracts already learned cards, facts, state and links and survives restart",
+    "handback starts the replacement only after the first worker is idle",
+    "rebuilding projections keeps independent later learning and explicit edits",
+    "a card already in flight cannot commit after correction",
+    "a checkpoint from an excluded turn is not restored after restart",
+    "facts from an uncertain owner stay proposed until positive target evidence",
+    "merge and unmerge cannot preserve invalid route-derived metadata",
+    "invalid fact versions restore the last valid value and notify dependent topics",
+    "a resumed worker never receives the excluded turn as reusable conversation",
+    "a catalog refresh cannot re-extract excluded turns or keep their keywords",
+    "a branch retains source provenance when its copied descriptor is later revoked",
+    "a route proposal cannot train relatedness; completion commits it once without another message",
+    "a corrected CREATE retracts its inferred title, keywords and workspace membership",
+    "a valid later fact value does not preserve aliases inherited from a wrong route",
+    "a link-only contribution is revoked through merge and unmerge",
+    "a later topic cannot retain memory copied from an excluded route through its briefing"
+  ],
+  "controlled_execution": {
+    "wrong_project_writes": 0,
+    "duplicate_input_extra_executions": 0,
+    "concurrent_workers_same_input": 0,
+    "target_project_writes": 1,
+    "evidence": "handback starts the replacement only after the first worker is idle"
+  },
+  "dry_run": {
+    "replay": "product-v1",
+    "cards": true,
+    "selection": "first 2 sessions per dev/test, first 6 turns per selected session",
+    "session_ids": [
+      "zh-0001",
+      "en-0002",
+      "zh-0005",
+      "en-0010"
+    ],
+    "fixture_sha256": "cdbb77184f3753f2d1b95d66aabbffeff3f61f481abd7af9471efcc98b83aa55",
+    "groups": [
+      {
+        "mode": "closed",
+        "split": "dev",
+        "rows": 12,
+        "expected_keys": 12,
+        "unique_keys": 12,
+        "exit_code": 0,
+        "scoring_exit_code": 0,
+        "path": "experiments/routing-rethink-step3/product-v1-closed-dev-cards-fake.jsonl",
+        "sha256": "44578856e8387e2632b0d90326cfcb40973a376a6975e19f73e39e8880dc5c10",
+        "quality_result": false
+      },
+      {
+        "mode": "closed",
+        "split": "test",
+        "rows": 12,
+        "expected_keys": 12,
+        "unique_keys": 12,
+        "exit_code": 0,
+        "scoring_exit_code": 0,
+        "path": "experiments/routing-rethink-step3/product-v1-closed-test-cards-fake.jsonl",
+        "sha256": "da26796f1b818cd07a56ff6873564c25ddd3d9121a9013dca8072d2bafc1bab0",
+        "quality_result": false
+      },
+      {
+        "mode": "open",
+        "split": "dev",
+        "rows": 12,
+        "expected_keys": 12,
+        "unique_keys": 12,
+        "exit_code": 0,
+        "scoring_exit_code": 0,
+        "path": "experiments/routing-rethink-step3/product-v1-open-dev-cards-fake.jsonl",
+        "sha256": "3684b5f4f230492b11e50e646a1651e8331cfa109af351228f6c4a78f6a574a9",
+        "quality_result": false
+      },
+      {
+        "mode": "open",
+        "split": "test",
+        "rows": 12,
+        "expected_keys": 12,
+        "unique_keys": 12,
+        "exit_code": 0,
+        "scoring_exit_code": 0,
+        "path": "experiments/routing-rethink-step3/product-v1-open-test-cards-fake.jsonl",
+        "sha256": "ea633e55fd6eb211c0dab06c6a027a67b1f795749e29f374f3efb7e6eb8f51d9",
+        "quality_result": false
+      }
+    ],
+    "scored_messages": 48,
+    "note": "Fake model; not a quality, speed, token saving or billed cost result."
+  },
+  "file_sha256": {
+    "src/learning-journal.ts": "54bc9188a3574f6029ee268c32bfe3470a572a0216bc9b6a5048d9e47f9540a3",
+    "src/store.ts": "d03e804d2a85a661f548ed6a13ca95a248901cb0509835fbc7b0a25c461ca357",
+    "src/index.ts": "71159bfa46963d091e9b2e945cf03d93f90fb5a383fd0447827327960d6dadda",
+    "src/run.ts": "be2e1f8f1403467e8f0ebfad599bef7e8c96dac1919d532e47e174ab7dda17ac",
+    "src/fact-flow.ts": "2b4ef860342749d48a67475f413b8245d9ac747b2448c7214743dfe9fee10426",
+    "src/history-catalog.ts": "64f045c860d8cecf4dfcbcae42598457af85f4240ff9aa084e182b8d80e97be9",
+    "src/gateway-compaction.ts": "6e56892595372390ffffc806f4a0e6b3d95ef00b229ccf0786a7ecdf8ea65ad8",
+    "dist/learning-journal.js": "930e3a2e7fc56ad2a7aa0ee05d9d1ab79ba60f16ad77806eb0b6b9189362a53d",
+    "dist/learning-journal.d.ts": "7b4f3f21a2097c23394ebd3ff1b3f6b31e1f5b91718c87bcd7cae75238768ba6",
+    "dist/store.js": "afd329ba5e60e1ba7f54caec646261b75ed8c4df95b50da226940d427f59fdd0",
+    "dist/store.d.ts": "e5a82ed58680a50d6403a2d730e2ed3110ea099d0b5da1e7e7e086ac22fb0e75",
+    "dist/index.js": "2cf00b8b0b44760d9b6a8612358fe3af0f63af40c6040d6c4a15b71c41c87f19",
+    "dist/index.d.ts": "1efed97eb6d8fa0b5cb7a5e162d2f357bb642f1dff1c3dd7ac8ea2852175ca91",
+    "dist/run.js": "02ff8846f3eed7617f9a8a5dce3582be4d21c76bf56a9dc4d547f70bea01ebe5",
+    "dist/run.d.ts": "4f473f0eb3d508420e72ab3a196296cc69e5d2d6b507a4628e0f54f909e01df1",
+    "dist/fact-flow.js": "bbe9a4841241928f2a98fdbfc95ed61787e13b876b181f3d5f34e0d25e904976",
+    "dist/fact-flow.d.ts": "8d4b6c12a67e3c2316b2d3f4ba1b6600e411a214fb84da19d9c7d82e077d0b07",
+    "dist/history-catalog.js": "33a6d6bfae5fe0759612ceb0df5bfbb2dbcba42f8656abb41c8b4d1056841f6c",
+    "dist/history-catalog.d.ts": "d2ac59fb2b7f76d8daed3cd9de40002e548a8f8098c7199d221a30503079c406",
+    "dist/gateway-compaction.js": "df503bbe0cb600c65c2a02692618f7231bcf813ba551b6776f29926c8325dc13",
+    "dist/gateway-compaction.d.ts": "a5757f23b8ea4e35e93c45a4ff8c98149bf82eb0f1f141187720cf498b60699c",
+    "tests/learning-provenance.test.ts": "ff58ce6f7073fd50fc06ca4cfe8a07994e947a87876f8cb4c441ff55a73e637e",
+    "tests/lifecycle.test.ts": "1954afad31c99cdbb172be8b44784dfe524bbf020a7e931996bb7864de2b08a9",
+    "tests/topic-memory.test.ts": "fdea58577f198d55e93558890edbe745941bdb79130af1d684f4d516f43cfd89"
+  },
+  "baseline_summary": "baseline-summary.json",
+  "git_diff_check_exit_code": 0
+}

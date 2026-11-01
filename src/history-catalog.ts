@@ -193,7 +193,12 @@ export class HistoryCatalog {
         if (this.store.isGateway(sessionId) || log.events.some(e => e.type === 'user/message' && e.data.source.kind === 'theone-route')) {
           this.store.markIndex(sessionId, through, 'skipped'); this.status.skipped++; this.status.pending--; continue
         }
-        const { parts, summaries } = historyParts(log.events)
+        const exclusions = this.store.excludedRanges(sessionId)
+        const generation = JSON.stringify(exclusions)
+        const validEvent = (seq: number) => !exclusions.some(range => seq >= range.startSeq && seq <= range.endSeq)
+        // A compaction can summarize an excluded turn even though its own seq is outside that turn.
+        const { parts, summaries } = historyParts(log.events.filter(event => validEvent(event.seq) &&
+          !(event.type === 'compaction/summary' && exclusions.some(range => range.startSeq <= event.seq))))
         if (!parts.length) { this.store.markIndex(sessionId, through, 'ready'); this.status.skipped++; this.status.pending--; continue }
         // A turn the user deleted stays out. It is known by its message, not its fingerprint: the last
         // turn's fingerprint changes as the conversation grows, and the deletion must outlast that.
@@ -223,14 +228,18 @@ export class HistoryCatalog {
           budget--
           const requestAbort = new AbortController()
           this.activeRequest = { id: sessionId, cwd: record.header.cwd, abort: requestAbort }
+          const sources = this.store.learningJournal.sources(sessionId, batch.at(-1)!.endSeq)
+            .filter(source => this.store.learningJournal.valid([source]))
+          const inherited = contexts.flatMap(context => this.store.learningJournal.dependencies(`topic:${context.id}`))
           const value = await modelJson(this.ctx.llm, this.selection(), CATALOG_PROMPT,
             { title, ownedContextId: owned?.id ?? null, compactionSummaries: summaries,
               turns: batch.map(({ seq, text }) => ({ seq, text })), contexts, groups }, AbortSignal.any([signal, requestAbort.signal]), { sessionId: log.session.id })
             .finally(() => { this.activeRequest = undefined })
           if (blocked()) { interrupted = true; break }
+          if (!this.store.learningJournal.valid([...sources, ...inherited]) || generation !== JSON.stringify(this.store.excludedRanges(sessionId))) { interrupted = true; break }
           const topics = validateCatalog(value, batch, contexts.map(c => c.id), groups.map(g => g.id), owned?.id)
           signal.throwIfAborted()
-          this.store.importTopics(sessionId, log.session.cwd, batch, topics)
+          this.store.withLearning([...sources, ...inherited], () => this.store.importTopics(sessionId, log.session.cwd, batch, topics))
         }
         if (interrupted) continue
         if (parts.every(p => this.store.indexedTurn(sessionId, p.seq)?.fingerprint === p.fingerprint || dismissed(p))) {

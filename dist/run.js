@@ -26,6 +26,7 @@ export class WorkerRun {
     failure;
     outcome;
     done = false;
+    cancelled = false;
     settled = Promise.resolve();
     constructor(ctx, worker, gateway, inputId, maxChars, beforeToolCalls) {
         this.worker = worker;
@@ -98,7 +99,19 @@ export class WorkerRun {
         return text.slice(-limit);
     }
     /** Give the Worker its context and input; the run ends when the Worker is idle again. */
-    start(contexts, input) {
+    start(contexts, input, after) {
+        if (after) {
+            this.settled = after.then(async () => {
+                if (this.cancelled) {
+                    this.done = true;
+                    this.wake();
+                    return;
+                }
+                this.start(contexts, input);
+                await this.settled;
+            }).catch(error => { this.failure = error; this.done = true; this.wake(); });
+            return;
+        }
         for (const context of contexts)
             this.worker.inject(context);
         this.worker.followup(input);
@@ -137,7 +150,7 @@ export class WorkerRun {
         while (!this.done && !this.unshown)
             await new Promise(resolve => this.waiters.push(resolve));
     }
-    cancel() { if (this.worker.status !== 'idle')
+    cancel() { this.cancelled = true; if (this.worker.status !== 'idle')
         this.worker.cancel({ kind: 'parent' }); }
     dispose() { for (const dispose of this.disposers.splice(0))
         dispose(); }

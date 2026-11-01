@@ -20,6 +20,7 @@ export function topicRetention(usage: ContextUsage | undefined, current: boolean
 export function gatewayCheckpoint(input: {
   messages: readonly RequestMessage[]; contexts: ContextDescriptor[]; usage: ContextUsage[];
   currentId?: string; route: (messageId: string) => RouteRecord | undefined;
+  excluded?: (messageId: string) => boolean;
   contextWindow?: number; maxTokens?: number; now?: number;
 }): string {
   const now = input.now ?? Date.now()
@@ -58,6 +59,7 @@ export function gatewayCheckpoint(input: {
           represented.add(topic.id)
           for (const item of topic.recent.slice(-6)) {
             if (!item || typeof item.messageId !== 'string' || typeof item.text !== 'string' || !['user', 'assistant'].includes(item.role)) continue
+            if (input.excluded?.(item.messageId)) continue
             const route = input.route(item.messageId)
             if (route?.status === 'completed' && route.decision.contextId === topic.id) append(topic.id, item)
           }
@@ -71,6 +73,7 @@ export function gatewayCheckpoint(input: {
     }
     if (message.role === 'user') {
       if (source?.kind !== 'user' || !('id' in message) || typeof message.id !== 'string') continue
+      if (input.excluded?.(message.id)) { focus = undefined; continue }
       const route = input.route(message.id)
       const contextId = route?.status === 'completed' ? route.decision.contextId : undefined
       focus = { contextId: contextId && known.has(contextId) ? contextId : undefined, messageId: message.id }
