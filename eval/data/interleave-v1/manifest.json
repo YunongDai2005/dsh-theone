@@ -1,0 +1,188 @@
+{
+  "version": "interleave-v1",
+  "routing_schema": "routing-v1",
+  "generator": "generate-routing-v1.mjs",
+  "generation": "deterministic-template",
+  "sha256": "aa5d702ae8ccfa157f9561683d9eb691c6ce7e8e1c822014ff8dd7c48b27dc5e",
+  "split_policy": "Whole variant groups, both languages and both pair sides stay together; last quarter is test.",
+  "sessions": 256,
+  "messages": 448,
+  "mechanisms": {
+    "foreground": {
+      "sessions": 32,
+      "messages": 32
+    },
+    "question": {
+      "sessions": 32,
+      "messages": 32
+    },
+    "approval": {
+      "sessions": 32,
+      "messages": 32
+    },
+    "background": {
+      "sessions": 16,
+      "messages": 32
+    },
+    "steering": {
+      "sessions": 16,
+      "messages": 32
+    },
+    "correction": {
+      "sessions": 16,
+      "messages": 48
+    },
+    "correction_new": {
+      "sessions": 16,
+      "messages": 32
+    },
+    "restart": {
+      "sessions": 16,
+      "messages": 32
+    },
+    "large_catalog": {
+      "sessions": 16,
+      "messages": 48
+    },
+    "homonym": {
+      "sessions": 16,
+      "messages": 32
+    },
+    "reference": {
+      "sessions": 16,
+      "messages": 16
+    },
+    "oneoff": {
+      "sessions": 16,
+      "messages": 48
+    },
+    "new_task": {
+      "sessions": 16,
+      "messages": 32
+    }
+  },
+  "explicit_binding": 112,
+  "pair_groups": 48,
+  "splits": {
+    "dev": {
+      "sessions": 192,
+      "messages": 336,
+      "mechanisms": {
+        "foreground": {
+          "sessions": 24,
+          "messages": 24
+        },
+        "question": {
+          "sessions": 24,
+          "messages": 24
+        },
+        "approval": {
+          "sessions": 24,
+          "messages": 24
+        },
+        "background": {
+          "sessions": 12,
+          "messages": 24
+        },
+        "steering": {
+          "sessions": 12,
+          "messages": 24
+        },
+        "correction": {
+          "sessions": 12,
+          "messages": 36
+        },
+        "correction_new": {
+          "sessions": 12,
+          "messages": 24
+        },
+        "restart": {
+          "sessions": 12,
+          "messages": 24
+        },
+        "large_catalog": {
+          "sessions": 12,
+          "messages": 36
+        },
+        "homonym": {
+          "sessions": 12,
+          "messages": 24
+        },
+        "reference": {
+          "sessions": 12,
+          "messages": 12
+        },
+        "oneoff": {
+          "sessions": 12,
+          "messages": 36
+        },
+        "new_task": {
+          "sessions": 12,
+          "messages": 24
+        }
+      },
+      "explicit_binding": 84,
+      "pair_groups": 36
+    },
+    "test": {
+      "sessions": 64,
+      "messages": 112,
+      "mechanisms": {
+        "foreground": {
+          "sessions": 8,
+          "messages": 8
+        },
+        "question": {
+          "sessions": 8,
+          "messages": 8
+        },
+        "approval": {
+          "sessions": 8,
+          "messages": 8
+        },
+        "background": {
+          "sessions": 4,
+          "messages": 8
+        },
+        "steering": {
+          "sessions": 4,
+          "messages": 8
+        },
+        "correction": {
+          "sessions": 4,
+          "messages": 12
+        },
+        "correction_new": {
+          "sessions": 4,
+          "messages": 8
+        },
+        "restart": {
+          "sessions": 4,
+          "messages": 8
+        },
+        "large_catalog": {
+          "sessions": 4,
+          "messages": 12
+        },
+        "homonym": {
+          "sessions": 4,
+          "messages": 8
+        },
+        "reference": {
+          "sessions": 4,
+          "messages": 4
+        },
+        "oneoff": {
+          "sessions": 4,
+          "messages": 12
+        },
+        "new_task": {
+          "sessions": 4,
+          "messages": 8
+        }
+      },
+      "explicit_binding": 28,
+      "pair_groups": 12
+    }
+  }
+}

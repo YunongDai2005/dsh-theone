@@ -9,6 +9,41 @@ Phase 1 (`interleave-v0`) measures routing: the data generator, TheOne's router 
 baselines that need no model, and the scorer. Phase 2 (`interleave-v1`, [below](#phase-2-shared-facts))
 adds the assistant's replies and measures whether one topic gets another topic's facts right.
 
+## Routing events (step 5)
+
+The bundled `eval/data/interleave-v1/` is a **routing event** dataset: 256 deterministic
+Chinese/English sessions, 448 user messages, 24-topic catalogs, and 48 owner-only pairs.
+It is identified by `routing_schema: "routing-v1"`. The older fact-lifecycle generator also uses
+`version: "interleave-v1"`; that version string alone does not select the event protocol.
+Generate fact-lifecycle data into a separate directory (commands below). The fact generator
+now refuses to overwrite the bundled routing dataset.
+
+`generate-routing-v1.mjs --templates --out <new-directory>` reproduces the directed set without
+a model. Its `--dry-run` uses the fake model to test the natural-language rendering path; omitting
+that flag uses the configured model. Paired short text and metadata stay fixed. Generated prose
+still needs semantic review before using it as a benchmark.
+
+```powershell
+node eval/generate-routing-v1.mjs --templates --out eval/data/routing-copy-dry
+node eval/generate-routing-v1.mjs --dry-run --variants 2 --out eval/data/routing-natural-dry
+node eval/run-router.mjs --data eval/data/interleave-v1/sessions.jsonl --split all --mode open --cards --dry-run --out eval/data/interleave-v1/predictions/events-full-dry.jsonl
+node eval/run-router.mjs --data eval/data/interleave-v1/sessions.jsonl --split all --mode open --cards --dry-run --state-ablation drop-bindings --out eval/data/interleave-v1/predictions/events-ablated-dry.jsonl
+py -X utf8 -B eval/score.py eval/data/interleave-v1/sessions.jsonl eval/data/interleave-v1/predictions/events-full-dry.jsonl --split all --ablation eval/data/interleave-v1/predictions/events-ablated-dry.jsonl
+```
+
+Use fresh output filenames/directories; the new protocol refuses overwrites. Explicit catalogs
+are seeded even in open mode; seeded IDs are fixed during scoring, while newly created IDs can
+be matched to previously absent gold topics. `legacy-v0` cannot replay event datasets.
+
+The driver calls the real correction HTTP handler, closes/recreates the whole plugin runtime on
+restart with the same database, and delivers native steering to an active Worker. Reply targets,
+question/approval owners, and visibility events currently have observation-only shadow APIs;
+the output marks those gaps and never mounts a gold topic to simulate a binding. Dataset timestamps
+are retained, but do not advance the product clock. State snapshots distinguish visible card,
+keyword and fact content from retained exclusion/audit records. Missing snapshots or content
+never learned are not scored as clean retractions. See the [Chinese step 5 report](../docs/design/routing-rethink-step5-report.zh.md)
+for the schema, coverage, evidence limits, and author-run commands.
+
 ## How the data is made
 
 1. **Threads.** A model invents a persona and 3–5 work threads in different domains (code, travel,
@@ -57,7 +92,7 @@ command so the runs are labelled by it:
 ```sh
 export OPENAI_BASE_URL=https://provider.example/v1     # the address the provider documents, usually ending in /v1
 export OPENAI_API_KEY=sk-...
-node eval/generate.mjs --sessions 50 --model their-model-name
+node eval/generate.mjs --sessions 50 --model their-model-name --out eval/data/interleave-facts-v1
 node eval/run-router.mjs --replay product-v1 --mode closed --policy theone --model their-model-name
 ```
 
@@ -180,9 +215,9 @@ Topics follow the gold labels, so routing mistakes do not blur the comparison. R
 its own: each probe and a sample of turns is routed with and without the facts offered.
 
 ```sh
-node eval/generate.mjs --sessions 50                     # v1 data, ≈ $1–2
-node eval/run-facts.mjs                                  # dev split, ≈ $3–4
-python eval/score_facts.py eval/data/interleave-v1/facts/deepseek-flash.jsonl
+node eval/generate.mjs --sessions 50 --out eval/data/interleave-facts-v1
+node eval/run-facts.mjs --data eval/data/interleave-facts-v1/sessions.jsonl
+python eval/score_facts.py eval/data/interleave-facts-v1/facts/deepseek-flash.jsonl
 ```
 
 The scorer prints accuracy by strategy and probe category, how wrong answers went wrong (an old value,

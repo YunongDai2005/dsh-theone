@@ -8,6 +8,8 @@ const TOPICS = {
 export default async function answer({ user, tag }) {
   const payload = JSON.parse(user)
   const step = tag.split(':')[0]
+  if (step === 'routing-render') return JSON.stringify({ messages: payload.plan.map(turn => ({ i: turn.i, text: turn.text, reply: turn.reply ?? '' })) })
+  if (step === 'terms') return '[]'
   if (step === 'spec') {
     const names = TOPICS[payload.lang]
     return JSON.stringify({ persona: payload.lang === 'zh' ? '一位在上班的设计师' : 'A designer with a day job',

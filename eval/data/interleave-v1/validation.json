@@ -1,0 +1,74 @@
+{
+  "kind": "offline-pipeline-validation-not-model-quality",
+  "product_base": "67b40fa",
+  "corpus_sha256": "aa5d702ae8ccfa157f9561683d9eb691c6ce7e8e1c822014ff8dd7c48b27dc5e",
+  "sessions": 256,
+  "messages": 448,
+  "v0_prediction_score_hashes_identical": 8,
+  "node_eval_tests": {
+    "tests": 45,
+    "pass": 45,
+    "fail": 0
+  },
+  "python_eval_tests": {
+    "tests": 32,
+    "pass": 32,
+    "fail": 0
+  },
+  "product_tests": {
+    "tests": 480,
+    "pass": 476,
+    "fail": 4,
+    "limitation": "Four existing subprocess entries fail with spawn/spawnSync EPERM"
+  },
+  "typechecks": [
+    "tsconfig.json",
+    "tsconfig.tests.json",
+    "tsconfig.client.json --noEmit"
+  ],
+  "src_dist_content_changed": false,
+  "dry_outputs": [
+    {
+      "path": "eval/data/interleave-v1/predictions/step5-open-all-full-dry-v3.jsonl",
+      "sha256": "e6691f06a7e7824203768ab11b063edc3eaf4b03f0991af3a8f0568c5c54d59d",
+      "messages": 448
+    },
+    {
+      "path": "eval/data/interleave-v1/predictions/step5-open-all-ablated-dry-v3.jsonl",
+      "sha256": "4a3df2320d938c0a005e07be5cc8583ea5d2ef8e569e86823ac59102af859d04",
+      "messages": 448
+    },
+    {
+      "path": "eval/data/interleave-v1/predictions/step5-closed-natural-dry-v3.jsonl",
+      "sha256": "19f3665978840c3014573d9cf3fe1bee59680de6aef630f8e4567448c2f0ff1f",
+      "messages": 112
+    }
+  ],
+  "utf8_repair_replay": {
+    "full_sessions": 8,
+    "ablated_sessions": 8,
+    "natural_sessions": 2,
+    "reused_full_sessions_after_identical_input_check": 248,
+    "reused_natural_sessions_after_identical_input_check": 62
+  },
+  "full_run_coverage": {
+    "binding_labels": 112,
+    "binding_unsupported": 96,
+    "native_steering_deliveries": 16,
+    "corrections_applied": 32,
+    "restarts": 32,
+    "large_catalog_traces": 48,
+    "pairs": 48,
+    "retraction_observations": {
+      "card": 48,
+      "keywords": 16,
+      "facts": 32
+    },
+    "retraction_stale_observations": {
+      "card": 0,
+      "keywords": 0,
+      "facts": 0
+    },
+    "active_source_leaks": 0
+  }
+}

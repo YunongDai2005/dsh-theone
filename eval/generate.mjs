@@ -9,7 +9,7 @@
 //   node eval/generate.mjs --sessions 50                       (v1; needs DEEPSEEK_API_KEY)
 //   node eval/generate.mjs --sessions 50 --dataset v0          (the routing set, as first published)
 //   node eval/generate.mjs --sessions 4 --dry-run              (fake model, costs nothing)
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
@@ -22,7 +22,17 @@ const here = dirname(fileURLToPath(import.meta.url))
 export const VERSIONS = { v0: 'interleave-v0', v1: 'interleave-v1' }
 export const VERSION = VERSIONS.v1
 
+function assertGenerationOutput(out) {
+  const file = out && join(out, 'sessions.jsonl')
+  if (file && existsSync(file)) {
+    const first = readFileSync(file, 'utf8').split(/\r?\n/).find(line => line.trim())
+    if (first && JSON.parse(first).routing_schema === 'routing-v1')
+      throw new Error('routing-v1 dataset: refusing fact generator overwrite; choose a new --out directory')
+  }
+}
+
 export async function generate(options) {
+  assertGenerationOutput(options.out)
   const { sessions: count = 50, seed = 1, langs = ['zh', 'en'], minThreads = 3, maxThreads = 5, minTurns = 40, maxTurns = 60,
     chunk = 8, judge = true, dataset = 'v1', out, client, log = () => {} } = options
   if (!VERSIONS[dataset]) throw new Error(`Unknown dataset ${dataset}; use v0 or v1`)
@@ -187,10 +197,11 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     dataset: { type: 'string', default: 'v1' }, out: { type: 'string' }, 'dry-run': { type: 'boolean', default: false },
     'no-judge': { type: 'boolean', default: false }, model: { type: 'string' } } })
   const dry = values['dry-run']
-  const client = await createClient({ model: values.model, cacheDir: join(here, '.cache', dry ? 'fake' : 'llm'), fake: dry ? join(here, 'test', 'fake-model.mjs') : undefined })
   const name = VERSIONS[values.dataset]
   if (!name) throw new Error('--dataset v0|v1')
   const out = dry ? join(here, 'data', `${name}-dry`) : values.out ?? join(here, 'data', name)
+  assertGenerationOutput(out)
+  const client = await createClient({ model: values.model, cacheDir: join(here, '.cache', dry ? 'fake' : 'llm'), fake: dry ? join(here, 'test', 'fake-model.mjs') : undefined })
   const timer = setInterval(() => console.error(`… ${client.usage}`), 15000)
   try {
     const sessions = await generate({ sessions: Number(values.sessions), seed: Number(values.seed), langs: values.langs.split(','), judge: !values['no-judge'], dataset: values.dataset, out, client, log: line => console.error(line) })

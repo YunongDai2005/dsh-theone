@@ -92,20 +92,22 @@ def score_session(session, rows, mode):
     gold_ids = {thread["id"] for thread in session["threads"]}
     # Open mode: the system's own labels are matched one-to-one to gold threads by overlap.
     mapping = {}
-    if mode == "open":
-        golds = sorted(gold_ids)
-        preds = sorted({by_i[t["i"]]["pred"] for t in turns if t["i"] in by_i and by_i[t["i"]]["pred"] not in SPECIAL})
+    routing_v1 = session.get("routing_schema") == "routing-v1"
+    seeded = {topic["id"] for topic in session.get("catalog", [])} if routing_v1 else set()
+    if mode == "open" or routing_v1:
+        golds = sorted(gold_ids - seeded)
+        preds = sorted({by_i[t["i"]]["pred"] for t in turns if t["i"] in by_i and by_i[t["i"]]["pred"] not in SPECIAL and by_i[t["i"]]["pred"] not in seeded})
         counts = Counter((t["gold"]["thread"], by_i[t["i"]]["pred"]) for t in turns
                          if t["gold"]["thread"] and t["i"] in by_i)
         match = hungarian([[counts[(g, p)] for p in preds] for g in golds])
-        mapping = {preds[j]: golds[i] for i, j in match.items()}
-    to_gold = (lambda label: mapping.get(label)) if mode == "open" else (lambda label: label if label in gold_ids else None)
+        mapping = {**{label: label for label in seeded}, **{preds[j]: golds[i] for i, j in match.items()}}
+    to_gold = (lambda label: mapping.get(label)) if mode == "open" or routing_v1 else (lambda label: label if label in gold_ids else None)
 
     # Each route is judged by what the chosen topic held so far: sending a message into a topic that is
     # mostly another thread is what pollutes context. Catalog topics (closed mode) start as their thread.
     held = defaultdict(Counter)
-    if mode == "closed":
-        for thread_id in gold_ids:
+    if mode == "closed" or seeded:
+        for thread_id in (seeded if routing_v1 else gold_ids):
             held[thread_id][thread_id] = 1_000_000
     outcomes = []
     seen_gold = set()
@@ -122,7 +124,7 @@ def score_session(session, rows, mode):
         elif pred == "ERROR":
             kind = "error"
         elif fresh:
-            kind = "correct" if gold not in seen_gold and mode == "open" else "spurious_new"
+            kind = "correct" if gold not in seen_gold and (mode == "open" or routing_v1) else "spurious_new"
         else:
             majority = held[pred].most_common(1)[0][0]
             kind = "correct" if majority == gold else "merged_new" if gold not in seen_gold else "wrong_existing"
@@ -153,7 +155,8 @@ def bcubed(pairs):
     return p, r, (2 * p * r / (p + r) if p + r else 0.0)
 
 
-def evaluate(sessions, predictions, split="dev"):
+def evaluate(sessions, predictions, split="dev", ablation_predictions=None):
+    all_sessions = sessions
     all_ids = {s["session_id"] for s in sessions}
     sessions = [s for s in sessions if split == "all" or s["split"] == split]
     expected = {(s["session_id"], t["i"]) for s in sessions for t in s["turns"]}
@@ -325,6 +328,17 @@ def evaluate(sessions, predictions, split="dev"):
         "card_usd_per_1000_messages": usd_per_1000(card_tokens) if card_tokens else None,
         "auxiliary_usd_per_1000_messages": usd_per_1000(auxiliary_tokens) if auxiliary_tokens else None,
     }
+    if any(s.get("routing_schema") for s in sessions):
+        from score_routing_v1 import evaluate_routing
+        ablation_selected = None
+        if ablation_predictions is not None:
+            other = evaluate(all_sessions, ablation_predictions, split)
+            if other["mode"] != mode or other["replay"] != replay:
+                raise ValueError("Ablation protocol/mode mismatch")
+            ablation_selected = [r for r in ablation_predictions if r["session_id"] in selected_ids]
+        result["routing_v1"] = evaluate_routing(sessions, selected, score_session, ablation_selected)
+    elif ablation_predictions is not None:
+        raise ValueError("State ablation requires routing-v1")
     return result
 
 
@@ -361,6 +375,16 @@ def table(results):
         for name, r in bursts:
             cell = lambda key: (lambda v: f"{v['accuracy']:.3f} ({v['n']})" if v and v["accuracy"] is not None else "–")(r["by_burst"].get(key))
             lines.append(f"| {name} | {cell('single')} | {cell('burst')} | {cell('burst_mixed')} | {r['waited_share']:.3f} | {r['model_calls_share']:.3f} |")
+    event_results = [(name, r["routing_v1"]) for name, r in results if "routing_v1" in r]
+    if event_results:
+        lines += ["", "| system | binding acc (n) | applied | correction next acc | card stale | keywords stale | facts stale | catalog R@16 | pairs both correct | ablation delta |",
+                  "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
+        for name, r in event_results:
+            b, c, stale, large, pairs = r["explicit_binding"], r["correction_recovery"], r["retraction"], r["large_catalog"], r["pairs"]
+            delta = (pairs["ablation"] or {}).get("accuracy_delta")
+            lines.append(f"| {name} | {number(b['accuracy'])} ({b['n']}) | {b['applied']} | {number(c['next_accuracy'])} | "
+                         + " | ".join(number(stale[key]["stale_rate"]) for key in ("card", "keywords", "facts"))
+                         + f" | {number(large['recall_at_16'])} | {number(pairs['both_correct_rate'])} | {number(delta)} |")
     return "\n".join(lines)
 
 
@@ -373,10 +397,17 @@ def main(argv):
         index = argv.index("--split")
         split = argv[index + 1]
         argv = argv[:index] + argv[index + 2:]
+    ablation = None
+    if "--ablation" in argv:
+        index = argv.index("--ablation")
+        ablation = read_jsonl(argv[index + 1])
+        argv = argv[:index] + argv[index + 2:]
+        if len(argv) != 3:
+            raise ValueError("--ablation requires exactly one full prediction file")
     sessions = read_jsonl(argv[1])
     results = []
     for path in argv[2:]:
-        r = evaluate(sessions, read_jsonl(path), split)
+        r = evaluate(sessions, read_jsonl(path), split, ablation_predictions=ablation)
         results.append((Path(path).stem, r))
         Path(path).with_suffix(".score.json").write_text(json.dumps(r, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(table(results))
