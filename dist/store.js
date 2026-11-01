@@ -299,7 +299,7 @@ export class ContextStore {
             return first;
         }
         catch (error) {
-            this.db.exec('ROLLBACK TO store_write; RELEASE store_write');
+            this.rollbackWrite();
             throw error;
         }
     }
@@ -467,7 +467,7 @@ export class ContextStore {
             this.db.exec('RELEASE store_write');
         }
         catch (error) {
-            this.db.exec('ROLLBACK TO store_write; RELEASE store_write');
+            this.rollbackWrite();
             throw error;
         }
     }
@@ -516,7 +516,7 @@ export class ContextStore {
             this.db.exec('RELEASE store_write');
         }
         catch (error) {
-            this.db.exec('ROLLBACK TO store_write; RELEASE store_write');
+            this.rollbackWrite();
             throw error;
         }
     }
@@ -544,7 +544,7 @@ export class ContextStore {
             this.db.exec('RELEASE store_write');
         }
         catch (error) {
-            this.db.exec('ROLLBACK TO store_write; RELEASE store_write');
+            this.rollbackWrite();
             throw error;
         }
     }
@@ -693,7 +693,7 @@ export class ContextStore {
             return { messageId, gatewayId, decision, status: 'planned' };
         }
         catch (error) {
-            this.db.exec('ROLLBACK TO store_write; RELEASE store_write');
+            this.rollbackWrite();
             throw error;
         }
     }
@@ -757,7 +757,7 @@ export class ContextStore {
             return decision;
         }
         catch (error) {
-            this.db.exec('ROLLBACK TO store_write; RELEASE store_write');
+            this.rollbackWrite();
             throw error;
         }
     }
@@ -1099,7 +1099,7 @@ export class ContextStore {
             this.db.exec('RELEASE store_write');
         }
         catch (error) {
-            this.db.exec('ROLLBACK TO store_write; RELEASE store_write');
+            this.rollbackWrite();
             throw error;
         }
     }
@@ -1182,7 +1182,7 @@ export class ContextStore {
             this.db.exec('RELEASE store_write');
         }
         catch (error) {
-            this.db.exec('ROLLBACK TO store_write; RELEASE store_write');
+            this.rollbackWrite();
             throw error;
         }
         return targetId;
@@ -1218,7 +1218,7 @@ export class ContextStore {
             this.db.exec('RELEASE store_write');
         }
         catch (error) {
-            this.db.exec('ROLLBACK TO store_write; RELEASE store_write');
+            this.rollbackWrite();
             throw error;
         }
     }
@@ -1297,7 +1297,7 @@ export class ContextStore {
             return result;
         }
         catch (error) {
-            this.db.exec('ROLLBACK TO store_write; RELEASE store_write');
+            this.rollbackWrite();
             throw error;
         }
     }
@@ -1543,7 +1543,7 @@ export class ContextStore {
             return String(row.corrected_to);
         }
         catch (error) {
-            this.db.exec('ROLLBACK TO store_write; RELEASE store_write');
+            this.rollbackWrite();
             throw error;
         }
     }
@@ -1599,7 +1599,7 @@ export class ContextStore {
             this.db.exec('RELEASE store_write');
         }
         catch (error) {
-            this.db.exec('ROLLBACK TO store_write; RELEASE store_write');
+            this.rollbackWrite();
             throw error;
         }
     }
@@ -1624,6 +1624,8 @@ export class ContextStore {
             }
         });
     }
+    /** A rolled-back write may have changed route stages the journal holds in memory. */
+    rollbackWrite() { this.db.exec('ROLLBACK TO store_write; RELEASE store_write'); this.learningJournal.forget(); }
     wasReassigned(messageId) {
         return this.learningJournal.excludedMessage(messageId) || !!this.db.prepare("SELECT 1 FROM learning_routes WHERE message_id=? AND stage='excluded'").get(messageId) ||
             !!this.db.prepare(`SELECT 1 FROM route_details d JOIN routing_events r ON r.message_id=d.message_id

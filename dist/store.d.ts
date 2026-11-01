@@ -445,6 +445,8 @@ export declare class ContextStore {
     /** Bind every model-derived write to the input(s) that supplied its evidence. Synchronous only. */
     withLearning<T>(sources: readonly LearningSource[], work: () => T): T;
     reassignLearning(messageId: string, contextId: string): void;
+    /** A rolled-back write may have changed route stages the journal holds in memory. */
+    private rollbackWrite;
     wasReassigned(messageId: string): boolean;
     private learningSnapshot;
     private restoreLearning;

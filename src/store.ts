@@ -361,7 +361,7 @@ export class ContextStore {
       this.db.prepare('UPDATE contexts SET descriptor = ? WHERE id = ?').run(JSON.stringify({ ...descriptor, summary: compacted ? descriptor.summary : card.summary, entities }), contextId)
       this.db.exec('RELEASE store_write')
       return first
-    } catch (error) { this.db.exec('ROLLBACK TO store_write; RELEASE store_write'); throw error }
+    } catch (error) { this.rollbackWrite(); throw error }
   }
 
   /** A route-created topic, never manually moved or already involved in a merge; use its latest main chat. */
@@ -536,7 +536,7 @@ export class ContextStore {
         }
       }
       this.db.exec('RELEASE store_write')
-    } catch (error) { this.db.exec('ROLLBACK TO store_write; RELEASE store_write'); throw error }
+    } catch (error) { this.rollbackWrite(); throw error }
   }
 
   private catalogDescriptor(id: string, descriptor: ContextDescriptor): void {
@@ -581,7 +581,7 @@ export class ContextStore {
       this.db.prepare('INSERT INTO context_state_updates(context_id, session_id, through_seq, state) VALUES (?, ?, ?, ?)')
         .run(contextId, sessionId, throughSeq, text)
       this.db.exec('RELEASE store_write')
-    } catch (error) { this.db.exec('ROLLBACK TO store_write; RELEASE store_write'); throw error }
+    } catch (error) { this.rollbackWrite(); throw error }
   }
 
   stateUpdates(contextId: string) {
@@ -605,7 +605,7 @@ export class ContextStore {
       if (inserted.changes) this.db.prepare('UPDATE contexts SET descriptor = ? WHERE id = ?')
         .run(JSON.stringify({ ...descriptor, summary: summary.trim() }), contextId)
       this.db.exec('RELEASE store_write')
-    } catch (error) { this.db.exec('ROLLBACK TO store_write; RELEASE store_write'); throw error }
+    } catch (error) { this.rollbackWrite(); throw error }
   }
 
   summaryUpdates(contextId: string) {
@@ -772,7 +772,7 @@ export class ContextStore {
       this.db.exec('RELEASE store_write')
       return { messageId, gatewayId, decision, status: 'planned' }
     } catch (error) {
-      this.db.exec('ROLLBACK TO store_write; RELEASE store_write')
+      this.rollbackWrite()
       throw error
     }
   }
@@ -829,7 +829,7 @@ export class ContextStore {
       this.db.exec('RELEASE store_write')
       return decision
     } catch (error) {
-      this.db.exec('ROLLBACK TO store_write; RELEASE store_write')
+      this.rollbackWrite()
       throw error
     }
   }
@@ -1159,7 +1159,7 @@ export class ContextStore {
       this.purge(sourceId)
       this.db.prepare('INSERT OR REPLACE INTO topic_merges VALUES (?, ?, ?, ?)').run(sourceId, targetId, now, JSON.stringify(journal))
       this.db.exec('RELEASE store_write')
-    } catch (error) { this.db.exec('ROLLBACK TO store_write; RELEASE store_write'); throw error }
+    } catch (error) { this.rollbackWrite(); throw error }
   }
 
   private mergeLink(targetId: string, sourceId: string, other: string, weight: number, manual: -1 | 0 | 1, now: number): void {
@@ -1229,7 +1229,7 @@ export class ContextStore {
         .map(row => String(row.stream)).filter(stream => (JSON.parse(stream.slice(5)) as string[]).some(id => id === sourceId || id === targetId))
       this.learningJournal.rebuild([`topic:${sourceId}`, `topic:${targetId}`, ...linkStreams])
       this.db.exec('RELEASE store_write')
-    } catch (error) { this.db.exec('ROLLBACK TO store_write; RELEASE store_write'); throw error }
+    } catch (error) { this.rollbackWrite(); throw error }
     return targetId
   }
 
@@ -1262,7 +1262,7 @@ export class ContextStore {
       this.db.prepare('DELETE FROM plugin_flags WHERE name IN (?, ?)').run(`merge-moved:${contextId}`, `merge-handled:${contextId}`)
       this.purge(contextId); this.db.exec('RELEASE store_write')
     }
-    catch (error) { this.db.exec('ROLLBACK TO store_write; RELEASE store_write'); throw error }
+    catch (error) { this.rollbackWrite(); throw error }
   }
 
   private purge(contextId: string): void {
@@ -1343,7 +1343,7 @@ export class ContextStore {
   private inTransaction<T>(work: () => T): T {
     this.db.exec('SAVEPOINT store_write')
     try { const result = work(); this.db.exec('RELEASE store_write'); return result }
-    catch (error) { this.db.exec('ROLLBACK TO store_write; RELEASE store_write'); throw error }
+    catch (error) { this.rollbackWrite(); throw error }
   }
 
   private addVersion(factId: string, version: number, status: FactStatus, value: string | null, evidence: FactEvidence, origin: FactView['origin'], now: number, intended: FactStatus = status): void {
@@ -1592,7 +1592,7 @@ export class ContextStore {
       this.db.prepare("UPDATE topic_runs SET outcome = 'completed' WHERE message_id = ? AND outcome = 'moved'").run(messageId)
       this.db.exec('RELEASE store_write')
       return String(row.corrected_to)
-    } catch (error) { this.db.exec('ROLLBACK TO store_write; RELEASE store_write'); throw error }
+    } catch (error) { this.rollbackWrite(); throw error }
   }
 
   /** A topic's turn for a message that was not its own: later reads of its history leave it out. */
@@ -1651,7 +1651,7 @@ export class ContextStore {
       const insert = this.db.prepare('INSERT OR REPLACE INTO hidden_contexts VALUES (?, ?, ?)')
       for (const entry of entries) insert.run(entry.id, entry.reason, now)
       this.db.exec('RELEASE store_write')
-    } catch (error) { this.db.exec('ROLLBACK TO store_write; RELEASE store_write'); throw error }
+    } catch (error) { this.rollbackWrite(); throw error }
   }
 
   close(): void { this.db.close() }
@@ -1675,6 +1675,9 @@ export class ContextStore {
       }
     })
   }
+
+  /** A rolled-back write may have changed route stages the journal holds in memory. */
+  private rollbackWrite(): void { this.db.exec('ROLLBACK TO store_write; RELEASE store_write'); this.learningJournal.forget() }
 
   wasReassigned(messageId: string): boolean {
     return this.learningJournal.excludedMessage(messageId) || !!this.db.prepare("SELECT 1 FROM learning_routes WHERE message_id=? AND stage='excluded'").get(messageId) ||

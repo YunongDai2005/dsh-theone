@@ -15,8 +15,15 @@ export declare class LearningJournal {
     private execute;
     replaying: boolean;
     private current;
+    private statements;
+    private stages;
+    private version;
+    private checked;
     constructor(db: DatabaseSync, snapshot: (stream: string) => unknown, restore: (stream: string, snapshot: unknown) => void, execute: (kind: string, args: unknown[]) => unknown);
+    private sql;
     source(messageId: string, contextId: string): LearningSource;
+    forget(): void;
+    private fresh;
     stage(source: LearningSource): LearningStage | undefined;
     valid(sources: readonly LearningSource[]): boolean;
     settle(messageId: string, contextId: string, confirmed?: boolean): void;

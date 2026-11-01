@@ -423,3 +423,21 @@ test('a later topic cannot retain memory copied from an excluded route through i
     assert.ok(!app.ctx.theone.store.stateUpdates(B).some(item => String(item.state).includes(poison)))
   } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
 })
+
+test('route stages held in memory follow rollbacks and writes from another connection', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'theone-stage-cache-'))
+  const path = join(dir, 'contexts.db')
+  const store = new ContextStore(path), other = new ContextStore(path)
+  try {
+    const journal = store.learningJournal
+    journal.settle('m1', A)
+    const source = journal.source('m1', A)
+    assert.equal(journal.valid([source]), true)
+    other.learningJournal.move('m1', B)
+    await new Promise(resolve => setImmediate(resolve))
+    assert.equal(journal.valid([source]), false, 'a move committed by another process is seen')
+    const back = journal.source('m1', B)
+    assert.throws(() => journal.record(`topic:${B}`, 'learnTerms', [], () => { journal.move('m1', A); throw new Error('abort') }, undefined))
+    assert.equal(journal.valid([back]), true, 'a rolled-back move does not linger')
+  } finally { store.close(); other.close(); await rm(dir, { recursive: true, force: true }) }
+})
