@@ -1,0 +1,29 @@
+{
+  "status": "passed",
+  "sessions": 50,
+  "messages": 2466,
+  "prediction_files": 7,
+  "prediction_rows": 17262,
+  "source_dist_payload_comparisons": 4932,
+  "checked_source_hashes": 15,
+  "local_links": 17,
+  "checks": [
+    "raw denominators and manifest",
+    "complete unique prediction keys",
+    "strict weighted loss arithmetic",
+    "matched-history totals",
+    "dev-only threshold selection",
+    "prefix estimate arithmetic",
+    "report percentage consistency",
+    "source file hashes",
+    "frozen initial hypotheses",
+    "local artifact links",
+    "Python syntax"
+  ],
+  "scripts": {
+    "analyze.py": "cbf96d03323ee57becb30b0d163d7f05c7865710eda91e79fa933e494d5e7ea3",
+    "source-probes.mjs": "2d9a00b29ed8cc76c79070fb2b2564240d942aea2dfee0550e0dc03974c077fc",
+    "verify.py": "9c91f64b78851ac15acc3fd277c1d384c2f7058e824b93f1395ad9600aeeed94"
+  },
+  "report_sha256": "f1729755e5bca8f7c245afddbc774914e4bf0cc1fa128bce1e5c98845cdb7e66"
+}

@@ -1,0 +1,282 @@
+[
+  {
+    "id": "z01",
+    "text": "再加一列显存占用",
+    "target": "thesis",
+    "blind_running": "thesis",
+    "rule": "thesis",
+    "correct": true
+  },
+  {
+    "id": "z02",
+    "text": "不对，用 booktabs",
+    "target": "thesis",
+    "blind_running": "thesis",
+    "rule": "new",
+    "correct": false
+  },
+  {
+    "id": "z03",
+    "text": "快点",
+    "target": "thesis",
+    "blind_running": "thesis",
+    "rule": "new",
+    "correct": false
+  },
+  {
+    "id": "z04",
+    "text": "先别动文件",
+    "target": "thesis",
+    "blind_running": "thesis",
+    "rule": "new",
+    "correct": false
+  },
+  {
+    "id": "z05",
+    "text": "把 9070 那边测的吞吐数据也放进这个表",
+    "target": "thesis",
+    "blind_running": "thesis",
+    "rule": "gpu",
+    "correct": false
+  },
+  {
+    "id": "z06",
+    "text": "京都明天天气怎么样",
+    "target": "kyoto",
+    "blind_running": "thesis",
+    "rule": "kyoto",
+    "correct": true
+  },
+  {
+    "id": "z07",
+    "text": "那家旅馆有温泉吗",
+    "target": "kyoto",
+    "blind_running": "thesis",
+    "rule": "kyoto",
+    "correct": true
+  },
+  {
+    "id": "z08",
+    "text": "然后第四章也照这样弄一下",
+    "target": "thesis",
+    "blind_running": "thesis",
+    "rule": "thesis",
+    "correct": true
+  },
+  {
+    "id": "z09",
+    "text": "帮我写一个 Rust 的发票解析器",
+    "target": "new",
+    "blind_running": "thesis",
+    "rule": "new",
+    "correct": true
+  },
+  {
+    "id": "z10",
+    "text": "9070 的 FP8 测完了吗",
+    "target": "gpu",
+    "blind_running": "thesis",
+    "rule": "gpu",
+    "correct": true
+  },
+  {
+    "id": "z11",
+    "text": "和之前那版有什么区别？",
+    "target": "thesis",
+    "blind_running": "thesis",
+    "rule": "new",
+    "correct": false
+  },
+  {
+    "id": "z12",
+    "text": "测完把结果放进我论文的表里",
+    "target": "gpu",
+    "blind_running": "gpu",
+    "rule": "thesis",
+    "correct": false
+  },
+  {
+    "id": "z13",
+    "text": "顺便帮我排一下京都的行程",
+    "target": "kyoto",
+    "blind_running": "gpu",
+    "rule": "kyoto",
+    "correct": true
+  },
+  {
+    "id": "z14",
+    "text": "改用 FP8",
+    "target": "gpu",
+    "blind_running": "gpu",
+    "rule": "gpu",
+    "correct": true
+  },
+  {
+    "id": "z15",
+    "text": "现在到哪一步了",
+    "target": "gpu",
+    "blind_running": "gpu",
+    "rule": "new",
+    "correct": false
+  },
+  {
+    "id": "z16",
+    "text": "降吧",
+    "target": "gpu",
+    "blind_running": "gpu",
+    "rule": "new",
+    "correct": false
+  },
+  {
+    "id": "z17",
+    "text": "房东的租房合同发过来了，帮我把个税的专项附加扣除填一下",
+    "target": "tax",
+    "blind_running": "gpu",
+    "rule": "tax",
+    "correct": true
+  },
+  {
+    "id": "z18",
+    "text": "第二天别太早，我起不来",
+    "target": "kyoto",
+    "blind_running": "kyoto",
+    "rule": "new",
+    "correct": false
+  },
+  {
+    "id": "z19",
+    "text": "论文的引用格式用 GB/T 7714 吗",
+    "target": "thesis",
+    "blind_running": "kyoto",
+    "rule": "thesis",
+    "correct": true
+  },
+  {
+    "id": "z20",
+    "text": "预算控制在五千以内",
+    "target": "kyoto",
+    "blind_running": "kyoto",
+    "rule": "new",
+    "correct": false
+  },
+  {
+    "id": "z21",
+    "text": "日元现在汇率多少",
+    "target": "kyoto",
+    "blind_running": "kyoto",
+    "rule": "new",
+    "correct": false
+  },
+  {
+    "id": "z22",
+    "text": "给我推荐几本讲注意力机制的书",
+    "target": "thesis",
+    "blind_running": "kyoto",
+    "rule": "new",
+    "correct": false
+  },
+  {
+    "id": "z23",
+    "text": "我还有一笔劳务报酬忘了说，8000",
+    "target": "tax",
+    "blind_running": "tax",
+    "rule": "new",
+    "correct": false
+  },
+  {
+    "id": "z25",
+    "text": "今晚吃什么好",
+    "target": "new",
+    "blind_running": "tax",
+    "rule": "new",
+    "correct": true
+  },
+  {
+    "id": "e01",
+    "text": "use the arm64 bottle too",
+    "target": "cli",
+    "blind_running": "cli",
+    "rule": "new",
+    "correct": false
+  },
+  {
+    "id": "e02",
+    "text": "wait, don't push anything yet",
+    "target": "cli",
+    "blind_running": "cli",
+    "rule": "new",
+    "correct": false
+  },
+  {
+    "id": "e03",
+    "text": "is the Alfama place cheaper than the other one?",
+    "target": "lisbon",
+    "blind_running": "cli",
+    "rule": "lisbon",
+    "correct": true
+  },
+  {
+    "id": "e04",
+    "text": "then do the same for the Scoop manifest",
+    "target": "cli",
+    "blind_running": "cli",
+    "rule": "new",
+    "correct": false
+  },
+  {
+    "id": "e05",
+    "text": "what should my long run pace be this week?",
+    "target": "marathon",
+    "blind_running": "cli",
+    "rule": "marathon",
+    "correct": true
+  },
+  {
+    "id": "e06",
+    "text": "draft a polite email declining a meeting on Friday",
+    "target": "new",
+    "blind_running": "cli",
+    "rule": "new",
+    "correct": true
+  },
+  {
+    "id": "e07",
+    "text": "only ones with a lift please, my knee is bad",
+    "target": "lisbon",
+    "blind_running": "lisbon",
+    "rule": "new",
+    "correct": false
+  },
+  {
+    "id": "e09",
+    "text": "did the crates.io publish go through?",
+    "target": "cli",
+    "blind_running": "lisbon",
+    "rule": "cli",
+    "correct": true
+  },
+  {
+    "id": "e10",
+    "text": "ok",
+    "target": "marathon",
+    "blind_running": "marathon",
+    "rule": "new",
+    "correct": false
+  },
+  {
+    "id": "e11",
+    "text": "I'll be in Lisbon in week 7, plan runs there",
+    "target": "marathon",
+    "blind_running": "marathon",
+    "rule": "lisbon",
+    "correct": false
+  },
+  {
+    "id": "e12",
+    "text": "book a table for two somewhere in Alfama on Saturday",
+    "target": "lisbon",
+    "blind_running": "marathon",
+    "rule": "lisbon",
+    "correct": true
+  }
+]

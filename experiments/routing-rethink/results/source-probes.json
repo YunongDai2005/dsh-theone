@@ -1,0 +1,474 @@
+{
+  "description": "Local functions; candidate FTS returns no hits, prior empty, gold previous state; prefix tokens estimated, not provider cache.",
+  "fastPath": {
+    "dev": {
+      "n": 1971,
+      "correct": 0
+    },
+    "test": {
+      "n": 495,
+      "correct": 0
+    }
+  },
+  "evidence": {
+    "dev": {
+      "n": 214,
+      "correct": 179
+    },
+    "dev/en": {
+      "n": 151,
+      "correct": 131
+    },
+    "dev/thread": {
+      "n": 196,
+      "correct": 179
+    },
+    "test": {
+      "n": 57,
+      "correct": 46
+    },
+    "test/zh": {
+      "n": 18,
+      "correct": 11
+    },
+    "test/thread": {
+      "n": 53,
+      "correct": 46
+    },
+    "dev/oneoff": {
+      "n": 18,
+      "correct": 0
+    },
+    "dev/zh": {
+      "n": 63,
+      "correct": 48
+    },
+    "test/en": {
+      "n": 39,
+      "correct": 35
+    },
+    "test/oneoff": {
+      "n": 4,
+      "correct": 0
+    }
+  },
+  "candidates": {
+    "dev/extra0": {
+      "n": 1469,
+      "correct": 1469
+    },
+    "dev/extra0/same": {
+      "n": 1054,
+      "correct": 1054
+    },
+    "dev/extra16": {
+      "n": 1469,
+      "correct": 1466
+    },
+    "dev/extra16/same": {
+      "n": 1054,
+      "correct": 1054
+    },
+    "dev/extra64": {
+      "n": 1469,
+      "correct": 1462
+    },
+    "dev/extra64/same": {
+      "n": 1054,
+      "correct": 1054
+    },
+    "dev/extra0/switch": {
+      "n": 415,
+      "correct": 415
+    },
+    "dev/extra0/twin": {
+      "n": 283,
+      "correct": 283
+    },
+    "dev/extra16/switch": {
+      "n": 415,
+      "correct": 412
+    },
+    "dev/extra16/twin": {
+      "n": 283,
+      "correct": 283
+    },
+    "dev/extra64/switch": {
+      "n": 415,
+      "correct": 408
+    },
+    "dev/extra64/twin": {
+      "n": 283,
+      "correct": 283
+    },
+    "test/extra0": {
+      "n": 380,
+      "correct": 380
+    },
+    "test/extra0/same": {
+      "n": 262,
+      "correct": 262
+    },
+    "test/extra16": {
+      "n": 380,
+      "correct": 380
+    },
+    "test/extra16/same": {
+      "n": 262,
+      "correct": 262
+    },
+    "test/extra64": {
+      "n": 380,
+      "correct": 379
+    },
+    "test/extra64/same": {
+      "n": 262,
+      "correct": 262
+    },
+    "test/extra0/switch": {
+      "n": 118,
+      "correct": 118
+    },
+    "test/extra16/switch": {
+      "n": 118,
+      "correct": 118
+    },
+    "test/extra64/switch": {
+      "n": 118,
+      "correct": 117
+    },
+    "test/extra0/twin": {
+      "n": 49,
+      "correct": 49
+    },
+    "test/extra16/twin": {
+      "n": 49,
+      "correct": 49
+    },
+    "test/extra64/twin": {
+      "n": 49,
+      "correct": 49
+    }
+  },
+  "midReply": {
+    "blind_running": {
+      "n": 35,
+      "correct": 21
+    },
+    "rule_only": {
+      "n": 35,
+      "correct": 16
+    },
+    "rule_only/running": {
+      "n": 21,
+      "correct": 3
+    },
+    "rule_only/other": {
+      "n": 11,
+      "correct": 10
+    },
+    "rule_only/new": {
+      "n": 3,
+      "correct": 3
+    }
+  },
+  "payloadParity": 4932,
+  "settlement": [
+    {
+      "name": "ambiguous_two_topics",
+      "before": {
+        "action": "CLARIFY",
+        "reason": "ambiguous",
+        "question": "a or b?",
+        "relatedIds": [
+          "a",
+          "b"
+        ]
+      },
+      "after": {
+        "action": "KEEP",
+        "contextId": "a",
+        "reason": "unclear-settled",
+        "alternateIds": [
+          "b"
+        ]
+      }
+    },
+    {
+      "name": "missing_history_no_candidates",
+      "before": {
+        "action": "CLARIFY",
+        "reason": "missing-history",
+        "question": "which previous task?"
+      },
+      "after": {
+        "action": "KEEP",
+        "contextId": "a",
+        "reason": "unclear-settled"
+      }
+    }
+  ],
+  "prefixes": {
+    "dev/open/zh/current": {
+      "requests": 991,
+      "characters": 4821184,
+      "tokens": 2204939.333333333,
+      "shared_characters": 3675430,
+      "cacheable_tokens": 1711744,
+      "average_tokens": 2224.964009418096,
+      "reusable_share": 0.7763224929242196,
+      "estimated_miss_tokens": 497.6744029599728
+    },
+    "dev/open/zh/keywords_dynamic": {
+      "requests": 991,
+      "characters": 4821424,
+      "tokens": 2204999.333333333,
+      "shared_characters": 3795843,
+      "cacheable_tokens": 1747008,
+      "average_tokens": 2225.024554322233,
+      "reusable_share": 0.7922941170957272,
+      "estimated_miss_tokens": 462.1506895391857
+    },
+    "dev/open/total/current": {
+      "requests": 1971,
+      "characters": 10436375,
+      "tokens": 4340878.749999998,
+      "shared_characters": 7466254,
+      "cacheable_tokens": 3349632,
+      "average_tokens": 2202.3737950279037,
+      "reusable_share": 0.7716483672804733,
+      "estimated_miss_tokens": 502.91565195332225
+    },
+    "dev/open/total/keywords_dynamic": {
+      "requests": 1971,
+      "characters": 10436855,
+      "tokens": 4340998.749999998,
+      "shared_characters": 7792872,
+      "cacheable_tokens": 3434880,
+      "average_tokens": 2202.4346778285126,
+      "reusable_share": 0.7912649134027052,
+      "estimated_miss_tokens": 459.72539320141965
+    },
+    "dev/closed/zh/current": {
+      "requests": 991,
+      "characters": 4910672,
+      "tokens": 2236863.8333333335,
+      "shared_characters": 3621094,
+      "cacheable_tokens": 1693952,
+      "average_tokens": 2257.178439286916,
+      "reusable_share": 0.7572888321394619,
+      "estimated_miss_tokens": 547.8424150689541
+    },
+    "dev/closed/zh/keywords_dynamic": {
+      "requests": 991,
+      "characters": 4926012,
+      "tokens": 2240698.8333333335,
+      "shared_characters": 3875169,
+      "cacheable_tokens": 1778112,
+      "average_tokens": 2261.0482677430205,
+      "reusable_share": 0.7935524281747517,
+      "estimated_miss_tokens": 466.78792465523054
+    },
+    "dev/closed/total/current": {
+      "requests": 1971,
+      "characters": 10856712,
+      "tokens": 4455515.499999998,
+      "shared_characters": 7464225,
+      "cacheable_tokens": 3343744,
+      "average_tokens": 2260.535514967021,
+      "reusable_share": 0.7504729811847813,
+      "estimated_miss_tokens": 564.0646879756459
+    },
+    "dev/closed/total/keywords_dynamic": {
+      "requests": 1971,
+      "characters": 10885772,
+      "tokens": 4462780.499999998,
+      "shared_characters": 8196173,
+      "cacheable_tokens": 3546048,
+      "average_tokens": 2264.2214611872137,
+      "reusable_share": 0.7945826598462554,
+      "estimated_miss_tokens": 465.1103500761026
+    },
+    "dev/open/en/current": {
+      "requests": 980,
+      "characters": 5615191,
+      "tokens": 2135939.4166666656,
+      "shared_characters": 3790824,
+      "cacheable_tokens": 1637888,
+      "average_tokens": 2179.5300170068017,
+      "reusable_share": 0.7668232475226654,
+      "estimated_miss_tokens": 508.2157312925159
+    },
+    "dev/open/en/keywords_dynamic": {
+      "requests": 980,
+      "characters": 5615431,
+      "tokens": 2135999.4166666656,
+      "shared_characters": 3997029,
+      "cacheable_tokens": 1687872,
+      "average_tokens": 2179.5912414965974,
+      "reusable_share": 0.7902024629922461,
+      "estimated_miss_tokens": 457.2728741496588
+    },
+    "dev/closed/en/current": {
+      "requests": 980,
+      "characters": 5946040,
+      "tokens": 2218651.666666665,
+      "shared_characters": 3843131,
+      "cacheable_tokens": 1649792,
+      "average_tokens": 2263.930272108842,
+      "reusable_share": 0.7436011811978902,
+      "estimated_miss_tokens": 580.469047619046
+    },
+    "dev/closed/en/keywords_dynamic": {
+      "requests": 980,
+      "characters": 5959760,
+      "tokens": 2222081.666666665,
+      "shared_characters": 4321004,
+      "cacheable_tokens": 1767936,
+      "average_tokens": 2267.430272108842,
+      "reusable_share": 0.7956215230613342,
+      "estimated_miss_tokens": 463.4139455782297
+    },
+    "test/open/zh/current": {
+      "requests": 242,
+      "characters": 1213574,
+      "tokens": 554612.25,
+      "shared_characters": 926237,
+      "cacheable_tokens": 429952,
+      "average_tokens": 2291.7861570247933,
+      "reusable_share": 0.7752299016114411,
+      "estimated_miss_tokens": 515.125
+    },
+    "test/open/zh/keywords_dynamic": {
+      "requests": 242,
+      "characters": 1213634,
+      "tokens": 554627.25,
+      "shared_characters": 957292,
+      "cacheable_tokens": 439040,
+      "average_tokens": 2291.848140495868,
+      "reusable_share": 0.7915947151893457,
+      "estimated_miss_tokens": 477.6332644628099
+    },
+    "test/open/total/current": {
+      "requests": 495,
+      "characters": 2642148,
+      "tokens": 1100767.833333333,
+      "shared_characters": 1901550,
+      "cacheable_tokens": 852608,
+      "average_tokens": 2223.7734006734,
+      "reusable_share": 0.7745575171997368,
+      "estimated_miss_tokens": 501.332996632996
+    },
+    "test/open/total/keywords_dynamic": {
+      "requests": 495,
+      "characters": 2642268,
+      "tokens": 1100797.833333333,
+      "shared_characters": 1974004,
+      "cacheable_tokens": 871296,
+      "average_tokens": 2223.834006734006,
+      "reusable_share": 0.7915131858150765,
+      "estimated_miss_tokens": 463.6400673400667
+    },
+    "test/closed/zh/current": {
+      "requests": 242,
+      "characters": 1227278,
+      "tokens": 558952,
+      "shared_characters": 901750,
+      "cacheable_tokens": 420608,
+      "average_tokens": 2309.719008264463,
+      "reusable_share": 0.7524939529691279,
+      "estimated_miss_tokens": 571.6694214876034
+    },
+    "test/closed/zh/keywords_dynamic": {
+      "requests": 242,
+      "characters": 1231053,
+      "tokens": 559895.75,
+      "shared_characters": 967135,
+      "cacheable_tokens": 443840,
+      "average_tokens": 2313.6188016528927,
+      "reusable_share": 0.7927190017070143,
+      "estimated_miss_tokens": 479.5692148760331
+    },
+    "test/closed/total/current": {
+      "requests": 495,
+      "characters": 2740075,
+      "tokens": 1126163.333333333,
+      "shared_characters": 1883656,
+      "cacheable_tokens": 843200,
+      "average_tokens": 2275.0774410774407,
+      "reusable_share": 0.7487368617340885,
+      "estimated_miss_tokens": 571.643097643097
+    },
+    "test/closed/total/keywords_dynamic": {
+      "requests": 495,
+      "characters": 2747733,
+      "tokens": 1128077.8333333333,
+      "shared_characters": 2065384,
+      "cacheable_tokens": 895040,
+      "average_tokens": 2278.9451178451177,
+      "reusable_share": 0.7934204303574207,
+      "estimated_miss_tokens": 470.7835016835015
+    },
+    "test/open/en/current": {
+      "requests": 253,
+      "characters": 1428574,
+      "tokens": 546155.583333333,
+      "shared_characters": 975313,
+      "cacheable_tokens": 422656,
+      "average_tokens": 2158.7177206851106,
+      "reusable_share": 0.773874721595663,
+      "estimated_miss_tokens": 488.14064558629656
+    },
+    "test/open/en/keywords_dynamic": {
+      "requests": 253,
+      "characters": 1428634,
+      "tokens": 546170.583333333,
+      "shared_characters": 1016712,
+      "cacheable_tokens": 432256,
+      "average_tokens": 2158.77700922266,
+      "reusable_share": 0.7914303940755999,
+      "estimated_miss_tokens": 450.2552700922254
+    },
+    "test/closed/en/current": {
+      "requests": 253,
+      "characters": 1512797,
+      "tokens": 567211.333333333,
+      "shared_characters": 981906,
+      "cacheable_tokens": 422592,
+      "average_tokens": 2241.942028985506,
+      "reusable_share": 0.7450344786246635,
+      "estimated_miss_tokens": 571.6179183135692
+    },
+    "test/closed/en/keywords_dynamic": {
+      "requests": 253,
+      "characters": 1516680,
+      "tokens": 568182.083333333,
+      "shared_characters": 1098249,
+      "cacheable_tokens": 451200,
+      "average_tokens": 2245.778985507245,
+      "reusable_share": 0.7941116294145734,
+      "estimated_miss_tokens": 462.3797760210791
+    }
+  },
+  "system": {
+    "characters": 3269,
+    "estimated_tokens": 1564.3333333333333
+  },
+  "hashes": {
+    "src/llm-router.ts": "345379f954d017d42397c6cea2b9fb8d7a31b54485d93606d7b78a89962d836e",
+    "src/router.ts": "deccee1d626e12bdffa81612063a18bfc08396c464006d1ae8d9fc9c44b0c434",
+    "src/routing-policy.ts": "c6dcfda4c1d93de28046b563456b0652afc731484cf458b92d16762cedec7722",
+    "src/routing-evidence.ts": "3763f7cf8657b343fcbf62db1c07ab57b73642b49916c97d7227ac50a60dee9b",
+    "src/history-catalog.ts": "5a3ac86eb3c232bcebd13b47949f47b99b9e03985d9aeff39cc6febc3c97798c",
+    "src/index.ts": "bec82531b767aa2a9d95581faba52ed3b2338e7120e0fb27c604257b7fa17ecc",
+    "src/topic-memory.ts": "ff42b1d070f9bb9b0fc62742d8a82ccb903ebce68c0dcca9c0f01cbcca689c1d",
+    "eval/run-router.mjs": "48619f68799d4704420b4ece3cb4f787d9dfd4190537914e65cb3de87c05902a",
+    "eval/score.py": "bc744a4de3538021a81f8c64604cd16c20c221b2e02711af1cdb286976fc8f4c",
+    "eval/baselines.py": "b897b540c0c56b7f429d0aa13fc77ab7c71fd84375e2c3b8ef341698c4cf52c8",
+    "eval/prefix-share.mjs": "c2337668b019b9c63bc3dad52c74bac36489698eef71f6768886214189013438",
+    "eval/data/interleave-v0/sessions.jsonl": "be37451e752841c6eea81c5c71dca2c82b6198cbe258f440e559deabef4a25a6",
+    "eval/data/mid-reply/cases.json": "c69ab78ab6cd3107d5e51bc20146362c0d33dc0ec7e9f82c1631ef284731a1f8",
+    "dist/llm-router.js": "821b8271f8eb3c3020d2108a7685e1d78974e91eb1b6d459eb6bbab97a4eccbe",
+    "dist/routing-policy.js": "085540fd8b2a50ddad2aa6860210299f0d7c7671fb300ddbabde597a6bd707da"
+  }
+}

@@ -1,0 +1,3852 @@
+[
+  {
+    "split": "dev",
+    "session": "en-0002",
+    "i": 20,
+    "text": "actually I bumped my monthly savings target to 350 instead of 300",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "300"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0002",
+    "i": 24,
+    "text": "hey the race got moved to October 19 because of weather, does that change my training plan much",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "october"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0002",
+    "i": 37,
+    "text": "so how much more do I need each month to hit December",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "december"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0002",
+    "i": 40,
+    "text": "fridge budget changed - I'm capping it at 1650 now, not 1800",
+    "gold": "t5",
+    "clue": {
+      "contextId": "t5",
+      "terms": [
+        "1800"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0004",
+    "i": 11,
+    "text": "I want to start planning my Japan trip, I'm thinking of flying out October 5",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "japan"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0004",
+    "i": 12,
+    "text": "Hey, the reunion dates changed - it's now July 25-27 instead",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "july"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0004",
+    "i": 19,
+    "text": "Switching gears, I'm working on my Japan trip with about $3,200 to spend",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "japan"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0004",
+    "i": 25,
+    "text": "also the budget went up to $2,800 total",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "2800"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0004",
+    "i": 27,
+    "text": "I need to finalize lodging at Sunriver Resort for the family reunion",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "sunriver",
+        "resort"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0004",
+    "i": 29,
+    "text": "I'm launching my handmade candle store on January 15, 2026",
+    "gold": "t5",
+    "clue": {
+      "contextId": "t4",
+      "terms": [
+        "2026"
+      ]
+    },
+    "correct": false
+  },
+  {
+    "split": "dev",
+    "session": "en-0004",
+    "i": 31,
+    "text": "help me set up the Shopify store and figure out my first product lineup",
+    "gold": "t5",
+    "clue": {
+      "contextId": "t5",
+      "terms": [
+        "shopify"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0004",
+    "i": 37,
+    "text": "my advisor keeps pushing me, the target went up to 18,000 words",
+    "gold": "t4",
+    "clue": {
+      "contextId": "t4",
+      "terms": [
+        "18000"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0004",
+    "i": 39,
+    "text": "the family reunion is moving to July 25-27, can you update the schedule?",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "july"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "test",
+    "session": "zh-0005",
+    "i": 27,
+    "text": "那支55 f1.2的光圈我该开到多少",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "f1"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0006",
+    "i": 8,
+    "text": "I want to get my Spanish good enough for my trip to Mexico City, it's October 10 to 17",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "spanish"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0006",
+    "i": 11,
+    "text": "would that be enough to order food and ask directions without falling back on English",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "english"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0006",
+    "i": 12,
+    "text": "thinking about learning Python finally, signed up for Python for Everybody on Coursera",
+    "gold": "t3",
+    "clue": {
+      "contextId": "t3",
+      "terms": [
+        "python"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0006",
+    "i": 17,
+    "text": "I have an advisor meeting on July 18, what should I actually show him by then",
+    "gold": "t4",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "july"
+      ]
+    },
+    "correct": false
+  },
+  {
+    "split": "dev",
+    "session": "en-0006",
+    "i": 20,
+    "text": "How much Spanish can I realistically learn before October 10",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "spanish",
+        "october"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0006",
+    "i": 24,
+    "text": "For Spanish, I want to actually be able to order food and ask directions in Mexico City without panicking.",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "spanish",
+        "mexico",
+        "city"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0006",
+    "i": 28,
+    "text": "quick one, what's 15% of 284?",
+    "gold": null,
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "284"
+      ]
+    },
+    "correct": false
+  },
+  {
+    "split": "dev",
+    "session": "en-0006",
+    "i": 30,
+    "text": "hey remember my tutor moved to Thursdays? anyway I finally need to sort out that other thing for school, think I have all the notes but no argument",
+    "gold": "t4",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "thursdays"
+      ]
+    },
+    "correct": false
+  },
+  {
+    "split": "dev",
+    "session": "en-0006",
+    "i": 36,
+    "text": "also the deadline moved to August 15 now",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t4",
+      "terms": [
+        "august"
+      ]
+    },
+    "correct": false
+  },
+  {
+    "split": "dev",
+    "session": "en-0006",
+    "i": 54,
+    "text": "so just to confirm, for the bookstore return, the total due is now $1,402.15?",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "1402.15"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "zh-0007",
+    "i": 17,
+    "text": "回到吉他那个事，麦克风AT2020接手机录，声音会不会太小",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "at2020"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "zh-0007",
+    "i": 23,
+    "text": "AT2020那个录音的事，要不要加个防喷罩",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "at2020"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "zh-0007",
+    "i": 58,
+    "text": "跑步那边，我现在已经掉到68.5公斤了",
+    "gold": "t4",
+    "clue": {
+      "contextId": "oneoff:39",
+      "terms": [
+        "68.5"
+      ]
+    },
+    "correct": false
+  },
+  {
+    "split": "dev",
+    "session": "en-0008",
+    "i": 22,
+    "text": "wait, deadline moved to October 18, does that give me more time?",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "october"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0008",
+    "i": 28,
+    "text": "that 1040-ES form, what do I put for the estimated payment",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "1040"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0008",
+    "i": 30,
+    "text": "back to meal prep, prepping Saturday morning instead",
+    "gold": "t3",
+    "clue": {
+      "contextId": "t3",
+      "terms": [
+        "saturday"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0008",
+    "i": 33,
+    "text": "my total income this quarter was $12,500, how do I report that on the 1040-ES",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "12500",
+        "1040"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0008",
+    "i": 35,
+    "text": "what's 17% of 12500",
+    "gold": null,
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "12500"
+      ]
+    },
+    "correct": false
+  },
+  {
+    "split": "dev",
+    "session": "en-0008",
+    "i": 36,
+    "text": "switching meal prep to Saturday morning instead of Sunday",
+    "gold": "t3",
+    "clue": {
+      "contextId": "t3",
+      "terms": [
+        "saturday"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0008",
+    "i": 38,
+    "text": "quick thing on taxes, is the filing deadline still October 15",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "october"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0008",
+    "i": 48,
+    "text": "ok back to the meal prep thing, I moved the shopping to Saturday morning instead",
+    "gold": "t3",
+    "clue": {
+      "contextId": "t3",
+      "terms": [
+        "saturday"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0008",
+    "i": 50,
+    "text": "now taxes, the filing deadline moved to October 18 not the 15th",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "october"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "zh-0009",
+    "i": 23,
+    "text": "帮我算下320的百分之十五是多少",
+    "gold": null,
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "320"
+      ]
+    },
+    "correct": false
+  },
+  {
+    "split": "dev",
+    "session": "zh-0009",
+    "i": 43,
+    "text": "还有我生活费现在涨到3000了，之前按2800算的",
+    "gold": "t4",
+    "clue": {
+      "contextId": "t4",
+      "terms": [
+        "2800"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "test",
+    "session": "en-0010",
+    "i": 8,
+    "text": "my in-laws get here June 14 so I need it fully cured before then",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "june"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "test",
+    "session": "en-0010",
+    "i": 19,
+    "text": "switching to the Mapei Kerapoxy CQ epoxy grout instead, does that change the amount or the dry time",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "mapei"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "test",
+    "session": "en-0010",
+    "i": 22,
+    "text": "in-laws get here June 14, is that enough time to cure everything",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "june"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "test",
+    "session": "en-0010",
+    "i": 25,
+    "text": "the lit review, I'm still short on sources from 2021 or later",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "2021"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "test",
+    "session": "en-0010",
+    "i": 27,
+    "text": "Need to start the HOA fence packet. The board meeting is June 3, is that too tight to get everything in",
+    "gold": "t3",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "june"
+      ]
+    },
+    "correct": false
+  },
+  {
+    "split": "test",
+    "session": "en-0010",
+    "i": 31,
+    "text": "actually let's stretch it, I'm aiming for 4,500 words now not 4,000",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "4500",
+        "4000"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "test",
+    "session": "en-0010",
+    "i": 41,
+    "text": "does that thing still need two more sources from 2021 or later?",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "2021"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "test",
+    "session": "en-0010",
+    "i": 47,
+    "text": "alright, back to the bathroom — the shower grout. I'm leaning toward Mapei Kerapoxy CQ epoxy grout now instead of the Ultracolor",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "ultracolor",
+        "kerapoxy",
+        "mapei"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "zh-0011",
+    "i": 24,
+    "text": "周六下午西湖边那组人像，我胶卷想换成富士 Pro 400H，行不行",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "400"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0012",
+    "i": 26,
+    "text": "the deadline moved to March 29, so I have a bit more breathing room now",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "march"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0012",
+    "i": 29,
+    "text": "make sure Smith et al. 2021 is woven in early, that's my anchor source",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "smith",
+        "2021"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0012",
+    "i": 35,
+    "text": "for the car, I keep thinking about the Ilford shots I wasted - anyway, is the Mazda still the right pick?",
+    "gold": "t3",
+    "clue": {
+      "contextId": "t3",
+      "terms": [
+        "mazda"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0012",
+    "i": 36,
+    "text": "budget is firm at $18,000, and I don't want anything over 60,000 miles",
+    "gold": "t3",
+    "clue": {
+      "contextId": "t3",
+      "terms": [
+        "18000",
+        "60000"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0012",
+    "i": 45,
+    "text": "soccer practice is Tuesdays 4 to 5, so that day is still the tricky one",
+    "gold": "t4",
+    "clue": {
+      "contextId": "t4",
+      "terms": [
+        "tuesdays"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0012",
+    "i": 46,
+    "text": "with the 3:30 pickup now, homework is going to be tight - anyway our budget dropped to $16,500, does the Mazda still work?",
+    "gold": "t3",
+    "clue": {
+      "contextId": "t3",
+      "terms": [
+        "mazda"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0012",
+    "i": 48,
+    "text": "ok so with 16.5k, is the 2019 CX-5 still realistic or should I drop to 2018",
+    "gold": "t3",
+    "clue": {
+      "contextId": "t3",
+      "terms": [
+        "2019",
+        "cx-5"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0012",
+    "i": 49,
+    "text": "back to pickup stuff - with the new 3:30 time, who can actually get them on Tuesdays",
+    "gold": "t4",
+    "clue": {
+      "contextId": "t4",
+      "terms": [
+        "tuesdays"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "zh-0013",
+    "i": 27,
+    "text": "帮我算一下9860加6800等于多少",
+    "gold": null,
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "9860",
+        "6800"
+      ]
+    },
+    "correct": false
+  },
+  {
+    "split": "dev",
+    "session": "zh-0013",
+    "i": 34,
+    "text": "对了，九月总共花了不是9860，月底结算下来是12450，比预想的多不少",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "12450"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0014",
+    "i": 6,
+    "text": "I already booked movers with Swift Movers",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "movers"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0014",
+    "i": 14,
+    "text": "actually my budget changed, its $1,600 a month now not $1,500",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "1500"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0014",
+    "i": 28,
+    "text": "I want to learn Spanish too, I'm only at beginner A1 right now",
+    "gold": "t4",
+    "clue": {
+      "contextId": "t4",
+      "terms": [
+        "spanish"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0014",
+    "i": 30,
+    "text": "quick one, whats 1500 divided by 30",
+    "gold": null,
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "1500"
+      ]
+    },
+    "correct": false
+  },
+  {
+    "split": "dev",
+    "session": "en-0014",
+    "i": 36,
+    "text": "convert 1200 usd to euros",
+    "gold": null,
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "1200"
+      ]
+    },
+    "correct": false
+  },
+  {
+    "split": "dev",
+    "session": "en-0014",
+    "i": 39,
+    "text": "by the way, Mr. Johnson keeps dodging my calls about the deposit",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "johnson"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0014",
+    "i": 40,
+    "text": "actually the deposit amount changed to $1,000, is that a problem",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "1000"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "test",
+    "session": "zh-0015",
+    "i": 8,
+    "text": "想做个社区回收活动的数据看板，数据是2025年1月到6月的，先从哪下手？",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "2025"
+      ]
+    },
+    "correct": false
+  },
+  {
+    "split": "test",
+    "session": "zh-0015",
+    "i": 17,
+    "text": "那个总重量是6.8吨，要不要也放进去一起看",
+    "gold": "t2",
+    "clue": {
+      "contextId": "oneoff:9",
+      "terms": [
+        "6.8"
+      ]
+    },
+    "correct": false
+  },
+  {
+    "split": "test",
+    "session": "zh-0015",
+    "i": 27,
+    "text": "对了社区回收那个参与家庭数涨到438户了，之前是412",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "438",
+        "412"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "test",
+    "session": "zh-0015",
+    "i": 41,
+    "text": "版本号我准备从v0.4.2升到v0.5.0，合适吧",
+    "gold": "t5",
+    "clue": {
+      "contextId": "t5",
+      "terms": [
+        "4.2",
+        "v0"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0016",
+    "i": 0,
+    "text": "I need to figure out which regional depots were behind most of last quarter's late deliveries, got a 3,400 shipment export to dig through",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "3400"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0016",
+    "i": 6,
+    "text": "switching gears, I'm doing 20 minutes of Spanish practice a day before Mexico City in January",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "spanish",
+        "mexico"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0016",
+    "i": 14,
+    "text": "Spanish: trip is January 9 to 23, how many lessons a week to be conversational",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "january"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0016",
+    "i": 18,
+    "text": "the trip is January 9 to 23 by the way",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "january"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0016",
+    "i": 26,
+    "text": "ok switching to my savings thing again, I'm putting in 300 a month right now. once the Mexico trip is paid off I could bump it",
+    "gold": "t4",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "mexico"
+      ]
+    },
+    "correct": false
+  },
+  {
+    "split": "dev",
+    "session": "en-0016",
+    "i": 30,
+    "text": "also the fund just went up to 5,100",
+    "gold": "t4",
+    "clue": {
+      "contextId": "oneoff:27",
+      "terms": [
+        "5100"
+      ]
+    },
+    "correct": false
+  },
+  {
+    "split": "dev",
+    "session": "en-0016",
+    "i": 35,
+    "text": "ok back to the depot thing - heads up, the ops review moved to October 16 now",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "october"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0016",
+    "i": 37,
+    "text": "random q, how many cups is 400 grams of flour",
+    "gold": null,
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "400"
+      ]
+    },
+    "correct": false
+  },
+  {
+    "split": "dev",
+    "session": "en-0016",
+    "i": 39,
+    "text": "is that enough to be conversational by January",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "january"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0016",
+    "i": 48,
+    "text": "back to Spanish - the tutor on Tuesdays at 6, can I move that to Thursday",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "tuesdays"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0016",
+    "i": 51,
+    "text": "ok now the Q3 late deliveries by depot - where do I start with that 3,400 row export",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "3400",
+        "q3"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "zh-0017",
+    "i": 12,
+    "text": "说回投简历的事，Java后端开发我该重点准备哪些东西",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "java"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "zh-0017",
+    "i": 22,
+    "text": "那个涂料我预算从400加到550了，够不够",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "400",
+        "550"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "zh-0017",
+    "i": 32,
+    "text": "做菜这个月买菜我定了600块预算，够不够啊",
+    "gold": "t3",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "600"
+      ]
+    },
+    "correct": false
+  },
+  {
+    "split": "dev",
+    "session": "en-0018",
+    "i": 1,
+    "text": "It's Saturday, June 14, so I have a couple weekends to practice.",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "saturday"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0018",
+    "i": 17,
+    "text": "actually I'm switching the target song to Wonderwall",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "wonderwall"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0018",
+    "i": 29,
+    "text": "the Yamaha FG800 is what I'm playing, anything I should change about how I sit or hold it",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "yamaha",
+        "fg800"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0018",
+    "i": 31,
+    "text": "one more paella thing, my dinner is Saturday June 14, when should I start cooking",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "june"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0018",
+    "i": 41,
+    "text": "hey for the June 14 thing, is a 15-inch pan enough for everyone coming?",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "june"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0018",
+    "i": 48,
+    "text": "hey the yamaha fg800 came out of the closet, where do I start with barre chords",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "fg800"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "zh-0019",
+    "i": 3,
+    "text": "我拿店里大概4200条订单数据练手，现在够用吗",
+    "gold": "t1",
+    "clue": {
+      "contextId": "oneoff:1",
+      "terms": [
+        "4200"
+      ]
+    },
+    "correct": false
+  },
+  {
+    "split": "dev",
+    "session": "zh-0019",
+    "i": 28,
+    "text": "800块的预算里香精和碱占太多了怎么办",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "800"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "zh-0019",
+    "i": 35,
+    "text": "手工皂的原料预算我追加到950了，之前800不太够",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "800"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "test",
+    "session": "en-0020",
+    "i": 8,
+    "text": "ok new thing — I'm moving out of my one bedroom on Oak Street. move date is March 15, pretty soon huh",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "street"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "test",
+    "session": "en-0020",
+    "i": 13,
+    "text": "and my lease here ends March 31, that gives me some overlap right",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "march"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "test",
+    "session": "en-0020",
+    "i": 17,
+    "text": "what if I pushed the March 15 thing back a week",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "march"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "test",
+    "session": "en-0020",
+    "i": 43,
+    "text": "and the quote was 480 right",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "480"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0022",
+    "i": 6,
+    "text": "Now the big one - I'm moving from Austin to Portland on August 15. Where do I even start?",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "portland"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0022",
+    "i": 9,
+    "text": "I want to get into film photography. I picked up a Pentax K1000, where do I start?",
+    "gold": "t3",
+    "clue": {
+      "contextId": "t3",
+      "terms": [
+        "pentax",
+        "k1000"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0022",
+    "i": 16,
+    "text": "hey, moving back to the savings thing - that 4.1% APY still the best I can get?",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "4.1"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0022",
+    "i": 24,
+    "text": "moving to Portland is stressing me out, what should I lock down first",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "portland"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0022",
+    "i": 27,
+    "text": "my new lease starts August 1",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "august"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0022",
+    "i": 33,
+    "text": "Back to film stuff — what ISO should I set my Pentax K1000 to for indoor shots",
+    "gold": "t3",
+    "clue": {
+      "contextId": "t3",
+      "terms": [
+        "pentax",
+        "k1000"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0022",
+    "i": 36,
+    "text": "that $4,200 quote, is that locked in or can it still change",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "4200"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0022",
+    "i": 41,
+    "text": "moving to Portland, can I push the move back a week without messing up everything",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "portland"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0022",
+    "i": 43,
+    "text": "also, whats 15 percent of 4200",
+    "gold": null,
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "4200"
+      ]
+    },
+    "correct": false
+  },
+  {
+    "split": "dev",
+    "session": "zh-0023",
+    "i": 8,
+    "text": "那个到2028年6月的事，再算一下",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "2028"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "zh-0023",
+    "i": 16,
+    "text": "记账这个表先按一个月工资18500来算吧",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "18500"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "zh-0023",
+    "i": 17,
+    "text": "目标是2028年6月前存够30万首付",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "2028"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "zh-0023",
+    "i": 24,
+    "text": "预算最多5000，跟攒首付那笔钱一样得卡死",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "5000"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "zh-0023",
+    "i": 26,
+    "text": "5000块大概多少美元",
+    "gold": null,
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "5000"
+      ]
+    },
+    "correct": false
+  },
+  {
+    "split": "dev",
+    "session": "zh-0023",
+    "i": 27,
+    "text": "商城小程序要改版 后端是微信小程序加Node18 首页加载太慢",
+    "gold": "t3",
+    "clue": {
+      "contextId": "t3",
+      "terms": [
+        "node"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "zh-0023",
+    "i": 41,
+    "text": "回头说下我攒首付的事 现在存款13万4了 目标还是2028年6月前存够30万",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "2028"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "zh-0023",
+    "i": 52,
+    "text": "冰箱我本来想买海尔那台 现在改主意了 想换美的BCD-508WTPZM",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "bcd-508wtpzm"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0024",
+    "i": 5,
+    "text": "Can you put together a prep plan for the Northline Health interview? I want to focus on QA process questions.",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "northline",
+        "health"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0024",
+    "i": 9,
+    "text": "My target salary is $95,000. Can you help me figure out when to say that number in the interview?",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "95000"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0024",
+    "i": 11,
+    "text": "And that one got moved to Thursday, March 20 at 2:00 PM with the same company, so redo the timeline",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "march"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0024",
+    "i": 18,
+    "text": "Starting on ShiftSwap again - I'm on version 0.3.2 right now, want to get moving on the next one",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "shiftswap"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0024",
+    "i": 22,
+    "text": "oh and I'm raising my target salary to $98,000 now",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "98000"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0024",
+    "i": 25,
+    "text": "Back on the SQLite thing, the approval flow needs to handle trades people actually make",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t3",
+      "terms": [
+        "lite"
+      ]
+    },
+    "correct": false
+  },
+  {
+    "split": "dev",
+    "session": "en-0024",
+    "i": 31,
+    "text": "What's the deal with that Northline Health interview next week",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "northline",
+        "health"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0024",
+    "i": 37,
+    "text": "the lit review is supposed to hit 6,000 words right",
+    "gold": "t3",
+    "clue": {
+      "contextId": "t3",
+      "terms": [
+        "6000"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0024",
+    "i": 38,
+    "text": "and it's due March 31 before 11:59 PM, no extensions",
+    "gold": "t3",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "march"
+      ]
+    },
+    "correct": false
+  },
+  {
+    "split": "dev",
+    "session": "en-0024",
+    "i": 43,
+    "text": "does version 0.4 still ship April 12 with the new database",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "0.4"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "test",
+    "session": "zh-0025",
+    "i": 14,
+    "text": "公司3月份的订单数据一共12480行，我想先找退货率最高的三个品类，用Python怎么开头",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "python"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "test",
+    "session": "zh-0025",
+    "i": 26,
+    "text": "数据就是2025年3月的，后台导出来的",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "2025"
+      ]
+    },
+    "correct": false
+  },
+  {
+    "split": "test",
+    "session": "zh-0025",
+    "i": 37,
+    "text": "那个12480行的表你还有印象吗",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "12480"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0026",
+    "i": 3,
+    "text": "I started the Couch to 5K plan, my pace is 9 minutes 45 seconds per kilometer right now",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "couch"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0026",
+    "i": 10,
+    "text": "the 5K is July 12 if that changes anything",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "july"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0026",
+    "i": 12,
+    "text": "ok so for the Couch to 5K, should I add a fourth run each week or keep it at 3?",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "couch"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0026",
+    "i": 16,
+    "text": "Okay back to the move - the movers quoted $780 for three hours, is that reasonable or should I get another quote?",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "780"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0026",
+    "i": 28,
+    "text": "Back to the move - movers quoted $780 for three hours, is that reasonable",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "780"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0026",
+    "i": 39,
+    "text": "back to dinners, grocery budget is $95 a week now not $115, what 5 meals can I make",
+    "gold": "t4",
+    "clue": {
+      "contextId": "t4",
+      "terms": [
+        "115"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "zh-0027",
+    "i": 23,
+    "text": "周四晚上试做红烧排骨 买了800克 够不够四个人吃",
+    "gold": "t4",
+    "clue": {
+      "contextId": "oneoff:3",
+      "terms": [
+        "800"
+      ]
+    },
+    "correct": false
+  },
+  {
+    "split": "dev",
+    "session": "zh-0027",
+    "i": 44,
+    "text": "预算还是300以内吧 换角阀加软管够吗",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "300"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0028",
+    "i": 0,
+    "text": "I'm learning to drive stick in my friend's 2012 Honda Civic 5-speed, any tips for a total beginner?",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "honda",
+        "civic"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0028",
+    "i": 6,
+    "text": "my road test is October 24, think I'll be ready?",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t5",
+      "terms": [
+        "october"
+      ]
+    },
+    "correct": false
+  },
+  {
+    "split": "dev",
+    "session": "en-0028",
+    "i": 12,
+    "text": "that gives me a few more weeks in the Civic",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "civic"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0028",
+    "i": 43,
+    "text": "I've done 6 lessons in that 2012 Civic, still stalling on hills",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "civic",
+        "2012"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "zh-0029",
+    "i": 15,
+    "text": "对了，工资我期望改成8500了，简历上要不要也一起改",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "8500"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "zh-0029",
+    "i": 26,
+    "text": "对了腌笃鲜的咸肉我改成400克了，之前写500克太多",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "400"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "zh-0029",
+    "i": 27,
+    "text": "会计的工作我还是想月薪8000起，低了不想去",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "8000"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "zh-0029",
+    "i": 36,
+    "text": "那个汤的事，咸肉我改成400克了，会不会太淡",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "400"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "zh-0029",
+    "i": 48,
+    "text": "咸肉我减到400克了，够不够",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "400"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "zh-0029",
+    "i": 49,
+    "text": "腌笃鲜炖1.5小时会不会太久啊",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "1.5"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "zh-0029",
+    "i": 55,
+    "text": "目标月薪我提到8500了，会不会要太高",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "8500"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "zh-0029",
+    "i": 56,
+    "text": "腌笃鲜那个咸肉我改成400克了，够不够5个人吃",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "400"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "test",
+    "session": "en-0030",
+    "i": 1,
+    "text": "I'm planning to do all the prep on Sunday, can you build me a timeline and shopping list that fits a small kitchen?",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "sunday"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "test",
+    "session": "en-0030",
+    "i": 7,
+    "text": "perfect, write it all out as a Sunday schedule with times next to each step",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "sunday"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "test",
+    "session": "en-0030",
+    "i": 17,
+    "text": "new thing - I want to build up $6,000 in an emergency fund over the next year",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t4",
+      "terms": [
+        "6000"
+      ]
+    },
+    "correct": false
+  },
+  {
+    "split": "test",
+    "session": "en-0030",
+    "i": 21,
+    "text": "switching gears - I need to analyze customer churn from a 50,000 row CRM export",
+    "gold": "t3",
+    "clue": {
+      "contextId": "t3",
+      "terms": [
+        "50000"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "test",
+    "session": "en-0030",
+    "i": 30,
+    "text": "so back to Sunday - that no shellfish rule still stands right",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "sunday"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "test",
+    "session": "en-0030",
+    "i": 34,
+    "text": "back to the dinner thing - the 50,000 row export made me realize i should batch this stuff",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t3",
+      "terms": [
+        "50000"
+      ]
+    },
+    "correct": false
+  },
+  {
+    "split": "test",
+    "session": "en-0030",
+    "i": 41,
+    "text": "what about that other one i was looking at - mileage cap was 60,000 miles right",
+    "gold": "t4",
+    "clue": {
+      "contextId": "t4",
+      "terms": [
+        "60000"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "test",
+    "session": "en-0030",
+    "i": 42,
+    "text": "ok back to the emergency fund. the savings account i have now is 4.25%, should i keep it there",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "4.25"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "test",
+    "session": "en-0030",
+    "i": 43,
+    "text": "i think the 2019 Mazda CX-5 is the one i want",
+    "gold": "t4",
+    "clue": {
+      "contextId": "t4",
+      "terms": [
+        "2019"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "zh-0031",
+    "i": 31,
+    "text": "再帮我算一下，150乘30等于多少",
+    "gold": null,
+    "clue": {
+      "contextId": "oneoff:15",
+      "terms": [
+        "150"
+      ]
+    },
+    "correct": false
+  },
+  {
+    "split": "dev",
+    "session": "en-0032",
+    "i": 8,
+    "text": "also the database is PostgreSQL 13 right now, do I bump it to 15 for this?",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "postgresql"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0032",
+    "i": 11,
+    "text": "wait, are we still on 3.2 or did I already move it to 4.2",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "3.2",
+        "4.2"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0032",
+    "i": 12,
+    "text": "so the plan is 4.2 plus the two-factor before the demo",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "4.2"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0032",
+    "i": 14,
+    "text": "last draft was 5200, figure I cut about 1200",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "5200"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0032",
+    "i": 23,
+    "text": "quick one - how many cups is 400 grams of flour",
+    "gold": null,
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "400"
+      ]
+    },
+    "correct": false
+  },
+  {
+    "split": "dev",
+    "session": "en-0032",
+    "i": 32,
+    "text": "need to get back to the meal prep thing finally. budget is $120 for the week, and it has to avoid peanuts for the family of four",
+    "gold": "t3",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "120"
+      ]
+    },
+    "correct": false
+  },
+  {
+    "split": "dev",
+    "session": "zh-0033",
+    "i": 5,
+    "text": "9月我想存2000，你看现实吗",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "2000"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "zh-0033",
+    "i": 13,
+    "text": "那2000的目标还是照旧，先按这个来",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "2000"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "zh-0033",
+    "i": 29,
+    "text": "月收入这个月有变化，涨到13500了",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "13500"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "zh-0033",
+    "i": 30,
+    "text": "3500除以12000是多少",
+    "gold": null,
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "12000",
+        "3500"
+      ]
+    },
+    "correct": false
+  },
+  {
+    "split": "dev",
+    "session": "en-0034",
+    "i": 21,
+    "text": "also the date moved to August 19",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "august"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0034",
+    "i": 36,
+    "text": "what's 15% of 2400",
+    "gold": null,
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "2400"
+      ]
+    },
+    "correct": false
+  },
+  {
+    "split": "dev",
+    "session": "en-0034",
+    "i": 44,
+    "text": "also thinking the date might need to move to August 19",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "august"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0034",
+    "i": 53,
+    "text": "for the used car fund, is 6000 still the right target or should i aim higher",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "6000"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0034",
+    "i": 54,
+    "text": "who's running the kids zone on August 19",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "august"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0034",
+    "i": 56,
+    "text": "ok so the block party is on August 19 now, what do I need to redo for permits and vendors",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "august"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "test",
+    "session": "zh-0035",
+    "i": 12,
+    "text": "店铺退货的事，我导了2024年10月1号到12月31号的数据，想找出退货率最高的三个品类",
+    "gold": "t4",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "2024"
+      ]
+    },
+    "correct": false
+  },
+  {
+    "split": "test",
+    "session": "zh-0035",
+    "i": 15,
+    "text": "保单号是PA2024-8837162，提交的时候要写在哪个表上",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "pa2024-8837162"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "test",
+    "session": "zh-0035",
+    "i": 28,
+    "text": "保单号PA2024-8837162你能帮我记一下吗",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "pa2024-8837162"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "test",
+    "session": "zh-0035",
+    "i": 43,
+    "text": "保单号是PA2024-8837162，你帮我记一下，别到时候又找不到",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "pa2024-8837162"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0036",
+    "i": 0,
+    "text": "Looking for a used hatchback, my budget is $14,000. Can you help me compare a 2018 Fit and a 2019 Corolla Hatchback?",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "hatchback",
+        "corolla",
+        "2018",
+        "2019"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0036",
+    "i": 3,
+    "text": "what's 60000 miles in kilometers",
+    "gold": null,
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "60000"
+      ]
+    },
+    "correct": false
+  },
+  {
+    "split": "dev",
+    "session": "en-0036",
+    "i": 5,
+    "text": "I need to schedule a test drive, thinking March 15 at 10am",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t4",
+      "terms": [
+        "march"
+      ]
+    },
+    "correct": false
+  },
+  {
+    "split": "dev",
+    "session": "en-0036",
+    "i": 7,
+    "text": "Picking up my film photography project again, using a Canon AE-1. Need to finish a roll for a spring photo walk",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "canon",
+        "ae-1"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0036",
+    "i": 8,
+    "text": "cool, and I've got some Kodak Portra 400 for it",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "portra"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0036",
+    "i": 9,
+    "text": "lab needs it by April 5",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "april"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0036",
+    "i": 12,
+    "text": "is the Fit still the better pick at that price or should I look at the Corolla",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "corolla"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0036",
+    "i": 18,
+    "text": "Also thinking about bass guitar, I wanna do Another One Bites the Dust as my first full song",
+    "gold": "t3",
+    "clue": {
+      "contextId": "t3",
+      "terms": [
+        "another",
+        "bites",
+        "dust"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0036",
+    "i": 22,
+    "text": "Back to the photo walk project, I'm gonna switch film to Kodak Ektar 100",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "kodak"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0036",
+    "i": 24,
+    "text": "ok so with the Ektar 100 for the photo walk, do I need to meter differently than the Portra",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "portra",
+        "ektar",
+        "100"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0036",
+    "i": 38,
+    "text": "Back to the car, the Corolla Hatchback at the other lot, is it worth a look?",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "hatchback",
+        "corolla"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0036",
+    "i": 40,
+    "text": "Back to the film thing, I'm using a Canon AE-1 right? Just want to have one roll done for the spring photo walk",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "canon",
+        "ae-1"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0036",
+    "i": 41,
+    "text": "should I stick with Portra 400 or switch it up, and does the lab deadline still work",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "portra"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "zh-0037",
+    "i": 7,
+    "text": "公司季度报告要用sales_q3_2023.csv这个文件，帮我用Python分析一下",
+    "gold": "t3",
+    "clue": {
+      "contextId": "t3",
+      "terms": [
+        "python"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "zh-0037",
+    "i": 10,
+    "text": "CLM-2023-0456 这个编号后面还要再提交什么吗",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "clm-2023-0456"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "zh-0037",
+    "i": 16,
+    "text": "之前一直用Python pandas处理那个csv，现在想换成R语言试试",
+    "gold": "t3",
+    "clue": {
+      "contextId": "t3",
+      "terms": [
+        "python"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "zh-0037",
+    "i": 17,
+    "text": "用R语言重新做一遍Q3销售分析，图表也重画",
+    "gold": "t3",
+    "clue": {
+      "contextId": "t3",
+      "terms": [
+        "q3"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "zh-0037",
+    "i": 18,
+    "text": "理赔那边CLM-2023-0789弄完了，接着看11月12到18号去京都的事吧",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "clm-2023-0789"
+      ]
+    },
+    "correct": false
+  },
+  {
+    "split": "dev",
+    "session": "zh-0037",
+    "i": 19,
+    "text": "机票和酒店我想住祇园附近，预算12000左右够吗",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "12000"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "zh-0037",
+    "i": 21,
+    "text": "P-2023-1012交上去之后，我回头去弄那个销售报告",
+    "gold": "t3",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "p-2023-1012"
+      ]
+    },
+    "correct": false
+  },
+  {
+    "split": "dev",
+    "session": "zh-0037",
+    "i": 24,
+    "text": "Q3那个销售数据我接着弄，参考下之前京都那趟的预算思路，把区域差异也拆出来",
+    "gold": "t3",
+    "clue": {
+      "contextId": "t3",
+      "terms": [
+        "q3"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "zh-0037",
+    "i": 26,
+    "text": "12000除以7是多少",
+    "gold": null,
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "12000"
+      ]
+    },
+    "correct": false
+  },
+  {
+    "split": "dev",
+    "session": "zh-0037",
+    "i": 27,
+    "text": "分析工具我想从Python pandas换成R语言，理赔那边的事先放一放",
+    "gold": "t3",
+    "clue": {
+      "contextId": "t3",
+      "terms": [
+        "python"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "zh-0037",
+    "i": 30,
+    "text": "对了 sales_q3_2023.csv 那个文件你帮我再看一下",
+    "gold": "t3",
+    "clue": {
+      "contextId": "t3",
+      "terms": [
+        "q3_2023"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "zh-0037",
+    "i": 32,
+    "text": "Q3销售数据再往下分析一下，看看哪些产品卖得最好",
+    "gold": "t3",
+    "clue": {
+      "contextId": "t3",
+      "terms": [
+        "q3"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "zh-0037",
+    "i": 59,
+    "text": "再用Python pandas把区域差异做成图表",
+    "gold": "t3",
+    "clue": {
+      "contextId": "t3",
+      "terms": [
+        "python"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0038",
+    "i": 6,
+    "text": "starting the auth endpoint for my task tracker api, running Express 4.18 but thinking of jumping to 5.0",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "express"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0038",
+    "i": 10,
+    "text": "I want JWT login, how should I structure the routes in Express",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "express"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0038",
+    "i": 19,
+    "text": "what do you think about that Bosch one you mentioned",
+    "gold": "t3",
+    "clue": {
+      "contextId": "t3",
+      "terms": [
+        "bosch"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0038",
+    "i": 25,
+    "text": "ok also I upgraded to Express 5.0, does that change anything",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "express",
+        "5.0"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0038",
+    "i": 27,
+    "text": "ok back to the bathroom faucet, my budget went up to $200 now",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "200"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0038",
+    "i": 28,
+    "text": "I'm leaning toward the Moen 1225, good pick?",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "1225",
+        "moen"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "zh-0039",
+    "i": 25,
+    "text": "还是先回到6.8万那笔提前还款的事吧 帮我算算",
+    "gold": "t3",
+    "clue": {
+      "contextId": "t3",
+      "terms": [
+        "6.8"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "zh-0039",
+    "i": 26,
+    "text": "月供2350 你按这个数推",
+    "gold": "t3",
+    "clue": {
+      "contextId": "t3",
+      "terms": [
+        "2350"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "zh-0039",
+    "i": 34,
+    "text": "周末想去老城区拍街拍 富士X-T30带哪几个参数比较好",
+    "gold": "t4",
+    "clue": {
+      "contextId": "t4",
+      "terms": [
+        "t30"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "test",
+    "session": "en-0040",
+    "i": 0,
+    "text": "Looking at a Lake District trip for the family, August 22-25, need somewhere to stay three nights",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "district",
+        "lake"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "test",
+    "session": "en-0040",
+    "i": 1,
+    "text": "what are the options near Keswick",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "keswick"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "test",
+    "session": "en-0040",
+    "i": 4,
+    "text": "Started Spanish on the vocab app, 12 day streak going",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "spanish"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "test",
+    "session": "en-0040",
+    "i": 6,
+    "text": "I want to actually order food in Spanish by September, not just hello",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "spanish"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "test",
+    "session": "en-0040",
+    "i": 8,
+    "text": "Right, for the Lake District trip we need 3 nights, late August, 4 of us",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "district",
+        "august",
+        "lake"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "test",
+    "session": "en-0040",
+    "i": 9,
+    "text": "and keep the total under 650",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "650"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "test",
+    "session": "en-0040",
+    "i": 11,
+    "text": "I'm on Complete Spanish Step-by-Step, just finished chapter 4",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "spanish"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "test",
+    "session": "en-0040",
+    "i": 13,
+    "text": "I study Spanish 20 minutes every weekday evening, is that enough",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "spanish"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "test",
+    "session": "en-0040",
+    "i": 14,
+    "text": "Could we take the train to the Lakes instead of driving?",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "lakes"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "test",
+    "session": "en-0040",
+    "i": 19,
+    "text": "good. will that be enough for ordering food in Seville by September though",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "september",
+        "seville"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "test",
+    "session": "en-0040",
+    "i": 20,
+    "text": "Back to guitar - I practise Tuesday, Thursday and Sunday, is that enough to hit three songs by October?",
+    "gold": "t3",
+    "clue": {
+      "contextId": "t3",
+      "terms": [
+        "october"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "test",
+    "session": "en-0040",
+    "i": 23,
+    "text": "ok, actually the records now run to July 2025, does that change much",
+    "gold": "t4",
+    "clue": {
+      "contextId": "t4",
+      "terms": [
+        "2025"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "test",
+    "session": "en-0040",
+    "i": 24,
+    "text": "for the food bank tracker, can we just redo the monthly summary so it runs Jan to July now",
+    "gold": "t4",
+    "clue": {
+      "contextId": "t4",
+      "terms": [
+        "july"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "test",
+    "session": "en-0040",
+    "i": 27,
+    "text": "quick one, what's 38% of 1,480",
+    "gold": null,
+    "clue": {
+      "contextId": "t4",
+      "terms": [
+        "1480"
+      ]
+    },
+    "correct": false
+  },
+  {
+    "split": "test",
+    "session": "en-0040",
+    "i": 40,
+    "text": "so with the new dates is it still under £650 for the four of us",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "650"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "zh-0041",
+    "i": 14,
+    "text": "回到预算，房租其实下个月要涨到3850",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "3850"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "zh-0041",
+    "i": 30,
+    "text": "说回六月预算，房租3600涨到3850了，我得重新排一下",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "3600"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "zh-0041",
+    "i": 32,
+    "text": "对了，信用卡那12400还得分期吧",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "12400"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "zh-0041",
+    "i": 34,
+    "text": "房租从3600涨到3850了，这多出来的250得从哪儿省",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "3600"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0042",
+    "i": 0,
+    "text": "I want to start learning Python basics, signed up on CodeCademy for it",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "python"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0042",
+    "i": 4,
+    "text": "ok so for Python functions and loops, any tips?",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "python"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0042",
+    "i": 9,
+    "text": "I need to get Emma's school stuff organized, homework and soccer and everything",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "emma"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0042",
+    "i": 15,
+    "text": "does the rav4 have enough cargo space for two kids and a dog",
+    "gold": "t3",
+    "clue": {
+      "contextId": "t3",
+      "terms": [
+        "rav4"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0042",
+    "i": 16,
+    "text": "ok so I think we're leaning toward the Toyota RAV4 now instead of the CR-V",
+    "gold": "t3",
+    "clue": {
+      "contextId": "t3",
+      "terms": [
+        "toyota",
+        "rav4"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0042",
+    "i": 18,
+    "text": "what's a fair price for a used RAV4 with under 60k miles",
+    "gold": "t3",
+    "clue": {
+      "contextId": "t3",
+      "terms": [
+        "rav4"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0042",
+    "i": 31,
+    "text": "actually forget the CR-V, I'm leaning toward the RAV4 now",
+    "gold": "t3",
+    "clue": {
+      "contextId": "t3",
+      "terms": [
+        "rav4"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0042",
+    "i": 38,
+    "text": "btw I switched my python course from CodeCademy to Udemy",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "codecademy"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "zh-0043",
+    "i": 13,
+    "text": "那个预算还是改回250吧，水果先不买了",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "250"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "zh-0043",
+    "i": 23,
+    "text": "500克面粉大概是多少杯",
+    "gold": null,
+    "clue": {
+      "contextId": "oneoff:12",
+      "terms": [
+        "500"
+      ]
+    },
+    "correct": false
+  },
+  {
+    "split": "dev",
+    "session": "zh-0043",
+    "i": 28,
+    "text": "250克黄油等于多少毫升",
+    "gold": null,
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "250"
+      ]
+    },
+    "correct": false
+  },
+  {
+    "split": "dev",
+    "session": "en-0044",
+    "i": 4,
+    "text": "now for job stuff, I'm applying through the Columbus State Community College jobs site, want to get 5 apps in",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "community",
+        "columbus",
+        "college"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0044",
+    "i": 13,
+    "text": "I've taught on Canvas and Moodle, does that help",
+    "gold": "t3",
+    "clue": {
+      "contextId": "t3",
+      "terms": [
+        "canvas"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0044",
+    "i": 16,
+    "text": "ok I'm up to 1 submitted on the Columbus teaching jobs, want to get moving on the rest",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "columbus"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0044",
+    "i": 33,
+    "text": "ok now the Smoky Mountains trip, I'm thinking July 26-30 for the cabin",
+    "gold": "t5",
+    "clue": {
+      "contextId": "t5",
+      "terms": [
+        "mountains",
+        "smoky"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0044",
+    "i": 54,
+    "text": "back to the porch railing, how much Sea Salt paint do I need for 16 feet",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "salt"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "test",
+    "session": "zh-0045",
+    "i": 0,
+    "text": "库存服务要重构了，我打算先把查询接口从 v1 迁到 inventory-api v2.3.1，你帮我想想怎么排期",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "v1",
+        "v2"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "test",
+    "session": "zh-0045",
+    "i": 9,
+    "text": "那这个全量之前，v2.3.1 还用不用再压测一轮",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "3.1",
+        "v2"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "test",
+    "session": "zh-0045",
+    "i": 19,
+    "text": "版本我升到v2.3.2了，之前那个有点问题",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "v2"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "test",
+    "session": "zh-0045",
+    "i": 26,
+    "text": "3500块人民币大概是多少美元",
+    "gold": null,
+    "clue": {
+      "contextId": "oneoff:7",
+      "terms": [
+        "3500"
+      ]
+    },
+    "correct": false
+  },
+  {
+    "split": "test",
+    "session": "zh-0045",
+    "i": 35,
+    "text": "帮我把 8000 字换算一下，大概相当于多少页 A4",
+    "gold": null,
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "8000"
+      ]
+    },
+    "correct": false
+  },
+  {
+    "split": "test",
+    "session": "zh-0045",
+    "i": 37,
+    "text": "NLPCC 2025 是什么级别的会",
+    "gold": null,
+    "clue": {
+      "contextId": "t3",
+      "terms": [
+        "2025"
+      ]
+    },
+    "correct": false
+  },
+  {
+    "split": "dev",
+    "session": "en-0046",
+    "i": 0,
+    "text": "hey I wanna build a little recipe app in React Native 0.74, where do I start",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "native",
+        "react"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0046",
+    "i": 13,
+    "text": "using my 300mm f/4 for now, actually i just got a 400mm f/5.6",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "300"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0046",
+    "i": 19,
+    "text": "quick update on the recipe app, i moved to React Native 0.75",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "native",
+        "react"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0046",
+    "i": 24,
+    "text": "the July 5 new moon trip, where should I start looking for a dark sky spot",
+    "gold": "t3",
+    "clue": {
+      "contextId": "t3",
+      "terms": [
+        "july"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0046",
+    "i": 25,
+    "text": "for the bird photography, i just got the 400mm f/5.6 so no more 300mm",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "400",
+        "5.6",
+        "300"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0046",
+    "i": 29,
+    "text": "ok recipe app again - deadline moved to March 22. also can we reuse the packing checklist style from the milky way trip for my grocery list screen",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "march"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0046",
+    "i": 32,
+    "text": "we upgraded to React Native 0.75 so the sqlite setup might break, can you check",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "native",
+        "react",
+        "0.75"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0046",
+    "i": 35,
+    "text": "switching to the fridge, any good French-door models under my budget",
+    "gold": "t4",
+    "clue": {
+      "contextId": "t4",
+      "terms": [
+        "french-door"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "zh-0047",
+    "i": 29,
+    "text": "控制在300词以内对吧",
+    "gold": "t3",
+    "clue": {
+      "contextId": "t3",
+      "terms": [
+        "300"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "zh-0047",
+    "i": 30,
+    "text": "300词大概是多少个中文字啊",
+    "gold": null,
+    "clue": {
+      "contextId": "t3",
+      "terms": [
+        "300"
+      ]
+    },
+    "correct": false
+  },
+  {
+    "split": "dev",
+    "session": "zh-0047",
+    "i": 50,
+    "text": "我论文现在8500字，是不是有点超了",
+    "gold": "t2",
+    "clue": {
+      "contextId": "t2",
+      "terms": [
+        "8500"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0048",
+    "i": 0,
+    "text": "I want to get better at speaking Spanish out loud, I'm at A2 right now",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "spanish",
+        "a2"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0048",
+    "i": 7,
+    "text": "can we do another Spanish speaking practice like that",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "spanish"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0048",
+    "i": 14,
+    "text": "my Spanish speaking is getting better, I think I'm around B1 now",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "spanish"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0048",
+    "i": 18,
+    "text": "let's do a full run of my daily routine in Spanish",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "spanish"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0048",
+    "i": 20,
+    "text": "I think my level has moved up to B1 now",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "b1"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "dev",
+    "session": "en-0048",
+    "i": 47,
+    "text": "her first choice is still Design Technology, does that work with the blocks",
+    "gold": "t3",
+    "clue": {
+      "contextId": "t3",
+      "terms": [
+        "technology",
+        "design"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "test",
+    "session": "en-0050",
+    "i": 31,
+    "text": "ok back to the cards, what if I throw an extra $100 a month at the smaller one",
+    "gold": "t1",
+    "clue": {
+      "contextId": "t1",
+      "terms": [
+        "100"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "test",
+    "session": "en-0050",
+    "i": 33,
+    "text": "hey I want to plan a Portland trip for October 18-20, just me and my sister, 3 days",
+    "gold": "t3",
+    "clue": {
+      "contextId": "t3",
+      "terms": [
+        "portland"
+      ]
+    },
+    "correct": true
+  },
+  {
+    "split": "test",
+    "session": "en-0050",
+    "i": 44,
+    "text": "actually the dates changed to October 25-27, can we make that work",
+    "gold": "t3",
+    "clue": {
+      "contextId": "t3",
+      "terms": [
+        "october"
+      ]
+    },
+    "correct": true
+  }
+]
