@@ -48,6 +48,10 @@ export async function createClient({ model = process.env.EVAL_MODEL ?? 'deepseek
   const base = (openai ? process.env.OPENAI_BASE_URL : process.env.DEEPSEEK_BASE_URL ?? 'https://api.deepseek.com/anthropic').replace(/\/$/, '')
   let extra = {}
   try { extra = JSON.parse(process.env.EVAL_EXTRA_BODY ?? '{}') } catch { throw new Error('EVAL_EXTRA_BODY must be a JSON object') }
+  let extraHeaders = {}
+  try { extraHeaders = JSON.parse(process.env.EVAL_HEADERS ?? '{}') } catch { throw new Error('EVAL_HEADERS must be a JSON object') }
+  // Some gateways (OpenCode Go) route and cache by a stable per-conversation id sent in a header they name.
+  const sessionHeader = process.env.EVAL_SESSION_HEADER
   if (cacheDir) mkdirSync(cacheDir, { recursive: true })
   let active = 0
   const queue = []
@@ -70,7 +74,7 @@ export async function createClient({ model = process.env.EVAL_MODEL ?? 'deepseek
    * @param request - { system, user, maxTokens, temperature, json, tag }
    */
   /** @param request.override - fields merged over EVAL_EXTRA_BODY for this call; null removes one (e.g. to keep thinking on). */
-  async function complete({ system, user, maxTokens = 2048, temperature, json = false, tag = '', details = false, override }) {
+  async function complete({ system, user, maxTokens = 2048, temperature, json = false, tag = '', details = false, override, session }) {
     const sampling = { model, max_tokens: maxTokens, ...(temperature === undefined ? {} : { temperature }) }
     const fields = Object.fromEntries(Object.entries({ ...extra, ...override }).filter(([, value]) => value !== null))
     const body = openai
@@ -105,7 +109,7 @@ export async function createClient({ model = process.env.EVAL_MODEL ?? 'deepseek
                 metrics.usage_by_call.push(rowUsage(used))
               }
             } else {
-              const response = await send(body, metrics)
+              const response = await send(body, metrics, session)
               text = openai ? String(response.choices?.[0]?.message?.content ?? '')
                 : response.content.filter(block => block.type === 'text').map(block => block.text).join('')
               used = providerUsage(response)
@@ -142,7 +146,7 @@ export async function createClient({ model = process.env.EVAL_MODEL ?? 'deepseek
     if (at > Date.now()) await new Promise(resolve => setTimeout(resolve, at - Date.now()))
   }
 
-  async function send(body, metrics) {
+  async function send(body, metrics, session) {
     for (let attempt = 0; ; attempt++) {
       let status = 0
       await paced()
@@ -150,7 +154,7 @@ export async function createClient({ model = process.env.EVAL_MODEL ?? 'deepseek
       let decoded
       try {
         const response = await fetch(openai ? `${base}/chat/completions` : `${base}/v1/messages`, { method: 'POST', signal: AbortSignal.timeout(120000),
-          headers: openai ? { 'content-type': 'application/json', authorization: `Bearer ${key}` }
+          headers: openai ? { 'content-type': 'application/json', authorization: `Bearer ${key}`, ...extraHeaders, ...(sessionHeader && session ? { [sessionHeader]: session } : {}) }
             : { 'content-type': 'application/json', 'x-api-key': key, authorization: `Bearer ${key}`, 'anthropic-version': '2023-06-01' },
           body: JSON.stringify(body) })
         status = response.status

@@ -55,7 +55,7 @@ class ReplayModel extends LlmAdapter {
     const tag = `${card ? 'card' : terms ? 'terms' : 'route'}:${this.tag}:${payload.recheck ? 'recheck:' : ''}${records.length}`
     try {
       const answer = await this.client.complete({ system: options.system, user, maxTokens: options.maxTokens,
-        json: false, details: true, tag, ...(payload.recheck ? { override: { reasoning_effort: null, thinking: null } } : {}) })
+        json: false, details: true, tag, session: this.tag.split(':').filter((_, index) => index !== 2).join(':'), ...(payload.recheck ? { override: { reasoning_effort: null, thinking: null } } : {}) })
       Object.assign(record, answer)
       yield* textResponse(typeof answer.value === 'string' ? answer.value : JSON.stringify(answer.value), answer.usage)
     } catch (error) { Object.assign(record, error); throw error }
