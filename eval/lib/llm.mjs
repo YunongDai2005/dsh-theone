@@ -78,7 +78,7 @@ export async function createClient({ model = process.env.EVAL_MODEL ?? 'deepseek
       : { ...sampling, system, messages: [{ role: 'user', content: user }], ...(override?.thinking === null ? {} : { thinking: { type: 'disabled' } }), ...fields }
     const answer = text => text.includes('</think>') ? text.slice(text.lastIndexOf('</think>') + '</think>'.length) : text
     const parse = text => JSON.parse(answer(text).trim().replace(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/, '$1').trim())
-    const metrics = { calls: 0, latency_ms: 0, usage_by_call: [] }
+    const metrics = { calls: 0, latency_ms: 0, usage_by_call: [], latency_by_call: [] }
     try {
       // A malformed answer is never cached, so asking again can succeed.
       for (let attempt = 0; ; attempt++) {
@@ -99,7 +99,9 @@ export async function createClient({ model = process.env.EVAL_MODEL ?? 'deepseek
                 used = { input: Math.ceil((system.length + user.length) / 3), output: Math.ceil(text.length / 3) }
               } finally {
                 metrics.calls++
-                metrics.latency_ms += performance.now() - started
+                const elapsed = performance.now() - started
+                metrics.latency_ms += elapsed
+                metrics.latency_by_call.push(elapsed)
                 metrics.usage_by_call.push(rowUsage(used))
               }
             } else {
@@ -160,7 +162,9 @@ export async function createClient({ model = process.env.EVAL_MODEL ?? 'deepseek
         if (error.fatal || (attempt >= 4 && status !== 429)) throw error
       } finally {
         metrics.calls++
-        metrics.latency_ms += performance.now() - started
+        const elapsed = performance.now() - started
+        metrics.latency_ms += elapsed
+        metrics.latency_by_call.push(elapsed)
         metrics.usage_by_call.push(rowUsage(providerUsage(decoded)))
       }
       await new Promise(resolve => setTimeout(resolve, Math.min(30000, 2000 * 2 ** attempt) * (0.75 + Math.random() / 2)))

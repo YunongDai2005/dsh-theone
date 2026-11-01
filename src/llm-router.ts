@@ -44,7 +44,32 @@ export interface RoutingPayload {
 }
 export interface RouterUsage { prompt_tokens: number; completion_tokens: number; total_tokens: number; prompt_cache_hit_tokens?: number; prompt_cache_miss_tokens?: number }
 export interface RoutingResult { decision: Decision; model: string; elapsedMs: number; usage?: RouterUsage }
+/** Observation only: these fields never enter routingPayload. */
+export interface RoutingTrace {
+  candidateIds: string[]
+  initial?: Decision
+  recheck: { attempted: boolean; trigger?: 'create' | 'clarify' | 'evidence-conflict'; previous?: string; contextId?: string; terms?: string[]; accepted?: boolean }
+  review: { attempted: boolean; pages: string[][] }
+  autoSettled: boolean
+  final?: Decision
+}
+export interface RouterCall {
+  layer: 'quick' | 'recheck' | 'review'
+  candidateIds: string[]
+  sent: boolean
+  elapsedMs: number
+  model?: string
+  promptTokens?: number
+  cacheHitTokens?: number
+  completionTokens?: number
+  errorCode?: string
+}
+export function newRoutingTrace(): RoutingTrace {
+  return { candidateIds: [], recheck: { attempted: false }, review: { attempted: false, pages: [] }, autoSettled: false }
+}
 export interface RouterReceipt {
+  trace?: RoutingTrace
+  callDetails?: RouterCall[]
   mode: 'rules' | 'llm'
   tier?: 'rules' | 'quick' | 'recheck' | 'review'
   calls?: number

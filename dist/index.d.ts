@@ -5,6 +5,7 @@ import type { ModelSelection } from '@deepseek-ai/dsh-agent';
 import type { SessionEventWindow } from '@deepseek-ai/dsh-session-query';
 import { HistoryCatalog } from './history-catalog.ts';
 import { ContextStore } from './store.ts';
+import { RoutingShadow } from './routing-shadow.ts';
 import type { RouterReceipt } from './llm-router.ts';
 import type { LinkageSnapshot } from './catalog-types.ts';
 import { type SettingsSnapshot } from './settings-types.ts';
@@ -45,6 +46,8 @@ export interface Config {
     persistentWork?: boolean;
     /** A routing card per topic, written in the background after its first replies; on unless turned off (tests). */
     topicCards?: boolean;
+    /** Metadata-only routing observations; never consumed by the router. */
+    routingShadow?: boolean;
     /** Where notices are read from; for testing. */
     noticeUrl?: string;
     /** Where problem reports are sent when the user presses Send; "off" leaves only copy and email. For testing. */
@@ -90,10 +93,13 @@ declare module '@deepseek-ai/dsh-llm' {
 }
 export declare function viaModel(selection: ModelSelection): string;
 export declare function parseVia(id: string | undefined): ModelSelection | undefined;
+export declare const TERMS_PROMPT = "\u4F60\u5728\u5E2E\u8BDD\u9898\u8DEF\u7531\u5668\u4ECE\u7528\u6237\u7684\u66F4\u6B63\u4E2D\u5B66\u4E60\u3002\u7528\u6237\u786E\u8BA4\u8FD9\u6761 message \u5C5E\u4E8E rightTopic\uFF08\u800C\u4E0D\u662F wrongTopic\uFF09\u3002\n\u4ECE message \u539F\u6587\u4E2D\u6311\u51FA\u6700\u591A 4 \u4E2A\u80FD\u628A\u5B83\u548C rightTopic \u8054\u7CFB\u8D77\u6765\u3001\u53C8\u80FD\u548C wrongTopic \u533A\u5206\u5F00\u7684\u8BCD\u8BED\uFF1A\u9879\u76EE\u540D\u3001\u672F\u8BED\u3001\u4EA7\u54C1\u3001\u4EBA\u540D\u3001\u6587\u4EF6\u540D\u7B49\uFF0C\u6BCF\u4E2A 2\u201312 \u4E2A\u5B57\uFF0C\u5FC5\u987B\u5728 message \u4E2D\u539F\u6837\u51FA\u73B0\u3002\n\u4E0D\u8981\u9009\u6CDB\u6CDB\u7684\u8BCD\uFF08\u5982\u300C\u5E2E\u6211\u300D\u300C\u8FD9\u4E2A\u300D\u300C\u95EE\u9898\u300D\uFF09\uFF0C\u4E0D\u8981\u9009 wrongTopic \u7684\u540D\u5B57\u3002\u53EA\u8F93\u51FA JSON \u5B57\u7B26\u4E32\u6570\u7EC4\uFF0C\u4F8B\u5982 [\"\u6D88\u878D\u5B9E\u9A8C\",\"\u7B2C\u4E09\u7AE0\"]\u3002";
 export default class TheOne extends Service {
     private config;
     static inject: string[];
     static Config: z<Config>;
+    readonly shadow?: RoutingShadow;
+    shadowError?: string;
     readonly store: ContextStore;
     readonly work: PersistentWork;
     private readonly projects;
@@ -215,6 +221,9 @@ export default class TheOne extends Service {
     gatewayModels(provider: string): Promise<LlmModelInfo[]>;
     /** The entry has exactly the backing model's capacity, including DSH overrides. */
     gatewayModelInfo(provider?: string, signal?: AbortSignal, model?: string): Promise<LlmResolvedModelInfo>;
+    /** Observation failures are isolated: they cannot change a route or model request. */
+    private observeShadow;
+    private recordShadowEvent;
     /** This main chat's recent text turns, each attributed to the topic it was routed to. */
     private recentMainChat;
     /** Recover bounded routing context from DSH references after the Gateway is rebuilt. */

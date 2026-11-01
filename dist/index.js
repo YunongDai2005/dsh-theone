@@ -14,8 +14,9 @@ import { buildSessionEventSearchDocuments, filterSessionEventDocuments } from '@
 import { HistoryCatalog, catalogSessionExcluded, withinCatalogFolder } from "./history-catalog.js";
 import { gatewayCheckpoint } from "./gateway-compaction.js";
 import { ContextStore } from "./store.js";
+import { RoutingShadow, temporaryArithmetic } from "./routing-shadow.js";
 import { resolveContext } from "./router.js";
-import { DshRouter, RouterFailure } from "./llm-router.js";
+import { DshRouter, RouterFailure, newRoutingTrace } from "./llm-router.js";
 import { continuesCurrent, mergeSimilarity, newIndependentTopic, redactRoutingText, settleUnclear, similarity, spokenCorrection, textFeatures, topicTerms } from "./routing-policy.js";
 import { modelJson } from "./model-json.js";
 import { EDITABLE_SETTINGS_KEYS, RESTART_SETTINGS_KEYS } from "./settings-types.js";
@@ -141,7 +142,7 @@ function descriptorJson(context, budget) {
     const lastState = clip(context.lastState, Math.floor(room / 3));
     return JSON.stringify({ title, summary: clip(context.summary, room - lastState.length), lastState });
 }
-const TERMS_PROMPT = `你在帮话题路由器从用户的更正中学习。用户确认这条 message 属于 rightTopic（而不是 wrongTopic）。
+export const TERMS_PROMPT = `你在帮话题路由器从用户的更正中学习。用户确认这条 message 属于 rightTopic（而不是 wrongTopic）。
 从 message 原文中挑出最多 4 个能把它和 rightTopic 联系起来、又能和 wrongTopic 区分开的词语：项目名、术语、产品、人名、文件名等，每个 2–12 个字，必须在 message 中原样出现。
 不要选泛泛的词（如「帮我」「这个」「问题」），不要选 wrongTopic 的名字。只输出 JSON 字符串数组，例如 ["消融实验","第三章"]。`;
 /** The id under which closing the getting-started card is remembered, beside dismissed notices. */
@@ -257,9 +258,12 @@ export default class TheOne extends Service {
         factLinks: z.boolean().default(false),
         factExtraction: z.boolean().default(false),
         topicCards: z.boolean().default(true),
+        routingShadow: z.boolean().default(true),
         noticeUrl: z.string(),
         feedbackUrl: z.string(),
     });
+    shadow;
+    shadowError;
     store;
     work;
     projects = new ProjectQueue();
@@ -315,6 +319,14 @@ export default class TheOne extends Service {
             throw new Error('Worker cannot use the gateway provider');
         const databasePath = config.databasePath || join(process.env.DSH_HOME || join(homedir(), '.dsh'), 'theone', 'contexts.db');
         this.store = new ContextStore(databasePath);
+        if (config.routingShadow !== false) {
+            try {
+                this.shadow = new RoutingShadow(databasePath === ':memory:' ? ':memory:' : databasePath + '.shadow.db');
+            }
+            catch {
+                this.shadowError = 'SHADOW_OPEN_FAILED';
+            }
+        }
         this.work = new PersistentWork(databasePath === ':memory:' ? ':memory:' : databasePath + '.work.db', {
             enabled: () => !!this.config.persistentWork,
             available: task => !task.contextId || this.store.contexts().some(context => context.id === task.contextId) && !this.store.unreachable().has(task.contextId),
@@ -386,6 +398,7 @@ export default class TheOne extends Service {
                 await this.catalog?.close();
                 await Promise.all(this.pendingStows.values());
                 this.store.close();
+                this.shadow?.close();
             }
         });
         this.store.seed(descriptors);
@@ -429,6 +442,7 @@ export default class TheOne extends Service {
         this.work.start();
         this.adapter = ctx.llm.registerAdapter(['theone'], new GatewayAdapter(this));
         ctx.on('session/event', (session, event) => {
+            this.observeShadow(shadow => this.recordShadowEvent(shadow, session, event));
             if (event.type === 'permission/preset' || event.type === 'sandbox/mode' || event.type === 'approval/policy') {
                 // The user can tighten access while a model or reviewer is still running.
                 // Apply the new policy before the next tool, including set-aside topics.
@@ -842,6 +856,8 @@ export default class TheOne extends Service {
             this.reservedGateway = agent.id;
             let route;
             const receipt = early?.receipt ?? { mode: this.router ? 'llm' : 'rules', tier: 'rules', calls: 0, cacheHitTokens: 0 };
+            receipt.trace ??= newRoutingTrace();
+            receipt.callDetails ??= [];
             const known = this.store.route(input.id);
             // Taken up in the background (now, or before a restart cut it off): it is not classified again.
             const adopted = known && (early || known.status === 'running') ? known : undefined;
@@ -882,8 +898,12 @@ export default class TheOne extends Service {
                     else
                         proposed = await this.classify(agent, input.id, text, currentId, allContexts, signal, receipt);
                     // Nothing asks the user where a message belongs; an unclear decision settles on the closest topic or a new one.
-                    if (!previous)
-                        proposed = settleUnclear(proposed, text, allContexts, currentId);
+                    receipt.trace.initial ??= { ...proposed };
+                    if (!previous) {
+                        const settled = settleUnclear(proposed, text, allContexts, currentId);
+                        receipt.trace.autoSettled = settled !== proposed;
+                        proposed = settled;
+                    }
                     signal.throwIfAborted();
                     route = this.store.plan(input.id, agent.id, config.gatewayKey, proposed);
                     if (goalId !== undefined && route.decision.contextId)
@@ -894,6 +914,15 @@ export default class TheOne extends Service {
                         this.reservedGateway = undefined;
                     throw error;
                 }
+            this.observeShadow(shadow => {
+                for (const message of users.length ? users : [input])
+                    shadow.bind(config.gatewayKey, agent.id, message.id, {
+                        topicId: route.decision.contextId ?? null,
+                        ...(message.source.kind === 'user' && temporaryArithmetic(messageText(message)) ? { temporary: true, basis: 'arithmetic-form' } : {}),
+                        ...(relays.length ? { source: 'background' } : {}),
+                    });
+            });
+            receipt.trace.final = { ...route.decision };
             this.store.recordRouteDetail(input.id, redactRoutingText(text).replace(/\s+/g, ' ').trim().slice(0, 160) || attachmentLabel, Object.fromEntries(Object.entries(receipt).filter(([, value]) => value !== undefined)));
             if (route.decision.correctionOf && route.decision.contextId)
                 this.applyCorrection(route.decision.correctionOf, route.decision.contextId, previous?.text);
@@ -916,7 +945,7 @@ export default class TheOne extends Service {
             if (!maybe.length && (notice === 'hidden' || (notice === 'switch' && !switched)))
                 return decision;
             return { ...decision, messages: [...decision.messages, createUserMessage({
-                        source: { kind: 'theone-route', form: 'notice', summary, messageId: input.id, router: Object.fromEntries(Object.entries(receipt).filter(([, value]) => value !== undefined)) },
+                        source: { kind: 'theone-route', form: 'notice', summary, messageId: input.id, router: JSON.parse(JSON.stringify(receipt)) },
                         content: [{ type: 'text', text: summary }],
                     })] };
         });
@@ -941,9 +970,11 @@ export default class TheOne extends Service {
         const isNotice = (message) => message.source.kind === 'theone-note' && message.source.noticeId === notice.id;
         const already = gateway.session.snapshotEvents().some(event => event.type === 'user/message' && isNotice(event.data)) ||
             [...gateway.inbox.nextTurn, ...gateway.inbox.nextStep].some(isNotice);
-        if (!already)
-            gateway.followup(createUserMessage({ source: { kind: 'theone-note', form: 'notice', noticeId: notice.id },
-                content: [{ type: 'text', text: notice.text }] }));
+        if (!already) {
+            const message = createUserMessage({ source: { kind: 'theone-note', form: 'notice', noticeId: notice.id }, content: [{ type: 'text', text: notice.text }] });
+            this.observeShadow(shadow => shadow.bind(this.config.gatewayKey, gateway.id, message.id, { topicId: job.payload.contextId ?? null, source: 'background' }));
+            gateway.followup(message);
+        }
         return this.ctx.sessions.flush(gateway.session);
     }
     /** DSH Connection protects plugin routes inside its authenticated /api fence. */
@@ -1779,6 +1810,62 @@ export default class TheOne extends Service {
             ...(backing.context ? { context: { ...backing.context } } : {}),
             ...(backing.defaultMaxTokens !== undefined ? { defaultMaxTokens: backing.defaultMaxTokens } : {}) };
     }
+    /** Observation failures are isolated: they cannot change a route or model request. */
+    observeShadow(record) {
+        if (!this.shadow)
+            return;
+        try {
+            record(this.shadow);
+        }
+        catch {
+            this.shadowError = 'SHADOW_WRITE_FAILED';
+        }
+    }
+    recordShadowEvent(shadow, session, event) {
+        const key = this.config.gatewayKey;
+        const main = this.store.isGateway(session.id) || this.ctx.agents.get(SessionId(session.id))?.options.provider === 'theone';
+        if (!main) {
+            if (event.type === 'turn/end') {
+                const background = [...this.background.values()].find(entry => entry.run.worker.id === session.id);
+                if (background)
+                    shadow.record(key, { messageId: `${session.id}:${event.seq}`, sessionId: session.id, seq: event.seq,
+                        topicId: this.store.route(background.run.inputId)?.decision.contextId ?? null, source: 'background', visible: false, replyTo: background.run.inputId });
+            }
+            return;
+        }
+        const run = this.runs.get(session.id);
+        if (event.type === 'user/message') {
+            if ('form' in event.data.source && event.data.source.form === 'recall')
+                return;
+            const routeInput = event.data.source.kind === 'theone-route' && typeof event.data.source.messageId === 'string' ? event.data.source.messageId : event.data.id;
+            const route = this.store.route(routeInput) ?? (run?.forwarded.has(event.data.id) ? this.store.route(run.inputId) : undefined);
+            const binding = shadow.binding(key, session.id, event.data.id);
+            const source = binding?.source ?? (event.data.source.kind === 'user' ? 'user'
+                : this.isRelay(event.data) || event.data.source.kind === 'theone-note' && !!event.data.source.noticeId ? 'background' : 'system');
+            shadow.record(key, { messageId: event.data.id, sessionId: session.id, seq: event.seq, topicId: binding?.topicId ?? route?.decision.contextId ?? null, source,
+                ...(source === 'user' && temporaryArithmetic(messageText(event.data)) ? { temporary: true, basis: 'arithmetic-form' } : {}) });
+        }
+        else if (event.type === 'assistant/message') {
+            const cause = session.snapshotEvents().filter(item => item.seq < event.seq).findLast(item => item.type === 'user/message'
+                && !('form' in item.data.source && item.data.source.form === 'recall') && item.data.source.kind !== 'theone-route');
+            const replyTo = run?.inputId ?? (cause?.type === 'user/message' ? cause.data.id : undefined);
+            const anchor = replyTo && shadow.message(key, session.id, replyTo);
+            const topicId = (replyTo && this.store.route(replyTo)?.decision.contextId) || (anchor && anchor.topicId) || null;
+            const source = anchor && ['background', 'system'].includes(anchor.source) ? anchor.source : 'foreground';
+            const messageId = `${session.id}:${event.seq}`;
+            const completed = !event.data.interrupted && !event.data.message.content.some(block => block.type === 'tool-call');
+            shadow.record(key, { messageId, sessionId: session.id, seq: event.seq, topicId, source, ...(replyTo ? { replyTo } : {}), completed });
+            // Plain prose questions are only an inference. Explicit host requests above
+            // carry their own open/close lifecycle and are never guessed from punctuation.
+            const text = event.data.message.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('');
+            if (topicId && /[?？]\s*$/.test(text) && !shadow.hasPending(key, messageId))
+                shadow.openPending(key, { topicId, kind: 'question', messageId, basis: 'question-form' });
+        }
+        else if (event.type === 'system/message' || event.type === 'developer/message' || event.type === 'tool/result') {
+            shadow.record(key, { messageId: `${session.id}:${event.seq}`, sessionId: session.id, seq: event.seq,
+                topicId: run ? this.store.route(run.inputId)?.decision.contextId ?? null : null, source: 'system' });
+        }
+    }
     /** This main chat's recent text turns, each attributed to the topic it was routed to. */
     recentMainChat(gateway, inputId, withheld) {
         const messages = [];
@@ -2239,7 +2326,7 @@ export default class TheOne extends Service {
                     ...(request.reason === undefined ? {} : { reason: request.reason }),
                     displayReason: { en: [base?.en, `Requested in the background task${topic ? ` "${topic}"` : ''}: ${detail}`].filter(Boolean).join('\n'),
                         zh: [base?.zh ?? base?.en, `后台任务${topic ? `「${topic}」` : ''}请求执行：${detail}`].filter(Boolean).join('\n') },
-                    ...(request.signal === undefined ? {} : { signal: request.signal }) }));
+                    ...(request.signal === undefined ? {} : { signal: request.signal }) }), 'approval');
             }
             catch {
                 // The gateway turn closed or approval is unavailable: answer as the Worker's own chain would.
@@ -2711,26 +2798,36 @@ export default class TheOne extends Service {
         }
     }
     /** Count every request that ran, including failed or unused concurrent review pages. */
-    async decideRouting(input, signal, receipt, sessionId, options) {
+    async decideRouting(input, signal, receipt, sessionId, options, layer = options?.think ? 'recheck' : 'quick') {
+        const started = performance.now();
+        const detail = { layer, candidateIds: input.contexts.map(context => context.id), sent: true, elapsedMs: 0 };
+        (receipt.callDetails ??= []).push(detail);
         receipt.calls = (receipt.calls ?? 0) + 1;
         const record = (usage) => {
             receipt.cacheHitTokens = (receipt.cacheHitTokens ?? 0) + (usage?.prompt_cache_hit_tokens ?? 0);
             if (!usage)
                 return;
+            Object.assign(detail, { promptTokens: usage.prompt_tokens, completionTokens: usage.completion_tokens, ...(usage.prompt_cache_hit_tokens === undefined ? {} : { cacheHitTokens: usage.prompt_cache_hit_tokens }) });
             receipt.promptTokens = (receipt.promptTokens ?? 0) + usage.prompt_tokens;
             receipt.completionTokens = (receipt.completionTokens ?? 0) + usage.completion_tokens;
         };
         try {
             const result = await this.router.decide(input, signal, sessionId, options);
             record(result.usage);
+            Object.assign(detail, { model: result.model, elapsedMs: result.elapsedMs });
             return result;
         }
         catch (error) {
+            detail.elapsedMs = Math.round(performance.now() - started);
             if (error instanceof RouterFailure) {
+                detail.errorCode = error.code;
+                detail.elapsedMs = error.meta?.elapsedMs ?? detail.elapsedMs;
                 record(error.meta?.usage);
                 // These failures happen before a model request can be sent.
-                if (['ROUTER_MODEL_MISSING', 'ROUTER_CIRCUIT_OPEN', 'ROUTER_INPUT_INVALID', 'ROUTER_RECURSION_BLOCKED'].includes(error.code))
+                if (['ROUTER_MODEL_MISSING', 'ROUTER_CIRCUIT_OPEN', 'ROUTER_INPUT_INVALID', 'ROUTER_RECURSION_BLOCKED'].includes(error.code)) {
                     receipt.calls--;
+                    detail.sent = false;
+                }
             }
             throw error;
         }
@@ -2741,6 +2838,7 @@ export default class TheOne extends Service {
      * still being written when the message was sent.
      */
     async classify(agent, inputId, text, currentId, allContexts, signal, receipt, running) {
+        const trace = receipt.trace ??= newRoutingTrace();
         receipt.tier = 'rules';
         receipt.calls ??= 0;
         receipt.cacheHitTokens ??= 0;
@@ -2758,6 +2856,7 @@ export default class TheOne extends Service {
                 searchFailed = true;
             }
         }
+        trace.candidateIds = contexts.map(context => context.id);
         let proposed;
         // Without the search the classifier sees the whole catalog (cut to fit, best-ranked first).
         if (searchFailed)
@@ -2770,18 +2869,21 @@ export default class TheOne extends Service {
                 const facts = offered.length ? { facts: offered } : {};
                 const result = await this.decideRouting({ text, contexts, catalogOrder, currentId, recent, historyIncomplete: this.catalog?.incomplete, corrections, ...facts, running, ...folders }, signal, receipt, agent.id);
                 proposed = result.decision;
+                trace.initial = { ...proposed };
                 receipt.tier = 'quick';
                 // A new topic, a question, or a decision against a strong clue is asked once more with thinking on; if that fails, the first stands.
                 // Clues: numbers, codes and names of the message that only one topic was sent or knows.
                 const evidence = this.routingEvidence(text, allContexts).filter(item => contexts.some(context => context.id === item.contextId));
                 const recheck = secondLook(proposed, evidence);
                 if (recheck) {
+                    trace.recheck = { attempted: true, trigger: recheck.contextId ? 'evidence-conflict' : proposed.action === 'CREATE' ? 'create' : 'clarify', ...recheck, accepted: false };
                     try {
                         const second = await this.decideRouting({ text, contexts, catalogOrder, currentId, recent, historyIncomplete: this.catalog?.incomplete, corrections, ...facts, running, ...folders, recheck }, signal, receipt, agent.id, { think: true });
                         // Changed its mind from one topic to another: the first comes along as reference, in case it was right.
                         const first = contexts.some(context => context.id === recheck.previous) ? recheck.previous : undefined;
                         proposed = first && second.decision.contextId && second.decision.contextId !== first ? { ...second.decision, alternateIds: [first] } : second.decision;
                         receipt.tier = 'recheck';
+                        trace.recheck.accepted = true;
                         result.elapsedMs += second.elapsedMs;
                     }
                     catch (error) {
@@ -2800,8 +2902,9 @@ export default class TheOne extends Service {
                     for (let offset = 0; offset < remaining.length && pages.length < 3; offset += pageSize)
                         pages.push([...(current ? [current] : []), ...remaining.slice(offset, offset + pageSize)]);
                     // Review pages concurrently, then read them in order exactly as a sequential pass would.
+                    trace.review = { attempted: pages.length > 0, pages: pages.map(page => page.map(context => context.id)) };
                     const incomplete = this.catalog.incomplete;
-                    const reviews = await Promise.allSettled(pages.map(page => this.decideRouting({ text, contexts: page, catalogOrder, currentId, recent, historyIncomplete: incomplete, corrections, ...facts, running, ...folders }, signal, receipt, agent.id)));
+                    const reviews = await Promise.allSettled(pages.map(page => this.decideRouting({ text, contexts: page, catalogOrder, currentId, recent, historyIncomplete: incomplete, corrections, ...facts, running, ...folders }, signal, receipt, agent.id, undefined, 'review')));
                     const firstElapsed = result.elapsedMs;
                     for (const settled of reviews) {
                         if (settled.status === 'rejected')
@@ -2842,6 +2945,8 @@ export default class TheOne extends Service {
         }
         else
             proposed = resolveContext(text, contexts, currentId);
+        trace.initial ??= { ...proposed };
+        trace.final = { ...proposed };
         if (proposed.action !== 'CREATE')
             return proposed;
         // A new topic works in the project it is about: the classifier's pick, else a related topic's project.
@@ -2975,6 +3080,7 @@ export default class TheOne extends Service {
             return;
         // The same notice the topic got ("Subtask status updated" and its report), as an ordinary chat shows it.
         const note = createUserMessage({ source: cause.source, content: cause.content });
+        this.observeShadow(shadow => shadow.bind(this.config.gatewayKey, gateway.id, note.id, { topicId: contextId, source: 'background' }));
         this.relays.add(note.id);
         const run = new WorkerRun(this.ctx, worker, gateway, note.id, this.config.maxResponseChars, names => this.showWorkerTools(gateway, worker, names));
         run.request = messageText(cause);
@@ -3327,6 +3433,8 @@ export default class TheOne extends Service {
         if (this.catalog)
             contexts = await this.catalog.candidates(query, undefined, signal, { contexts: allContexts }).catch(() => { signal.throwIfAborted(); return allContexts; });
         contexts = contexts.filter(context => context.id !== previous.contextId);
+        const trace = receipt.trace ??= newRoutingTrace();
+        trace.candidateIds = contexts.map(context => context.id);
         let decision;
         let byRules = !this.router;
         if (this.router) {
@@ -3347,6 +3455,7 @@ export default class TheOne extends Service {
         }
         else
             decision = resolveContext(query, contexts);
+        trace.initial = { ...decision };
         if (decision.action === 'CLARIFY' || decision.contextId === previous.contextId)
             return unclear;
         // Rules cannot name a new topic from "it's the paper one"; only from the message itself.
@@ -3638,12 +3747,22 @@ export default class TheOne extends Service {
     }
     /** Work a topic's session is asking the user about (approvals, questions) counts as waiting on the user. */
     asking = new Map();
-    async whileAsking(worker, ask) {
+    async whileAsking(worker, ask, kind = 'question') {
+        let pending;
+        this.observeShadow(shadow => {
+            const run = this.runForWorker(worker);
+            const topicId = run && this.store.route(run.inputId)?.decision.contextId
+                || this.store.contexts().find(context => context.workingSessionId === worker.id)?.id;
+            if (topicId)
+                pending = shadow.openPending(this.config.gatewayKey, { topicId, kind, messageId: run?.inputId, basis: 'host-request' });
+        });
         this.asking.set(worker.id, (this.asking.get(worker.id) ?? 0) + 1);
         try {
             return await ask();
         }
         finally {
+            if (pending)
+                this.observeShadow(shadow => shadow.closePending(this.config.gatewayKey, pending));
             const left = (this.asking.get(worker.id) ?? 1) - 1;
             if (left > 0)
                 this.asking.set(worker.id, left);

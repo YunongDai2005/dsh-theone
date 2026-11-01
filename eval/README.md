@@ -37,15 +37,15 @@ Each line of `sessions.jsonl` is one session:
 
 ## Run it
 
-Needs Node.js 22+ (the one DSH runs on) and Python 3.10+. Nothing to install.
+Needs the repository dependencies, a supported DSH Node.js runtime, and Python 3.10+. Build `dist/` with `npm.cmd run build` before a product replay.
 
 ```powershell
 # Windows PowerShell; on macOS/Linux use: export DEEPSEEK_API_KEY=sk-...
 $env:DEEPSEEK_API_KEY = "sk-..."
 
 node eval/generate.mjs --sessions 50 --dataset v0        # ≈ $1–2, a few minutes
-node eval/run-router.mjs --mode closed --policy llm      # TheOne's prompt, topic list known up front
-node eval/run-router.mjs --mode open --policy theone     # topics created on the way, with TheOne's fast path and rules
+node eval/run-router.mjs --replay product-v1 --mode closed --policy theone # actual product, seeded catalog
+node eval/run-router.mjs --replay product-v1 --mode open --policy theone   # actual product, empty catalog
 python eval/baselines.py eval/data/interleave-v0/sessions.jsonl
 python eval/score.py eval/data/interleave-v0/sessions.jsonl eval/data/interleave-v0/predictions/*.jsonl
 ```
@@ -58,7 +58,7 @@ command so the runs are labelled by it:
 export OPENAI_BASE_URL=https://provider.example/v1     # the address the provider documents, usually ending in /v1
 export OPENAI_API_KEY=sk-...
 node eval/generate.mjs --sessions 50 --model their-model-name
-node eval/run-router.mjs --mode closed --policy llm --model their-model-name
+node eval/run-router.mjs --replay product-v1 --mode closed --policy theone --model their-model-name
 ```
 
 `EVAL_EXTRA_BODY='{"…": …}'` adds provider-specific fields to every request, for example to turn off
@@ -67,17 +67,35 @@ a model's thinking.
 `EVAL_RPM=28` spaces requests evenly for a provider that allows only so many calls a minute; raise
 `EVAL_CONCURRENCY` (default 4) along with it so the calls' own latency does not become the limit.
 
-Try everything first with `--dry-run`: a fake model stands in, nothing is spent, and the output goes
-to `eval/data/interleave-v0-dry` (or `-v1-dry`). Every model answer is cached in `eval/.cache`, so a rerun or a crash
-halfway costs nothing twice. `--model deepseek-v4-pro` switches model; `EVAL_PRICES="in,cached,out"`
-sets USD per million tokens for the cost line (default: V4.1 Flash peak prices, October 2026).
+Use `--dry-run` for a fake transport without API credentials or model charges. The generator
+writes to `interleave-v0-dry` / `interleave-v1-dry`; the router reads `--data` and writes `--out`
+(or a protocol-prefixed file under that dataset's `predictions/`). Supply both explicitly for a smoke run.
+Responses use separate `eval/.cache/product-v1` and `eval/.cache/legacy-v0` directories. A local cache
+hit makes zero transport calls; set `EVAL_REFRESH=1` when measuring live tokens and latency.
+`EVAL_PRICES="in,cached,out"` sets USD per million tokens; verify prices for the chosen model yourself.
 
-`run-router.mjs` imports TheOne's own routing prompt, payload builder and decision validation from
-`dist/`, so its numbers are TheOne's, not a re-implementation's. Phase 1 approximations: there are no
-assistant replies yet, so routing sees only the user's side; and in open mode a topic is described by
-the messages routed to it, where TheOne would also have the topic session's own progress notes.
+`product-v1` is the default. It starts an isolated real DSH/TheOne runtime from `dist/`, using the
+product's gateway, `HistoryCatalog.candidates`, second look, catalog review pages, fallbacks,
+`settleUnclear`, topic store and correction learning. There is no copied classifier. Each row includes
+`trace` (candidates, initial decision, recheck reason, review pages, automatic settlement, final route),
+`call_details` (logical calls), and `usage_by_call` (physical transport attempts with layer, input/cache-hit/output
+tokens and duration). Card calls (`--cards`) and correction-learning calls have separate `card_usage`
+and `auxiliary_usage`; the scorer includes them in total cost without changing routing latency.
+
+This is a controlled routing replay, not an end-to-end Worker benchmark. Each message arrives after
+the prior turn and correction learning finish. No host profile is loaded; the catalog is the supplied
+snapshot and background scanning is stopped. Worker tools are not executed. `turn.reply`, when present,
+provides observed assistant text; v0 has none, so replies are empty. Cards default off for the user-only
+v0 replay; add `--cards` when comparing that product configuration. Results must retain these conditions.
+
+The earlier partial simulation is available with `--replay legacy-v0`, including `--policy llm`, burst
+ablations and optional `--recheck`. Old predictions without a `replay` field are labelled `legacy-v0`.
+The scorer displays the protocols separately and rejects mixing them inside one prediction file.
+Missing, duplicate or unexpected prediction keys are errors, including an entirely missing session.
 
 ### Bursts: wait, then route what was sent together
+
+These experiments use the separate `legacy-v0` protocol.
 
 People often send several short messages before any reply ("3 of us", "one is elderly", "budget
 8000"). Routed one by one, each lacks context; routed together, they are one clear request.
@@ -89,13 +107,13 @@ belong to the same thread, `--cross` when they do not (bursts that change subjec
 wrong). Run a few settings to see how much the answer depends on them:
 
 ```sh
-node eval/run-router.mjs --mode open --policy theone                                  # baseline, from cache
-node eval/run-router.mjs --mode open --policy theone --merge all --same 0.35 --cross 0.05
-node eval/run-router.mjs --mode open --policy theone --merge all --same 0.35 --cross 0.15
-node eval/run-router.mjs --mode open --policy theone --merge adaptive --same 0.35 --cross 0.05
-node eval/run-router.mjs --mode open --policy theone --merge all --decide each --same 0.35 --cross 0.05
-node eval/run-router.mjs --mode open --policy theone --merge all --decide each --same 0.35 --cross 0.15
-python eval/score.py eval/data/interleave-v0/sessions.jsonl eval/data/interleave-v0/predictions/open-theone*.jsonl
+node eval/run-router.mjs --replay legacy-v0 --mode open --policy theone                                  # baseline, from cache
+node eval/run-router.mjs --replay legacy-v0 --mode open --policy theone --merge all --same 0.35 --cross 0.05
+node eval/run-router.mjs --replay legacy-v0 --mode open --policy theone --merge all --same 0.35 --cross 0.15
+node eval/run-router.mjs --replay legacy-v0 --mode open --policy theone --merge adaptive --same 0.35 --cross 0.05
+node eval/run-router.mjs --replay legacy-v0 --mode open --policy theone --merge all --decide each --same 0.35 --cross 0.05
+node eval/run-router.mjs --replay legacy-v0 --mode open --policy theone --merge all --decide each --same 0.35 --cross 0.15
+python eval/score.py eval/data/interleave-v0/sessions.jsonl eval/data/interleave-v0/predictions/legacy-v0-open-theone*.jsonl
 ```
 
 Merging with one decision per burst helps bursts that stay on one thread and hurts bursts that

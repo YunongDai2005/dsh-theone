@@ -5,7 +5,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { buildSchedule } from '../lib/schedule.mjs'
 import { createClient } from '../lib/llm.mjs'
 import { generate } from '../generate.mjs'
-import { routeSession } from '../run-router.mjs'
+import { routeSession } from '../run-router-legacy.mjs'
 
 const fake = join(dirname(fileURLToPath(import.meta.url)), 'fake-model.mjs')
 const threads = [{ id: 't1', facts: [{ key: 'a', update: true }] }, { id: 't2', facts: [{ key: 'b' }], twinOf: 't3' }, { id: 't3', facts: [] }, { id: 't4', facts: [] }]

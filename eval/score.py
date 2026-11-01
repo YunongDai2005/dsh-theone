@@ -81,7 +81,14 @@ def prf(tp, fp, fn):
 def score_session(session, rows, mode):
     """Per-message outcomes for one session, with predicted labels mapped onto gold threads."""
     by_i = {row["i"]: row for row in rows}
+    if len(by_i) != len(rows):
+        raise ValueError("Duplicate prediction in session")
     turns = session["turns"]
+    expected = {t["i"] for t in turns}
+    if expected - by_i.keys():
+        raise ValueError("Missing prediction in session")
+    if by_i.keys() - expected:
+        raise ValueError("Unexpected prediction in session")
     gold_ids = {thread["id"] for thread in session["threads"]}
     # Open mode: the system's own labels are matched one-to-one to gold threads by overlap.
     mapping = {}
@@ -147,11 +154,41 @@ def bcubed(pairs):
 
 
 def evaluate(sessions, predictions, split="dev"):
+    all_ids = {s["session_id"] for s in sessions}
     sessions = [s for s in sessions if split == "all" or s["split"] == split]
+    expected = {(s["session_id"], t["i"]) for s in sessions for t in s["turns"]}
+    if len(expected) != sum(len(s["turns"]) for s in sessions):
+        raise ValueError("Duplicate input key")
+    selected_ids = {s["session_id"] for s in sessions}
     rows_by_session = defaultdict(list)
+    seen = set()
+    selected = []
     for row in predictions:
+        key = (row["session_id"], row["i"])
+        if key in seen:
+            raise ValueError(f"Duplicate prediction: {key}")
+        seen.add(key)
+        if row["session_id"] not in all_ids:
+            raise ValueError(f"Unexpected prediction: {key}")
+        if row["session_id"] not in selected_ids:
+            continue
+        if key not in expected:
+            raise ValueError(f"Unexpected prediction: {key}")
+        if not isinstance(row.get("pred"), str) or not row["pred"]:
+            raise ValueError(f"Missing prediction value: {key}")
         rows_by_session[row["session_id"]].append(row)
-    mode = next((row.get("mode") for row in predictions if row.get("mode")), "closed")
+        selected.append(row)
+    missing = expected - seen
+    if missing:
+        raise ValueError(f"Missing prediction: {sorted(missing)[:5]}")
+    protocols = {row.get("replay", "legacy-v0") for row in selected}
+    if len(protocols) > 1:
+        raise ValueError(f"Mixed replay protocols: {sorted(protocols)}")
+    replay = next(iter(protocols), "legacy-v0")
+    modes = {row.get("mode", "closed") for row in selected}
+    if len(modes) > 1:
+        raise ValueError("Mixed replay modes")
+    mode = next(iter(modes), "closed")
     kinds, strict_kinds, strict, lenient = Counter(), Counter(), [0, 0], [0, 0]
     by_action, by_tag, by_lang = defaultdict(lambda: [0, 0]), defaultdict(lambda: [0, 0]), defaultdict(lambda: [0, 0])
     # Burst runs (run-router --merge): accuracy of messages routed alone, in a burst, in a burst
@@ -161,7 +198,7 @@ def evaluate(sessions, predictions, split="dev"):
     fragments, merges, pairs = [], [], []
     tokens = Counter()
     latency, calls = [], []
-    tiers, card_tokens = Counter(), Counter()
+    tiers, card_tokens, auxiliary_tokens = Counter(), Counter(), Counter()
     usage_known = cache_known = False
     covered = 0
     for session in sessions:
@@ -184,11 +221,14 @@ def evaluate(sessions, predictions, split="dev"):
             cache_known |= "cache_hit" in usage
             if isinstance(row.get("calls"), (int, float)):
                 calls.append(row["calls"])
-            if row.get("tier") in ("fast", "quick", "recheck"):
+            if row.get("tier") in ("fast", "quick", "recheck", "review", "rules"):
                 tiers[row["tier"]] += 1
             for card in row.get("card_usage") or []:
                 for key in ("input", "output", "cache_hit"):
                     card_tokens[key] += card.get(key, 0)
+            for auxiliary in row.get("auxiliary_usage") or []:
+                for key in ("input", "output", "cache_hit"):
+                    auxiliary_tokens[key] += auxiliary.get(key, 0)
             if "burst" in row:
                 waited[0] += bool(row.get("waited"))
                 waited[1] += 1
@@ -257,7 +297,7 @@ def evaluate(sessions, predictions, split="dev"):
     measured = tokens["messages"]
     routing_cost_known = usage_known or (measured > 0 and tiers["fast"] == measured)
     result = {
-        "mode": mode, "split": split, "sessions": covered, "messages": tokens["messages"],
+        "mode": mode, "replay": replay, "split": split, "sessions": covered, "messages": tokens["messages"],
         "accuracy": rate(strict), "accuracy_lenient": rate(lenient),
         "weighted_error": round(weighted / thread_messages, 4) if thread_messages else None,
         "harm_per_100_messages": round(100 * weighted / thread_messages, 4) if thread_messages else None,
@@ -276,35 +316,41 @@ def evaluate(sessions, predictions, split="dev"):
         "tokens_per_message": {k: round(tokens[k] / tokens["messages"], 1) for k in ("input", "output", "cache_hit")} if tokens["messages"] else {},
         "model_calls_share": round(tokens["calls"] / tokens["messages"], 3) if tokens["messages"] else None,
         "calls_per_message": round(sum(calls) / measured, 4) if measured and len(calls) == measured else None,
-        "by_tier": {key: {"n": tiers[key], "share": round(tiers[key] / measured, 4)} for key in ("fast", "quick", "recheck")} if measured and sum(tiers.values()) == measured else None,
+        "by_tier": {key: {"n": tiers[key], "share": round(tiers[key] / measured, 4)} for key in ("fast", "quick", "recheck", "review", "rules")} if measured and sum(tiers.values()) == measured else None,
         "cache_hit_rate": round(tokens["cache_hit"] / tokens["input"], 4) if cache_known and tokens["input"] else None,
         # Nearest-rank p90; an even-sized median averages the two middle samples.
         "latency_ms": {"p50": median(latency), "p90": latency[math.ceil(len(latency) * 0.9) - 1]} if measured and len(latency) == measured else None,
-        "usd_per_1000_messages": usd_per_1000(tokens + card_tokens) if routing_cost_known or card_tokens else None,
+        "usd_per_1000_messages": usd_per_1000(tokens + card_tokens + auxiliary_tokens) if routing_cost_known or card_tokens or auxiliary_tokens else None,
         "routing_usd_per_1000_messages": usd_per_1000(tokens) if routing_cost_known else None,
         "card_usd_per_1000_messages": usd_per_1000(card_tokens) if card_tokens else None,
+        "auxiliary_usd_per_1000_messages": usd_per_1000(auxiliary_tokens) if auxiliary_tokens else None,
     }
     return result
 
 
 def table(results):
     """A compact markdown comparison of several systems."""
+    groups = defaultdict(list)
+    for name, result in results:
+        groups[result.get("replay", "legacy-v0")].append((name, result))
+    if len(groups) > 1:
+        return "\n\n".join(f"### {protocol} (separate protocol)\n\n" + table(group) for protocol, group in groups.items())
     cols = [("accuracy", "acc"), ("accuracy_lenient", "acc (lenient)"), ("weighted_error", "weighted err"),
             ("oneoff_into_topic", "one-off into topic"), ("topics_per_thread", "topics/thread"), ("threads_per_topic", "threads/topic"),
             ("refs_recall", "refs recall")]
-    lines = ["| system | mode | " + " | ".join(c[1] for c in cols) + " | switch F1 | B³ F1 | input tok/msg |",
+    lines = [f"Replay protocol: {next(iter(groups), 'legacy-v0')}", "", "| system | mode | " + " | ".join(c[1] for c in cols) + " | switch F1 | B³ F1 | input tok/msg |",
              "|---" * (len(cols) + 5) + "|"]
     for name, r in results:
         cells = ["–" if r.get(k) is None else f"{r[k]:.3f}" if isinstance(r[k], float) else str(r[k]) for k, _ in cols]
         lines.append(f"| {name} | {r['mode']} | " + " | ".join(cells)
                      + f" | {r['switch']['f1']:.3f} | {r['bcubed']['f1']:.3f} | {r['tokens_per_message'].get('input', 0):.0f} |")
-    lines += ["", "| system | calls/msg | fast | quick | recheck | cache hit | p50 ms | p90 ms | harm/100 | $/1k msg |",
-              "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
+    lines += ["", "| system | calls/msg | fast | quick | recheck | review | rules | cache hit | p50 ms | p90 ms | harm/100 | $/1k msg |",
+              "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
     def number(value, digits=3):
         return "–" if value is None else f"{value:.{digits}f}"
     for name, r in results:
         tiers = r.get("by_tier") or {}
-        tier_cells = [f"{tiers[key]['n']} ({tiers[key]['share']:.1%})" if key in tiers else "–" for key in ("fast", "quick", "recheck")]
+        tier_cells = [f"{tiers[key]['n']} ({tiers[key]['share']:.1%})" if key in tiers else "–" for key in ("fast", "quick", "recheck", "review", "rules")]
         latency = r.get("latency_ms") or {}
         lines.append(f"| {name} | {number(r.get('calls_per_message'))} | " + " | ".join(tier_cells)
                      + f" | {number(r.get('cache_hit_rate'))} | {number(latency.get('p50'), 1)} | {number(latency.get('p90'), 1)}"

@@ -4,7 +4,7 @@ import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createClient } from '../lib/llm.mjs'
-import { routeSession } from '../run-router.mjs'
+import { routeSession } from '../run-router-legacy.mjs'
 
 const session = { session_id: 'metrics', split: 'dev', lang: 'en', threads: [{ id: 'a', title: 'A', description: '' }],
   turns: [{ i: 0, text: 'Plan a garden', gold: { thread: 'a' } }, { i: 1, text: 'ok', gold: { thread: 'a' } }] }

@@ -1,0 +1,62 @@
+{
+  "quick": {
+    "requestHash": "f5a5768719c2f32f1f5904cc630dfad26cc8d80ed446ad1c5c67fca5bcc0d82a",
+    "calls": 1,
+    "action": "MOUNT",
+    "selected": "a"
+  },
+  "fast": {
+    "requestHash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "calls": 0,
+    "action": "KEEP",
+    "selected": "a"
+  },
+  "conflict": {
+    "requestHash": "c05afa8c88917ad78637751ed6219d9786e3229c60705daad5c8e7710103224f",
+    "calls": 2,
+    "action": "SWAP",
+    "selected": "b"
+  },
+  "unclear": {
+    "requestHash": "a2611c79e4e7a53c54b2ae453f132c62b55bd51a0cccc268ac2277d38fdb8723",
+    "calls": 2,
+    "action": "KEEP",
+    "selected": "a"
+  },
+  "unclear-empty": {
+    "requestHash": "200435a2e912c6d57bf71a9e2c87c9d42b89a343314bacb43388aec2932c3a92",
+    "calls": 2,
+    "action": "CREATE",
+    "selected": "CREATE"
+  },
+  "create": {
+    "requestHash": "6b7338c07b4d979515a69b9b180a18d717495c35ec8d0c6e98860ce029165fab",
+    "calls": 2,
+    "action": "CREATE",
+    "selected": "CREATE"
+  },
+  "recheck-invalid": {
+    "requestHash": "6b7338c07b4d979515a69b9b180a18d717495c35ec8d0c6e98860ce029165fab",
+    "calls": 2,
+    "action": "CREATE",
+    "selected": "CREATE"
+  },
+  "review": {
+    "requestHash": "15aa876e681ca6cbb528e582c9e4c5447be0cb68e64bf701ba8f999d68678b80",
+    "calls": 5,
+    "action": "MOUNT",
+    "selected": "old-016"
+  },
+  "review-invalid": {
+    "requestHash": "f2b6d5b860ed6be6c37fbb21b900d8d27d1e0cb651164334c081253f84d9d419",
+    "calls": 5,
+    "action": "KEEP",
+    "selected": "old-000"
+  },
+  "model-error": {
+    "requestHash": "100366650411011a426c90c543b647984b4e06c06dec73b19dab7fea4acd6197",
+    "calls": 1,
+    "action": "KEEP",
+    "selected": "a"
+  }
+}

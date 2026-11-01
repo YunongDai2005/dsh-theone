@@ -80,6 +80,10 @@ test('an interjection about another matter starts that topic at once and becomes
     // The thesis topic answers while the Qwen reply is still running.
     await until(() => fixture.log.includes('thesis'))
     assert.deepEqual(fixture.log, ['qwen:1', 'thesis'])
+    await until(() => app.ctx.theone.shadow!.snapshot('test-gateway').background.length === 1)
+    const shadow = app.ctx.theone.shadow!.snapshot('test-gateway')
+    assert.equal(shadow.background[0].topicId, 'ctx_thesis')
+    assert.equal(shadow.focus?.topicId, 'ctx_qwen_9070xt')
     const mid = fixture.routed.at(-1)!
     assert.equal(mid.running?.topicId, 'ctx_qwen_9070xt')
     assert.equal(mid.running?.request, 'Qwen 那个')

@@ -23,6 +23,35 @@ def rows(preds, mode):
 
 
 class ScoreTest(unittest.TestCase):
+    def test_protocols_are_reported_separately_and_extra_keys_are_rejected(self):
+        complete = rows(['t1', 't1', 't2', 't2', 'n1', 't1', 't2'], 'closed')
+        legacy = score.evaluate([session()], complete)
+        product = score.evaluate([session()], [dict(row, replay='product-v1') for row in complete])
+        report = score.table([('old', legacy), ('new', product)])
+        self.assertIn('### legacy-v0 (separate protocol)', report)
+        self.assertIn('### product-v1 (separate protocol)', report)
+        with self.assertRaisesRegex(ValueError, 'Unexpected prediction'):
+            score.evaluate([session()], complete + [dict(complete[0], i=99)])
+        with self.assertRaisesRegex(ValueError, 'Duplicate prediction'):
+            score.score_session(session(), complete + [complete[0]], 'closed')
+        with self.assertRaisesRegex(ValueError, 'Missing prediction'):
+            score.score_session(session(), complete[:-1], 'closed')
+
+    def test_missing_predictions_are_errors_including_a_whole_session(self):
+        s = session()
+        complete = rows(['t1', 't1', 't2', 't2', 'n1', 't1', 't2'], 'closed')
+        for incomplete in (complete[:-1], []):
+            with self.assertRaisesRegex(ValueError, 'Missing prediction'):
+                score.evaluate([s], incomplete)
+
+    def test_duplicate_predictions_and_mixed_replays_are_errors(self):
+        complete = rows(['t1', 't1', 't2', 't2', 'n1', 't1', 't2'], 'closed')
+        with self.assertRaisesRegex(ValueError, 'Duplicate prediction'):
+            score.evaluate([session()], complete + [complete[0]])
+        complete[0]['replay'] = 'product-v1'
+        with self.assertRaisesRegex(ValueError, 'Mixed replay'):
+            score.evaluate([session()], complete)
+
     def test_oracle_is_perfect_in_both_modes(self):
         s = session()
         for mode in ("closed", "open"):
@@ -126,6 +155,17 @@ class BillingScoreTest(unittest.TestCase):
         self.assertEqual(r['latency_ms'], {'p50': 0, 'p90': 0})
         self.assertAlmostEqual(r['usd_per_1000_messages'], .0438, places=6)
         self.assertEqual(r['usd_per_1000_messages'], r['card_usd_per_1000_messages'])
+
+    def test_correction_learning_has_a_separate_bill(self):
+        predictions = rows(['t1', 't1', 't2', 't2', 'n1', 't1', 't2'], 'closed')
+        for row in predictions:
+            row.update(calls=0, tier='fast', latency_ms=0)
+        predictions[0]['auxiliary_usage'] = [{'layer': 'terms', 'input': 1000, 'output': 30, 'cache_hit': 100, 'latency_ms': 12}]
+        r = score.evaluate([session()], predictions)
+        self.assertEqual(r['calls_per_message'], 0)
+        self.assertEqual(r['latency_ms'], {'p50': 0, 'p90': 0})
+        self.assertAlmostEqual(r['usd_per_1000_messages'], .0438, places=6)
+        self.assertEqual(r['usd_per_1000_messages'], r['auxiliary_usd_per_1000_messages'])
 
     def test_an_entirely_fast_run_has_zero_cost_rather_than_unknown_cost(self):
         predictions = rows(['t1', 't1', 't2', 't2', 'n1', 't1', 't2'], 'closed')

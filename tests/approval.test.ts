@@ -19,6 +19,7 @@ test('a Worker tool approval is asked on the main-chat card for that call and it
     // Stands in for the browser answerer, which only answers for the session it shows.
     app.ctx.on('approval/request', async (request, next) => {
       if (request.agent.id !== app.gateway.id) return next()
+      assert.ok(app.ctx.theone.shadow!.snapshot('test-gateway').pending.some(owner => owner.kind === 'approval' && owner.topicId === 'ctx_qwen_9070xt'))
       asked.push({ agent: request.agent.id, toolName: request.toolName, callId: request.callId, display: request.displayReason?.zh })
       return 'allowed-once'
     })
@@ -60,6 +61,7 @@ test('a question the Worker asks the user is answered in the main chat', { timeo
     // Stands in for the browser, which only answers for the conversation it shows.
     app.ctx.on('user-questions/request', async (request, next) => {
       if (request.agent?.id !== app.gateway.id) return next()
+      assert.ok(app.ctx.theone.shadow!.snapshot('test-gateway').pending.some(owner => owner.kind === 'question' && owner.topicId === 'ctx_qwen_9070xt'))
       askedFor.push(request.questions[0].question)
       return { answers: [{ id: request.questions[0].id, selected: ['14B'] }] }
     })

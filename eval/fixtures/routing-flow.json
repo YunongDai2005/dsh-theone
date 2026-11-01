@@ -1,0 +1,12 @@
+[
+  { "id": "quick", "text": "Discuss the design choices", "answer": "a", "want": "a", "layers": ["quick"] },
+  { "id": "fast", "text": "ok", "current": "a", "answer": "a", "want": "a", "layers": [] },
+  { "id": "conflict", "text": "请调整 fp8 的参数", "current": "a", "answer": "conflict", "want": "b", "layers": ["quick", "recheck"] },
+  { "id": "unclear", "text": "继续上次那个方案", "current": "a", "answer": "unclear", "want": "a", "auto": true, "layers": ["quick", "recheck"] },
+  { "id": "unclear-empty", "text": "继续上次那个方案", "empty": true, "answer": "unclear", "want": "CREATE", "auto": true, "layers": ["quick", "recheck"] },
+  { "id": "create", "text": "Plan a pottery class for Saturday", "answer": "create", "want": "CREATE", "layers": ["quick", "recheck"] },
+  { "id": "recheck-invalid", "text": "Plan a pottery class for Saturday", "answer": "recheck-invalid", "want": "CREATE", "layers": ["quick", "recheck"] },
+  { "id": "review", "text": "Could we pick up that old project again?", "large": true, "answer": "review", "want": "old-016", "layers": ["quick", "recheck", "review", "review", "review"] },
+  { "id": "review-invalid", "text": "Could we pick up that old project again?", "large": true, "current": "old-000", "answer": "review-invalid", "want": "old-000", "layers": ["quick", "recheck", "review", "review", "review"] },
+  { "id": "model-error", "text": "Discuss a completely unrelated task", "current": "a", "answer": "error", "want": "a", "layers": ["quick"] }
+]
