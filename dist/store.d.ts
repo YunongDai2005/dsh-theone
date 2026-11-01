@@ -219,6 +219,7 @@ export declare class ContextStore {
     /** Old unscoped historical mappings remain visible, but cannot be searched. */
     sourceRanges(contextId: string): SourceRange[];
     sources(contextId: string): string[];
+    routeReceipt(messageId: string): import('./llm-router.ts').RouterReceipt | undefined;
     /** What a route was decided from: a short redacted excerpt and the classifier's receipt. */
     recordRouteDetail(messageId: string, excerpt: string, receipt: unknown): void;
     /** What each topic has been sent in this entry: the newest excerpts of the messages routed to it (after corrections). */

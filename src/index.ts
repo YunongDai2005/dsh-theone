@@ -28,6 +28,7 @@ import { HistoryCatalog, catalogSessionExcluded, withinCatalogFolder } from './h
 import { gatewayCheckpoint } from './gateway-compaction.ts'
 import { uniqueSources, type LearningSource } from './learning-journal.ts'
 import { ContextStore } from './store.ts'
+import { RoutingBindings, parseBindingInput, type BindingInput, type BindingResolution, type BindingReference } from './routing-bindings.ts'
 import { RoutingShadow, temporaryArithmetic, type MessageOrigin } from './routing-shadow.ts'
 import { resolveContext } from './router.ts'
 import { DshRouter, RouterFailure, newRoutingTrace } from './llm-router.ts'
@@ -342,6 +343,7 @@ export default class TheOne extends Service {
     noticeUrl: z.string(),
     feedbackUrl: z.string(),
   })
+  readonly bindings: RoutingBindings
   readonly shadow?: RoutingShadow
   shadowError?: string
   readonly store: ContextStore
@@ -398,6 +400,8 @@ export default class TheOne extends Service {
     if (config.workerProvider === 'theone') throw new Error('Worker cannot use the gateway provider')
     const databasePath = config.databasePath || join(process.env.DSH_HOME || join(homedir(), '.dsh'), 'theone', 'contexts.db')
     this.store = new ContextStore(databasePath)
+    this.bindings = new RoutingBindings(databasePath === ':memory:' ? ':memory:' : databasePath + '.bindings.db', config.gatewayKey,
+      sources => this.store.learningJournal.valid(sources))
     if (config.routingShadow !== false) {
       try { this.shadow = new RoutingShadow(databasePath === ':memory:' ? ':memory:' : databasePath + '.shadow.db') }
       catch { this.shadowError = 'SHADOW_OPEN_FAILED' }
@@ -450,7 +454,7 @@ export default class TheOne extends Service {
         await Promise.all([...this.workers.values()].map(handle => handle.dispose()))
         await Promise.all(this.closing.values())
       }
-      finally { await this.work.close(); await this.catalog?.close(); await Promise.all(this.pendingStows.values()); this.store.close(); this.shadow?.close() }
+      finally { await this.work.close(); await this.catalog?.close(); await Promise.all(this.pendingStows.values()); this.store.close(); this.shadow?.close(); this.bindings.close() }
     })
     this.store.seed(descriptors)
     if (!!config.workerProvider !== !!config.workerModel) throw new Error('Set both workerProvider and workerModel, or neither')
@@ -491,6 +495,7 @@ export default class TheOne extends Service {
     this.adapter = ctx.llm.registerAdapter(['theone'], new GatewayAdapter(this))
     ctx.on('session/event', (session, event) => {
       this.observeShadow(shadow => this.recordShadowEvent(shadow, session, event))
+      this.recordBindingEvent(session, event)
       if (event.type === 'permission/preset' || event.type === 'sandbox/mode' || event.type === 'approval/policy') {
         // The user can tighten access while a model or reviewer is still running.
         // Apply the new policy before the next tool, including set-aside topics.
@@ -552,8 +557,8 @@ export default class TheOne extends Service {
       const run = this.runs.get(agent.id)
       if (!run || message.source.kind !== 'user' || this.moving.has(message.id)) return
       const interjection = agent.inbox.nextStep.some(pending => pending.id === message.id)
-      if (this.router && !this.sorting.has(message.id)) this.sortMidReply(agent, run, message, interjection)
-      else if (interjection && run.canForward) run.forward(message)
+      if ((this.router || Object.keys(this.bindings.input(agent.id, message.id)).length) && !this.sorting.has(message.id)) this.sortMidReply(agent, run, message, interjection)
+      else if (interjection && run.canForward) this.forwardToWorker(run, message)
     })
     ctx.on('agent/inbox/discarded', ({ agent, message }) => {
       if (this.moving.has(message.id)) return
@@ -655,9 +660,10 @@ export default class TheOne extends Service {
       const service = this
       if (typeof original !== 'function' || typeof questions.continued !== 'function') return
       questions.answer = function (this: unknown, agent: Agent, callId: string, answer: unknown) {
-        const asker = service.store.isGateway(agent.id) ? [...service.workers.values()].map(handle => handle.agent)
-          .find(worker => { try { return questions.continued(worker).some(question => question.callId === callId) } catch { return false } }) : undefined
-        return original.call(this, asker ?? agent, callId, answer)
+        const askers = service.store.isGateway(agent.id) ? [...service.workers.values()].map(handle => handle.agent)
+          .filter(worker => { try { return questions.continued(worker).some(question => question.callId === callId) } catch { return false } }) : []
+        if (askers.length > 1) return false
+        return original.call(this, askers[0] ?? agent, callId, answer)
       }
       scope.effect(() => () => { questions.answer = original })
     })
@@ -811,7 +817,7 @@ export default class TheOne extends Service {
           decision = { ...decision, messages: users.length ? decision.messages.filter(message => !elsewhere.has(message.id)) : [] }
         }
         // Steering handed to the Worker continues the running reply without routing.
-        for (const message of users) if (!run.forwarded.has(message.id) && run.canForward) run.forward(message)
+        for (const message of users) if (!run.forwarded.has(message.id) && run.canForward) this.forwardToWorker(run, message)
         if (users.every(message => run.forwarded.has(message.id))) return decision
         // The Worker finished before this steering reached it: answer it next, in the same topic.
       }
@@ -856,7 +862,7 @@ export default class TheOne extends Service {
       if (adopted) {
         // Classified when it was sent; the topic it went to is in use from now on.
         route = adopted
-        if (adopted.decision.contextId) this.store.mount(config.gatewayKey, adopted.decision.contextId)
+        if (adopted.decision.contextId && (!relays.length || input.source.kind === 'user-question-reply')) this.store.mount(config.gatewayKey, adopted.decision.contextId)
       } else try {
         const currentId = this.store.current(config.gatewayKey)
         // Topics as routing sees them: with what corrections taught them.
@@ -866,12 +872,16 @@ export default class TheOne extends Service {
           : [this.goalTopics.get(goalId), currentId].find(id => id && allContexts.some(context => context.id === id))
         // A bare "go on"/"thanks" skips candidate search and the classifier: it can only continue.
         // Steering inside a turn also stays with its topic, as it would in an ordinary session.
-        const fastKeep = !previous && !!currentId && allContexts.some(context => context.id === currentId) && (midTurn || attachmentOnly || (!!this.router && continuesCurrent(text)))
+        const binding = this.resolveBinding(agent, users, allContexts)
+        if (binding.status !== 'none') receipt.binding = binding
+        const fastKeep = binding.status === 'none' && !previous && !!currentId && allContexts.some(context => context.id === currentId) && (midTurn || attachmentOnly || (!!this.router && continuesCurrent(text)))
         let proposed
         if (previous) {
           proposed = await this.reroute(previous, correction!, signal, receipt)
           if (proposed.action === 'CLARIFY' && proposed.reason === 'correction-unclear')
             proposed = await this.correctionChoice(agent, previous, signal, receipt) ?? proposed
+        } else if (binding.status === 'applied') {
+          proposed = this.bindingDecision(binding, currentId, receipt)
         } else if (goalTopic) {
           receipt.mode = 'rules'
           proposed = { action: goalTopic === currentId ? 'KEEP' as const : 'MOUNT' as const, contextId: goalTopic, reason: 'goal-round' }
@@ -899,7 +909,7 @@ export default class TheOne extends Service {
         for (const message of users.length ? users : [input]) shadow.bind(config.gatewayKey, agent.id, message.id, {
           topicId: route.decision.contextId ?? null,
           ...(message.source.kind === 'user' && temporaryArithmetic(messageText(message)) ? { temporary: true, basis: 'arithmetic-form' } : {}),
-          ...(relays.length ? { source: 'background' as const } : {}),
+          ...(relays.length ? { source: input.source.kind === 'user-question-reply' ? 'foreground' as const : 'background' as const } : {}),
         })
       })
       receipt.trace.final = { ...route.decision }
@@ -964,6 +974,17 @@ export default class TheOne extends Service {
         path: string; methods: string[]; requestBody?: string; fetch: (request: Request) => Promise<Response>
       }) => () => void } } | undefined
       if (!connection?.fetch?.register) return
+      child.effect(() => connection.fetch!.register({ path: '/api/theone/messages', methods: ['POST'], requestBody: 'buffered', fetch: async request => {
+        try {
+          const body = await request.json() as { sessionId?: unknown; text?: unknown; binding?: unknown; mode?: unknown }
+          if (typeof body.sessionId !== 'string' || typeof body.text !== 'string' || !body.text.trim() || body.text.length > 100000 ||
+            body.mode !== undefined && body.mode !== 'followup' && body.mode !== 'steer') return Response.json({ error: 'Invalid message' }, { status: 400 })
+          const input = this.submitMessage(body.sessionId, body.text, parseBindingInput(body.binding), body.mode === 'steer' ? 'steer' : 'followup')
+          return Response.json({ messageId: input.id })
+        } catch { return Response.json({ error: 'Invalid message or unavailable main chat' }, { status: 400 }) }
+      } }))
+      child.effect(() => connection.fetch!.register({ path: '/api/theone/bindings', methods: ['GET'], fetch: async () =>
+        Response.json({ references: this.bindings.references(new Set(this.routingContexts().map(context => context.id))) }, { headers: { 'cache-control': 'no-store' } }) }))
       child.effect(() => connection.fetch!.register({ path: '/api/theone/tasks', methods: ['GET', 'POST'], requestBody: 'buffered', fetch: async request => {
         if (request.method === 'GET') return Response.json(this.workTasks(), { headers: { 'cache-control': 'no-store' } })
         // DSH's HTTP bridge uses dsh.internal as the URL, preserving the real Host header.
@@ -1639,6 +1660,77 @@ export default class TheOne extends Service {
       ...(backing.defaultMaxTokens !== undefined ? { defaultMaxTokens: backing.defaultMaxTokens } : {}) }
   }
 
+  /** Authenticated adapters submit references, never a caller-invented topic owner. */
+  submitMessage(sessionId: string, text: string, binding: BindingInput = {}, mode: 'followup' | 'steer' = 'followup'): UserMessage {
+    const gateway = this.ctx.agents.get(SessionId(sessionId))
+    if (!gateway || gateway.options.provider !== 'theone' && !this.store.isPinnedGateway(sessionId)) throw new Error('Not a live main chat')
+    const input = createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text }] })
+    this.bindings.rememberInput(sessionId, input.id, parseBindingInput(binding))
+    if (mode === 'steer') gateway.steer(input); else gateway.followup(input)
+    return input
+  }
+
+  private resolveBinding(gateway: Agent, messages: UserMessage[], contexts: ContextDescriptor[]): BindingResolution {
+    const run = this.runs.get(gateway.id)
+    const topicId = run && !run.done ? this.store.route(run.inputId)?.decision.contextId : undefined
+    const steering = topicId && run ? { inputId: run.inputId, topicId, sources: this.bindingSources(run.inputId, topicId) } : undefined
+    const resolutions = messages.map(message => this.bindings.resolve(this.bindings.input(gateway.id, message.id),
+      new Set(contexts.map(context => context.id)), steering))
+    if (resolutions.every(result => result.status === 'none')) return { status: 'none' }
+    if (resolutions.length !== 1) return { status: 'rejected', reason: 'batched-input' }
+    return resolutions[0]
+  }
+
+  private bindingDecision(binding: BindingResolution, currentId: string | undefined, receipt: RouterReceipt): Decision {
+    receipt.binding = binding
+    receipt.mode = 'rules'; receipt.tier = 'rules'; receipt.calls = 0; receipt.cacheHitTokens = 0
+    return { action: binding.topicId === currentId ? 'KEEP' : currentId ? 'SWAP' : 'MOUNT',
+      contextId: binding.topicId, reason: 'binding-' + binding.kind }
+  }
+
+  private bindingSources(messageId: string, contextId: string): LearningSource[] {
+    return uniqueSources([this.store.learningJournal.source(messageId, contextId), ...(this.routeBinding(messageId)?.sources ?? [])])
+  }
+
+  private routeBinding(messageId: string): BindingResolution | undefined {
+    return this.store.routeReceipt(messageId)?.binding
+  }
+
+  private forwardToWorker(run: WorkerRun, message: UserMessage): void {
+    run.forward(message)
+    const route = this.store.route(message.id), contextId = route?.decision.contextId
+    if (!contextId || this.routeBinding(message.id)?.status !== 'applied') return
+    const source = this.store.learningJournal.source(message.id, contextId)
+    this.store.learningJournal.bind(run.worker.id, run.forwarded.get(message.id)!, message.id, contextId,
+      (run.worker.session.snapshotEvents().at(-1)?.seq ?? -1) + 1, this.routeBinding(message.id)?.sources)
+    this.store.learningJournal.depend(run.worker.id, run.inputId, [source])
+    void run.settled.then(() => this.store.learningJournal.end(run.worker.id, run.forwarded.get(message.id)!, run.worker.session.snapshotEvents().at(-1)?.seq ?? 0))
+  }
+
+  private recordBindingEvent(session: { id: string; snapshotEvents(): readonly SessionEvent[] }, event: SessionEvent): void {
+    const main = this.store.isGateway(session.id) || this.ctx.agents.get(SessionId(session.id))?.options.provider === 'theone'
+    const run = main ? this.runs.get(session.id) : [...this.background.values()].find(entry => entry.run.worker.id === session.id)?.run
+    if (!main) {
+      const topicId = run && this.store.route(run.inputId)?.decision.contextId
+      if (event.type === 'turn/end' && topicId && run) this.bindings.record({ id: session.id + ':' + event.seq, sessionId: session.id, topicId,
+        kind: 'reply', source: 'background', sources: this.bindingSources(run.inputId, topicId) })
+      return
+    }
+    if (event.type !== 'assistant/message') return
+    const events = session.snapshotEvents()
+    const cause = run ? events.find(item => item.type === 'user/message' && item.data.id === run.inputId)
+      : events.filter(item => item.seq < event.seq).findLast(item => item.type === 'user/message'
+        && !('form' in item.data.source && item.data.source.form === 'recall') && item.data.source.kind !== 'theone-route')
+    if (cause?.type !== 'user/message') return
+    const inputId = run?.inputId ?? cause.data.id
+    const route = this.store.route(inputId)
+    const topicId = route?.decision.contextId
+    if (!topicId) return
+    const source = cause.data.source.kind === 'user-question-reply' || cause.data.source.kind === 'user' && !this.relays.has(cause.data.id) ? 'foreground' : 'background'
+    this.bindings.record({ id: session.id + ':' + event.seq, sessionId: session.id, topicId, kind: 'reply', source,
+      sources: this.bindingSources(inputId, topicId) })
+  }
+
   /** Observation failures are isolated: they cannot change a route or model request. */
   private observeShadow(record: (shadow: RoutingShadow) => void): void {
     if (!this.shadow) return
@@ -2116,7 +2208,7 @@ export default class TheOne extends Service {
           ...(request.reason === undefined ? {} : { reason: request.reason }),
           displayReason: { en: [base?.en, `Requested in the background task${topic ? ` "${topic}"` : ''}: ${detail}`].filter(Boolean).join('\n'),
             zh: [base?.zh ?? base?.en, `后台任务${topic ? `「${topic}」` : ''}请求执行：${detail}`].filter(Boolean).join('\n') },
-          ...(request.signal === undefined ? {} : { signal: request.signal }) }), 'approval')
+          ...(request.signal === undefined ? {} : { signal: request.signal }) }), 'approval', { callId: request.callId })
       } catch {
         // The gateway turn closed or approval is unavailable: answer as the Worker's own chain would.
         return next()
@@ -2198,9 +2290,11 @@ export default class TheOne extends Service {
       const { wait: _wait, ...plain } = request
       // Asked by work main chat has not shown yet: the window names the topic it is for.
       const topic = this.backgroundTopic(run)
-      const items = plain.questions as { header?: string }[] | undefined
+      const items = plain.questions as { id: string; header?: string }[] | undefined
       const named = topic && Array.isArray(items) ? { questions: items.map(item => ({ ...item, header: item.header ? `${topic} · ${item.header}` : topic })) } : {}
-      return await this.whileAsking(worker, () => questions.ask({ ...plain, ...named, agent: run.gateway }))
+      return await this.whileAsking(worker, () => questions.ask({ ...plain, ...named, agent: run.gateway }), 'question',
+        { ...(_wait && typeof _wait === 'object' && 'callId' in _wait && typeof _wait.callId === 'string' ? { callId: _wait.callId } : {}),
+          questionIds: items?.map(item => item.id) })
     // Before DSH's own forwarding to the browser, for the same reason as approvals.
     }, { prepend: true })
   }
@@ -2601,11 +2695,12 @@ export default class TheOne extends Service {
     if (searchFailed) receipt.errorCode = 'HISTORY_SEARCH_UNAVAILABLE'
     if (this.router) {
       const recent = await this.recentMessages(agent, inputId, signal)
+      const attention = this.bindings.attention(new Set(allContexts.map(context => context.id)))
       try {
         const corrections = this.similarCorrections(text)
         const offered = this.config.factLinks ? this.factCandidates(text, recent, currentId) : []
         const facts = offered.length ? { facts: offered } : {}
-        const result = await this.decideRouting({text,contexts,catalogOrder,currentId,recent,historyIncomplete: this.catalog?.incomplete,corrections,...facts,running,...folders},signal,receipt,agent.id)
+        const result = await this.decideRouting({text,contexts,catalogOrder,currentId,recent,attention,historyIncomplete: this.catalog?.incomplete,corrections,...facts,running,...folders},signal,receipt,agent.id)
         proposed = result.decision
         trace.initial = { ...proposed }
         receipt.tier = 'quick'
@@ -2616,7 +2711,7 @@ export default class TheOne extends Service {
         if (recheck) {
           trace.recheck = { attempted: true, trigger: recheck.contextId ? 'evidence-conflict' : proposed.action === 'CREATE' ? 'create' : 'clarify', ...recheck, accepted: false }
           try {
-            const second = await this.decideRouting({text,contexts,catalogOrder,currentId,recent,historyIncomplete: this.catalog?.incomplete,corrections,...facts,running,...folders,recheck},signal,receipt,agent.id,{think:true})
+            const second = await this.decideRouting({text,contexts,catalogOrder,currentId,recent,attention,historyIncomplete: this.catalog?.incomplete,corrections,...facts,running,...folders,recheck},signal,receipt,agent.id,{think:true})
             // Changed its mind from one topic to another: the first comes along as reference, in case it was right.
             const first = contexts.some(context => context.id === recheck.previous) ? recheck.previous : undefined
             proposed = first && second.decision.contextId && second.decision.contextId !== first ? { ...second.decision, alternateIds: [first] } : second.decision
@@ -2637,7 +2732,7 @@ export default class TheOne extends Service {
           // Review pages concurrently, then read them in order exactly as a sequential pass would.
           trace.review = { attempted: pages.length > 0, pages: pages.map(page => page.map(context => context.id)) }
           const incomplete = this.catalog.incomplete
-          const reviews = await Promise.allSettled(pages.map(page => this.decideRouting({text,contexts:page,catalogOrder,currentId,recent,historyIncomplete: incomplete,corrections,...facts,running,...folders},signal,receipt,agent.id,undefined,'review')))
+          const reviews = await Promise.allSettled(pages.map(page => this.decideRouting({text,contexts:page,catalogOrder,currentId,recent,attention,historyIncomplete: incomplete,corrections,...facts,running,...folders},signal,receipt,agent.id,undefined,'review')))
           const firstElapsed = result.elapsedMs
           for (const settled of reviews) {
             if (settled.status === 'rejected') throw settled.reason
@@ -2725,7 +2820,7 @@ export default class TheOne extends Service {
     const pending = () => gateway.inbox.nextStep.some(item => item.id === message.id)
     const settled = decided.then(async decision => {
       if (!decision) {
-        if (interjection && pending() && run.canForward && !run.forwarded.has(message.id)) run.forward(message)
+        if (interjection && pending() && run.canForward && !run.forwarded.has(message.id)) this.forwardToWorker(run, message)
         return
       }
       if (pending()) this.requeue(gateway, message)
@@ -2738,11 +2833,21 @@ export default class TheOne extends Service {
   /** The other matter a message sent during `run` is about, or nothing when it is about that reply or unsure. */
   private async otherMatter(gateway: Agent, run: WorkerRun, message: UserMessage, receipt: RouterReceipt, signal: AbortSignal): Promise<Decision | undefined> {
     const text = messageText(message)
-    // No words, a correction, or a bare "go on": only the running reply can be meant.
-    if (!text.trim() || spokenCorrection(text) !== undefined || continuesCurrent(text)) return undefined
     const runningId = this.store.route(run.inputId)?.decision.contextId
     const contexts = this.routingContexts()
     if (!runningId || !contexts.some(context => context.id === runningId)) return undefined
+    const binding = this.resolveBinding(gateway, [message], contexts)
+    if (binding.status !== 'none') receipt.binding = binding
+    if (binding.status === 'applied') {
+      const proposed = this.bindingDecision(binding, runningId, receipt)
+      if (binding.topicId !== runningId) return proposed
+      const route = this.store.plan(message.id, gateway.id, this.config.gatewayKey, proposed, false)
+      receipt.trace = { ...newRoutingTrace(), initial: proposed, final: route.decision }
+      receipt.callDetails = []
+      this.store.recordRouteDetail(message.id, redactRoutingText(text).slice(0, 160), receipt)
+      return undefined
+    }
+    if (binding.status === 'none' && (!text.trim() || spokenCorrection(text) !== undefined || continuesCurrent(text))) return undefined
     const proposed = await this.classify(gateway, message.id, text, runningId, contexts, signal, receipt,
       { topicId: runningId, request: run.request, progress: run.progress() })
     if (proposed.action === 'KEEP' || proposed.action === 'CLARIFY' || receipt.errorCode || proposed.reason.startsWith('router-fallback')) return undefined
@@ -2784,8 +2889,8 @@ export default class TheOne extends Service {
   }
 
   /**
-   * A topic took up work on its own: follow it from now, and put a line in main chat whose turn shows
-   * that work, after anything main chat is already answering. The topic becomes the one in use then.
+   * Show autonomous work in main chat without taking the foreground topic. A host-validated
+   * delayed question answer is user input and does move focus to its owner.
    */
   private relay(worker: Agent, contextId: string, cause: UserMessage): void {
     const gatewayId = this.store.latestGateway(this.config.gatewayKey)
@@ -2793,7 +2898,8 @@ export default class TheOne extends Service {
     if (!gateway) return
     // The same notice the topic got ("Subtask status updated" and its report), as an ordinary chat shows it.
     const note = createUserMessage({ source: cause.source, content: cause.content })
-    this.observeShadow(shadow => shadow.bind(this.config.gatewayKey, gateway.id, note.id, { topicId: contextId, source: 'background' }))
+    const answered = cause.source.kind === 'user-question-reply'
+    this.observeShadow(shadow => shadow.bind(this.config.gatewayKey, gateway.id, note.id, { topicId: contextId, source: answered ? 'foreground' : 'background' }))
     this.relays.add(note.id)
     const run = new WorkerRun(this.ctx, worker, gateway, note.id, this.config.maxResponseChars, names => this.showWorkerTools(gateway, worker, names))
     run.request = messageText(cause)
@@ -2803,7 +2909,16 @@ export default class TheOne extends Service {
       { action: current === contextId ? 'KEEP' : current ? 'SWAP' : 'MOUNT', contextId, reason: 'topic-continues' }, false)
     this.store.claim(note.id)
     this.store.startTopicRun(note.id, contextId, worker.id)
-    this.background.set(note.id, { run, receipt: { mode: 'rules', tier: 'rules', calls: 0, cacheHitTokens: 0 } })
+    const receipt: RouterReceipt = { mode: 'rules', tier: 'rules', calls: 0, cacheHitTokens: 0 }
+    if (cause.source.kind === 'user-question-reply') {
+      const callId = cause.source.callId
+      const call = worker.session.snapshotEvents().findLast(event => event.type === 'tool/call' && event.data.callId === callId)
+      const sources = call ? this.store.learningJournal.sources(worker.id, call.seq, call.seq) : []
+      receipt.binding = { status: 'applied', kind: 'question', topicId: contextId, refs: [worker.id + ':' + cause.source.callId], sources }
+      this.store.learningJournal.bind(worker.id, cause.id, note.id, contextId, (worker.session.snapshotEvents().at(-1)?.seq ?? -1) + 1, sources)
+      void run.settled.then(() => this.store.learningJournal.end(worker.id, cause.id, worker.session.snapshotEvents().at(-1)?.seq ?? 0))
+    }
+    this.background.set(note.id, { run, receipt })
     gateway.followup(note)
   }
 
@@ -2833,7 +2948,7 @@ export default class TheOne extends Service {
    */
   private async *realign(input: UserMessage, contextId: string | undefined): AsyncGenerator<StreamChunk> {
     const title = this.store.contexts().find(context => context.id === contextId)?.title
-    if (contextId && title) this.store.mount(this.config.gatewayKey, contextId)
+    if (contextId && title && (!this.isRelay(input) || input.source.kind === 'user-question-reply')) this.store.mount(this.config.gatewayKey, contextId)
     const english = writtenInEnglish(messageText(input))
     const turn = await this.turnOf(contextId, input).catch(() => undefined)
     const named = title ? (english ? `"${title}"` : `「${title}」`) : (english ? 'its topic' : '话题')
@@ -2979,6 +3094,7 @@ export default class TheOne extends Service {
       signal?.throwIfAborted()
       this.store.learningJournal.bind(worker.id, workerInput.id, input.id, context.id, (worker.session.snapshotEvents().at(-1)?.seq ?? -1) + 1,
         uniqueSources([...this.referenceSources(context.id), ...links?.sources ?? [],
+          ...(this.routeBinding(input.id)?.sources ?? []),
           ...(route.decision.correctionOf ? [this.store.learningJournal.source(route.decision.correctionOf, context.id)] : [])]))
       run.start([createUserMessage({
         source: { kind: 'theone-context', form: 'recall', contextId: refreshed.id },
@@ -3474,7 +3590,13 @@ export default class TheOne extends Service {
 
   /** Work a topic's session is asking the user about (approvals, questions) counts as waiting on the user. */
   private readonly asking = new Map<string, number>()
-  private async whileAsking<T>(worker: Agent, ask: () => Promise<T>, kind: 'question' | 'approval' = 'question'): Promise<T> {
+  private async whileAsking<T>(worker: Agent, ask: () => Promise<T>, kind: 'question' | 'approval' = 'question', request?: BindingReference['request']): Promise<T> {
+    const run = this.runForWorker(worker)
+    const topicId = run && this.store.route(run.inputId)?.decision.contextId
+      || this.store.contexts().find(context => context.workingSessionId === worker.id)?.id
+    const bindingId = randomUUID()
+    if (topicId) this.bindings.record({ id: bindingId, sessionId: run?.gateway.id ?? worker.id, topicId, kind, source: 'foreground', ...(request ? { request } : {}),
+      sources: run ? this.bindingSources(run.inputId, topicId) : [] })
     let pending: string | undefined
     this.observeShadow(shadow => {
       const run = this.runForWorker(worker)
@@ -3485,6 +3607,7 @@ export default class TheOne extends Service {
     this.asking.set(worker.id, (this.asking.get(worker.id) ?? 0) + 1)
     try { return await ask() }
     finally {
+      this.bindings.closeReference(bindingId)
       if (pending) this.observeShadow(shadow => shadow.closePending(this.config.gatewayKey, pending!))
       const left = (this.asking.get(worker.id) ?? 1) - 1
       if (left > 0) this.asking.set(worker.id, left); else this.asking.delete(worker.id)
@@ -3799,6 +3922,13 @@ export default class TheOne extends Service {
       if (contextId && !abandon && !run.failure && run.outcome?.kind === 'completed') {
         this.store.learningJournal.settle(run.inputId, contextId)
         this.learnFromRoute(run.inputId, this.store.route(run.inputId)!.decision)
+      }
+      for (const messageId of run.forwarded.keys()) {
+        const forwarded = this.store.route(messageId)
+        if (!forwarded || forwarded.decision.contextId !== contextId) continue
+        const completed = !abandon && !run.failure && run.outcome?.kind === 'completed'
+        this.store.finish(messageId, completed ? 'completed' : 'failed')
+        if (completed && contextId) this.store.learningJournal.settle(messageId, contextId)
       }
       if (contextId) this.refreshCompactionSummary(run.worker, contextId)
       // Off by default: a small model call after the turn, only when the Worker recorded nothing itself.

@@ -36,13 +36,19 @@ are seeded even in open mode; seeded IDs are fixed during scoring, while newly c
 be matched to previously absent gold topics. `legacy-v0` cannot replay event datasets.
 
 The driver calls the real correction HTTP handler, closes/recreates the whole plugin runtime on
-restart with the same database, and delivers native steering to an active Worker. Reply targets,
-question/approval owners, and visibility events currently have observation-only shadow APIs;
-the output marks those gaps and never mounts a gold topic to simulate a binding. Dataset timestamps
-are retained, but do not advance the product clock. State snapshots distinguish visible card,
+restart with the same database, and sends explicit references through the product's
+`submitMessage` entry (also used by authenticated `POST /api/theone/messages`).
+Foreground/pending/background events simulate trusted host observations; their ownership is
+registered in the product binding registry, never inferred from gold or installed by changing
+currentId. Reliable reply, pending-response and live steering bindings have a real zero-call
+receipt. Conflicting, expired and background-only references fall back to normal classification.
+`--state-ablation drop-bindings` removes those references and their supporting events; background
+observations, text, catalog, corrections and restarts remain. Dataset timestamps are retained,
+but do not advance the product clock. State snapshots distinguish visible card,
 keyword and fact content from retained exclusion/audit records. Missing snapshots or content
 never learned are not scored as clean retractions. See the [Chinese step 5 report](../docs/design/routing-rethink-step5-report.zh.md)
-for the schema, coverage, evidence limits, and author-run commands.
+for the schema and coverage, and the [Chinese step 6 report](../docs/design/routing-rethink-step6-report.zh.md)
+for the binding protocol, native-host boundaries, current validation, and author-run commands.
 
 ## How the data is made
 

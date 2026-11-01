@@ -53,7 +53,7 @@ test('natural generator preserves structural labels and paired short text throug
     assert.deepEqual(pair[0].turns.map(t => t.text), pair[1].turns.map(t => t.text))
 })
 
-test('reply and pending metadata stay unsupported instead of secretly mounting gold', async () => {
+test('reply and pending references use the product input endpoint without mounting gold', async () => {
   const s = session([turn(0, 'ok', 'b', { events_before: [
     { id: 'visible', type: 'foreground', topic_id: 'b', text: 'Continue?' },
     { id: 'q', type: 'pending', owner_id: 'b', kind: 'question', message_id: 'visible' },
@@ -61,13 +61,16 @@ test('reply and pending metadata stay unsupported instead of secretly mounting g
     input: { reply_to: 'visible', pending_response: 'q' },
     gold: { thread: 'b', action: 'switch', refs: [], explicit_binding: true, retract: [] } })])
   const [row] = await routeSession(s, { client: await createClient({ fake }) })
-  assert.equal(row.pred, 'a')
-  assert.deepEqual(row.binding.unsupported, ['reply_to', 'pending_response'])
-  assert.equal(row.binding.applied, false)
-  assert.equal(row.events.filter(e => e.status === 'shadow-only').length, 3)
+  assert.equal(row.pred, 'b')
+  assert.deepEqual(row.binding.unsupported, [])
+  assert.equal(row.binding.applied, true)
+  assert.equal(row.logical_calls, 0)
+  assert.equal(row.calls, 0)
+  assert.equal(row.events.filter(e => e.status === 'applied').length, 3)
   const [ablated] = await routeSession(s, { client: await createClient({ fake }), stateAblation: 'drop-bindings' })
   assert.equal(ablated.state_ablation, 'drop-bindings')
-  assert.equal(ablated.pred, row.pred)
+  assert.equal(ablated.pred, 'a')
+  assert.equal(ablated.binding.applied, false)
 })
 
 test('correction uses the product API and retraction evidence survives a real restart', async () => {
@@ -96,8 +99,9 @@ test('same-round steering goes through the live gateway', async () => {
   assert.equal(rows[1].delivery.kind, 'steering')
   assert.equal(rows[1].delivery.observed, true)
   assert.equal(rows[1].binding.applied, true)
-  assert.equal(rows[1].receipt_missing, true)
-  assert.equal(rows[1].calls, 1)
+  assert.equal(rows[1].receipt_missing, false)
+  assert.equal(rows[1].calls, 0)
+  assert.equal(rows[1].logical_calls, 0)
 })
 
 test('v1 replay refuses the legacy simulator and invalid ablation names', async () => {
@@ -172,7 +176,7 @@ test('mistaken CREATE cases expose keyword learning before correction and retrac
   assert.equal(rows[1].pred, 'b')
 })
 
-test('delayed steering classification retains the actual destination and every transport call', async () => {
+test('explicit live steering bypasses even a slow classifier and keeps its own receipt', async () => {
   const base = await createClient({ fake })
   const client = { model: base.model, complete: async request => {
     if (JSON.parse(request.user).running) await new Promise(resolve => setTimeout(resolve, 25))
@@ -182,8 +186,9 @@ test('delayed steering classification retains the actual destination and every t
     input: { steering_of: 0 }, gold: { thread: 'a', action: 'continue', refs: [], explicit_binding: true, retract: [] } })])
   const rows = await routeSession(s, { client })
   assert.equal(rows[1].pred, 'a')
-  assert.equal(rows[1].calls, 1)
-  assert.equal(rows[1].usage_by_call.length, 1)
+  assert.equal(rows[1].calls, 0)
+  assert.equal(rows[1].usage_by_call.length, 0)
+  assert.equal(rows[1].logical_calls, 0)
 })
 
 test('event replay preserves product fallback errors in prediction telemetry', async () => {

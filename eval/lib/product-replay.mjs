@@ -260,7 +260,13 @@ async function routeEventSession(session, { mode = 'closed', policy = 'theone', 
   const inputs = new Map(), rows = []
   const catalog = session.catalog ?? (mode === 'closed' ? session.threads.map(t => ({
     id: t.id, title: t.title, summary: t.description || t.title, entities: [], keywords: [], lastState: 'waiting' })) : [])
-  const say = turn => createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: turn.text }] })
+  // Same input consumer as POST /api/theone/messages. Ownership never comes from gold.
+  const submit = (turn, mode = 'followup') => app.ctx.theone.submitMessage(app.gateway.id, turn.text,
+    stateAblation === 'drop-bindings' ? {} : {
+      ...(turn.input?.reply_to ? { replyTo: turn.input.reply_to } : {}),
+      ...(turn.input?.pending_response ? { pendingResponse: turn.input.pending_response } : {}),
+      ...(turn.input?.steering_of !== undefined ? { steeringOf: inputs.get(turn.input.steering_of).id } : {}),
+    }, mode)
   try {
     await writeFile(join(root, 'contexts.json'), JSON.stringify(catalog))
     app = await openEventRuntime(root, client, { cards, routingShadow }, instance)
@@ -298,8 +304,12 @@ async function routeEventSession(session, { mode = 'closed', policy = 'theone', 
         } else if (stateAblation === 'drop-bindings' && event.type !== 'background') {
           eventResults.push({ ...event, status: 'ablated' })
         } else {
-          // These public product APIs are observation-only. They cannot bind a
-          // user input or mount a topic. No gold label is read here.
+          // Dataset events replace trusted host observations at the product's
+          // producer seam. They are not accepted from the public HTTP input API.
+          app.ctx.theone.bindings.record({ id: event.id, sessionId: app.gateway.id,
+            topicId: event.type === 'pending' ? event.owner_id : event.topic_id,
+            kind: event.type === 'pending' ? event.kind : 'reply',
+            source: event.type === 'background' ? 'background' : 'foreground', sources: [] })
           const shadow = app.ctx.theone.shadow
           if (shadow) {
             if (event.type === 'pending') shadow.openPending('replay', { topicId: event.owner_id, kind: event.kind,
@@ -307,12 +317,11 @@ async function routeEventSession(session, { mode = 'closed', policy = 'theone', 
             else shadow.record('replay', { messageId: event.id, sessionId: session.session_id + ':events', seq: seq++,
               topicId: event.topic_id, source: event.type, visible: event.type !== 'background' })
           }
-          eventResults.push({ ...event, status: shadow ? 'shadow-only' : 'unsupported',
-            reason: 'No routing input adapter for dataset host/visibility events' })
+          eventResults.push({ ...event, status: 'applied', adapter: 'trusted-host-observation' })
         }
       }
       const before = eventSnapshot(app, root, inputs)
-      const input = say(turn); inputs.set(turn.i, input)
+      let input
       const next = session.turns[position + 1]
       const steered = stateAblation === 'none' && next?.input?.steering_of === turn.i ? next : undefined
       let steerInput, steerBefore, routeRecords, workerCount = 0
@@ -321,15 +330,14 @@ async function routeEventSession(session, { mode = 'closed', policy = 'theone', 
         app.model.records = []
         steerBefore = eventSnapshot(app, root, inputs)
         workerCount = app.model.workerInputs.length
-        steerInput = say(steered); inputs.set(steered.i, steerInput)
         app.model.tag = `product-v1:${session.session_id}:${steered.i}:${mode}:${stateAblation}`
-        app.gateway.steer(steerInput)
+        steerInput = submit(steered, 'steer'); inputs.set(steered.i, steerInput)
         // Native sorting is asynchronous. Yield a host tick while the worker is
         // paused here; the existing product decides whether to forward or queue.
         await new Promise(resolve => setImmediate(resolve))
       }
       const started = performance.now()
-      app.gateway.followup(input)
+      input = submit(turn); inputs.set(turn.i, input)
       await drainRuntime(app, cards)
       const after = eventSnapshot(app, root, inputs)
       const rowFor = (t, message, stateBefore, records, extra = {}) => {
@@ -340,7 +348,7 @@ async function routeEventSession(session, { mode = 'closed', policy = 'theone', 
         if (!receipt?.trace && !delivery?.observed) throw new Error(`Missing product receipt/delivery: ${session.session_id}:${t.i}`)
         const sent = receipt?.callDetails?.filter(c => c.sent) ?? []
         const calls = transportCalls(records, i => sent[i] ?? { layer: 'unattributed' })
-        const unsupported = ['reply_to', 'pending_response'].filter(k => t.input?.[k] !== undefined)
+        const unsupported = []
         const pred = route ? (route.decision.action === 'CLARIFY' ? 'CLARIFY' : route.decision.contextId ?? 'ERROR') : delivery.topic_id
         return { session_id: session.session_id, i: t.i, replay: 'product-v1', routing_schema: 'routing-v1', mode, policy,
           state_ablation: stateAblation, at: t.at, pred, action: route?.decision.action ?? 'FORWARDED',
@@ -352,7 +360,7 @@ async function routeEventSession(session, { mode = 'closed', policy = 'theone', 
           usage_by_call: calls, usage: calls.reduce((a, c) => ({ input: a.input + (c.input ?? 0), output: a.output + (c.output ?? 0),
             cache_hit: a.cache_hit + (c.cache_hit ?? 0) }), { input: 0, output: 0, cache_hit: 0 }),
           latency_ms: calls.reduce((n, c) => n + (c.latency_ms ?? 0), 0), elapsed_ms: Math.round(performance.now() - started),
-          events: eventResults, binding: { requested: t.input ?? {}, applied: !!delivery?.observed,
+          events: eventResults, binding: { requested: t.input ?? {}, applied: receipt?.binding?.status === 'applied', resolution: receipt?.binding ?? null,
             unsupported, ablated: stateAblation === 'drop-bindings' },
           state_before: stateBefore, state_after: after, snapshot_phase: steered ? 'after-shared-round' : 'after-turn',
           ...extra }
@@ -362,9 +370,8 @@ async function routeEventSession(session, { mode = 'closed', policy = 'theone', 
         auxiliary_usage: [...eventUsage, ...transportCalls(app.model.auxiliaryRecords, () => ({ layer: 'terms' }))],
       }))
       if (steered) {
-        // A forwarded native steering has no independent persisted RouterReceipt.
-        // Its destination is established by the actual worker request, not gold,
-        // currentId, or a fabricated router decision.
+        // Independently check delivery against the Worker input, in addition to
+        // the persisted binding receipt. Neither observation reads gold.
         const observed = app.model.workerInputs.slice(workerCount).filter(w => w.messages.at(-1)?.text === steered.text)
         const destinations = [...new Set(observed.map(w => app.ctx.theone.store.contexts().find(t => t.workingSessionId === w.sessionId)?.id).filter(Boolean))]
         rows.push(rowFor(steered, steerInput, steerBefore, app.model.records, {

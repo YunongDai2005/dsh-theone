@@ -2,6 +2,7 @@ import type LlmRuntime from '@deepseek-ai/dsh-llm'
 import { randomUUID } from 'node:crypto'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { ModelSelection } from '@deepseek-ai/dsh-agent'
+import type { BindingResolution, RoutingAttention } from './routing-bindings.ts'
 import type { ContextDescriptor, Decision } from './types.ts'
 import { newIndependentTopic, referencesHistory, redactRoutingText } from './routing-policy.ts'
 import { FACT_LIMITS, type FactCandidate } from './facts.ts'
@@ -16,6 +17,7 @@ export interface RoutingInput {
   catalogOrder?: readonly string[]
   currentId?: string
   recent?: RecentMessage[]
+  attention?: RoutingAttention
   historyIncomplete?: boolean
   /** Messages the user moved to another topic after routing; similar ones belong there too. */
   corrections?: { text: string; wrongId?: string; rightId: string }[]
@@ -37,6 +39,7 @@ export interface RoutingPayload {
   corrections?: RoutingInput['corrections']
   symbols?: FactCandidate[]
   recent: RecentMessage[]
+  attention?: RoutingAttention
   running?: RoutingInput['running']
   recheck?: Recheck
   currentId: string | null
@@ -68,6 +71,7 @@ export function newRoutingTrace(): RoutingTrace {
   return { candidateIds: [], recheck: { attempted: false }, review: { attempted: false, pages: [] }, autoSettled: false }
 }
 export interface RouterReceipt {
+  binding?: BindingResolution
   trace?: RoutingTrace
   callDetails?: RouterCall[]
   mode: 'rules' | 'llm'
@@ -111,7 +115,8 @@ export const PROJECTS_PROMPT = `
 projects（可能没有）是用户电脑上的项目文件夹（只有名字）。CREATE 时，如果这件新事情明显是在其中某个项目里干活（提到这个项目或它的代码、文件、仓库，或接着做那个项目里的事），把它的 id 填进 projectId；和这些项目无关、或拿不准时填 null。其他动作或没有 projects 时 projectId 为 null。`
 
 /** The routing instructions for one request. */
-export const routingPrompt = (_payload: object) => ROUTING_PROMPT + FACTS_PROMPT + PROJECTS_PROMPT + RUNNING_PROMPT + RECHECK_PROMPT
+export const ATTENTION_PROMPT = '\nattention.foreground 是前台最后展示的回复及其话题，不代表用户已经读过；attention.background 是后台完成或通知，不能因为它更晚就取代前台焦点。来源只是语义判断的依据，不等于明确回复绑定。'
+export const routingPrompt = (payload: object) => ROUTING_PROMPT + FACTS_PROMPT + PROJECTS_PROMPT + RUNNING_PROMPT + RECHECK_PROMPT + ('attention' in payload ? ATTENTION_PROMPT : '')
 
 /** How much of each field a routing request carries; the later steps apply only when a request would not fit. */
 const PAYLOAD_STEPS = [
@@ -170,13 +175,17 @@ function buildPayload(input: RoutingInput, text: string, offeredContexts: readon
     label: redactRoutingText(fact.label).slice(0, FACT_LIMITS.routerLabel), kind: fact.kind, value: redactRoutingText(fact.value).slice(0, FACT_LIMITS.routerValue) }))
   const running = input.running && offered.has(input.running.topicId) ? { running: { topicId: input.running.topicId,
     request: redactRoutingText(input.running.request).slice(0, 600), progress: redactRoutingText(input.running.progress).slice(-600) } } : {}
+  const attention = input.attention ? {
+    ...(input.attention.foreground && offered.has(input.attention.foreground.topicId) ? { foreground: input.attention.foreground } : {}),
+    background: input.attention.background.filter(item => offered.has(item.topicId)).slice(0, 3),
+  } : undefined
   const projects = (input.projects ?? []).slice(0, 40).map(project => ({ id: project.id, name: redactRoutingText(project.name).slice(0, 80) }))
   const clue = input.recheck?.contextId && offered.has(input.recheck.contextId) ? { contextId: input.recheck.contextId,
     terms: (input.recheck.terms ?? []).slice(0, EVIDENCE_LIMITS.terms).map(term => redactRoutingText(term).slice(0, 40)) } : {}
   const recheck = input.recheck ? { recheck: { previous: input.recheck.previous.slice(0, 80), ...clue } } : {}
   return { contexts, ...(states.length ? { states } : {}), ...(projects.length ? { projects } : {}),
     historyIncomplete: input.historyIncomplete ?? false, ...(corrections.length ? { corrections } : {}),
-    ...(symbols.length ? { symbols } : {}), recent, ...running, ...recheck, currentId: mounted(input, contexts), text }
+    ...(symbols.length ? { symbols } : {}), recent, ...(attention ? { attention } : {}), ...running, ...recheck, currentId: mounted(input, contexts), text }
 }
 
 /**

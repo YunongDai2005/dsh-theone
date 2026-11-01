@@ -73,12 +73,7 @@ export interface RouteView {
     at: number;
     /** Redacted start of the message. */
     excerpt: string;
-    receipt?: {
-        mode: 'rules' | 'llm';
-        model?: string;
-        elapsedMs?: number;
-        errorCode?: string;
-    };
+    receipt?: import('./llm-router.ts').RouterReceipt & Record<string, unknown>;
     /** The topic the user said it belonged to instead. */
     correctedTo?: string;
 }

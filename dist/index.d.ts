@@ -1,10 +1,11 @@
 import { Context, Service } from '@deepseek-ai/cordis';
 import z from '@deepseek-ai/schemastery';
-import type { GenerateOptions, LlmModelInfo, LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm';
+import type { GenerateOptions, LlmModelInfo, LlmResolvedModelInfo, StreamChunk, UserMessage } from '@deepseek-ai/dsh-llm';
 import type { ModelSelection } from '@deepseek-ai/dsh-agent';
 import type { SessionEventWindow } from '@deepseek-ai/dsh-session-query';
 import { HistoryCatalog } from './history-catalog.ts';
 import { ContextStore } from './store.ts';
+import { RoutingBindings, type BindingInput } from './routing-bindings.ts';
 import { RoutingShadow } from './routing-shadow.ts';
 import type { RouterReceipt } from './llm-router.ts';
 import type { LinkageSnapshot } from './catalog-types.ts';
@@ -99,6 +100,7 @@ export default class TheOne extends Service {
     private config;
     static inject: string[];
     static Config: z<Config>;
+    readonly bindings: RoutingBindings;
     readonly shadow?: RoutingShadow;
     shadowError?: string;
     readonly store: ContextStore;
@@ -222,6 +224,14 @@ export default class TheOne extends Service {
     gatewayModels(provider: string): Promise<LlmModelInfo[]>;
     /** The entry has exactly the backing model's capacity, including DSH overrides. */
     gatewayModelInfo(provider?: string, signal?: AbortSignal, model?: string): Promise<LlmResolvedModelInfo>;
+    /** Authenticated adapters submit references, never a caller-invented topic owner. */
+    submitMessage(sessionId: string, text: string, binding?: BindingInput, mode?: 'followup' | 'steer'): UserMessage;
+    private resolveBinding;
+    private bindingDecision;
+    private bindingSources;
+    private routeBinding;
+    private forwardToWorker;
+    private recordBindingEvent;
     /** Observation failures are isolated: they cannot change a route or model request. */
     private observeShadow;
     private recordShadowEvent;
@@ -341,8 +351,8 @@ export default class TheOne extends Service {
      */
     private startBackground;
     /**
-     * A topic took up work on its own: follow it from now, and put a line in main chat whose turn shows
-     * that work, after anything main chat is already answering. The topic becomes the one in use then.
+     * Show autonomous work in main chat without taking the foreground topic. A host-validated
+     * delayed question answer is user input and does move focus to its owner.
      */
     private relay;
     /**

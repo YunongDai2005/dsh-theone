@@ -20,6 +20,8 @@ test('a Worker tool approval is asked on the main-chat card for that call and it
     app.ctx.on('approval/request', async (request, next) => {
       if (request.agent.id !== app.gateway.id) return next()
       assert.ok(app.ctx.theone.shadow!.snapshot('test-gateway').pending.some(owner => owner.kind === 'approval' && owner.topicId === 'ctx_qwen_9070xt'))
+      assert.ok(app.ctx.theone.bindings.references(new Set(['ctx_qwen_9070xt'])).some(ref =>
+        ref.kind === 'approval' && ref.request?.callId === 'guarded-call'))
       asked.push({ agent: request.agent.id, toolName: request.toolName, callId: request.callId, display: request.displayReason?.zh })
       return 'allowed-once'
     })
@@ -41,6 +43,7 @@ test('a Worker tool approval is asked on the main-chat card for that call and it
     }
     const result = await ask(app.gateway, 'Qwen 那个')
     assert.equal(result.output, '已写入')
+    assert.equal(app.ctx.theone.bindings.references(new Set(['ctx_qwen_9070xt'])).filter(ref => ref.kind === 'approval').length, 0)
     assert.equal(outcome, 'allowed-once')
     assert.equal(asked.length, 1)
     assert.equal(asked[0].toolName, 'guarded_write')
@@ -62,6 +65,8 @@ test('a question the Worker asks the user is answered in the main chat', { timeo
     app.ctx.on('user-questions/request', async (request, next) => {
       if (request.agent?.id !== app.gateway.id) return next()
       assert.ok(app.ctx.theone.shadow!.snapshot('test-gateway').pending.some(owner => owner.kind === 'question' && owner.topicId === 'ctx_qwen_9070xt'))
+      assert.ok(app.ctx.theone.bindings.references(new Set(['ctx_qwen_9070xt'])).some(ref =>
+        ref.kind === 'question' && ref.request?.questionIds?.includes('size')))
       askedFor.push(request.questions[0].question)
       return { answers: [{ id: request.questions[0].id, selected: ['14B'] }] }
     })
@@ -84,6 +89,7 @@ test('a question the Worker asks the user is answered in the main chat', { timeo
     }
     const result = await ask(app.gateway, 'Qwen 那个')
     assert.equal(result.output, '用 14B')
+    assert.equal(app.ctx.theone.bindings.references(new Set(['ctx_qwen_9070xt'])).filter(ref => ref.kind === 'question').length, 0)
     assert.deepEqual(askedFor, ['用哪个尺寸？'])
     assert.deepEqual(answer, { answers: [{ id: 'size', selected: ['14B'] }] })
   } finally { await app.close(); await rm(root, { recursive: true, force: true }) }

@@ -811,6 +811,10 @@ export class ContextStore {
     sources(contextId) {
         return [...new Set(this.sourceRanges(contextId).map(source => source.sessionId))];
     }
+    routeReceipt(messageId) {
+        const row = this.db.prepare('SELECT receipt FROM route_details WHERE message_id=?').get(messageId);
+        return row?.receipt ? JSON.parse(String(row.receipt)) : undefined;
+    }
     /** What a route was decided from: a short redacted excerpt and the classifier's receipt. */
     recordRouteDetail(messageId, excerpt, receipt) {
         this.db.prepare('INSERT OR IGNORE INTO route_details(message_id, excerpt, receipt) VALUES (?, ?, ?)').run(messageId, excerpt, JSON.stringify(receipt));
