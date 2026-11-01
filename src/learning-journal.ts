@@ -23,6 +23,7 @@ export class LearningJournal {
       CREATE TABLE IF NOT EXISTS learning_turns (session_id TEXT NOT NULL, input_id TEXT NOT NULL, message_id TEXT NOT NULL,
         context_id TEXT NOT NULL, start_seq INTEGER NOT NULL, end_seq INTEGER NOT NULL, revision INTEGER NOT NULL, parents TEXT NOT NULL DEFAULT '[]',
         PRIMARY KEY(session_id,input_id));
+      CREATE INDEX IF NOT EXISTS learning_turns_message ON learning_turns(message_id);
       CREATE TABLE IF NOT EXISTS learning_fact_aliases (fact_id TEXT NOT NULL, alias TEXT NOT NULL, sources TEXT NOT NULL,
         PRIMARY KEY(fact_id,alias,sources));
       CREATE TABLE IF NOT EXISTS learning_fact_versions (fact_id TEXT NOT NULL, version INTEGER NOT NULL,
