@@ -1,0 +1,24 @@
+{
+  "files": {
+    "docs/design/routing-rethink-step4-report.zh.md": "059a969e0a725560394b2836e85bd70d7aa4ac14842cc52d5b0f6812725bcd63",
+    "experiments/routing-rethink-step4/analyze.py": "65d61238b8bf628b96384c0f0c8e19122deb809ce28d3c11cb97034e217ecd15",
+    "experiments/routing-rethink-step4/bindings.mjs": "a371841ec4c94ec71f6427fcfc7d1f331eee0a5ee9d04a74284f389660a8c0f2",
+    "experiments/routing-rethink-step4/bindings.test.mjs": "ac90b87d868d4103c25dafd25eb82a4bad7468d4aa3cb87dffaf5351fa734ab7",
+    "experiments/routing-rethink-step4/dev-results.json": "8ea2662d56be7a298bd305ee0c3db3367d6b2731f414d2c4827fb23336935882",
+    "experiments/routing-rethink-step4/freeze.json": "a927950325fc817ca82edd4b577bde7ec8f89dfb75f7722f0bbdc1ce6536d739",
+    "experiments/routing-rethink-step4/probe.mjs": "ba72778fb120866ccf4b0dacbbdaeafb0571e86d535e5fa21c66483919fc1fa9",
+    "experiments/routing-rethink-step4/protocol.md": "59267231659afdd39a9b7bc49cf53f48e61c164310a17ac01a00101149298b4f",
+    "experiments/routing-rethink-step4/README.md": "ef6f46ca6d29641329787be18b7ded3a16940b7518e012a62622ea3f020bcc44",
+    "experiments/routing-rethink-step4/render_report.py": "22e23eac73dc8c4f64334da3ea67d4a262d210fd6afe49a85035c9e0a40d8fc3",
+    "experiments/routing-rethink-step4/source-probe-dev.json": "895cecea0d3a0aa7fb8c70cbda0df00b6f5ced49b544fb3f6349495a59baae81",
+    "experiments/routing-rethink-step4/source-probe-test.json": "3c0ef3651301ce11051566971b12161145d951cac110d842e55eb5256bdc6703",
+    "experiments/routing-rethink-step4/test-evaluation-started.json": "c84361195534fd84e288ea2617ce906110ccd29eb7e85f79e062a7cf28e08da4",
+    "experiments/routing-rethink-step4/test-results.json": "1705d05c1435efc4582b51afa7412269d05a0f8440cea6c44427fc83f9bacc5a",
+    "experiments/routing-rethink-step4/test_analysis.py": "6901766ffb847945ce035915af8bad0c00c12fc865db06db3a53eecaf1698c83",
+    "experiments/routing-rethink-step4/validation.json": "2e01dd1193ac9ad5f417fbe747443246df3b7058ea5307adb6b83a2c0fd1db92",
+    "experiments/routing-rethink-step4/verify.py": "b63e9ce3643591edafaaae46961a95e214af174b2c43400a9f33af3bcaa33184"
+  },
+  "total_bytes_without_manifest": 351647,
+  "test_policy_evaluations": 1,
+  "note": "Hashes cover delivered artifacts; original predictions are not copied."
+}

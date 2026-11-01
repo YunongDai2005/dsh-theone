@@ -1,0 +1,80 @@
+{
+  "split": "test",
+  "corpus_sha256": "be37451e752841c6eea81c5c71dca2c82b6198cbe258f440e559deabef4a25a6",
+  "counts": {
+    "sessions": 10,
+    "messages": 495,
+    "regex_hits": 0,
+    "current_available_after_first": 485,
+    "regex_hits_with_previous_turn": 0,
+    "shadow_binding_eligible": 0,
+    "short_chars_16": 110,
+    "implicit": 141,
+    "implicit_regex_hits": 0,
+    "source_dist_disagreements": 0
+  },
+  "metadata": {
+    "reply": 0,
+    "replyTo": 0,
+    "reply_to": 0,
+    "requestId": 0,
+    "steering": 0,
+    "attachments": 0,
+    "goalId": 0,
+    "events": 0,
+    "timestamp": 0
+  },
+  "shortExamples": [
+    {
+      "session": "zh-0005",
+      "i": 1,
+      "text": "那个时间是不是太晚了点",
+      "regex": false
+    },
+    {
+      "session": "zh-0005",
+      "i": 4,
+      "text": "光圈开到最大还是收两档好",
+      "regex": false
+    },
+    {
+      "session": "zh-0005",
+      "i": 5,
+      "text": "背景想压暗一点怎么办",
+      "regex": false
+    },
+    {
+      "session": "zh-0005",
+      "i": 6,
+      "text": "梅花拍特写还是带枝干好",
+      "regex": false
+    },
+    {
+      "session": "zh-0005",
+      "i": 7,
+      "text": "行 那我先试试",
+      "regex": false
+    },
+    {
+      "session": "zh-0005",
+      "i": 10,
+      "text": "先从哪块开始补比较好",
+      "regex": false
+    },
+    {
+      "session": "zh-0005",
+      "i": 14,
+      "text": "还是回到数学吧，每天二十分钟够吗",
+      "regex": false
+    },
+    {
+      "session": "zh-0005",
+      "i": 16,
+      "text": "那个手动头逆光拍会不会糊",
+      "regex": false
+    }
+  ],
+  "source_dist_settlement_fixtures": 5,
+  "positive_bare_continuation_fixtures": 4,
+  "note": "Sequential product-v1 waits for idle and sends text only. Missing host metadata is not a trusted binding."
+}

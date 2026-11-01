@@ -1,0 +1,50 @@
+{
+  "frozen_at_utc": "2026-11-01T13:40:12.685957+00:00",
+  "policy": {
+    "id": "loss-evidence-v1",
+    "scope": "suppression-only on logged baseline histories",
+    "keep": [
+      "nonempty catalog and viable conflicting evidence",
+      "nonempty catalog and CREATE split risk"
+    ],
+    "skip": [
+      "empty catalog",
+      "CLARIFY without distinguishing evidence"
+    ],
+    "accuracy_lower_pp": -0.5,
+    "pollution_upper_pp": 0.2,
+    "harm_upper_per100": 0.2,
+    "short_chars": 16,
+    "long_return_intervening_turns": 10,
+    "bootstrap": {
+      "unit": "conversation",
+      "iterations": 10000,
+      "seed": 20261101
+    },
+    "prices_usd_per_million": [
+      0.3,
+      0.006,
+      1.2
+    ]
+  },
+  "files": {
+    "experiments/routing-rethink-step4/analyze.py": "65d61238b8bf628b96384c0f0c8e19122deb809ce28d3c11cb97034e217ecd15",
+    "experiments/routing-rethink-step4/probe.mjs": "ba72778fb120866ccf4b0dacbbdaeafb0571e86d535e5fa21c66483919fc1fa9",
+    "experiments/routing-rethink-step4/bindings.mjs": "a371841ec4c94ec71f6427fcfc7d1f331eee0a5ee9d04a74284f389660a8c0f2",
+    "experiments/routing-rethink-step4/protocol.md": "59267231659afdd39a9b7bc49cf53f48e61c164310a17ac01a00101149298b4f",
+    "eval/score.py": "82d270df3631ee3faa885f3912d88814bc01d3033c51299d6eff9c032b99a2d1",
+    "src/routing-policy.ts": "c6dcfda4c1d93de28046b563456b0652afc731484cf458b92d16762cedec7722",
+    "src/routing-evidence.ts": "3763f7cf8657b343fcbf62db1c07ab57b73642b49916c97d7227ac50a60dee9b",
+    "src/history-catalog.ts": "64f045c860d8cecf4dfcbcae42598457af85f4240ff9aa084e182b8d80e97be9",
+    "src/routing-shadow.ts": "63ce0fccd25e5a8bc63d4860735e280f9f3707cdaa724eab02481603a8ab1f62",
+    "src/index.ts": "71159bfa46963d091e9b2e945cf03d93f90fb5a383fd0447827327960d6dadda",
+    "eval/lib/product-replay.mjs": "89c11b1faad20cdfafdaeb46bc0e0878a4b885e1ff31c3553d06b2ac768c2ce6"
+  },
+  "dev_results_sha256": "8ea2662d56be7a298bd305ee0c3db3367d6b2731f414d2c4827fb23336935882",
+  "dev_inputs": {
+    "eval/data/interleave-v0/sessions.jsonl": "be37451e752841c6eea81c5c71dca2c82b6198cbe258f440e559deabef4a25a6",
+    "eval/data/interleave-v0/predictions/product-v1-open-dev-cards-deepseek-v4.1-flash.jsonl": "1d9daa0edae3f71d64bd33358e30a8860cda7992effd6f3f8f0a673e5679db0f",
+    "eval/data/interleave-v0/predictions/product-v1-closed-dev-cards-deepseek-v4.1-flash.jsonl": "e8224d175d0ac006e0e5e89abfe3be11c3d57983608a95448e006a34bc2afd18"
+  },
+  "test_prediction_reads_before_freeze": 0
+}

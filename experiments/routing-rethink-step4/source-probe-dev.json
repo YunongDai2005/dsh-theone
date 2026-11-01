@@ -1,0 +1,80 @@
+{
+  "split": "dev",
+  "corpus_sha256": "be37451e752841c6eea81c5c71dca2c82b6198cbe258f440e559deabef4a25a6",
+  "counts": {
+    "sessions": 40,
+    "messages": 1971,
+    "regex_hits": 0,
+    "current_available_after_first": 1931,
+    "regex_hits_with_previous_turn": 0,
+    "shadow_binding_eligible": 0,
+    "short_chars_16": 477,
+    "implicit": 616,
+    "implicit_regex_hits": 0,
+    "source_dist_disagreements": 0
+  },
+  "metadata": {
+    "reply": 0,
+    "replyTo": 0,
+    "reply_to": 0,
+    "requestId": 0,
+    "steering": 0,
+    "attachments": 0,
+    "goalId": 0,
+    "events": 0,
+    "timestamp": 0
+  },
+  "shortExamples": [
+    {
+      "session": "zh-0001",
+      "i": 1,
+      "text": "场地呢",
+      "regex": false
+    },
+    {
+      "session": "zh-0001",
+      "i": 2,
+      "text": "那个预算大概多少钱合适",
+      "regex": false
+    },
+    {
+      "session": "zh-0001",
+      "i": 3,
+      "text": "那接下来要准备啥",
+      "regex": false
+    },
+    {
+      "session": "zh-0001",
+      "i": 4,
+      "text": "这个流程你能帮我排一下吗",
+      "regex": false
+    },
+    {
+      "session": "zh-0001",
+      "i": 5,
+      "text": "还有别的要注意的吗",
+      "regex": false
+    },
+    {
+      "session": "zh-0001",
+      "i": 6,
+      "text": "那个分工怎么弄",
+      "regex": false
+    },
+    {
+      "session": "zh-0001",
+      "i": 7,
+      "text": "读书会筹备的事先这样，谢谢",
+      "regex": false
+    },
+    {
+      "session": "zh-0001",
+      "i": 8,
+      "text": "那我先按这个来吧",
+      "regex": false
+    }
+  ],
+  "source_dist_settlement_fixtures": 5,
+  "positive_bare_continuation_fixtures": 4,
+  "note": "Sequential product-v1 waits for idle and sends text only. Missing host metadata is not a trusted binding."
+}
