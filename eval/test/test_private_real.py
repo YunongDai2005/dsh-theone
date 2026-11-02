@@ -23,8 +23,10 @@ def at(n):
 
 def session(name, times, source='claude'):
     return {'id': name, 'source': source, 'messages': [
-        {'id': name + str(n), 'at': at(n), 'text': f'Invented {name} planning item {n}',
-         'has_paste': False, 'paste_chars': 0} for n in times], 'replies': []}
+        {'id': name + str(n), 'at': at(n), 'text': f'Invented {name} telescope planning item {n}',
+         'has_paste': False, 'paste_chars': 0} for n in times], 'replies': [],
+            'projects': [{'at': at(times[0]), 'name': 'fictional-' + name, 'key': name}],
+            'metadata': [], 'attachment_hints': []}
 
 
 class RedactionTests(unittest.TestCase):
@@ -158,28 +160,157 @@ class PipelineTests(unittest.TestCase):
                     'content': [{'type': 'input_text', 'text': 'continue'}]}}]
         self.assertEqual(pipeline.parse_codex(records, 'file1', self.r, self.stats), [])
 
-    def test_foreground_is_chronological_not_gold_and_reply_has_no_future_leak(self):
-        a = session('a', [0, 4, 8])
-        b = session('b', [1, 5, 9], 'codex')
-        a['replies'] = [{'at': at(3), 'text': 'Earlier fictional answer.'},
-                        {'at': at(7), 'text': 'Later fictional answer.'}]
+    def test_interleave_omits_simulated_foreground_and_replies(self):
+        a, b = session('a', [0, 4, 8]), session('b', [1, 5, 9], 'codex')
+        a['replies'] = [{'at': at(3), 'text': 'Earlier fictional answer.'}]
         b['replies'] = [{'at': at(2), 'text': 'Other fictional answer.'}]
         stream = pipeline.make_stream([a, b], 'dev', 1)
         self.assertEqual([t['at'] for t in stream['turns']], [at(4), at(5), at(8)])
-        self.assertEqual(stream['turns'][1]['events_before'][0]['topic_id'], 't1')
-        self.assertEqual(stream['turns'][1]['gold']['thread'], 't2')
-        self.assertEqual(stream['turns'][0]['reply'], '')
-        self.assertFalse(any(t.get('input') for t in stream['turns']))
-        self.assertTrue(all(not t['ambiguous'] for t in stream['turns']))
-        self.assertTrue(all(len(e['text']) <= 200 and e['at'] <= t['at']
-                            for t in stream['turns'] for e in t['events_before']))
+        self.assertTrue(all(t['events_before'] == [] and t['reply'] == '' for t in stream['turns']))
+        self.assertNotIn('current_id', stream)
+        self.assertEqual(stream['observation_basis'], 'unavailable_multi_window')
 
-    def test_no_overlap_no_stream_and_catalog_uses_past_only(self):
+    def test_warmup_is_unseeded_past_only_and_includes_multiple_requests(self):
         self.assertIsNone(pipeline.make_stream([session('a', [0, 1]), session('b', [3, 4])], 'dev', 1))
-        a, b = session('a', [0, 3, 5]), session('b', [1, 4, 6])
-        a['messages'][-1]['text'] = 'A future invented secret subject.'
+        a, b = session('a', [0, 1, 2, 3, 4, 5, 8]), session('b', [6, 7, 9])
+        a['messages'][5]['text'] = 'Sixth request must not be included in the card.'
+        a['messages'][-1]['text'] = 'Future invented subject must never be in warmup.'
+        a['metadata'] = [{'at': at(2), 'kind': 'title', 'text': 'Fictional lantern plan'},
+                         {'at': at(7), 'kind': 'summary', 'text': 'Future metadata forbidden'}]
         stream = pipeline.make_stream([a, b], 'dev', 2)
-        self.assertNotIn('future invented', json.dumps(stream['catalog']))
+        self.assertEqual(stream['catalog'], [])
+        self.assertTrue(stream.get('warmup'))
+        text = json.dumps(stream['warmup'])
+        self.assertIn('planning item 4', text)
+        self.assertIn('Fictional lantern plan', text)
+        self.assertIn('fictional-a', text)
+        self.assertNotIn('Sixth request', text)
+        self.assertNotIn('Future', text)
+        self.assertTrue(all(t['at'] < stream['overlap_start'] for t in stream['warmup']))
+        self.assertTrue(all(t['at'] >= stream['overlap_start'] for t in stream['turns']))
+        self.assertLess(max(t['i'] for t in stream['warmup']), min(t['i'] for t in stream['turns']))
+        self.assertTrue(all(t['gold']['thread'] is None for t in stream['warmup']))
+        self.assertFalse(any(t['title'].startswith('Topic ') for t in stream['threads']))
+
+    def test_insufficient_cards_are_excluded_and_counted(self):
+        a, b = session('a', [0, 3, 5]), session('b', [1, 4, 6])
+        for m in a['messages']: m['text'] = 'ok'
+        self.assertIsNone(pipeline.make_stream([a, b], 'dev', 1))
+        streams, info = pipeline.build_interleaved([a, b, session('c', [20, 22, 24]), session('d', [21, 23, 25])])
+        self.assertEqual(info.get('insufficient_card_sessions'), 1)
+
+    def test_card_can_start_after_a_short_first_prompt_without_future_leak(self):
+        a, b = session('a', [0, 2, 6]), session('b', [1, 3, 7])
+        a['messages'][0]['text'] = 'ok'
+        stream = pipeline.make_stream([a, b], 'dev', 1)
+        self.assertIsNotNone(stream)
+        self.assertTrue(all(t['at'] > at(2) for t in stream['turns']))
+
+    def test_project_scope_compares_directory_identity_and_reports_unknown(self):
+        a, b = session('a', [0, 3, 5]), session('b', [1, 4, 6])
+        self.assertEqual(pipeline.make_stream([a, b], 'dev', 1).get('project_scope'), 'cross_project')
+        b['projects'] = a['projects']
+        self.assertEqual(pipeline.make_stream([a, b], 'dev', 1).get('project_scope'), 'same_project')
+        b['projects'] = []
+        self.assertEqual(pipeline.make_stream([a, b], 'dev', 1).get('project_scope'), 'unknown')
+
+    def test_host_prefixes_nested_and_generic_leading_xml_are_removed(self):
+        for tag in ('external_codex_apps_open_page', 'codex_internal_context', 'environment_context',
+                    'user_instructions', 'command-invented', 'local-command-invented', 'ide_selection', 'future_host'):
+            with self.subTest(tag=tag):
+                block = f'<{tag} source="fiction > only"><{tag}>nested fixture</{tag}>injected fixture</{tag}>'
+                self.assertIsNone(pipeline.clean_user(block, self.r, self.stats))
+                result = pipeline.clean_user(block + '\nPlan an imaginary observatory.', self.r, self.stats)
+                self.assertEqual(result['text'], 'Plan an imaginary observatory.')
+        result = pipeline.clean_user('Plan the observatory. <ide_selection>hidden</ide_selection>', self.r, self.stats)
+        self.assertEqual(result['text'], 'Plan the observatory.')
+        self.assertTrue(any(k.startswith('stripped_blocks:') for k in self.stats))
+
+    def test_injection_counts_distinguish_removed_blocks_from_excluded_messages(self):
+        pipeline.clean_user('<external_codex_apps_demo>fixture</external_codex_apps_demo>Plan the fictional telescope.', self.r, self.stats)
+        pipeline.clean_user('<external_codex_apps_demo>fixture</external_codex_apps_demo>', self.r, self.stats)
+        self.assertEqual(self.stats['stripped_blocks:external_codex_apps'], 2)
+        self.assertEqual(self.stats['excluded_injection_only:external_codex_apps'], 1)
+
+    def test_summary_after_injection_and_unclosed_known_host_are_excluded(self):
+        self.assertIsNone(pipeline.clean_user('<environment_context>fiction</environment_context>This session is being continued from a previous conversation.', self.r, self.stats))
+        self.assertIsNone(pipeline.clean_user('<codex_internal_context>unfinished host block', self.r, self.stats))
+
+    def test_only_attachment_paths_are_not_eval_messages_and_hints_are_basenames(self):
+        records = [
+            {'type': 'user', 'uuid': 'a', 'sessionId': 'fiction', 'timestamp': at(0), 'cwd': 'D:/lab/observatory',
+             'message': {'content': '@"D:/private/fake plan.md" @./notes.txt'}},
+            {'type': 'user', 'uuid': 'b', 'sessionId': 'fiction', 'timestamp': at(1), 'cwd': 'D:/lab/observatory',
+             'message': {'content': 'Compare the invented telescope plans.'}},
+        ]
+        out = pipeline.parse_claude(records, 'file', self.r, self.stats)[0]
+        self.assertEqual(len(out['messages']), 1)
+        self.assertEqual(self.stats['excluded_attachment_only'], 1)
+        self.assertEqual(out['attachment_hints'][0]['names'], ['fake plan.md', 'notes.txt'])
+        self.assertNotIn('D:/private', json.dumps(out))
+        result = pipeline.clean_user('Compare @"D:/private/notes.txt" carefully.', self.r, self.stats)
+        self.assertNotIn('D:/private', result['text'])
+        self.assertIn('notes.txt', result['text'])
+
+    def test_windows_project_leaf_is_casefolded_and_attachments_lose_directories(self):
+        a = pipeline.new_session('a', 'codex')
+        b = pipeline.new_session('b', 'codex')
+        pipeline.add_project(a, 'D:' + chr(92) + 'fiction' + chr(92) + 'OBSERVATORY', at(0), self.r)
+        pipeline.add_project(b, '/fiction/observatory/', at(0), self.r)
+        self.assertEqual(a['projects'][0]['key'], b['projects'][0]['key'])
+        hints = []
+        value = '@"D:' + chr(92) + 'fiction' + chr(92) + 'lens.md"'
+        self.assertIsNone(pipeline.clean_user(value, self.r, self.stats, hints=hints))
+        self.assertEqual(hints, ['lens.md'])
+
+    def test_dispatch_filter_ignores_removed_host_task_descriptions(self):
+        rows = [{'type': 'session_meta', 'payload': {'id': 'fiction', 'source': 'vscode'}},
+                {'type': 'response_item', 'timestamp': at(0), 'payload': {'type': 'message', 'role': 'user',
+                  'content': '<codex_internal_context>task file: fiction.md</codex_internal_context>Plan the fictional telescope mount.'}}]
+        self.assertEqual(len(pipeline.parse_codex(rows, 'file', self.r, self.stats)), 1)
+
+    def test_claude_untimed_title_never_enters_a_card(self):
+        rows = [{'type': 'custom-title', 'sessionId': 'fiction', 'customTitle': 'Untimed future title'},
+                {'type': 'summary', 'sessionId': 'fiction', 'timestamp': at(0), 'summary': 'Timed fictional history'},
+                {'type': 'user', 'uuid': 'u', 'sessionId': 'fiction', 'timestamp': at(1),
+                 'cwd': 'D:/lab/observatory', 'message': {'content': 'Compare invented telescope mount designs.'}}]
+        out = pipeline.parse_claude(rows, 'file', self.r, self.stats)[0]
+        self.assertEqual([m['text'] for m in out.get('metadata', [])], ['Timed fictional history'])
+        self.assertEqual(self.stats['metadata_untimed_excluded'], 1)
+        self.assertEqual(out['projects'][0]['name'], 'observatory')
+
+    def test_codex_meta_project_and_timestamped_title_are_sanitized(self):
+        rows = [{'type': 'session_meta', 'timestamp': at(0), 'payload': {'id': 'fiction', 'source': 'vscode',
+                  'cwd': 'C:/Users/Fictional/private/observatory', 'thread_name': 'Plan for nobody@example.invalid'}},
+                {'type': 'response_item', 'timestamp': at(1), 'payload': {'type': 'message', 'role': 'user',
+                  'content': [{'type': 'input_text', 'text': 'Compare invented telescope mount designs.'}]}}]
+        out = pipeline.parse_codex(rows, 'file', self.r, self.stats)[0]
+        self.assertEqual(out.get('projects', [{}])[0].get('name'), 'observatory')
+        self.assertTrue(out.get('metadata'))
+        self.assertNotIn('nobody@', json.dumps(out))
+        self.assertNotIn('Fictional/private', json.dumps(out))
+
+    def test_copied_history_cannot_create_fake_parallel_source_sessions(self):
+        self.assertTrue(hasattr(pipeline, 'deduplicate_history'))
+        original, fork = session('original', [0, 2, 4]), session('fork', [0, 2, 8])
+        fork['messages'][:2] = [dict(m) for m in original['messages'][:2]]
+        stats = {'claude': Counter(), 'codex': Counter()}
+        cleaned = pipeline.deduplicate_history([fork, original], stats)
+        by_id = {s['id']: s for s in cleaned}
+        self.assertEqual([m['at'] for m in by_id['original']['messages']], [at(0), at(2), at(4)])
+        self.assertEqual([m['at'] for m in by_id['fork']['messages']], [at(8)])
+        self.assertIsNone(pipeline.make_stream(cleaned, 'dev', 1))
+        self.assertEqual(stats['claude']['shared_history_users_excluded'], 2)
+        self.assertEqual(len(fork['messages']), 3)
+
+    def test_pair_first_grouping_retains_two_flows_from_four_overlapping_windows(self):
+        sessions = [session('a', [0, 4, 8]), session('b', [1, 5, 9]),
+                    session('c', [2, 6, 10]), session('d', [3, 7, 11]),
+                    session('e', [20, 24, 28]), session('f', [21, 25, 29])]
+        streams, _ = pipeline.build_interleaved(sessions)
+        self.assertEqual(sum(s['split'] == 'dev' for s in streams), 2)
+        self.assertEqual(sum(s['split'] == 'test' for s in streams), 1)
+        self.assertEqual(len({x for s in streams for x in s['source_sessions']}), 6)
 
     def test_split_has_no_session_or_time_leak_and_cap_is_global(self):
         sessions = [session('a', [0, 2, 4]), session('b', [1, 3, 5]),
@@ -299,6 +430,23 @@ class StorageTests(unittest.TestCase):
             self.g.write_private(target, {'nested': [{'text': fake}]})
             self.assertNotIn(fake, target.read_text(encoding='utf-8'))
             self.assertIn('[KEY:', target.read_text(encoding='utf-8'))
+
+    def test_codex_index_is_timestamped_and_filtered_at_card_boundary(self):
+        self.assertTrue(hasattr(self.g, 'read_codex_index'))
+        with private_temp(dir=self.g.PRIVATE_ROOT) as temp:
+            (temp / '.codex').mkdir()
+            rows = [{'id': 'fiction', 'thread_name': 'Past fictional telescope title', 'updated_at': at(0)},
+                    {'id': 'fiction', 'thread_name': 'Future title cannot appear', 'updated_at': at(5)},
+                    {'id': 'fiction', 'thread_name': 'Unknown date title'}]
+            (temp / '.codex/session_index.jsonl').write_text('\n'.join(json.dumps(r) for r in rows), encoding='utf-8')
+            item = session('fiction', [1, 3, 6], 'codex')
+            item['id'] = pipeline.alias('codex:fiction')
+            stats = Counter()
+            self.g.read_codex_index(temp, [item], redact_module.Redactor(), stats)
+            card = pipeline.card_for(item, at(3))
+            self.assertIn('Past fictional', card['title'])
+            self.assertNotIn('Future title', json.dumps(card))
+            self.assertEqual(stats['metadata_untimed_excluded'], 1)
 
     def test_wal_snapshot_is_not_silently_ignored(self):
         import contextlib

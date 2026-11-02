@@ -112,3 +112,156 @@ py -X utf8 -B eval/score.py eval/data/private-real/benchmark-20261102/gateway.js
 自动审批策略拒绝了删除本轮 `corpus-v1`、`corpus-v2` 旧快照及 3 个空人工测试目录的清理命令，只给出 `blocked by policy`，没有更具体原因。本轮未再次尝试删除或请求确认。这些中间产物仍在被忽略的 `eval/data/private-real/` 内；正式评测只使用 `benchmark-20261102/`，不要合并旧快照重复计数。
 
 剩余限制是：脱敏不等于匿名化，未标记的粘贴、项目名称和非主目录路径仍可能揭示个人信息；私有语料不适合公开。当前缺少用户确认的 DSH 纠正数据，交错金标和前台观察均带有建模假设；时间样本、来源比例和 short 样本量有限，不能外推用户总体表现。尚未运行真实模型，也未验证作者的 API 配置和真实延迟；没有声称获得产品性能提升。
+
+## 第二版（2026-11-02）
+
+最终数据目录为 `eval/data/private-real/benchmark-20261102-v2-ready/`，版本标记为 `private-real-2`。本节更新第一版的卡片、预热、评分和前台观察约定。保留原始第一版目录及作者的真实模型预测；未调用任何模型 API，未读取模型凭据文件或使用 API Key，未 commit，交由作者审查后提交。
+
+作者发现的准确率问题已经用现有预测只读复算。原评分器将 `catalog` 中的 ID 视为必须沿用的真实已有话题，因此这些金标不能参与开放匹配；产品创建的新 ID 即使分组合理，也无法映射到预置金标。下面的“一对一”将预置和新 ID 同等处理，每条流只拟合一次匹配，short/switch 继续使用这次匹配，不对子集重新拟合。
+
+| 第一版作者预测 | 原严格准确率 | 一对一正确数 / 总数 | short 正确数 / 总数 | switch 正确数 / 总数 |
+|---|---:|---:|---:|---:|
+| dev，none | 24.54% | 113 / 163（69.33%） | 17 / 25 | 13 / 26 |
+| dev，drop-bindings | 40.49% | 113 / 163（69.33%） | 17 / 25 | 13 / 26 |
+| test，none | 49.21% | 44 / 63（69.84%） | 7 / 11 | 6 / 15 |
+| test，drop-bindings | 26.98% | 42 / 63（66.67%） | 6 / 11 | 6 / 15 |
+
+保留或去掉状态后，一对一准确率差为 dev 0 个百分点、test 3.17 个百分点，不能据此证明前台规则的收益。旧版 22 张卡片中有 8 张的标题或摘要仍含可清除的注入；226 条评分输入中有 14 条需要继续清除注入，12 条按新版清洗规则会被整体排除。第一版用源会话编号生成话题标题，并用单条首句构造卡片，附件引用或极短首句不能充分描述任务。旧前台观察来自跨窗口时间合并，不能证明用户当时看到了哪条回复。
+
+过滤现在覆盖 `external_codex_apps_*`、`codex_internal_context*`、`command-*`、`local-command-*`、`ide_*` 及既有宿主标签；支持嵌套同名标签、带属性的标签、属性中的大于号和已知宿主的未闭合块。未知的成对 XML 风格前缀也被移除。清除后再检查系统摘要，避免包装层被移除后露出的摘要进入语料。附件引用不读取文件正文，混合输入只保留脱敏文件名；纯附件引用整条排除，文件名可作为历史卡片线索。
+
+以下为最终生成时、通过来源筛选后用户记录的计数；“清除块”与“整条排除”口径不同，同一消息含多种类别时类别计数可能重叠。仅列类别和数量，不展示真实内容。
+
+| 类别 | 清除块数 | 清除后为空的记录数 |
+|---|---:|---:|
+| external_codex_apps 前缀 | 56 | 56 |
+| codex_internal_context 前缀 | 8 | 8 |
+| 其他开头成对 XML 块 | 37 | 24 |
+| command 前缀 | 3 | 1 |
+| local-command 前缀 | 0 | 0 |
+| ide 前缀 | 0 | 0 |
+| 既有宿主标签，含环境和用户指令包装 | 78 | 65 |
+
+共 180 条记录清除了 182 个块，154 条因清除后为空而排除。附件引用命中 7 条，其中纯附件 1 条。Claude 无时间戳的标题条目排除 2,302 条；这不是 2,302 个不同会话。卡片信息不足而不能交错的会话为 1 个。
+
+数据审计还发现跨 Claude 会话复制的历史：源、消息 ID、时间戳及脱敏文本同时相同的 9 条记录现在只保留一次。选择较早开始、较早结束的历史作为保留方，排序相同时按匿名会话 ID 稳定选择。普通重复续接语不会仅因文本相同而被去重。中间数据曾将其中 8 条同时计入两个窗口，产生虚假交错；最终数据已排除这个问题。
+
+卡片使用共同评测区间开始前最多前 5 条有效用户消息，每条先脱敏再截到 240 字符。摘要上限 1,800 字符，标题上限 80 字符；增加脱敏后的项目目录末级名称、此前附件文件名及可证明时间的原生标题或摘要。有效信息至少需要 4 种英文词或汉字及 18 个有效字符；项目名、文件名和短续接语本身不能使空任务通过门槛。若首句过短，可用稍后的有效请求完成预热，再开始评测。
+
+Claude 本机记录中的 `custom-title/customTitle` 没有时间戳，全部拒绝作为卡片来源；未发现可用于本轮的带时间会话摘要。Codex 的 `session_meta` 有项目路径，本机没有线程标题字段；实际线程名在 `.codex/session_index.jsonl`，包含 `thread_name` 和 `updated_at`。只在更新时间严格早于评测边界时使用，未使用文件修改时间代替内容时间。`turn_context.summary` 是推理配置，不当作会话摘要。索引共 141 条记录，关联到合格候选会话的带时间标题有 23 条；最终卡片实际使用其中 6 条。最终 20 张卡片使用 1/2/3/5 条历史请求的数量分别为 8/3/2/7，使用附件文件名线索 4 次。
+
+评测区间从所有源会话均具备可用卡片的最早时间之后 1 毫秒开始，结束于最早结束的源会话。每张卡片的所有材料都严格早于该边界，边界内或之后的输入仍只用于评分。分组优先选择双窗口，避免第三个窗口缩短重叠区间或占用另一条可用流的配对对象；仍是确定性贪心选择，不声称全局最优。
+
+交错组 `catalog` 为空，卡片放在独立的 `warmup` 数组。私有回放入口在同一产品运行实例中先送入预热，再处理评分消息，让产品自行创建话题；不把源会话标签作为路由指令。预热消息的 `gold.thread=null`，不会进入评分输入或匹配权重。普通预测文件只包含评分消息；预热回执另存为 `<预测文件>.warmup.jsonl`，便于审查预热调用及成本。原有 `eval/score.py`、产品回放器和 `src/`、`dist/` 均未修改。第二版必须使用 `eval/run-private-real.mjs` 回放，直接调用原入口会遗漏独立预热。
+
+交错组标记 `observation_basis=unavailable_multi_window`，所有 `events_before`、`reply` 均为空，不提供 `current_id` 或用户绑定。回放入口会拒绝给这种数据重新加入前台事件或助手回复。产品仍会保留回放过程自身产生的状态，但这不是历史 UI 焦点证据，因此这套交错数据不用于验证第七步前台归属规则。DSH 参考组继续单独保留其推断观察和未确认标记。
+
+最终候选包含 Claude 32 个会话、654 条去重用户消息，Codex 35 个会话、351 条消息；另有 DSH 2 个 gateway、12 条输入。交错候选中 55 个会话、989 条消息具有足够卡片和至少两条输入；1 个跨时间切分边界的会话（14 条）被排除，34 个未找到可用配对。最终采用 20 个互不重复的源会话，形成 10 条双窗口流、229 条评分消息，另有 20 条预热。989 条中的其余 760 条是预热、区间外、跨界或无法交错的输入。没有拼接无重叠的会话来填满预算。
+
+时间切分边界为 **2026-10-26 14:57:54.650 UTC**（北京时间 22:57:54.650）。dev/test 源会话互不相交，且 dev 最晚评分时间早于 test 最早评分时间。旧版为 10 条流、226 条评分输入；新版在更严格过滤和历史去重后仍保留 10 条流、229 条。来源日志有新增，不能将两版规模之差解释为同一固定快照上的净过滤量。
+
+| 最终集合 | 流 / 片段 | 评分或参考消息 | 独立预热 | short | switch |
+|---|---:|---:|---:|---:|---:|
+| 交错 dev | 6 | 135 | 12 | 23 | 10 |
+| 交错 test | 4 | 94 | 8 | 31 | 12 |
+| DSH 全部片段 | 3 | 12 | 0 | 6 | 3 |
+
+合计 241 条评分或参考消息，外加 20 条预热；DSH 的 12 条均未确认，严格准确率仍为 null。交错组有 Claude 165 条、Codex 64 条，中文 218 条、英文 11 条；含粘贴或附件线索的输入为 10 条。新旧 short/switch 样本数不同，不能直接当作相同测试集比较。
+
+项目分类只比较源会话记录的目录末级名称，不区分大小写，先计算匿名身份再脱敏显示名称，以免脱敏占位符把不同项目误合并。所有源会话在观察区间内只出现同一个目录名时标记 `project_scope=same_project`，存在多个已知名称则为 `cross_project`，缺少目录信息为 `unknown`。分类在 session 级存储，并添加对应 turn 标签，使原评分器和新诊断工具都能分别报告。报告仅给出统计，不列真实项目名。
+
+| 分组 | dev 流 / 消息 | test 流 / 消息 | 合计流 / 消息 |
+|---|---:|---:|---:|
+| same_project | 2 / 7 | 0 / 0 | 2 / 7 |
+| cross_project | 4 / 128 | 4 / 94 | 8 / 222 |
+| unknown | 0 / 0 | 0 / 0 | 0 / 0 |
+
+同项目的两个窗口被产品合为一个话题未必错误；本轮仍保留源会话近似金标供观察，没有用项目标签自动改金标。目录末级同名也不能证明是同一仓库，因此分类有局限。
+
+新增只读工具 `eval/score-private-real.py` 复用现有匈牙利算法，忽略预置身份，仅以每条流全部可评分消息求一个一对一映射，然后输出总体、short、switch 和项目分组的正确数、分母及准确率。它拒绝重复、缺失、额外预测键，排除未确认或歧义输入，不修改数据、预测或旧评分文件，也不输出聊天内容或具体映射 ID。
+
+最终假模型检查使用 `dry-v2-interleaved-dev-none.jsonl`、`dry-v2-interleaved-test-none.jsonl`、`dry-v2-gateway-all-none.jsonl`，配有原评分器生成的 `.score.json` 和只读诊断结果 `.diagnostic.json`。229 条交错预测、12 条 DSH 预测及 20 条独立预热回执均已核对，无 ERROR、错误字段或缺失回执；预测键完整，预热键与评分键不重叠。两种评分的总体正确数一致。
+
+| 最终假模型检查 | 正确数 / 严格分母 | short | switch |
+|---|---:|---:|---:|
+| dev | 112 / 135（82.96%） | 23 / 23 | 4 / 10 |
+| test | 63 / 94（67.02%） | 21 / 31 | 6 / 12 |
+| DSH | 0 / 0（null） | 0 / 0 | 0 / 0 |
+
+这些数值只验证回放和评分管线。假模型在全部 10 条交错流内都只给出一个预测话题，switch F1 为 0；高总体准确率来自多数类别占比，不能作为产品真实路由能力，更不能与第一版真实模型成绩比较。评分器显示的假 token、耗时和换算金额也不是实际成本或性能。预热成本未计入普通预测的每消息费用，真实评测总成本需同时审查独立预热回执。
+
+最终验证为 private-real Python 38 项、只读评分 Python 5 项、private-real Node 6 项，加既有 routing-v1 Node 18 项和 Python 评分 16 项，共 **83 项**。新增测试均为人工样例，覆盖新注入类别、嵌套包装、附件文件名、时间不明/未来标题、短首句预热、信息不足、项目身份、复制历史去重、双窗口优先分组、预热建立产品话题及不进入评分、一对一子集匹配和预测键完整性。
+
+复核命令如下。生成时必须指定尚不存在的私有输出目录。
+
+```powershell
+py -X utf8 -B -m unittest discover -s eval/test -p 'test_private_real*.py' -v
+node --test --test-isolation=none eval/test/private-real.test.mjs eval/test/routing-v1.test.mjs
+py -X utf8 -B -m unittest discover -s eval/test -p test_score_routing_v1.py -v
+py -X utf8 -B eval/generate-private-real.py --out eval/data/private-real/author-v2-fresh-corpus
+```
+
+以下真实模型命令**未执行**，供作者在现有模型配置中审查后自行运行。不在命令中填写密钥；先跑 dev，再独立跑 test。输出名与第一版和本轮假模型输出均不同。
+
+```powershell
+$bench = 'eval/data/private-real/benchmark-20261102-v2-ready'
+
+node eval/run-private-real.mjs --data "$bench/interleaved.jsonl" --mode open --cards --split dev --live --out "$bench/author-live2-interleaved-dev-none.jsonl"
+py -X utf8 -B eval/score.py "$bench/interleaved.jsonl" "$bench/author-live2-interleaved-dev-none.jsonl" --split dev
+py -X utf8 -B eval/score-private-real.py "$bench/interleaved.jsonl" "$bench/author-live2-interleaved-dev-none.jsonl" --split dev
+
+node eval/run-private-real.mjs --data "$bench/interleaved.jsonl" --mode open --cards --split test --live --out "$bench/author-live2-interleaved-test-none.jsonl"
+py -X utf8 -B eval/score.py "$bench/interleaved.jsonl" "$bench/author-live2-interleaved-test-none.jsonl" --split test
+py -X utf8 -B eval/score-private-real.py "$bench/interleaved.jsonl" "$bench/author-live2-interleaved-test-none.jsonl" --split test
+
+node eval/run-private-real.mjs --data "$bench/gateway.jsonl" --mode open --cards --split all --live --out "$bench/author-live2-gateway-all-none.jsonl"
+py -X utf8 -B eval/score.py "$bench/gateway.jsonl" "$bench/author-live2-gateway-all-none.jsonl" --split all
+py -X utf8 -B eval/score-private-real.py "$bench/gateway.jsonl" "$bench/author-live2-gateway-all-none.jsonl" --split all
+```
+
+如作者需要延续第一版状态消融的对照，下面仍提供独立输出名。但第二版交错输入没有模拟前台绑定，`drop-bindings` 不能被解释为第七步前台规则的因果实验，真实模型随机性也可能造成差异。
+
+```powershell
+foreach ($split in @('dev', 'test')) {
+  node eval/run-private-real.mjs --data "$bench/interleaved.jsonl" --mode open --cards --split $split --state-ablation drop-bindings --live --out "$bench/author-live2-interleaved-$split-drop-bindings.jsonl"
+  py -X utf8 -B eval/score.py "$bench/interleaved.jsonl" "$bench/author-live2-interleaved-$split-drop-bindings.jsonl" --split $split
+  py -X utf8 -B eval/score-private-real.py "$bench/interleaved.jsonl" "$bench/author-live2-interleaved-$split-drop-bindings.jsonl" --split $split
+}
+```
+
+只读复算第一版可使用下列命令，不会覆盖第一版 `.score.json`。
+
+```powershell
+$old = 'eval/data/private-real/benchmark-20261102'
+foreach ($split in @('dev', 'test')) {
+  foreach ($ablation in @('none', 'drop-bindings')) {
+    py -X utf8 -B eval/score-private-real.py "$old/interleaved.jsonl" "$old/live1-interleaved-$split-$ablation.jsonl" --split $split
+  }
+}
+```
+
+只采用 `benchmark-20261102-v2-ready/` 作为第二版正式输入。`v2-check-01/`、`benchmark-20261102-v2/` 和 `benchmark-20261102-v2-final/` 是本轮检查期间留下的中间快照，不用于正式评测，也不要合并重复计数。所有这些目录均在既有忽略规则下，未覆盖第一版。最终审计记录在正式目录的 `verification.json`：229 条评分输入无重复观察，249 条预热及评分文本复扫没有残留敏感模式，时间和源会话隔离检查通过。对开始时记录的 1,313 个受保护文件逐一哈希复核，改变数为 0，其中第一版目录有 941 个文件。
+
+交付前还将 8 份待审文件与 7,128 条 Claude/Codex 候选用户文本及可见助手片段做去空白后的连续 48 字符重合检查（报告只检查第二版新增部分）。报告和全部人工样例均无聊天原文重合；17 个命中窗口经逐项复核仅为既有 routing-v1 字段结构和 Node 标准导入语句，不是用户对话内容。检查结果在 `export-audit.json`、`export-review.json`；短于该长度的普通用语不由此检查证明。全程使用 shell、`py -X utf8 -B` 和 Node 非隔离测试；中文写入使用 UTF-8，没有使用子代理或 node_repl。
+
+剩余限制：源会话仍只是近似话题，938 对相邻输入中有 160 对低词面重叠，不能把它当成实际换题率；共同时间区间仅证明会话生命周期重叠，不证明窗口持续活跃。短输入缺少前台观察时仍可能本来就不可判定。原生标题数量少，信息门槛和贪心配对都会带来选择偏差；同项目子集只有 7 条且全部在 dev，不能据此概括同项目并行效果。DSH 尚无确认纠正金标。脱敏不等于匿名化，路径、项目线索和无边界粘贴仍可能含个人信息，私有语料不宜公开。本轮只验证离线数据与工具，真实模型能力、真实成本及延迟均留待作者评测。
+
+### 第二版真实模型结果（作者补测）
+
+DeepSeek V4.1 Flash（OpenCode Go，`reasoning_effort: none`，open/cards），2026-11-02，数据 `benchmark-20261102-v2-ready`。两个评分器（`eval/score.py` 开放模式、`eval/score-private-real.py` 一对一映射）给出的总体正确数一致。
+
+| 组 | 总体 | short | switch | harm/100 | $/千条 |
+|---|---|---|---|---:|---:|
+| dev（6 流） | 119/135 = 88.1% | 22/23 | 5/10 | 24.4 | 0.26 |
+| test（4 流） | 67/94 = 71.3% | 23/31 | 7/12 | 89.4 | 0.21 |
+| DSH 参考（12 条，均未确认） | 不计分 | – | – | – | 0.36 |
+
+第一版同一模型在一对一口径下约 69%（dev 69.3%、test 69.8%），主要被注入文本和空卡片拖累；第二版 dev 明显上升，test 基本持平。
+
+逐条看错误（只在本机看，不在此处引用原文），可以分成三类：
+
+1. **金标本身可疑。** test 最大的一条流（54 条）里两个源会话做的是同一类工作，产品把它们合成了一个话题，贡献了 test 约四分之三的错误。目录末级名不同，所以被标成 cross_project，但实际是同一件事在两个窗口里推进。dev 最大的流也有类似的少量情况。
+2. **没有前台状态时本来就判断不了的短句。** 例如“怎么样了”“跑完了吗”这类进度追问，在多窗口数据里没有“最后一条回复来自哪个话题”的状态。真实的单一主聊天里，第七步的前台/待答规则会用到这个状态，所以这部分是偏悲观的估计。
+3. **真正的路由弱点：显式换题时偏向留在当前话题。** switch 子集只有约 50–58%。用户隐式提到另一件事（只说对象名、不说“回到……”）时，模型常常 KEEP。这是第七步规则覆盖不到的、需要语义判断的部分，样本还少（22 条），先记录，不据此调提示词。
+
+另外仍有少量 Codex 附件头（以“# Files mentioned by the user”开头的块）留在评测消息里，下一版生成器应一并过滤。

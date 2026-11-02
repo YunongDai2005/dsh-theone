@@ -18,7 +18,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent / 'lib'))
 from private_real_redact import Redactor
 from private_real import (alias, timestamp, content_text, clean_user, clean_reply,
-                          parse_claude, parse_codex, build_interleaved, split_gateway, distribution)
+                          parse_claude, parse_codex, build_interleaved, split_gateway, distribution, add_metadata, deduplicate_history)
 
 PRIVATE_ROOT = Path(__file__).resolve().parent / 'data/private-real'
 
@@ -60,6 +60,22 @@ def jsonl_records(path, stats):
                     stats['malformed_records'] += 1
     except (OSError, UnicodeError):
         stats['unreadable_files'] += 1
+
+
+def read_codex_index(home, sessions, redactor, stats):
+    # This append-only index has thread_name + updated_at. Never use an untimed
+    # current title, file mtime, or turn_context.summary (a reasoning setting).
+    path = Path(home) / '.codex/session_index.jsonl'
+    if not path.exists():
+        stats['missing_thread_index'] += 1
+        return
+    by_id = {s['id']: s for s in sessions if s['source'] == 'codex'}
+    for row in jsonl_records(path, stats):
+        stats['thread_index_records'] += 1
+        target = by_id.get(alias('codex:' + str(row.get('id'))))
+        if target is not None:
+            add_metadata(target, row.get('thread_name'), timestamp(row.get('updated_at')),
+                         'thread_name', redactor, stats)
 
 
 def read_dsh(home, redactor, stats):
@@ -187,15 +203,20 @@ def generate(home, out, max_messages=2000):
     # Relocated Claude logs may repeat the same human message in several files.
     merged = {}
     for s in all_sessions:
-        target = merged.setdefault(s['id'], {**s, 'messages': [], 'replies': []})
-        target['messages'].extend(s['messages']); target['replies'].extend(s['replies'])
+        target = merged.setdefault(s['id'], {**s, **{k: [] for k in ('messages', 'replies', 'projects', 'metadata', 'attachment_hints')}})
+        for field in ('messages', 'replies', 'projects', 'metadata', 'attachment_hints'):
+            target[field].extend(s.get(field, []))
     for s in merged.values():
         unique = {m['id']: m for m in s['messages']}
         stats[s['source']]['cross_file_duplicates'] += len(s['messages']) - len(unique)
         s['messages'] = sorted(unique.values(), key=lambda m: (m['at'], m['id']))
         reps = {(r['at'], r['text']): r for r in s['replies']}
         s['replies'] = sorted(reps.values(), key=lambda r: r['at'])
-    all_sessions = list(merged.values())
+        for field in ('projects', 'metadata', 'attachment_hints'):
+            values = {json.dumps(item, sort_keys=True): item for item in s[field]}
+            s[field] = sorted(values.values(), key=lambda item: item['at'])
+    all_sessions = deduplicate_history(list(merged.values()), stats)
+    read_codex_index(home, all_sessions, redactor, stats['codex'])
     for source in ('claude', 'codex'):
         stats[source]['unique_users'] = sum(len(s['messages']) for s in all_sessions if s['source'] == source)
         stats[source]['unique_sessions'] = sum(s['source'] == source for s in all_sessions)
@@ -211,7 +232,7 @@ def generate(home, out, max_messages=2000):
         gateway.extend(split_gateway(s, routes, cutoff, i + 1))
     summary = {'generated_utc': datetime.now(timezone.utc).isoformat(), 'max_messages': max_messages,
         'sources': {k: dict(v) for k, v in stats.items()}, 'redactions': dict(redactor.counts),
-        'redaction_scope': 'Accepted candidate user text and visible assistant text, before dataset selection; tool/system bodies not scanned.',
+        'redaction_scope': 'Candidate user/visible assistant text, project leaves, attachment basenames and timestamped metadata before selection; tool/system bodies not scanned.',
         'interleaved': distribution(interleaved), 'gateway': distribution(gateway), 'split': split_info,
         'topic_drift': topic_drift(all_sessions), 'total_messages': sum(len(s['turns']) for s in interleaved + gateway)}
     assert summary['total_messages'] <= max_messages
@@ -224,7 +245,7 @@ def generate(home, out, max_messages=2000):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--out', default=str(PRIVATE_ROOT / 'corpus-v1'))
+    parser.add_argument('--out', required=True)
     parser.add_argument('--max-messages', type=int, default=2000)
     args = parser.parse_args(argv)
     try:
