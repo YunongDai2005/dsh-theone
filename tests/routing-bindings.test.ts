@@ -109,6 +109,18 @@ test('foreground and background provenance reach the classifier without granting
   } finally { await app.dispose() }
 })
 
+test('a foreground reply alone adds no attention field, so ordinary requests stay as they were', async () => {
+  const app = await setup()
+  try {
+    record(app, 'front', A)
+    await send(app, {}, '下一步该怎么处理这个方案')
+    const call = routingCalls(app)[0]
+    const payload = JSON.parse(call.messages[0].content.flatMap(b => b.type === 'text' ? b.text : []).join(''))
+    assert.equal('attention' in payload, false)
+    assert.equal(JSON.stringify(call).includes('attention.foreground'), false)
+  } finally { await app.dispose() }
+})
+
 test('a corrected bound route retracts learning and invalidates replies produced by that route', async () => {
   const app = await setup()
   try {

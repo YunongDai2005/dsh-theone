@@ -93,9 +93,12 @@ function buildPayload(input, text, offeredContexts, step) {
         label: redactRoutingText(fact.label).slice(0, FACT_LIMITS.routerLabel), kind: fact.kind, value: redactRoutingText(fact.value).slice(0, FACT_LIMITS.routerValue) }));
     const running = input.running && offered.has(input.running.topicId) ? { running: { topicId: input.running.topicId,
             request: redactRoutingText(input.running.request).slice(0, 600), progress: redactRoutingText(input.running.progress).slice(-600) } } : {};
-    const attention = input.attention ? {
-        ...(input.attention.foreground && offered.has(input.attention.foreground.topicId) ? { foreground: input.attention.foreground } : {}),
-        background: input.attention.background.filter(item => offered.has(item.topicId)).slice(0, 3),
+    // Sent only when something finished in the background: the foreground alone repeats currentId and recent, and in the
+    // real eval the extra field and its instruction pulled new topics into the foreground one (step 6 report, section 8).
+    const background = (input.attention?.background ?? []).filter(item => offered.has(item.topicId)).slice(0, 3);
+    const attention = background.length ? {
+        ...(input.attention?.foreground && offered.has(input.attention.foreground.topicId) ? { foreground: input.attention.foreground } : {}),
+        background,
     } : undefined;
     const projects = (input.projects ?? []).slice(0, 40).map(project => ({ id: project.id, name: redactRoutingText(project.name).slice(0, 80) }));
     const clue = input.recheck?.contextId && offered.has(input.recheck.contextId) ? { contextId: input.recheck.contextId,
