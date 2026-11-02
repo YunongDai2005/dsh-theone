@@ -1,4 +1,5 @@
-import { DatabaseSync } from 'node:sqlite'
+import type { DatabaseSync } from 'node:sqlite'
+import { openDatabase } from './sqlite.ts'
 import { randomUUID } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
@@ -24,8 +25,8 @@ export class WorkStore {
   private readonly db: DatabaseSync
   constructor(path: string) {
     if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true })
-    this.db = new DatabaseSync(path)
-    this.db.exec(`PRAGMA busy_timeout = 5000;
+    this.db = openDatabase(path, 5000)
+    this.db.exec(`
       CREATE TABLE IF NOT EXISTS work_items (
         id TEXT PRIMARY KEY, dedupe TEXT NOT NULL UNIQUE, resource TEXT NOT NULL, body TEXT NOT NULL,
         state TEXT NOT NULL, due INTEGER NOT NULL, created INTEGER NOT NULL,

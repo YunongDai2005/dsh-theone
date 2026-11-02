@@ -1,4 +1,4 @@
-import { DatabaseSync } from 'node:sqlite';
+import { openDatabase } from "./sqlite.js";
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
@@ -31,7 +31,7 @@ export class ContextStore {
     constructor(path) {
         if (path !== ':memory:')
             mkdirSync(dirname(path), { recursive: true });
-        this.db = new DatabaseSync(path);
+        this.db = openDatabase(path, 5000);
         this.db.exec(`
       PRAGMA foreign_keys = ON;
       CREATE TABLE IF NOT EXISTS topic_groups (
@@ -64,7 +64,6 @@ export class ContextStore {
       CREATE TABLE IF NOT EXISTS plugin_settings (
         gateway_key TEXT PRIMARY KEY, settings TEXT NOT NULL, revision INTEGER NOT NULL
       );
-      PRAGMA busy_timeout = 5000;
       CREATE TABLE IF NOT EXISTS contexts (
         id TEXT PRIMARY KEY, descriptor TEXT NOT NULL, working_session_id TEXT NOT NULL UNIQUE
       );

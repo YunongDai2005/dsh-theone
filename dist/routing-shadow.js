@@ -1,4 +1,4 @@
-import { DatabaseSync } from 'node:sqlite';
+import { openDatabase } from "./sqlite.js";
 const compare = (a, b) => a[0] - b[0] || a[1] - b[1];
 /** A conservative, explicitly labelled shadow inference; never a routing rule. */
 export function temporaryArithmetic(text) {
@@ -11,9 +11,8 @@ export function temporaryArithmetic(text) {
 export class RoutingShadow {
     db;
     constructor(path) {
-        this.db = new DatabaseSync(path);
+        this.db = openDatabase(path, 100);
         this.db.exec(`
-      PRAGMA busy_timeout = 100;
       CREATE TABLE IF NOT EXISTS shadow_sessions (gateway TEXT, session TEXT, ordinal INTEGER, PRIMARY KEY(gateway,session));
       CREATE TABLE IF NOT EXISTS shadow_messages (gateway TEXT, session TEXT, message TEXT, ordinal INTEGER, seq INTEGER, value TEXT, PRIMARY KEY(gateway,session,message));
       CREATE TABLE IF NOT EXISTS shadow_bindings (gateway TEXT, session TEXT, message TEXT, value TEXT, PRIMARY KEY(gateway,session,message));

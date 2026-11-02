@@ -1,4 +1,4 @@
-import { DatabaseSync } from 'node:sqlite';
+import { openDatabase } from "./sqlite.js";
 import { randomUUID } from 'node:crypto';
 import { uniqueSources } from "./learning-journal.js";
 /** Server-owned provenance, separate from optional shadow observations. No text or grants.
@@ -13,8 +13,8 @@ export class RoutingBindings {
     constructor(path, gateway, valid) {
         this.gateway = gateway;
         this.valid = valid;
-        this.db = new DatabaseSync(path);
-        this.db.exec('PRAGMA busy_timeout=100; CREATE TABLE IF NOT EXISTS routing_refs (' +
+        this.db = openDatabase(path, 100);
+        this.db.exec('CREATE TABLE IF NOT EXISTS routing_refs (' +
             'n INTEGER PRIMARY KEY, gateway TEXT, id TEXT, topic TEXT, kind TEXT, origin TEXT, value TEXT, runtime TEXT, closed INTEGER DEFAULT 0,' +
             'UNIQUE(gateway,id,topic)); CREATE INDEX IF NOT EXISTS routing_refs_recent ON routing_refs(gateway,origin,n);' +
             'CREATE TABLE IF NOT EXISTS routing_inputs (gateway TEXT, session TEXT, message TEXT, value TEXT, PRIMARY KEY(gateway,session,message));');
