@@ -304,19 +304,19 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(len(fork['messages']), 3)
 
     def test_pair_first_grouping_retains_two_flows_from_four_overlapping_windows(self):
-        sessions = [session('a', [0, 4, 8]), session('b', [1, 5, 9]),
-                    session('c', [2, 6, 10]), session('d', [3, 7, 11]),
-                    session('e', [20, 24, 28]), session('f', [21, 25, 29])]
+        sessions = [session('a', range(0, 29, 4)), session('b', range(1, 30, 4)),
+                    session('c', range(2, 31, 4)), session('d', range(3, 32, 4)),
+                    session('e', range(40, 57, 2)), session('f', range(41, 58, 2))]
         streams, _ = pipeline.build_interleaved(sessions)
         self.assertEqual(sum(s['split'] == 'dev' for s in streams), 2)
         self.assertEqual(sum(s['split'] == 'test' for s in streams), 1)
         self.assertEqual(len({x for s in streams for x in s['source_sessions']}), 6)
 
     def test_split_has_no_session_or_time_leak_and_cap_is_global(self):
-        sessions = [session('a', [0, 2, 4]), session('b', [1, 3, 5]),
-                    session('c', [20, 22, 24]), session('d', [21, 23, 25])]
-        streams, info = pipeline.build_interleaved(sessions, max_messages=6)
-        self.assertLessEqual(sum(len(s['turns']) for s in streams), 6)
+        sessions = [session('a', range(0, 23, 2)), session('b', range(1, 24, 2)),
+                    session('c', range(30, 53, 2)), session('d', range(31, 54, 2))]
+        streams, info = pipeline.build_interleaved(sessions, max_messages=40)
+        self.assertLessEqual(sum(len(s['turns']) for s in streams), 40)
         dev = [s for s in streams if s['split'] == 'dev']
         test = [s for s in streams if s['split'] == 'test']
         self.assertTrue(dev and test)

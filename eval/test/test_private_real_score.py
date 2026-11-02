@@ -68,4 +68,75 @@ class PrivateScoreTests(unittest.TestCase):
             with self.assertRaises(ValueError): diagnostic.evaluate([s], bad)
 
 
+    def test_pure_subtopics_have_zero_mixing_but_visible_fragmentation(self):
+        s, rows = fixture()
+        for row, pred in zip(rows, ['p', 'p', 'q', 'r', 'r', 'r']): row['pred'] = pred
+        result = diagnostic.evaluate([s], rows)
+        self.assertEqual(result['cross_session_mixing']['mixed'], 0)
+        self.assertEqual(result['cross_session_mixing']['n'], 6)
+        self.assertEqual(result['fragmentation']['topic_count_histogram'], {'1': 1, '2': 1})
+        self.assertEqual(result['fragmentation']['mean_topics_per_source'], 1.5)
+        self.assertEqual(result['all']['correct'], 5)
+
+    def test_majority_mixing_ties_and_special_predictions_are_distinct(self):
+        s, rows = fixture()
+        result = diagnostic.evaluate([s], rows)
+        self.assertEqual(result['cross_session_mixing']['mixed'], 1)
+        self.assertEqual(result['cross_session_mixing']['unresolved'], 0)
+        for row in rows: row['pred'] = 'p'
+        result = diagnostic.evaluate([s], rows)
+        self.assertEqual(result['cross_session_mixing']['unresolved'], 6)
+        self.assertEqual(result['cross_session_mixing']['mixed'], 0)
+        rows[0]['pred'] = 'ERROR'
+        rows[1]['pred'] = 'CLARIFY'
+        result = diagnostic.evaluate([s], rows)
+        self.assertEqual(result['cross_session_mixing']['invalid'], 2)
+        self.assertEqual(result['cross_session_mixing']['mixed'], 1)
+        self.assertEqual(result['fragmentation']['topic_count_histogram'], {'1': 2})
+
+    def test_switch_uses_past_ownership_and_requires_reusing_an_existing_source_topic(self):
+        s, rows = fixture()
+        for t, g in zip(s['turns'], ['a', 'a', 'b', 'b', 'a', 'b']): t['gold']['thread'] = g
+        for i, t in enumerate(s['turns']): t['tags'] = ['switch'] if i in (2, 4, 5) else []
+        for row, p in zip(rows, ['p', 'p', 'q', 'q', 'r', 'q']): row['pred'] = p
+        result = diagnostic.evaluate([s], rows)
+        self.assertEqual((result['switch_routing']['correct'], result['switch_routing']['n']), (2, 3))
+        self.assertEqual(result['switch_routing']['by_visit']['returning']['correct'], 1)
+        self.assertEqual(result['switch_routing']['by_visit']['returning']['n'], 2)
+        # The new r is a pure A topic retrospectively, but was an unnecessary split on return.
+        self.assertEqual(result['cross_session_mixing']['mixed'], 0)
+
+    def test_switch_cannot_be_rescued_by_future_majority_or_unchanged_topic(self):
+        s, rows = fixture()
+        for t, g in zip(s['turns'], ['a', 'b', 'b', 'b', 'a', 'a']): t['gold']['thread'] = g
+        for i, t in enumerate(s['turns']): t['tags'] = ['switch'] if i in (1, 4) else []
+        for row, p in zip(rows, ['p', 'p', 'p', 'p', 'q', 'q']): row['pred'] = p
+        result = diagnostic.evaluate([s], rows)
+        self.assertEqual(result['switch_routing']['correct'], 1)
+        self.assertEqual(result['switch_routing']['n'], 2)
+
+    def test_macro_mean_and_median_do_not_weight_by_stream_length(self):
+        s, rows = fixture()
+        small = {'session_id': 'small', 'split': 'dev', 'turns': [{'i': 0, 'gold': {'thread': 'c'}, 'tags': []}]}
+        result = diagnostic.evaluate([s, small], rows + [{'session_id': 'small', 'i': 0, 'pred': 'z'}])
+        self.assertEqual(result['all']['correct'], 5)
+        self.assertEqual(result['all']['n'], 7)
+        self.assertAlmostEqual(result['stream_accuracy']['mean'], 5 / 6, places=6)
+        self.assertAlmostEqual(result['stream_accuracy']['median'], 5 / 6, places=6)
+        self.assertEqual(result['stream_accuracy']['n'], 2)
+
+    def test_ambiguous_predecessor_makes_switch_unassessable_without_bridging_gap(self):
+        s, rows = fixture()
+        s['turns'][2]['ambiguous'] = True
+        result = diagnostic.evaluate([s], rows)
+        self.assertEqual(result['switch_routing']['n'], 1)
+        self.assertEqual(result['switch_routing']['unassessable'], 1)
+        self.assertEqual(result['switch_routing']['correct'], 0)
+        for t in s['turns']: t['ambiguous'] = True
+        result = diagnostic.evaluate([s], rows)
+        self.assertIsNone(result['stream_accuracy']['mean'])
+        self.assertIsNone(result['cross_session_mixing']['rate'])
+        self.assertIsNone(result['fragmentation']['mean_topics_per_source'])
+
+
 if __name__ == '__main__': unittest.main()

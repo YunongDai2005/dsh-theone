@@ -5,9 +5,11 @@ Session identity is only a proxy topic label, not human-confirmed routing truth.
 """
 from collections import Counter, defaultdict
 from datetime import datetime, timezone, timedelta
+from itertools import combinations
 import hashlib
 import json
 import re
+from private_real_blocks import strip_automatic
 
 INJECTED = ('system-reminder', 'environment_context', 'INSTRUCTIONS', 'user_instructions',
             'developer_instructions', 'turn_aborted', 'subagent_notification', 'task-notification',
@@ -121,6 +123,12 @@ def clean_user(text, redactor, stats, attachment=False, hints=None):
     removed = Counter()
     text = strip_blocks(text, removed)
     stats.update(removed)
+    text, auto_names = strip_automatic(text, redactor, stats)
+    if auto_names and hints is not None: hints.extend(auto_names)
+    if not text and auto_names:
+        stats['attachment_reference_users'] += 1
+        stats['excluded_attachment_only'] += 1
+        return None
     if not text:
         stats['excluded_empty_or_injected'] += 1
         for category in removed:
@@ -130,14 +138,14 @@ def clean_user(text, redactor, stats, attachment=False, hints=None):
     if SUMMARY.search(text):
         stats['excluded_summary_or_system'] += 1
         return None
-    text, names = attachment_refs(text, redactor)
+    text, ref_names = attachment_refs(text, redactor)
+    names = list(dict.fromkeys(auto_names + ref_names))
     if names:
         stats['attachment_reference_users'] += 1
-        if hints is not None: hints.extend(names)
+        if hints is not None: hints.extend(n for n in ref_names if n not in hints)
         if not text.strip():
             stats['excluded_attachment_only'] += 1
             return None
-        text = text.strip() + '\n[Attachments: ' + ', '.join(names) + ']'
     # Redact before extracting even the length-only paste marker.
     text = redactor.redact(text)
     paste_chars = 0
@@ -149,6 +157,7 @@ def clean_user(text, redactor, stats, attachment=False, hints=None):
     if not text.replace('[PASTE]', '').strip():
         stats['excluded_paste_only'] += 1
         return None
+    if names: text = text.strip() + '\n[Attachments: ' + ', '.join(names) + ']'
     if len(text) > 16000:
         stats['excluded_unbounded_text'] += 1
         return None
@@ -157,7 +166,8 @@ def clean_user(text, redactor, stats, attachment=False, hints=None):
 
 def clean_reply(text, redactor):
     # Full original responses never leave this call; hidden reasoning is never read.
-    return redactor.summary(PASTE.sub(' [PASTE] ', strip_blocks(text)), 200).strip()
+    text, _ = strip_automatic(strip_blocks(text), redactor)
+    return redactor.summary(PASTE.sub(' [PASTE] ', text), 200).strip()
 
 
 def dispatched(text):
@@ -184,7 +194,8 @@ def add_metadata(session, value, when, kind, redactor, stats):
     if not when:
         stats['metadata_untimed_excluded'] += 1
         return
-    text = redactor.redact(PASTE.sub(' ', strip_blocks(value)))
+    value, _ = strip_automatic(strip_blocks(value), redactor)
+    text = redactor.redact(PASTE.sub(' ', value))
     text, _ = attachment_refs(text, redactor)
     text = text.strip()[:300]
     if text:
@@ -270,7 +281,7 @@ def parse_codex(records, file_key, redactor, stats):
             stats['excluded_dispatched_users'] += len(user_rows)
             return []
     head = [content_text(r['payload'].get('content'))[0] for r in user_rows]
-    human_head = [clean for t in head if (clean := strip_blocks(t)) and not SUMMARY.search(clean)][:3]
+    human_head = [clean for t in head if (clean := strip_automatic(strip_blocks(t), None)[0]) and not SUMMARY.search(clean)][:3]
     if any(dispatched(t) for t in human_head):
         stats['excluded_dispatched_sessions'] += 1
         stats['excluded_dispatched_users'] += len(user_rows)
@@ -356,7 +367,7 @@ def tags_for(message, previous_topic, topic, foreground):
 
 
 def header(sid, split, scenario, topics, catalog, sources):
-    return {'version': 'interleave-v1', 'routing_schema': 'routing-v1', 'benchmark_revision': 'private-real-2',
+    return {'version': 'interleave-v1', 'routing_schema': 'routing-v1', 'benchmark_revision': 'private-real-3',
             'session_id': sid, 'split': split, 'lang': 'zh', 'scenario': scenario,
             'generation': 'local-redacted-real-chat', 'source_sessions': sources,
             'threads': [{'id': t, 'title': f'Topic {n + 1}', 'description': 'Local session proxy', 'domain': 'mixed'} for n, t in enumerate(topics)],
@@ -409,7 +420,7 @@ def project_scope(sessions, end):
     return 'same_project' if len(set.union(*identities)) == 1 else 'cross_project'
 
 
-def make_stream(sessions, split, index):
+def make_stream(sessions, split, index, window=None):
     if not 2 <= len(sessions) <= 5 or any(len(s['messages']) < 2 for s in sessions): return None
     ready = [card_ready_at(s) for s in sessions]
     if any(t is None for t in ready): return None
@@ -417,6 +428,8 @@ def make_stream(sessions, split, index):
     # stays inside their actual common lifetime; no non-overlapping windows are joined.
     start = after_millisecond(max(ready))
     end = min(s['messages'][-1]['at'] for s in sessions)
+    if window is not None:
+        start, end = max(start, window[0]), min(end, window[1])
     if start >= end: return None
     cards, messages, warmup = [], [], []
     for n, s in enumerate(sessions):
@@ -454,61 +467,96 @@ def make_stream(sessions, split, index):
     return out
 
 
+STREAM_RULES = {'min_source_messages': 5, 'min_source_share': 0.2,
+                'min_switches': 3, 'max_stream_messages': 40, 'sources_per_stream': 2}
+
+
+def balanced_windows(eligible, ready):
+    """All qualifying contiguous windows; selection never cuts individual timestamps.
+
+    Enumerating lengths also lets a small remaining budget select a valid smaller
+    window, instead of truncating an already-qualified flow into an invalid one.
+    """
+    windows = []
+    for pair in combinations(eligible, 2):
+        start = after_millisecond(max(ready[s['id']] for s in pair))
+        end = min(s['messages'][-1]['at'] for s in pair)
+        messages = sorted((m['at'], s['id'], m['id'], s['source']) for s in pair
+                          for m in s['messages'] if start <= m['at'] <= end)
+        for left in range(len(messages)):
+            if left and messages[left - 1][0] == messages[left][0]: continue
+            counts, switches = Counter(), 0
+            for right in range(left, min(left + STREAM_RULES['max_stream_messages'], len(messages))):
+                if (right > left and messages[right][0] == messages[right - 1][0]
+                        and messages[right][1] != messages[right - 1][1]):
+                    break  # Cross-source timestamp ties have no observed ordering.
+                counts[messages[right][1]] += 1
+                if right > left: switches += messages[right][1] != messages[right - 1][1]
+                n = right - left + 1
+                if right + 1 < len(messages) and messages[right][0] == messages[right + 1][0]: continue
+                if len(counts) != 2 or switches < STREAM_RULES['min_switches']: continue
+                if any(v < STREAM_RULES['min_source_messages'] or v / n < STREAM_RULES['min_source_share'] for v in counts.values()): continue
+                windows.append({'pair': tuple(s['id'] for s in pair), 'start': messages[left][0],
+                    'end': messages[right][0], 'n': n, 'switches': switches,
+                    'keys': frozenset((source, mid, at) for at, sid, mid, source in messages[left:right + 1])})
+    return sorted(windows, key=lambda w: (-w['n'], -w['switches'], w['start'], w['end'], w['pair']))
+
+
 def build_interleaved(sessions, max_messages=1988):
     if not 1 <= max_messages <= 2000: raise ValueError('Message budget must be 1..2000')
-    insufficient = sum(len(s['messages']) >= 2 and card_ready_at(s) is None for s in sessions)
-    eligible = sorted((s for s in sessions if len(s['messages']) >= 2 and card_ready_at(s) is not None), key=lambda s: (s['messages'][0]['at'], s['id']))
-    all_times = sorted(m['at'] for s in eligible for m in s['messages'])
-    if not all_times: return [], {'reason': 'no_eligible_sessions', 'insufficient_card_sessions': insufficient}
-    # Choose a temporal boundary using session intervals, never message content.
-    # This sacrifices spanning sessions to guarantee source-session disjointness.
-    candidates = sorted({s['messages'][-1]['at'] for s in eligible})
+    ready = {s['id']: card_ready_at(s) for s in sessions if len(s['messages']) >= 2}
+    insufficient = sum(t is None for t in ready.values())
+    eligible = sorted((s for s in sessions if ready.get(s['id']) is not None),
+                      key=lambda s: (s['messages'][0]['at'], s['id']))
+    info = {'insufficient_card_sessions': insufficient, 'selection_rules': dict(STREAM_RULES),
+            'eligible_sessions': len(eligible), 'eligible_users': sum(len(s['messages']) for s in eligible)}
+    windows = balanced_windows(eligible, ready)
+    info['qualifying_candidate_windows'] = len(windows)
+    if not windows: return [], {**info, 'reason': 'no_balanced_temporal_windows'}
+    # Select the 70/30 boundary from usable observation coverage, not a long
+    # inactive session's length. Spanning sources are still wholly held out.
     best = None
-    for cut in candidates:
-        earlier = [s for s in eligible if s['messages'][-1]['at'] <= cut]
-        later = [s for s in eligible if s['messages'][0]['at'] > cut]
-        if len(earlier) < 2 or len(later) < 2: continue
-        a, b = sum(len(s['messages']) for s in earlier), sum(len(s['messages']) for s in later)
+    for cut in sorted({s['messages'][-1]['at'] for s in eligible}):
+        earlier = {s['id'] for s in eligible if s['messages'][-1]['at'] <= cut}
+        later = {s['id'] for s in eligible if s['messages'][0]['at'] > cut}
+        pools = [[w for w in windows if set(w['pair']) <= ids] for ids in (earlier, later)]
+        if not all(pools): continue
+        a, b = (len(set().union(*(w['keys'] for w in pool))) for pool in pools)
         merit = min(a / 0.7, b / 0.3)
-        if best is None or merit > best[0]: best = (merit, cut, earlier, later)
-    if best is None: return [], {'reason': 'no_disjoint_temporal_split', 'insufficient_card_sessions': insufficient}
-    _, cutoff, earlier, later = best
-    selected, grouped_ids = [], set()
+        if best is None or merit > best[0]: best = merit, cut, earlier, later, pools
+    if best is None: return [], {**info, 'reason': 'no_disjoint_balanced_temporal_split'}
+    _, cutoff, earlier, later, pools = best
+    by_id = {s['id']: s for s in eligible}
+    selected, grouped_ids, used = [], set(), set()
     excluded = Counter()
     quota = {'dev': int(max_messages * 0.7), 'test': max_messages - int(max_messages * 0.7)}
-    for split, pool in (('dev', earlier), ('test', later)):
-        remaining = list(pool)
-        while remaining and quota[split] > 0:
-            seed = remaining.pop(0)
-            candidates = [s for s in remaining if s['messages'][0]['at'] < seed['messages'][-1]['at'] and s['messages'][-1]['at'] > seed['messages'][0]['at']]
-            group = [seed]
-            stream = None
-            for candidate in candidates:
-                trial = make_stream(group + [candidate], split, len(selected) + 1)
-                if trial:
-                    group.append(candidate); stream = trial
-                    # Prefer two-source flows so a third window cannot consume
-                    # the partner of another usable pair or shrink this overlap.
-                    break
-            if stream is None:
-                excluded['no_usable_overlap_sessions'] += 1
+    for split, pool in zip(('dev', 'test'), pools):
+        chosen = []
+        for window in pool:
+            if window['n'] > quota[split]:
+                excluded['over_budget_candidate_windows'] += 1
                 continue
-            turns = stream['turns'][:quota[split]]
-            if len({t['gold']['thread'] for t in turns}) < 2:
-                excluded['cap_rejected_streams'] += 1
+            if used.intersection(window['keys']):
+                excluded['overlapping_candidate_windows'] += 1
                 continue
-            stream['turns'] = turns
+            chosen.append(window)
+            used.update(window['keys'])
+            quota[split] -= window['n']
+        for window in sorted(chosen, key=lambda w: (w['start'], w['end'], w['pair'])):
+            group = [by_id[sid] for sid in window['pair']]
+            stream = make_stream(group, split, len(selected) + 1, (window['start'], window['end']))
+            if stream is None or len(stream['turns']) != window['n']:
+                raise ValueError('Window reconstruction changed scoring membership')
+            stream['selection'] = {**STREAM_RULES, 'actual_switches': window['switches']}
             selected.append(stream)
-            quota[split] -= len(turns)
-            grouped_ids.update(s['id'] for s in group)
-            remaining = [s for s in remaining if s not in group]
+            grouped_ids.update(window['pair'])
     included = sum(len(s['turns']) for s in selected)
-    return selected, {'cutoff_utc': cutoff, 'eligible_sessions': len(eligible), 'eligible_users': len(all_times),
-        'insufficient_card_sessions': insufficient,
+    return selected, {**info, 'cutoff_utc': cutoff,
         'spanning_sessions_excluded': len(eligible) - len(earlier) - len(later),
-        'spanning_users_excluded': sum(len(s['messages']) for s in eligible if s not in earlier and s not in later),
-        'grouped_sessions': len(grouped_ids), 'selected_users': included,
-        'not_selected_users': len(all_times) - included, 'unused_quota': quota, **excluded}
+        'spanning_users_excluded': sum(len(s['messages']) for s in eligible if s['id'] not in earlier | later),
+        'grouped_sessions': len(grouped_ids), 'source_instances': sum(len(s['source_sessions']) for s in selected),
+        'selected_users': included, 'not_selected_users': info['eligible_users'] - included,
+        'unused_quota': quota, **excluded}
 
 
 def make_gateway(s, routes, split, index):

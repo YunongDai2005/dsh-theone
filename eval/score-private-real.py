@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read-only diagnostic: one-to-one labels, ignoring seeded topic semantics.
+"""Read-only source separation diagnostic, with one-to-one accuracy as a control.
 
 Only aggregate counts are printed. No data, predictions, or existing scores are
 changed. Short/switch and project breakdowns reuse each stream's full assignment.
@@ -10,6 +10,8 @@ import json
 from pathlib import Path
 import sys
 from score import hungarian, read_jsonl, SPECIAL
+sys.path.insert(0, str(Path(__file__).resolve().parent / 'lib'))
+from private_real_metrics import source_metrics, summarize
 
 PRIVATE_ROOT = Path(__file__).resolve().parent / 'data/private-real'
 
@@ -42,6 +44,7 @@ def evaluate(sessions, predictions, split='dev'):
         raise ValueError('Missing prediction')
     counts = defaultdict(lambda: [0, 0])
     excluded = 0
+    per_stream = []
     scopes = ('same_project', 'cross_project', 'unknown')
     def accumulate(prefix, turn, ok):
         for label in ('all', 'short', 'switch'):
@@ -64,10 +67,14 @@ def evaluate(sessions, predictions, split='dev'):
         mapping = {preds[j]: golds[i] for i, j in match.items()}
         scope = session.get('project_scope', 'unknown')
         if scope not in scopes: scope = 'unknown'
+        stream_correct = 0
         for turn in turns:
             ok = mapping.get(rows[turn['i']]['pred']) == turn['gold']['thread']
+            stream_correct += int(ok)
             accumulate('total', turn, ok)
             accumulate(scope, turn, ok)
+        per_stream.append({'stream_index': len(per_stream) + 1, 'project_scope': scope,
+            'n': len(turns), 'correct': stream_correct, 'metrics': source_metrics(session, rows, turns)})
     def bucket(prefix):
         result = {}
         for label in ('all', 'short', 'switch'):
@@ -76,7 +83,16 @@ def evaluate(sessions, predictions, split='dev'):
         return result
     return {'method': 'one_to_one_hungarian_all_topic_ids', 'mapping_basis': 'all_confirmed_scored_turns_per_stream',
             'split': split, 'sessions': len(selected), 'excluded_ambiguous': excluded,
-            **bucket('total'), 'by_project': {scope: bucket(scope) for scope in scopes}}
+            **bucket('total'), 'by_project': {scope: bucket(scope) for scope in scopes},
+            'diagnostic_revision': 'private-real-3',
+            'ownership_basis': 'strict_majority_all_confirmed_scored_turns_per_topic; ties_are_unresolved',
+            'switch_basis': 'past_scored_turns_only; leave_previous_and_reuse_owned_topic_or_create_if_none',
+            'warmup_ownership': 'unavailable; not inferred from context-only warmup',
+            **summarize(per_stream), 'per_stream': [{
+                'stream_index': r['stream_index'], 'project_scope': r['project_scope'],
+                'all': {'correct': r['correct'], 'n': r['n'],
+                        'accuracy': round(r['correct'] / r['n'], 6) if r['n'] else None},
+                **summarize([r])} for r in per_stream]}
 
 
 def main(argv=None):
