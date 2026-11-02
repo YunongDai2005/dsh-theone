@@ -27,6 +27,7 @@ export function validateRoutingSession(session) {
     if (!gold || (gold.thread !== null && !topics.has(gold.thread)) || typeof gold.explicit_binding !== 'boolean' ||
         !Array.isArray(gold.retract) || !Array.isArray(gold.refs) || gold.refs.some(id => !topics.has(id)) ||
         typeof turn.ambiguous !== 'boolean' || !Array.isArray(turn.tags)) fail('invalid gold/tags')
+    if (gold.requires_user_ref !== undefined && typeof gold.requires_user_ref !== 'boolean') fail('invalid requires_user_ref')
     for (const event of turn.events_before ?? []) {
       if (!event.id || events.has(event.id)) fail('duplicate event id')
       if (event.at && (!Number.isFinite(Date.parse(event.at)) || Date.parse(event.at) > at)) fail('event time after turn')

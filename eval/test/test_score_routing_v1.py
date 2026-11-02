@@ -148,5 +148,69 @@ class RoutingV1ScoreTest(unittest.TestCase):
         self.assertEqual(r['leaky'], 1)
         self.assertEqual(r['leak_rate'], 1)
 
+
+class Step7ScoreTest(unittest.TestCase):
+    def test_fresh_label_for_seeded_topic_is_spurious_not_correct(self):
+        s = corpus()[0]
+        rows = predictions()
+        rows[0]['pred'] = 'invented'
+        o, _ = score.score_session(s, rows, 'open')
+        self.assertFalse(o[0]['accurate'])
+        self.assertEqual(o[0]['kind'], 'spurious_new')
+
+    def test_oneoff_isolation_is_correct_but_does_not_enter_thread_accuracy(self):
+        s = corpus()[0]
+        s['turns'][0]['gold']['thread'] = None
+        rows = predictions()
+        rows[0]['pred'] = 'temporary'
+        o, _ = score.score_session(s, rows, 'open')
+        self.assertTrue(o[0]['accurate'])
+        self.assertEqual(o[0]['kind'], 'oneoff_isolated')
+        self.assertEqual(score.evaluate([s], rows)['accuracy'], 1)
+        rows[0]['pred'] = 'ERROR'
+        self.assertFalse(score.score_session(s, rows, 'open')[0][0]['accurate'])
+
+    def test_ambiguous_large_catalog_targets_do_not_lower_identifiable_recall(self):
+        s = corpus()[0]
+        s['catalog'] += [{'id': f'c{i}'} for i in range(22)]
+        s['turns'][0]['ambiguous'] = True
+        rows = predictions()
+        rows[0]['trace']['candidateIds'] = ['a']
+        r = score.evaluate([s], rows)['routing_v1']['large_catalog']
+        self.assertEqual(r['n'], 1)
+        self.assertEqual(r['ambiguous_n'], 1)
+        self.assertEqual(r['recall_at_16'], 1)
+
+    def test_drop_user_refs_is_a_supported_ablation_comparison(self):
+        full = predictions()
+        other = [dict(r, state_ablation='drop-user-refs') for r in full]
+        r = score.evaluate(corpus(), full, ablation_predictions=other)
+        self.assertEqual(r['routing_v1']['pairs']['ablation']['state_ablation'], 'drop-user-refs')
+
+    def test_reference_dependent_conflicts_are_separate_from_unmarked_accuracy(self):
+        s = corpus()
+        s[0]['turns'][0]['gold']['requires_user_ref'] = True
+        full = score.evaluate(s, predictions())
+        other = [dict(r, state_ablation='drop-user-refs') for r in predictions()]
+        ablated = score.evaluate(s, other)
+        self.assertEqual(full['accuracy'], 0.5)
+        self.assertEqual(ablated['accuracy'], 1)
+        self.assertEqual(ablated['routing_v1']['by_scenario']['unspecified']['ambiguous_n'], 1)
+
+    def test_pair_ablation_delta_uses_the_same_identifiable_pairs_on_both_sides(self):
+        a, b = corpus()[0], copy.deepcopy(corpus()[0])
+        b['session_id'] = 'other'
+        a['turns'] = [turn(0, 'a', True)]
+        b['turns'] = [turn(0, 'b', True)]
+        a['pair'] = {'id': 'p', 'side': 'a', 'kind': 'foreground', 'turn_i': 0}
+        b['pair'] = dict(a['pair'], side='b')
+        a['turns'][0]['gold']['requires_user_ref'] = True
+        b['turns'][0]['gold']['requires_user_ref'] = True
+        rows = [dict(predictions()[0], pred='a'), dict(predictions()[0], session_id='other', pred='b')]
+        other = [dict(r, pred='a', state_ablation='drop-user-refs') for r in rows]
+        r = score.evaluate([a,b], rows, ablation_predictions=other)['routing_v1']['pairs']['ablation']
+        self.assertEqual(r['comparable_pairs'], 0)
+        self.assertIsNone(r['accuracy_delta'])
+
 if __name__ == '__main__':
     unittest.main()

@@ -29,7 +29,7 @@ export interface PendingOwner {
 type Binding = { topicId: string | null; temporary?: boolean; basis?: string; source?: MessageOrigin }
 const compare = (a: DisplayOrder, b: DisplayOrder) => a[0] - b[0] || a[1] - b[1]
 
-/** A conservative, explicitly labelled shadow inference; never a routing rule. */
+/** Conservative lexical detection of a self-contained arithmetic aside; no shadow state is read. */
 export function temporaryArithmetic(text: string): boolean {
   const expression = text.trim().replace(/^(?:(?:顺便问(?:一下)?|插一句)[，,:：\s]*)?(?:计算(?:一下)?|算(?:一下)?|what is|calculate)?\s*/i, '')
     .replace(/(?:等于多少|是多少)?[?？。.!！\s]*$/, '').trim()

@@ -19,7 +19,7 @@ import { RoutingBindings, parseBindingInput } from "./routing-bindings.js";
 import { RoutingShadow, temporaryArithmetic } from "./routing-shadow.js";
 import { resolveContext } from "./router.js";
 import { DshRouter, RouterFailure, newRoutingTrace } from "./llm-router.js";
-import { continuesCurrent, mergeSimilarity, newIndependentTopic, redactRoutingText, settleUnclear, similarity, spokenCorrection, textFeatures, topicTerms } from "./routing-policy.js";
+import { continuesCurrent, resumesWork, mergeSimilarity, newIndependentTopic, redactRoutingText, settleUnclear, similarity, spokenCorrection, textFeatures, topicTerms } from "./routing-policy.js";
 import { modelJson } from "./model-json.js";
 import { EDITABLE_SETTINGS_KEYS, RESTART_SETTINGS_KEYS } from "./settings-types.js";
 import { validateSettings } from "./settings.js";
@@ -872,7 +872,8 @@ export default class TheOne extends Service {
             if (adopted) {
                 // Classified when it was sent; the topic it went to is in use from now on.
                 route = adopted;
-                if (adopted.decision.contextId && (!relays.length || input.source.kind === 'user-question-reply'))
+                receipt.temporary ??= this.store.routeReceipt(input.id)?.temporary;
+                if (!receipt.temporary && adopted.decision.contextId && (!relays.length || input.source.kind === 'user-question-reply'))
                     this.store.mount(config.gatewayKey, adopted.decision.contextId);
             }
             else
@@ -883,12 +884,19 @@ export default class TheOne extends Service {
                     // Every round of a goal works in the topic it started in: the one in use when it was set.
                     const goalTopic = goalId === undefined ? undefined
                         : [this.goalTopics.get(goalId), currentId].find(id => id && allContexts.some(context => context.id === id));
-                    // A bare "go on"/"thanks" skips candidate search and the classifier: it can only continue.
+                    // Short continuations first consult live waits and the last displayed reply.
                     // Steering inside a turn also stays with its topic, as it would in an ordinary session.
                     const binding = this.resolveBinding(agent, users, allContexts);
                     if (binding.status !== 'none')
                         receipt.binding = binding;
-                    const fastKeep = binding.status === 'none' && !previous && !!currentId && allContexts.some(context => context.id === currentId) && (midTurn || attachmentOnly || (!!this.router && continuesCurrent(text)));
+                    const topics = new Set(allContexts.map(context => context.id));
+                    const short = continuesCurrent(text) || resumesWork(text);
+                    const continuation = binding.status === 'none' && !previous && !midTurn && !goalTopic && !relays.length && !attachmentOnly && !!this.router && short
+                        ? this.bindings.continuation(topics, currentId, resumesWork(text)) : { status: 'none' };
+                    if (continuation.status !== 'none')
+                        receipt.continuation = continuation;
+                    const temporary = binding.status === 'none' && !previous && !midTurn && !goalTopic && !relays.length && temporaryArithmetic(text);
+                    const fastKeep = binding.status === 'none' && continuation.status === 'none' && !previous && !!currentId && topics.has(currentId) && (midTurn || attachmentOnly || (!!this.router && continuesCurrent(text)));
                     let proposed;
                     if (previous) {
                         proposed = await this.reroute(previous, correction, signal, receipt);
@@ -901,6 +909,16 @@ export default class TheOne extends Service {
                     else if (goalTopic) {
                         receipt.mode = 'rules';
                         proposed = { action: goalTopic === currentId ? 'KEEP' : 'MOUNT', contextId: goalTopic, reason: 'goal-round' };
+                    }
+                    else if (temporary) {
+                        receipt.mode = 'rules';
+                        receipt.temporary = this.bindings.temporaryReturn(topics, currentId);
+                        proposed = newIndependentTopic(text, allContexts, 'temporary-arithmetic');
+                    }
+                    else if (continuation.status === 'applied') {
+                        receipt.mode = 'rules';
+                        proposed = { action: continuation.topicId === currentId ? 'KEEP' : currentId ? 'SWAP' : 'MOUNT',
+                            contextId: continuation.topicId, reason: 'continuation-' + continuation.kind };
                     }
                     else if (fastKeep) {
                         receipt.mode = 'rules';
@@ -919,7 +937,7 @@ export default class TheOne extends Service {
                         proposed = settled;
                     }
                     signal.throwIfAborted();
-                    route = this.store.plan(input.id, agent.id, config.gatewayKey, proposed);
+                    route = this.store.plan(input.id, agent.id, config.gatewayKey, proposed, !temporary);
                     if (goalId !== undefined && route.decision.contextId)
                         this.goalTopics.set(goalId, route.decision.contextId);
                 }
@@ -1872,7 +1890,12 @@ export default class TheOne extends Service {
             contextId: binding.topicId, reason: 'binding-' + binding.kind };
     }
     bindingSources(messageId, contextId) {
-        return uniqueSources([this.store.learningJournal.source(messageId, contextId), ...(this.routeBinding(messageId)?.sources ?? [])]);
+        return uniqueSources([this.store.learningJournal.source(messageId, contextId), ...this.routeSources(messageId)]);
+    }
+    routeSources(messageId) {
+        // A background Worker starts before main chat persists its display receipt.
+        const receipt = this.store.routeReceipt(messageId) ?? this.background.get(messageId)?.receipt;
+        return uniqueSources([...(receipt?.binding?.sources ?? []), ...(receipt?.continuation?.sources ?? []), ...(receipt?.stateSources ?? [])]);
     }
     routeBinding(messageId) {
         return this.store.routeReceipt(messageId)?.binding;
@@ -1880,10 +1903,10 @@ export default class TheOne extends Service {
     forwardToWorker(run, message) {
         run.forward(message);
         const route = this.store.route(message.id), contextId = route?.decision.contextId;
-        if (!contextId || this.routeBinding(message.id)?.status !== 'applied')
+        if (!contextId || this.routeBinding(message.id)?.status !== 'applied' && !this.store.routeReceipt(message.id)?.continuation && !this.store.routeReceipt(message.id)?.stateSources?.length)
             return;
         const source = this.store.learningJournal.source(message.id, contextId);
-        this.store.learningJournal.bind(run.worker.id, run.forwarded.get(message.id), message.id, contextId, (run.worker.session.snapshotEvents().at(-1)?.seq ?? -1) + 1, this.routeBinding(message.id)?.sources);
+        this.store.learningJournal.bind(run.worker.id, run.forwarded.get(message.id), message.id, contextId, (run.worker.session.snapshotEvents().at(-1)?.seq ?? -1) + 1, this.routeSources(message.id));
         this.store.learningJournal.depend(run.worker.id, run.inputId, [source]);
         void run.settled.then(() => this.store.learningJournal.end(run.worker.id, run.forwarded.get(message.id), run.worker.session.snapshotEvents().at(-1)?.seq ?? 0));
     }
@@ -1912,7 +1935,7 @@ export default class TheOne extends Service {
             return;
         const source = cause.data.source.kind === 'user-question-reply' || cause.data.source.kind === 'user' && !this.relays.has(cause.data.id) ? 'foreground' : 'background';
         this.bindings.record({ id: session.id + ':' + event.seq, sessionId: session.id, topicId, kind: 'reply', source,
-            sources: this.bindingSources(inputId, topicId) });
+            sources: this.bindingSources(inputId, topicId), ...(this.store.routeReceipt(inputId)?.temporary ? { temporary: this.store.routeReceipt(inputId).temporary } : {}) });
     }
     /** Observation failures are isolated: they cannot change a route or model request. */
     observeShadow(record) {
@@ -2989,6 +3012,15 @@ export default class TheOne extends Service {
                 searchFailed = true;
             }
         }
+        const attention = this.bindings.attention(new Set(allContexts.map(context => context.id)));
+        if (attention && (attention.background.length || attention.pending?.length || attention.pendingOverflow || attention.foreground?.topicId && attention.foreground.topicId !== currentId))
+            receipt.stateSources = attention.sources;
+        const stateIds = [...(attention?.pending ?? []).map(item => item.topicId),
+            ...(attention?.foreground && attention.foreground.topicId !== currentId ? [attention.foreground.topicId] : [])];
+        if (stateIds.length) {
+            const required = new Set([...(currentId ? [currentId] : []), ...stateIds]);
+            contexts = [...allContexts.filter(context => required.has(context.id)), ...contexts.filter(context => !required.has(context.id))].slice(0, 16);
+        }
         trace.candidateIds = contexts.map(context => context.id);
         let proposed;
         // Without the search the classifier sees the whole catalog (cut to fit, best-ranked first).
@@ -2996,7 +3028,6 @@ export default class TheOne extends Service {
             receipt.errorCode = 'HISTORY_SEARCH_UNAVAILABLE';
         if (this.router) {
             const recent = await this.recentMessages(agent, inputId, signal);
-            const attention = this.bindings.attention(new Set(allContexts.map(context => context.id)));
             try {
                 const corrections = this.similarCorrections(text);
                 const offered = this.config.factLinks ? this.factCandidates(text, recent, currentId) : [];
@@ -3170,9 +3201,41 @@ export default class TheOne extends Service {
             this.store.recordRouteDetail(message.id, redactRoutingText(text).slice(0, 160), receipt);
             return undefined;
         }
-        if (binding.status === 'none' && (!text.trim() || spokenCorrection(text) !== undefined || continuesCurrent(text)))
-            return undefined;
+        if (binding.status === 'none') {
+            if (!text.trim() || spokenCorrection(text) !== undefined)
+                return undefined;
+            const topics = new Set(contexts.map(context => context.id));
+            if (continuesCurrent(text) || resumesWork(text)) {
+                const continuation = this.bindings.continuation(topics, runningId, resumesWork(text));
+                if (continuation.status !== 'none')
+                    receipt.continuation = continuation;
+                if (continuation.status === 'applied') {
+                    receipt.mode = 'rules';
+                    const proposed = { action: continuation.topicId === runningId ? 'KEEP' : 'SWAP',
+                        contextId: continuation.topicId, reason: 'continuation-' + continuation.kind };
+                    if (continuation.topicId !== runningId)
+                        return proposed;
+                    const route = this.store.plan(message.id, gateway.id, this.config.gatewayKey, proposed, false);
+                    receipt.trace = { ...newRoutingTrace(), initial: proposed, final: route.decision };
+                    receipt.callDetails = [];
+                    this.store.recordRouteDetail(message.id, redactRoutingText(text).slice(0, 160), receipt);
+                    return undefined;
+                }
+                if (continuation.status === 'none' && continuesCurrent(text))
+                    return undefined;
+            }
+            if (temporaryArithmetic(text)) {
+                receipt.mode = 'rules';
+                receipt.temporary = this.bindings.temporaryReturn(topics, runningId);
+                return newIndependentTopic(text, contexts, 'temporary-arithmetic');
+            }
+        }
         const proposed = await this.classify(gateway, message.id, text, runningId, contexts, signal, receipt, { topicId: runningId, request: run.request, progress: run.progress() });
+        if (proposed.action === 'KEEP' && (receipt.continuation || receipt.stateSources?.length)) {
+            const route = this.store.plan(message.id, gateway.id, this.config.gatewayKey, proposed, false);
+            receipt.trace.final = route.decision;
+            this.store.recordRouteDetail(message.id, redactRoutingText(text).slice(0, 160), receipt);
+        }
         if (proposed.action === 'KEEP' || proposed.action === 'CLARIFY' || receipt.errorCode || proposed.reason.startsWith('router-fallback'))
             return undefined;
         if (proposed.action === 'CREATE' && this.catalog?.incomplete && !proposed.historyIndependent)
@@ -3273,7 +3336,7 @@ export default class TheOne extends Service {
      */
     async *realign(input, contextId) {
         const title = this.store.contexts().find(context => context.id === contextId)?.title;
-        if (contextId && title && (!this.isRelay(input) || input.source.kind === 'user-question-reply'))
+        if (!this.store.routeReceipt(input.id)?.temporary && contextId && title && (!this.isRelay(input) || input.source.kind === 'user-question-reply'))
             this.store.mount(this.config.gatewayKey, contextId);
         const english = writtenInEnglish(messageText(input));
         const turn = await this.turnOf(contextId, input).catch(() => undefined);
@@ -3424,7 +3487,7 @@ export default class TheOne extends Service {
             const links = await this.briefingFor(refreshed, route.decision, gateway, input.id, messageText(input), signal).catch(() => undefined);
             signal?.throwIfAborted();
             this.store.learningJournal.bind(worker.id, workerInput.id, input.id, context.id, (worker.session.snapshotEvents().at(-1)?.seq ?? -1) + 1, uniqueSources([...this.referenceSources(context.id), ...links?.sources ?? [],
-                ...(this.routeBinding(input.id)?.sources ?? []),
+                ...this.routeSources(input.id),
                 ...(route.decision.correctionOf ? [this.store.learningJournal.source(route.decision.correctionOf, context.id)] : [])]));
             run.start([createUserMessage({
                     source: { kind: 'theone-context', form: 'recall', contextId: refreshed.id },

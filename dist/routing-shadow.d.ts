@@ -34,7 +34,7 @@ type Binding = {
     basis?: string;
     source?: MessageOrigin;
 };
-/** A conservative, explicitly labelled shadow inference; never a routing rule. */
+/** Conservative lexical detection of a self-contained arithmetic aside; no shadow state is read. */
 export declare function temporaryArithmetic(text: string): boolean;
 /** Separate durable metadata only. No caller may use this to construct routing inputs.
  * No message text, credentials, model payloads or executable actions are stored here. */

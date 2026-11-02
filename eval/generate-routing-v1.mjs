@@ -23,7 +23,7 @@ export function buildRoutingSet({ variants = 8 } = {}) {
       text, reply: zh ? '已记下。' : 'Noted.', gold: { thread, action: i ? 'continue' : 'switch', refs: [], explicit_binding: false, retract: [] },
       style: 'explicit', tags: [], ambiguous: false, ...extra })
     const add = (kind, turns, extra = {}, side = '') => {
-      const s = { version: 'interleave-v1', routing_schema: 'routing-v1', session_id: `rv1-${v}-${lang}-${kind}${side}`,
+      const s = { version: 'interleave-v1', routing_schema: 'routing-v1', benchmark_revision: 'step7', session_id: `rv1-${v}-${lang}-${kind}${side}`,
         split, lang, scenario: kind, template_group: `variant-${v}`, generation: 'deterministic-template',
         threads: topics.map(t => ({ id: t.id, title: t.title, description: t.summary, domain: 'software' })),
         catalog: structuredClone(topics), current_id: 'a',
@@ -33,13 +33,19 @@ export function buildRoutingSet({ variants = 8 } = {}) {
     for (const kind of ['foreground', 'question', 'approval']) for (const owner of ['a', 'b']) {
       const events = kind === 'foreground'
         ? [{ id: 'visible', type: 'foreground', topic_id: owner, text: zh ? '是否继续？' : 'Continue?' }]
-        : [{ id: 'visible', type: 'foreground', topic_id: 'a', text: zh ? '是否继续？' : 'Continue?' },
-          { id: 'request', type: 'pending', owner_id: owner, kind, message_id: 'visible' },
-          { id: 'other-request', type: 'pending', owner_id: 'b', kind, message_id: 'visible' }]
+        : [{ id: 'request', type: 'pending', owner_id: owner, kind }]
       add(kind, [makeTurn(0, short, owner, { events_before: events, locked_text: true, style: 'implicit',
         input: kind === 'foreground' ? { reply_to: 'visible' } : { pending_response: 'request' },
         gold: { thread: owner, action: 'continue', refs: [], explicit_binding: true, retract: [] } })],
       { pair: { id: `pair-${v}-${lang}-${kind}`, kind, side: owner, event_id: kind === 'foreground' ? 'visible' : 'request', turn_i: 0 } }, '-' + owner)
+      // Keep the former competing-waits cases as a separate, explicitly reference-dependent control.
+      if (kind !== 'foreground') add(kind + '_conflict', [makeTurn(0, short, owner, {
+        events_before: [{ id: 'visible', type: 'foreground', topic_id: 'a', text: zh ? '是否继续？' : 'Continue?' },
+          { id: 'request', type: 'pending', owner_id: owner, kind, message_id: 'visible' },
+          { id: 'other-request', type: 'pending', owner_id: 'b', kind, message_id: 'visible' }],
+        locked_text: true, style: 'implicit', input: { pending_response: 'request' },
+        gold: { thread: owner, action: 'continue', refs: [], explicit_binding: true, requires_user_ref: true, retract: [] },
+      })], { pair: { id: `pair-${v}-${lang}-${kind}-conflict`, kind, side: owner, event_id: 'request', turn_i: 0 } }, '-' + owner)
     }
     add('background', [makeTurn(0, names[0] + (zh ? '，继续整理数据。' : ': organize the data.'), 'a'),
       makeTurn(1, short, 'a', { style: 'implicit', events_before: [{ type: 'background', id: 'done', topic_id: 'b',
@@ -76,7 +82,7 @@ export function buildRoutingSet({ variants = 8 } = {}) {
     add('large_catalog', [
       makeTurn(0, big[22].title + (zh ? '，修复发布脚本。' : ': repair the release script.'), 'c22', { must_include: [big[22].title] }),
       makeTurn(1, zh ? `回到 SHARD${v}X19 的报表。找到之前那份。` : `Return to the report for SHARD${v}X19. Find the earlier one.`, 'c19', { must_include: [`SHARD${v}X19`] }),
-      makeTurn(2, zh ? '回到之前的数据发布项目，那个 report.csv。' : 'Return to the earlier data release project and its report.csv.', 'c23', { ambiguous: true })],
+      makeTurn(2, zh ? `回到之前 SHARD${v}X23 的数据发布项目，那个 report.csv。` : `Return to the earlier data release project for SHARD${v}X23 and its report.csv.`, 'c23', { must_include: [`SHARD${v}X23`] })],
       { catalog: big, threads: big.map(t => ({ id: t.id, title: t.title, description: t.summary, domain: 'software' })), current_id: 'c00' })
     add('homonym', [makeTurn(0, names[0] + (zh ? '，编辑 report.csv。' : ': edit report.csv.'), 'a', { must_include: [names[0], 'report.csv'] }),
       makeTurn(1, names[1] + (zh ? '，同名 report.csv 的列名也要改。' : ': rename the columns in its own report.csv too.'), 'b', { must_include: [names[1], 'report.csv'] })])
@@ -130,7 +136,7 @@ export function datasetManifest(sessions, jsonl) {
       sessions: group.length, messages: group.reduce((n, s) => n + s.turns.length, 0) }])),
     explicit_binding: selected.reduce((n, s) => n + s.turns.filter(t => t.gold.explicit_binding).length, 0),
     pair_groups: new Set(selected.filter(s => s.pair).map(s => s.pair.id)).size })
-  return { version: 'interleave-v1', routing_schema: 'routing-v1', generator: 'generate-routing-v1.mjs',
+  return { version: 'interleave-v1', routing_schema: 'routing-v1', benchmark_revision: 'step7', generator: 'generate-routing-v1.mjs',
     generation: sessions[0]?.generation, sha256: createHash('sha256').update(jsonl).digest('hex'),
     split_policy: 'Whole variant groups, both languages and both pair sides stay together; last quarter is test.',
     ...count(sessions), splits: Object.fromEntries(['dev', 'test'].map(split => [split, count(sessions.filter(s => s.split === split))])) }

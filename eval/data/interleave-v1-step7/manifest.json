@@ -1,0 +1,213 @@
+{
+  "version": "interleave-v1",
+  "routing_schema": "routing-v1",
+  "benchmark_revision": "step7",
+  "generator": "generate-routing-v1.mjs",
+  "generation": "deterministic-template",
+  "sha256": "b54a6f81de942cc9cab4e05954b9b534d6a2b4dbe0f25eed66e8ac51acb5106d",
+  "split_policy": "Whole variant groups, both languages and both pair sides stay together; last quarter is test.",
+  "sessions": 320,
+  "messages": 512,
+  "mechanisms": {
+    "foreground": {
+      "sessions": 32,
+      "messages": 32
+    },
+    "question": {
+      "sessions": 32,
+      "messages": 32
+    },
+    "question_conflict": {
+      "sessions": 32,
+      "messages": 32
+    },
+    "approval": {
+      "sessions": 32,
+      "messages": 32
+    },
+    "approval_conflict": {
+      "sessions": 32,
+      "messages": 32
+    },
+    "background": {
+      "sessions": 16,
+      "messages": 32
+    },
+    "steering": {
+      "sessions": 16,
+      "messages": 32
+    },
+    "correction": {
+      "sessions": 16,
+      "messages": 48
+    },
+    "correction_new": {
+      "sessions": 16,
+      "messages": 32
+    },
+    "restart": {
+      "sessions": 16,
+      "messages": 32
+    },
+    "large_catalog": {
+      "sessions": 16,
+      "messages": 48
+    },
+    "homonym": {
+      "sessions": 16,
+      "messages": 32
+    },
+    "reference": {
+      "sessions": 16,
+      "messages": 16
+    },
+    "oneoff": {
+      "sessions": 16,
+      "messages": 48
+    },
+    "new_task": {
+      "sessions": 16,
+      "messages": 32
+    }
+  },
+  "explicit_binding": 176,
+  "pair_groups": 80,
+  "splits": {
+    "dev": {
+      "sessions": 240,
+      "messages": 384,
+      "mechanisms": {
+        "foreground": {
+          "sessions": 24,
+          "messages": 24
+        },
+        "question": {
+          "sessions": 24,
+          "messages": 24
+        },
+        "question_conflict": {
+          "sessions": 24,
+          "messages": 24
+        },
+        "approval": {
+          "sessions": 24,
+          "messages": 24
+        },
+        "approval_conflict": {
+          "sessions": 24,
+          "messages": 24
+        },
+        "background": {
+          "sessions": 12,
+          "messages": 24
+        },
+        "steering": {
+          "sessions": 12,
+          "messages": 24
+        },
+        "correction": {
+          "sessions": 12,
+          "messages": 36
+        },
+        "correction_new": {
+          "sessions": 12,
+          "messages": 24
+        },
+        "restart": {
+          "sessions": 12,
+          "messages": 24
+        },
+        "large_catalog": {
+          "sessions": 12,
+          "messages": 36
+        },
+        "homonym": {
+          "sessions": 12,
+          "messages": 24
+        },
+        "reference": {
+          "sessions": 12,
+          "messages": 12
+        },
+        "oneoff": {
+          "sessions": 12,
+          "messages": 36
+        },
+        "new_task": {
+          "sessions": 12,
+          "messages": 24
+        }
+      },
+      "explicit_binding": 132,
+      "pair_groups": 60
+    },
+    "test": {
+      "sessions": 80,
+      "messages": 128,
+      "mechanisms": {
+        "foreground": {
+          "sessions": 8,
+          "messages": 8
+        },
+        "question": {
+          "sessions": 8,
+          "messages": 8
+        },
+        "question_conflict": {
+          "sessions": 8,
+          "messages": 8
+        },
+        "approval": {
+          "sessions": 8,
+          "messages": 8
+        },
+        "approval_conflict": {
+          "sessions": 8,
+          "messages": 8
+        },
+        "background": {
+          "sessions": 4,
+          "messages": 8
+        },
+        "steering": {
+          "sessions": 4,
+          "messages": 8
+        },
+        "correction": {
+          "sessions": 4,
+          "messages": 12
+        },
+        "correction_new": {
+          "sessions": 4,
+          "messages": 8
+        },
+        "restart": {
+          "sessions": 4,
+          "messages": 8
+        },
+        "large_catalog": {
+          "sessions": 4,
+          "messages": 12
+        },
+        "homonym": {
+          "sessions": 4,
+          "messages": 8
+        },
+        "reference": {
+          "sessions": 4,
+          "messages": 4
+        },
+        "oneoff": {
+          "sessions": 4,
+          "messages": 12
+        },
+        "new_task": {
+          "sessions": 4,
+          "messages": 8
+        }
+      },
+      "explicit_binding": 44,
+      "pair_groups": 20
+    }
+  }
+}

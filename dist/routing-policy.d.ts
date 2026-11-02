@@ -13,8 +13,10 @@ export declare function referencesHistory(text: string): boolean;
  */
 export declare function settleUnclear(decision: Decision, text: string, contexts: readonly ContextDescriptor[], currentId?: string): Decision;
 export declare function newIndependentTopic(text: string, contexts: ContextDescriptor[], reason: string): Decision;
-/** A bare acknowledgement or "go on" can only continue the mounted topic, so it needs no classifier call. */
+/** Short text may use a fast route only after checking server-owned pending and foreground state. */
 export declare function continuesCurrent(text: string): boolean;
+/** Resume work after an aside; questions about the aside (why/more) are intentionally excluded. */
+export declare function resumesWork(text: string): boolean;
 /**
  * "Wrong topic" said right after a reply: the previous message belonged elsewhere. Returns what
  * follows the phrase (often the right topic, e.g. "分错了，是论文的"), or undefined.

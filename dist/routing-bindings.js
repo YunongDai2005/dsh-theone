@@ -17,6 +17,7 @@ export class RoutingBindings {
         this.db.exec('CREATE TABLE IF NOT EXISTS routing_refs (' +
             'n INTEGER PRIMARY KEY, gateway TEXT, id TEXT, topic TEXT, kind TEXT, origin TEXT, value TEXT, runtime TEXT, closed INTEGER DEFAULT 0,' +
             'UNIQUE(gateway,id,topic)); CREATE INDEX IF NOT EXISTS routing_refs_recent ON routing_refs(gateway,origin,n);' +
+            'CREATE INDEX IF NOT EXISTS routing_refs_pending ON routing_refs(gateway,runtime,origin,closed,n);' +
             'CREATE TABLE IF NOT EXISTS routing_inputs (gateway TEXT, session TEXT, message TEXT, value TEXT, PRIMARY KEY(gateway,session,message));');
     }
     close() { this.db.close(); }
@@ -66,14 +67,55 @@ export class RoutingBindings {
         return { status: 'applied', kind: owners.at(-1).kind, topicId: owners[0].topicId, refs,
             sources: uniqueSources(owners.flatMap(owner => owner.sources)) };
     }
-    /** Bounded reads; learning validity uses LearningJournal's existing stage cache. */
+    /** Bounded reads; validity always uses LearningJournal's existing stage cache. */
+    observations(topics) {
+        const valid = (ref) => topics.has(ref.topicId) && this.valid(ref.sources);
+        const latest = (origin, limit) => this.db.prepare('SELECT value FROM routing_refs r WHERE gateway=? AND origin=? AND kind=? AND closed=0 ' +
+            'AND (SELECT COUNT(*) FROM routing_refs d WHERE d.gateway=r.gateway AND d.id=r.id)=1 ORDER BY n DESC LIMIT 32')
+            .all(this.gateway, origin, 'reply').map(row => JSON.parse(String(row.value))).filter(valid).slice(0, limit);
+        // Read one sentinel beyond the cap. Truncation must never look like a unique live wait.
+        const rows = this.db.prepare('SELECT value FROM routing_refs WHERE gateway=? AND origin=? AND kind!=? AND closed=0 AND runtime=? ORDER BY n DESC LIMIT 33')
+            .all(this.gateway, 'foreground', 'reply', this.runtime);
+        const pending = rows.slice(0, 32).map(row => JSON.parse(String(row.value))).filter(valid);
+        return { foreground: latest('foreground', 1)[0], background: latest('background', 3), pending, overflow: rows.length > 32 };
+    }
+    temporaryReturn(topics, currentId) {
+        const { foreground } = this.observations(topics);
+        const sources = foreground && foreground.topicId === currentId ? foreground.sources
+            : foreground?.temporary && foreground.temporary.returnTopicId === currentId ? foreground.temporary.sources : [];
+        return { ...(currentId && topics.has(currentId) ? { returnTopicId: currentId } : {}), sources: this.valid(sources ?? []) ? sources ?? [] : [] };
+    }
+    continuation(topics, currentId, resume) {
+        const { foreground, pending, overflow } = this.observations(topics);
+        const returning = resume && !!currentId && foreground?.temporary && foreground.temporary.returnTopicId === currentId && topics.has(currentId)
+            && this.valid(foreground.temporary.sources);
+        if (resume && foreground?.temporary?.returnTopicId && !returning)
+            return { status: 'conflict' };
+        const frontId = returning ? currentId : foreground?.topicId;
+        const frontSources = returning ? foreground.temporary.sources : foreground?.sources ?? [];
+        if (overflow || pending.length > 1 || pending.length && (!resume || frontId && frontId !== pending[0].topicId))
+            return { status: 'conflict' };
+        const owner = pending[0];
+        if (owner)
+            return { status: 'applied', kind: 'pending', topicId: owner.topicId,
+                refs: [owner.id, ...(foreground ? [foreground.id] : [])], sources: uniqueSources([...owner.sources, ...frontSources]) };
+        if (frontId && (frontId !== currentId || returning))
+            return { status: 'applied', kind: returning ? 'temporary-return' : 'foreground',
+                topicId: frontId, refs: [foreground.id], sources: frontSources };
+        return { status: 'none' };
+    }
     attention(topics) {
-        const latest = (source, limit) => this.db.prepare('SELECT value FROM routing_refs WHERE gateway=? AND origin=? AND kind=? ORDER BY n DESC LIMIT 32')
-            .all(this.gateway, source, 'reply').map(row => JSON.parse(String(row.value)))
-            .filter(ref => topics.has(ref.topicId) && this.valid(ref.sources)).slice(0, limit)
-            .map(ref => ({ messageId: ref.id, topicId: ref.topicId }));
-        const foreground = latest('foreground', 1)[0], background = latest('background', 3);
-        return foreground || background.length ? { ...(foreground ? { foreground } : {}), background } : undefined;
+        const { foreground, background, pending, overflow } = this.observations(topics);
+        const brief = (ref) => ({ messageId: ref.id, topicId: ref.topicId });
+        const temporary = foreground?.temporary;
+        const returnTopicId = temporary?.returnTopicId && topics.has(temporary.returnTopicId) && this.valid(temporary.sources) ? temporary.returnTopicId : undefined;
+        return foreground || background.length || pending.length || overflow ? {
+            ...(foreground ? { foreground: { ...brief(foreground), ...(returnTopicId ? { returnTopicId } : {}) } } : {}),
+            background: background.map(brief),
+            ...(pending.length ? { pending: pending.slice(0, 8).map(ref => ({ id: ref.id, topicId: ref.topicId, kind: ref.kind })) } : {}),
+            ...(overflow || pending.length > 8 ? { pendingOverflow: true } : {}),
+            sources: uniqueSources([...foreground?.sources ?? [], ...(returnTopicId ? temporary.sources : []), ...background.flatMap(ref => ref.sources), ...pending.flatMap(ref => ref.sources)]),
+        } : undefined;
     }
     references(topics) {
         return this.db.prepare('SELECT value FROM routing_refs WHERE gateway=? ORDER BY n DESC LIMIT 64').all(this.gateway)

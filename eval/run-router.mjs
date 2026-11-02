@@ -44,7 +44,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const client = await createClient({ model: values.model, cacheDir: join(here, '.cache', values.replay, dry ? 'fake' : 'llm'),
     fake: dry ? join(here, 'test', 'fake-model.mjs') : undefined })
   const name = `${values.replay}-${values.mode}-${values.policy}${values.cards ? '-cards' : ''}-${client.model.replace(/[^\w.-]+/g, '_')}`
-  const suffix = values['state-ablation'] === 'none' ? '' : '-drop-bindings'
+  const suffix = values['state-ablation'] === 'none' ? '' : '-' + values['state-ablation']
   const out = values.out ?? join(dirname(values.data), 'predictions', `${name}${suffix}.jsonl`)
   if (sessions.some(isRoutingV1) && existsSync(out)) throw new Error('Refusing to overwrite routing-v1 predictions: ' + out)
   const rows = []

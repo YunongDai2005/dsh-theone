@@ -1,7 +1,8 @@
 import type LlmRuntime from '@deepseek-ai/dsh-llm';
 import { SessionId } from '@deepseek-ai/dsh-session';
 import type { ModelSelection } from '@deepseek-ai/dsh-agent';
-import type { BindingResolution, RoutingAttention } from './routing-bindings.ts';
+import type { BindingResolution, ContinuationResolution, TemporaryReturn, RoutingAttention } from './routing-bindings.ts';
+import type { LearningSource } from './learning-journal.ts';
 import type { ContextDescriptor, Decision } from './types.ts';
 import { type FactCandidate } from './facts.ts';
 import { type Recheck } from './routing-evidence.ts';
@@ -107,6 +108,9 @@ export interface RouterCall {
 export declare function newRoutingTrace(): RoutingTrace;
 export interface RouterReceipt {
     binding?: BindingResolution;
+    continuation?: ContinuationResolution;
+    temporary?: TemporaryReturn;
+    stateSources?: LearningSource[];
     trace?: RoutingTrace;
     callDetails?: RouterCall[];
     mode: 'rules' | 'llm';
@@ -128,6 +132,7 @@ export declare const RUNNING_PROMPT = "\nrunning\uFF08\u53EF\u80FD\u6CA1\u6709\u
 export declare const PROJECTS_PROMPT = "\nprojects\uFF08\u53EF\u80FD\u6CA1\u6709\uFF09\u662F\u7528\u6237\u7535\u8111\u4E0A\u7684\u9879\u76EE\u6587\u4EF6\u5939\uFF08\u53EA\u6709\u540D\u5B57\uFF09\u3002CREATE \u65F6\uFF0C\u5982\u679C\u8FD9\u4EF6\u65B0\u4E8B\u60C5\u660E\u663E\u662F\u5728\u5176\u4E2D\u67D0\u4E2A\u9879\u76EE\u91CC\u5E72\u6D3B\uFF08\u63D0\u5230\u8FD9\u4E2A\u9879\u76EE\u6216\u5B83\u7684\u4EE3\u7801\u3001\u6587\u4EF6\u3001\u4ED3\u5E93\uFF0C\u6216\u63A5\u7740\u505A\u90A3\u4E2A\u9879\u76EE\u91CC\u7684\u4E8B\uFF09\uFF0C\u628A\u5B83\u7684 id \u586B\u8FDB projectId\uFF1B\u548C\u8FD9\u4E9B\u9879\u76EE\u65E0\u5173\u3001\u6216\u62FF\u4E0D\u51C6\u65F6\u586B null\u3002\u5176\u4ED6\u52A8\u4F5C\u6216\u6CA1\u6709 projects \u65F6 projectId \u4E3A null\u3002";
 /** The routing instructions for one request. */
 export declare const ATTENTION_PROMPT = "\nattention.foreground \u662F\u524D\u53F0\u6700\u540E\u5C55\u793A\u7684\u56DE\u590D\u53CA\u5176\u8BDD\u9898\uFF0C\u4E0D\u4EE3\u8868\u7528\u6237\u5DF2\u7ECF\u8BFB\u8FC7\uFF1Battention.background \u662F\u540E\u53F0\u5B8C\u6210\u6216\u901A\u77E5\uFF0C\u4E0D\u80FD\u56E0\u4E3A\u5B83\u66F4\u665A\u5C31\u53D6\u4EE3\u524D\u53F0\u7126\u70B9\u3002\u6765\u6E90\u53EA\u662F\u8BED\u4E49\u5224\u65AD\u7684\u4F9D\u636E\uFF0C\u4E0D\u7B49\u4E8E\u660E\u786E\u56DE\u590D\u7ED1\u5B9A\u3002";
+export declare const CONTINUATION_PROMPT = "\nattention.pending \u662F TheOne \u4ECD\u6709\u6548\u7684\u5F85\u7B54\u95EE\u9898/\u5BA1\u6279\u53CA\u5F52\u5C5E\uFF0C\u53EA\u8868\u793A\u8DEF\u7531\u7EBF\u7D22\uFF0C\u4E0D\u662F\u7528\u6237\u6388\u6743\uFF1B\u591A\u4E2A\u5F85\u7B54\u6216\u4E0E foreground \u51B2\u7A81\u65F6\u7ED3\u5408\u672C\u8F6E\u8BED\u4E49\u9009\u62E9\uFF0C\u4E0D\u8981\u53EA\u6309 currentId\u3002pendingOverflow \u8868\u793A\u8FD8\u6709\u672A\u5217\u51FA\u7684\u5F85\u7B54\uFF0C\u4E0D\u80FD\u628A\u5217\u8868\u5F53\u6210\u5168\u90E8\u3002foreground.returnTopicId \u8868\u793A\u4E00\u6B21\u6027\u63D2\u95EE\u524D\u7684\u5DE5\u4F5C\uFF0C\u88F8\u7EED\u63A5\u56DE\u5230\u5B83\uFF1B\u8FFD\u95EE\u8BE5\u63D2\u95EE\u672C\u8EAB\u4ECD\u53EF\u9009 foreground.topicId\u3002";
 export declare const routingPrompt: (payload: object) => string;
 /**
  * The classifier's input. A request that would be too large is cut down step by step (shorter

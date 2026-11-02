@@ -110,7 +110,7 @@ def score_session(session, rows, mode):
         for thread_id in (seeded if routing_v1 else gold_ids):
             held[thread_id][thread_id] = 1_000_000
     outcomes = []
-    seen_gold = set()
+    seen_gold = set(seeded) if routing_v1 else set()
     for t in turns:
         row = by_i.get(t["i"])
         gold = t["gold"]["thread"]
@@ -134,7 +134,11 @@ def score_session(session, rows, mode):
                 held[pred][gold] += 1
         refs = [to_gold(r) for r in (row or {}).get("refs", [])]
         accurate = gold is not None and mapped == gold
-        outcomes.append({"turn": t, "row": row, "pred": pred, "mapped": mapped, "kind": kind, "accurate": accurate, "refs": refs})
+        if routing_v1 and gold is None:
+            accurate = kind == "oneoff_isolated" and pred not in SPECIAL
+        ambiguous = t.get("ambiguous", False) or (routing_v1 and t["gold"].get("requires_user_ref", False)
+                                                   and (row or {}).get("state_ablation", "none") != "none")
+        outcomes.append({"turn": t, "row": row, "pred": pred, "mapped": mapped, "kind": kind, "accurate": accurate, "refs": refs, "scorable": gold is not None and not ambiguous, "ambiguous": ambiguous})
     return outcomes, mapping
 
 
@@ -238,20 +242,20 @@ def evaluate(sessions, predictions, split="dev", ablation_predictions=None):
             if isinstance(row.get("latency_ms"), (int, float)):
                 latency.append(row["latency_ms"])
             kinds[kind] += 1
-            if not t["ambiguous"]:
+            if not o["ambiguous"]:
                 strict_kinds[kind] += 1
             gold = t["gold"]["thread"]
             if gold is None:
                 continue
             ok = o["accurate"]
             judge = (t.get("judge") or {}).get("thread")
-            if not t["ambiguous"]:
+            if not o["ambiguous"]:
                 strict[0] += ok
                 strict[1] += 1
-            lenient[0] += ok or (t["ambiguous"] and judge not in (None, "ambiguous", "none") and o["mapped"] == judge)
+            lenient[0] += ok or (o["ambiguous"] and judge not in (None, "ambiguous", "none") and o["mapped"] == judge)
             lenient[1] += 1
             # Breakdowns use the same messages as strict accuracy.
-            if not t["ambiguous"]:
+            if not o["ambiguous"]:
                 for bucket, key in ((by_action, t["gold"]["action"]), (by_lang, session["lang"])):
                     bucket[key][0] += ok
                     bucket[key][1] += 1

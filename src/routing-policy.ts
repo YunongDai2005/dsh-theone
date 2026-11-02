@@ -50,10 +50,15 @@ export function newIndependentTopic(text: string, contexts: ContextDescriptor[],
   return { action: 'CREATE', title, reason, historyIndependent: true }
 }
 
-/** A bare acknowledgement or "go on" can only continue the mounted topic, so it needs no classifier call. */
+/** Short text may use a fast route only after checking server-owned pending and foreground state. */
 export function continuesCurrent(text: string): boolean {
   const input = text.trim()
   return input.length <= 16 && /^(?:继续(?:说|写|做)?|接着(?:说|写|做|来)?|然后呢?|还有呢|好的?|好吧|可以|行|嗯+|对的?|是的|没问题|收到|谢谢|多谢|辛苦了|为什么|为啥|怎么说|详细(?:点|些|一点|说说)|展开(?:说说|讲讲)?|再详细(?:点|些|一点)?|ok(?:ay)?|yes|thanks?|thank you|go on|continue|why|more)[\s!！。.,，?？~～…]*$/i.test(input)
+}
+
+/** Resume work after an aside; questions about the aside (why/more) are intentionally excluded. */
+export function resumesWork(text: string): boolean {
+  return /^(?:继续(?:说|写|做)?|接着(?:说|写|做|来)?|好的?|好吧|可以|行|嗯+|对的?|是的|没问题|收到|谢谢|多谢|辛苦了|下一步|ok(?:ay)?|yes|thanks?|thank you|go on|continue|next step)[\s!！。.,，?？~～…]*$/i.test(text.trim())
 }
 
 /**

@@ -28,12 +28,24 @@ def evaluate_routing(sessions, rows, score_session, ablation_rows=None):
     exclusions, source_leaks = [], []
     event_status = Counter()
     restart_ok = []
+    large_ambiguous = 0
+    oneoffs, returns, continuations = [], [], []
+    scenarios = defaultdict(lambda: Counter())
     for s in sessions:
         sid = s["session_id"]
         for pos, t in enumerate(s["turns"]):
             r = indexed[(sid, t["i"])]
             ok = outcomes[(sid, t["i"])]["accurate"]
-            strict = not t.get("ambiguous") and t["gold"]["thread"] is not None
+            strict = outcomes[(sid, t["i"])]["scorable"]
+            counts = scenarios[s.get("scenario", "unspecified")]
+            counts["total"] += 1
+            counts["strict_n"] += strict
+            counts["strict_correct"] += strict and ok
+            counts["ambiguous_n"] += t["gold"]["thread"] is not None and not strict
+            counts["oneoff_n"] += t["gold"]["thread"] is None
+            if t["gold"]["thread"] is None: oneoffs.append(ok)
+            if strict and pos and s["turns"][pos - 1]["gold"]["thread"] is None: returns.append(ok)
+            if strict and (r.get("continuation") or {}).get("status") == "applied": continuations.append(ok)
             if t["gold"].get("explicit_binding") and strict:
                 bound.append(ok)
                 binding = r.get("binding") or {}
@@ -45,7 +57,9 @@ def evaluate_routing(sessions, rows, score_session, ablation_rows=None):
                 event_status[event.get("status", "missing")] += 1
                 if event.get("type") == "restart" and event.get("status") == "applied" and strict:
                     restart_ok.append(ok)
-            if len(s.get("catalog", [])) > 16 and t["gold"]["thread"] is not None:
+            if len(s.get("catalog", [])) > 16 and t["gold"]["thread"] is not None and not strict:
+                large_ambiguous += 1
+            if len(s.get("catalog", [])) > 16 and strict:
                 large.append(ok)
                 trace = r.get("trace") or {}
                 candidates = trace.get("candidateIds")
@@ -67,7 +81,7 @@ def evaluate_routing(sessions, rows, score_session, ablation_rows=None):
                     if strict: next_ok.append(ok)
                     for later in s["turns"][pos:]:
                         if later is not t and any(e["type"] == "correction" for e in later.get("events_before", [])): break
-                        if not later.get("ambiguous") and later["gold"]["thread"] is not None:
+                        if outcomes[(sid, later["i"])]["scorable"]:
                             following_ok.append(outcomes[(sid, later["i"])]["accurate"])
             for target in t["gold"].get("retract", []):
                 old = indexed.get((sid, target["turn_i"]), {})
@@ -112,16 +126,37 @@ def evaluate_routing(sessions, rows, score_session, ablation_rows=None):
     paired = {"complete_pairs": len(complete), "incomplete_pairs": len(groups) - len(complete),
               "accuracy": rate(paired_ok), "both_correct_rate": rate(both), "prediction_changed_rate": rate(changed),
               "ablation": None}
+    identifiable = [group for group in complete if all(o["scorable"] for _, o in group)]
+    paired["identifiable"] = {"complete_pairs": len(identifiable),
+        "accuracy": rate([o["accurate"] for group in identifiable for _, o in group]),
+        "both_correct_rate": rate([all(o["accurate"] for _, o in group) for group in identifiable])}
     if ablation_rows is not None:
         # The main scorer checks complete keys, duplicate rows, and protocol/mode
         # consistency before entering here. Never zip files by row order.
         other = evaluate_routing(sessions, ablation_rows, score_session)
-        if variants != {"none"} or other["state_ablation"] != "drop-bindings":
-            raise ValueError("Ablation comparison requires full none vs drop-bindings")
+        if variants != {"none"} or other["state_ablation"] not in {"drop-bindings", "drop-user-refs"}:
+            raise ValueError("Ablation comparison requires full none vs drop-user-refs or drop-bindings")
+        ablated_by_session = defaultdict(list)
+        for row in ablation_rows: ablated_by_session[row["session_id"]].append(row)
+        ablated_outcomes = {}
+        for s in sessions:
+            selected = ablated_by_session[s["session_id"]]
+            scored, _ = score_session(s, selected, selected[0].get("mode", "closed"))
+            ablated_outcomes.update({(s["session_id"], o["turn"]["i"]): o for o in scored})
+        comparable = []
+        for group in identifiable:
+            other_group = [ablated_outcomes[(s["session_id"], s["pair"]["turn_i"])] for s, _ in group]
+            if all(o["scorable"] for o in other_group): comparable.append((group, other_group))
+        full_accuracy = rate([o["accurate"] for group, _ in comparable for _, o in group])
+        ablated_accuracy = rate([o["accurate"] for _, group in comparable for o in group])
+        full_both = rate([all(o["accurate"] for _, o in group) for group, _ in comparable])
+        ablated_both = rate([all(o["accurate"] for o in group) for _, group in comparable])
         subtract = lambda a, b: round(a - b, 4) if a is not None and b is not None else None
-        paired["ablation"] = {"accuracy_delta": subtract(paired["accuracy"], other["pairs"]["accuracy"]),
-                             "both_correct_delta": subtract(paired["both_correct_rate"], other["pairs"]["both_correct_rate"]),
-                             "full_accuracy": paired["accuracy"], "ablated_accuracy": other["pairs"]["accuracy"]}
+        paired["ablation"] = {"state_ablation": other["state_ablation"], "comparable_pairs": len(comparable),
+                             "accuracy_delta": subtract(full_accuracy, ablated_accuracy),
+                             "both_correct_delta": subtract(full_both, ablated_both),
+                             "full_accuracy": full_accuracy, "ablated_accuracy": ablated_accuracy}
+
     return {
         "state_ablation": next(iter(variants), "none"),
         "explicit_binding": {"n": len(bound), "accuracy": rate(bound), "applied": len(applied),
@@ -135,9 +170,13 @@ def evaluate_routing(sessions, rows, score_session, ablation_rows=None):
                        for key, counts in retracted.items()},
         "retraction_sources": {"observed": len(source_leaks), "leaky": sum(source_leaks), "leak_rate": rate(source_leaks)},
         "retraction_exclusion": {"observed": len(exclusions), "excluded_rate": rate(exclusions)},
-        "large_catalog": {"n": len(large), "observed": len(recall), "missing_trace": missing,
+        "large_catalog": {"n": len(large), "ambiguous_n": large_ambiguous, "observed": len(recall), "missing_trace": missing,
                           "recall_at_16": rate(recall), "recall_after_review": rate(page_hits),
                           "review_pages": page_count, "accuracy": rate(large)},
+        "by_scenario": {key: {**dict(c), "accuracy": round(c["strict_correct"] / c["strict_n"], 4) if c["strict_n"] else None}
+                        for key, c in sorted(scenarios.items())},
+        "oneoff": {"n": len(oneoffs), "isolated_accuracy": rate(oneoffs), "return_n": len(returns), "return_accuracy": rate(returns)},
+        "continuation": {"applied": len(continuations), "accuracy": rate(continuations)},
         "restart": {"n": len(restart_ok), "accuracy": rate(restart_ok)},
         "event_status": dict(event_status), "pairs": paired,
     }

@@ -204,3 +204,42 @@ test('new-topic correction templates retain Chinese text instead of pipeline rep
   assert.equal(cases.length, 8)
   for (const s of cases) assert.match(s.turns[0].text, /\p{Script=Han}/u)
 })
+
+test('drop-user-refs removes reply and pending references but retains the server observations', async () => {
+  const s = session([turn(0, 'ok', 'b', { events_before: [
+    { id: 'front', type: 'foreground', topic_id: 'b', text: 'Continue?' },
+    { id: 'q', type: 'pending', owner_id: 'b', kind: 'question', message_id: 'front' }],
+    input: { reply_to: 'front', pending_response: 'q' } })])
+  const [row] = await routeSession(s, { client: await createClient({ fake }), stateAblation: 'drop-user-refs' })
+  assert.equal(row.pred, 'b')
+  assert.equal(row.calls, 0)
+  assert.equal(row.binding.applied, false)
+  assert.deepEqual(row.binding.submitted, {})
+  assert.equal(row.events.every(e => e.status === 'applied'), true)
+})
+
+test('drop-user-refs keeps native in-flight steering identity and arrival timing', async () => {
+  const s = session([turn(0, 'Garden design', 'a'), turn(1, 'make it shorter', 'a', { input: { steering_of: 0 } })])
+  const rows = await routeSession(s, { client: await createClient({ fake }), stateAblation: 'drop-user-refs' })
+  assert.equal(rows[1].delivery.kind, 'steering')
+  assert.equal(rows[1].delivery.observed, true)
+  assert.equal(rows[1].binding.applied, true)
+  assert.equal(rows[1].calls, 0)
+})
+
+test('step7 templates provide unmarked unique waits and identifiable distant catalog targets', () => {
+  const data = generator.buildRoutingSet()
+  for (const s of data) {
+    if (['question', 'approval'].includes(s.scenario)) {
+      const events = s.turns[0].events_before
+      assert.equal(events.filter(e => e.type === 'pending').length, 1)
+      assert.ok(!events.some(e => e.type === 'foreground' && e.topic_id !== s.turns[0].gold.thread))
+    }
+    if (s.scenario === 'large_catalog') {
+      const last = s.turns.at(-1)
+      assert.equal(last.ambiguous, false)
+      assert.ok(last.text.includes(s.catalog.find(c => c.id === 'c23').entities[1]))
+    }
+  }
+  assert.ok(data.some(s => s.scenario === 'question_conflict' && s.turns[0].gold.requires_user_ref))
+})

@@ -18,7 +18,7 @@ It is identified by `routing_schema: "routing-v1"`. The older fact-lifecycle gen
 Generate fact-lifecycle data into a separate directory (commands below). The fact generator
 now refuses to overwrite the bundled routing dataset.
 
-`generate-routing-v1.mjs --templates --out <new-directory>` reproduces the directed set without
+`generate-routing-v1.mjs --templates --out <new-directory>` generates the step 7 revision without
 a model. Its `--dry-run` uses the fake model to test the natural-language rendering path; omitting
 that flag uses the configured model. Paired short text and metadata stay fixed. Generated prose
 still needs semantic review before using it as a benchmark.
@@ -49,6 +49,37 @@ keyword and fact content from retained exclusion/audit records. Missing snapshot
 never learned are not scored as clean retractions. See the [Chinese step 5 report](../docs/design/routing-rethink-step5-report.zh.md)
 for the schema and coverage, and the [Chinese step 6 report](../docs/design/routing-rethink-step6-report.zh.md)
 for the binding protocol, native-host boundaries, current validation, and author-run commands.
+
+## Unmarked routing (step 7)
+
+The primary ablation is `--state-ablation drop-user-refs`: it removes the user's `reply_to`
+and `pending_response` selectors while keeping TheOne's foreground provenance, live pending
+owners, background observations, and native `steering_of` identity and arrival timing.
+`drop-bindings` remains the older destructive control: it also removes foreground/pending
+observations and native steering. Neither ablation removes ordinary replies produced by the replay.
+
+Use `eval/data/interleave-v1-step7/sessions.jsonl` for the primary comparison. This separate,
+versioned revision has 320 sessions / 512 messages: unique question/approval owner pairs;
+separate competing-wait pairs labelled `gold.requires_user_ref`; and a distinct SHARD code in
+the final large-catalog request. Original data and step6b predictions are unchanged. A conflict
+that requires a removed selector is excluded from unmarked strict accuracy, but remains visible
+in per-scenario counts and raw pair diagnostics. Compare pair ablations only on the common
+identifiable pairs (`pairs.ablation.comparable_pairs`); `pairs.identifiable` reports the eligible
+subset for a single run. Corrections' deliberately ambiguous first messages remain recovery probes.
+
+```powershell
+foreach ($ablation in @('none', 'drop-user-refs', 'drop-bindings')) {
+  node eval/run-router.mjs --data eval/data/interleave-v1-step7/sessions.jsonl --split all --mode open --cards --dry-run --state-ablation $ablation --out "eval/data/interleave-v1-step7/predictions/example-step7-$ablation.jsonl"
+}
+py -X utf8 -B eval/score.py eval/data/interleave-v1-step7/sessions.jsonl eval/data/interleave-v1-step7/predictions/example-step7-none.jsonl --split all --ablation eval/data/interleave-v1-step7/predictions/example-step7-drop-user-refs.jsonl
+```
+
+The routing-v1 scorer treats a new label for an already seeded topic as `spurious_new`,
+reports isolated one-offs separately from thread accuracy, and excludes ambiguous catalog
+queries from R@16 (also reporting their count). v0 scoring is unchanged. Dry runs exercise the
+pipeline only: their model ignores most semantics and their tokens/prices are synthetic.
+See the [step 7 report](../docs/design/routing-rethink-step7-report.zh.md) for the row audit,
+validation evidence, bounded product rules, and real-model commands for the author.
 
 ## How the data is made
 

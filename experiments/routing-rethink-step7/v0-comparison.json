@@ -1,0 +1,746 @@
+{
+  "open-dev": {
+    "messages": 1971,
+    "identical": 1971,
+    "differences": [],
+    "before_sha256": "d02635232cf81bc6414f0bc4fd7a802f4ff99e185fa84320f04068fc611de420",
+    "after_sha256": "d02635232cf81bc6414f0bc4fd7a802f4ff99e185fa84320f04068fc611de420",
+    "before_score": {
+      "mode": "open",
+      "replay": "product-v1",
+      "split": "dev",
+      "sessions": 40,
+      "messages": 1971,
+      "accuracy": 0.4451,
+      "accuracy_lenient": 0.4466,
+      "weighted_error": 1.6793,
+      "harm_per_100_messages": 167.9338,
+      "ambiguous_share": 0.1338,
+      "outcomes": {
+        "correct": 810,
+        "merged_new": 122,
+        "oneoff_into_topic": 88,
+        "wrong_existing": 951
+      },
+      "oneoff_into_topic": 1.0,
+      "switch": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "bcubed": {
+        "precision": 0.3379,
+        "recall": 1.0,
+        "f1": 0.5051
+      },
+      "topics_per_thread": 1.0,
+      "threads_per_topic": 4.05,
+      "refs_recall": 0.0,
+      "by_action": {
+        "continue": 0.4973,
+        "new": 0.2469,
+        "return": 0.3396,
+        "switch": 0.3829
+      },
+      "by_tag": {
+        "cross": 0.3939,
+        "cue": 0.4196,
+        "explicit": 0.3973,
+        "implicit": 0.515,
+        "long_gap": 0.3396,
+        "pronoun": 0.4571,
+        "twin": 0.1713
+      },
+      "by_lang": {
+        "en": 0.4469,
+        "zh": 0.4434
+      },
+      "tokens_per_message": {
+        "input": 1497.2,
+        "output": 62.0,
+        "cache_hit": 0.0
+      },
+      "model_calls_share": 1.0,
+      "calls_per_message": 1.0203,
+      "by_tier": {
+        "fast": {
+          "n": 0,
+          "share": 0.0
+        },
+        "quick": {
+          "n": 1931,
+          "share": 0.9797
+        },
+        "recheck": {
+          "n": 40,
+          "share": 0.0203
+        },
+        "review": {
+          "n": 0,
+          "share": 0.0
+        },
+        "rules": {
+          "n": 0,
+          "share": 0.0
+        }
+      },
+      "cache_hit_rate": 0.0,
+      "latency_ms": {
+        "p50": 0.01659999999901629,
+        "p90": 0.020000000000436557
+      },
+      "usd_per_1000_messages": 0.563458,
+      "routing_usd_per_1000_messages": 0.523609,
+      "card_usd_per_1000_messages": 0.039849,
+      "auxiliary_usd_per_1000_messages": null
+    },
+    "after_score": {
+      "mode": "open",
+      "replay": "product-v1",
+      "split": "dev",
+      "sessions": 40,
+      "messages": 1971,
+      "accuracy": 0.4451,
+      "accuracy_lenient": 0.4466,
+      "weighted_error": 1.6793,
+      "harm_per_100_messages": 167.9338,
+      "ambiguous_share": 0.1338,
+      "outcomes": {
+        "correct": 810,
+        "merged_new": 122,
+        "oneoff_into_topic": 88,
+        "wrong_existing": 951
+      },
+      "oneoff_into_topic": 1.0,
+      "switch": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "bcubed": {
+        "precision": 0.3379,
+        "recall": 1.0,
+        "f1": 0.5051
+      },
+      "topics_per_thread": 1.0,
+      "threads_per_topic": 4.05,
+      "refs_recall": 0.0,
+      "by_action": {
+        "continue": 0.4973,
+        "new": 0.2469,
+        "return": 0.3396,
+        "switch": 0.3829
+      },
+      "by_tag": {
+        "cross": 0.3939,
+        "cue": 0.4196,
+        "explicit": 0.3973,
+        "implicit": 0.515,
+        "long_gap": 0.3396,
+        "pronoun": 0.4571,
+        "twin": 0.1713
+      },
+      "by_lang": {
+        "en": 0.4469,
+        "zh": 0.4434
+      },
+      "tokens_per_message": {
+        "input": 1497.2,
+        "output": 62.0,
+        "cache_hit": 0.0
+      },
+      "model_calls_share": 1.0,
+      "calls_per_message": 1.0203,
+      "by_tier": {
+        "fast": {
+          "n": 0,
+          "share": 0.0
+        },
+        "quick": {
+          "n": 1931,
+          "share": 0.9797
+        },
+        "recheck": {
+          "n": 40,
+          "share": 0.0203
+        },
+        "review": {
+          "n": 0,
+          "share": 0.0
+        },
+        "rules": {
+          "n": 0,
+          "share": 0.0
+        }
+      },
+      "cache_hit_rate": 0.0,
+      "latency_ms": {
+        "p50": 0.017299999999522697,
+        "p90": 0.022399999999834108
+      },
+      "usd_per_1000_messages": 0.563458,
+      "routing_usd_per_1000_messages": 0.523609,
+      "card_usd_per_1000_messages": 0.039849,
+      "auxiliary_usd_per_1000_messages": null
+    }
+  },
+  "open-test": {
+    "messages": 495,
+    "identical": 495,
+    "differences": [],
+    "before_sha256": "9c275d880da96539755651c9962a4bc32d957c5bfcb6a4260948d1d0e1418cb3",
+    "after_sha256": "9c275d880da96539755651c9962a4bc32d957c5bfcb6a4260948d1d0e1418cb3",
+    "before_score": {
+      "mode": "open",
+      "replay": "product-v1",
+      "split": "test",
+      "sessions": 10,
+      "messages": 495,
+      "accuracy": 0.4881,
+      "accuracy_lenient": 0.4716,
+      "weighted_error": 1.5357,
+      "harm_per_100_messages": 153.5714,
+      "ambiguous_share": 0.1158,
+      "outcomes": {
+        "correct": 221,
+        "merged_new": 31,
+        "wrong_existing": 223,
+        "oneoff_into_topic": 20
+      },
+      "oneoff_into_topic": 1.0,
+      "switch": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "bcubed": {
+        "precision": 0.3475,
+        "recall": 1.0,
+        "f1": 0.5158
+      },
+      "topics_per_thread": 1.0,
+      "threads_per_topic": 4.1,
+      "refs_recall": 0.0,
+      "by_action": {
+        "continue": 0.5646,
+        "new": 0.25,
+        "return": 0.3,
+        "switch": 0.3939
+      },
+      "by_tag": {
+        "cross": 0.4211,
+        "cue": 0.5556,
+        "explicit": 0.4434,
+        "implicit": 0.5565,
+        "long_gap": 0.3,
+        "pronoun": 0.4848,
+        "twin": 0.4211
+      },
+      "by_lang": {
+        "en": 0.537,
+        "zh": 0.4363
+      },
+      "tokens_per_message": {
+        "input": 1511.7,
+        "output": 62.0,
+        "cache_hit": 0.0
+      },
+      "model_calls_share": 1.0,
+      "calls_per_message": 1.0202,
+      "by_tier": {
+        "fast": {
+          "n": 0,
+          "share": 0.0
+        },
+        "quick": {
+          "n": 485,
+          "share": 0.9798
+        },
+        "recheck": {
+          "n": 10,
+          "share": 0.0202
+        },
+        "review": {
+          "n": 0,
+          "share": 0.0
+        },
+        "rules": {
+          "n": 0,
+          "share": 0.0
+        }
+      },
+      "cache_hit_rate": 0.0,
+      "latency_ms": {
+        "p50": 0.01769999999942229,
+        "p90": 0.021200000000135333
+      },
+      "usd_per_1000_messages": 0.568211,
+      "routing_usd_per_1000_messages": 0.527956,
+      "card_usd_per_1000_messages": 0.040255,
+      "auxiliary_usd_per_1000_messages": null
+    },
+    "after_score": {
+      "mode": "open",
+      "replay": "product-v1",
+      "split": "test",
+      "sessions": 10,
+      "messages": 495,
+      "accuracy": 0.4881,
+      "accuracy_lenient": 0.4716,
+      "weighted_error": 1.5357,
+      "harm_per_100_messages": 153.5714,
+      "ambiguous_share": 0.1158,
+      "outcomes": {
+        "correct": 221,
+        "merged_new": 31,
+        "wrong_existing": 223,
+        "oneoff_into_topic": 20
+      },
+      "oneoff_into_topic": 1.0,
+      "switch": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "bcubed": {
+        "precision": 0.3475,
+        "recall": 1.0,
+        "f1": 0.5158
+      },
+      "topics_per_thread": 1.0,
+      "threads_per_topic": 4.1,
+      "refs_recall": 0.0,
+      "by_action": {
+        "continue": 0.5646,
+        "new": 0.25,
+        "return": 0.3,
+        "switch": 0.3939
+      },
+      "by_tag": {
+        "cross": 0.4211,
+        "cue": 0.5556,
+        "explicit": 0.4434,
+        "implicit": 0.5565,
+        "long_gap": 0.3,
+        "pronoun": 0.4848,
+        "twin": 0.4211
+      },
+      "by_lang": {
+        "en": 0.537,
+        "zh": 0.4363
+      },
+      "tokens_per_message": {
+        "input": 1511.7,
+        "output": 62.0,
+        "cache_hit": 0.0
+      },
+      "model_calls_share": 1.0,
+      "calls_per_message": 1.0202,
+      "by_tier": {
+        "fast": {
+          "n": 0,
+          "share": 0.0
+        },
+        "quick": {
+          "n": 485,
+          "share": 0.9798
+        },
+        "recheck": {
+          "n": 10,
+          "share": 0.0202
+        },
+        "review": {
+          "n": 0,
+          "share": 0.0
+        },
+        "rules": {
+          "n": 0,
+          "share": 0.0
+        }
+      },
+      "cache_hit_rate": 0.0,
+      "latency_ms": {
+        "p50": 0.018599999999423744,
+        "p90": 0.023000000001047738
+      },
+      "usd_per_1000_messages": 0.568211,
+      "routing_usd_per_1000_messages": 0.527956,
+      "card_usd_per_1000_messages": 0.040255,
+      "auxiliary_usd_per_1000_messages": null
+    }
+  },
+  "closed-dev": {
+    "messages": 1971,
+    "identical": 1971,
+    "differences": [],
+    "before_sha256": "759e2b62703b3ba6055a34368d6e244706f78b7836f9cd9980855b38ea75b217",
+    "after_sha256": "759e2b62703b3ba6055a34368d6e244706f78b7836f9cd9980855b38ea75b217",
+    "before_score": {
+      "mode": "closed",
+      "replay": "product-v1",
+      "split": "dev",
+      "sessions": 40,
+      "messages": 1971,
+      "accuracy": 0.0313,
+      "accuracy_lenient": 0.0329,
+      "weighted_error": 1.6793,
+      "harm_per_100_messages": 167.9338,
+      "ambiguous_share": 0.1338,
+      "outcomes": {
+        "spurious_new": 39,
+        "correct": 790,
+        "merged_new": 122,
+        "oneoff_into_topic": 88,
+        "wrong_existing": 932
+      },
+      "oneoff_into_topic": 1.0,
+      "switch": {
+        "precision": 0.6,
+        "recall": 0.0055,
+        "f1": 0.0109
+      },
+      "bcubed": {
+        "precision": 0.3481,
+        "recall": 0.98,
+        "f1": 0.5138
+      },
+      "topics_per_thread": 1.056,
+      "threads_per_topic": 3.8,
+      "refs_recall": 0.0,
+      "by_action": {
+        "continue": 0.0318,
+        "new": 0.0062,
+        "return": 0.0377,
+        "switch": 0.0411
+      },
+      "by_tag": {
+        "cross": 0.0303,
+        "cue": 0.0536,
+        "explicit": 0.0257,
+        "implicit": 0.0381,
+        "long_gap": 0.0377,
+        "pronoun": 0.025,
+        "twin": 0.0125
+      },
+      "by_lang": {
+        "en": 0.0123,
+        "zh": 0.0499
+      },
+      "tokens_per_message": {
+        "input": 1800.3,
+        "output": 62.6,
+        "cache_hit": 0.0
+      },
+      "model_calls_share": 1.0,
+      "calls_per_message": 1.0421,
+      "by_tier": {
+        "fast": {
+          "n": 0,
+          "share": 0.0
+        },
+        "quick": {
+          "n": 1888,
+          "share": 0.9579
+        },
+        "recheck": {
+          "n": 83,
+          "share": 0.0421
+        },
+        "review": {
+          "n": 0,
+          "share": 0.0
+        },
+        "rules": {
+          "n": 0,
+          "share": 0.0
+        }
+      },
+      "cache_hit_rate": 0.0,
+      "latency_ms": {
+        "p50": 0.020400000001245644,
+        "p90": 0.025599999999940337
+      },
+      "usd_per_1000_messages": 0.654515,
+      "routing_usd_per_1000_messages": 0.615169,
+      "card_usd_per_1000_messages": 0.039346,
+      "auxiliary_usd_per_1000_messages": null
+    },
+    "after_score": {
+      "mode": "closed",
+      "replay": "product-v1",
+      "split": "dev",
+      "sessions": 40,
+      "messages": 1971,
+      "accuracy": 0.0313,
+      "accuracy_lenient": 0.0329,
+      "weighted_error": 1.6793,
+      "harm_per_100_messages": 167.9338,
+      "ambiguous_share": 0.1338,
+      "outcomes": {
+        "spurious_new": 39,
+        "correct": 790,
+        "merged_new": 122,
+        "oneoff_into_topic": 88,
+        "wrong_existing": 932
+      },
+      "oneoff_into_topic": 1.0,
+      "switch": {
+        "precision": 0.6,
+        "recall": 0.0055,
+        "f1": 0.0109
+      },
+      "bcubed": {
+        "precision": 0.3481,
+        "recall": 0.98,
+        "f1": 0.5138
+      },
+      "topics_per_thread": 1.056,
+      "threads_per_topic": 3.8,
+      "refs_recall": 0.0,
+      "by_action": {
+        "continue": 0.0318,
+        "new": 0.0062,
+        "return": 0.0377,
+        "switch": 0.0411
+      },
+      "by_tag": {
+        "cross": 0.0303,
+        "cue": 0.0536,
+        "explicit": 0.0257,
+        "implicit": 0.0381,
+        "long_gap": 0.0377,
+        "pronoun": 0.025,
+        "twin": 0.0125
+      },
+      "by_lang": {
+        "en": 0.0123,
+        "zh": 0.0499
+      },
+      "tokens_per_message": {
+        "input": 1800.3,
+        "output": 62.6,
+        "cache_hit": 0.0
+      },
+      "model_calls_share": 1.0,
+      "calls_per_message": 1.0421,
+      "by_tier": {
+        "fast": {
+          "n": 0,
+          "share": 0.0
+        },
+        "quick": {
+          "n": 1888,
+          "share": 0.9579
+        },
+        "recheck": {
+          "n": 83,
+          "share": 0.0421
+        },
+        "review": {
+          "n": 0,
+          "share": 0.0
+        },
+        "rules": {
+          "n": 0,
+          "share": 0.0
+        }
+      },
+      "cache_hit_rate": 0.0,
+      "latency_ms": {
+        "p50": 0.020700000000942964,
+        "p90": 0.027099999999336433
+      },
+      "usd_per_1000_messages": 0.654515,
+      "routing_usd_per_1000_messages": 0.615169,
+      "card_usd_per_1000_messages": 0.039346,
+      "auxiliary_usd_per_1000_messages": null
+    }
+  },
+  "closed-test": {
+    "messages": 495,
+    "identical": 495,
+    "differences": [],
+    "before_sha256": "bbfbf6996bb1f249ee25efb7bc580ca6e66b165d8c067190be8734fc68b3ebf4",
+    "after_sha256": "bbfbf6996bb1f249ee25efb7bc580ca6e66b165d8c067190be8734fc68b3ebf4",
+    "before_score": {
+      "mode": "closed",
+      "replay": "product-v1",
+      "split": "test",
+      "sessions": 10,
+      "messages": 495,
+      "accuracy": 0.0405,
+      "accuracy_lenient": 0.04,
+      "weighted_error": 1.6952,
+      "harm_per_100_messages": 169.5238,
+      "ambiguous_share": 0.1158,
+      "outcomes": {
+        "spurious_new": 10,
+        "correct": 186,
+        "merged_new": 30,
+        "wrong_existing": 249,
+        "oneoff_into_topic": 20
+      },
+      "oneoff_into_topic": 1.0,
+      "switch": {
+        "precision": 0.5,
+        "recall": 0.013,
+        "f1": 0.0253
+      },
+      "bcubed": {
+        "precision": 0.3676,
+        "recall": 0.9059,
+        "f1": 0.523
+      },
+      "topics_per_thread": 1.195,
+      "threads_per_topic": 3.5,
+      "refs_recall": 0.0,
+      "by_action": {
+        "continue": 0.0369,
+        "new": 0.025,
+        "return": 0.0,
+        "switch": 0.0606
+      },
+      "by_tag": {
+        "cross": 0.0526,
+        "cue": 0.0,
+        "explicit": 0.0472,
+        "implicit": 0.0261,
+        "long_gap": 0.0,
+        "pronoun": 0.0606,
+        "twin": 0.0
+      },
+      "by_lang": {
+        "en": 0.0,
+        "zh": 0.0833
+      },
+      "tokens_per_message": {
+        "input": 1847.0,
+        "output": 61.5,
+        "cache_hit": 0.0
+      },
+      "model_calls_share": 1.0,
+      "calls_per_message": 1.0566,
+      "by_tier": {
+        "fast": {
+          "n": 0,
+          "share": 0.0
+        },
+        "quick": {
+          "n": 467,
+          "share": 0.9434
+        },
+        "recheck": {
+          "n": 28,
+          "share": 0.0566
+        },
+        "review": {
+          "n": 0,
+          "share": 0.0
+        },
+        "rules": {
+          "n": 0,
+          "share": 0.0
+        }
+      },
+      "cache_hit_rate": 0.0,
+      "latency_ms": {
+        "p50": 0.021300000000337604,
+        "p90": 0.03059999999959473
+      },
+      "usd_per_1000_messages": 0.665918,
+      "routing_usd_per_1000_messages": 0.627874,
+      "card_usd_per_1000_messages": 0.038044,
+      "auxiliary_usd_per_1000_messages": null
+    },
+    "after_score": {
+      "mode": "closed",
+      "replay": "product-v1",
+      "split": "test",
+      "sessions": 10,
+      "messages": 495,
+      "accuracy": 0.0405,
+      "accuracy_lenient": 0.04,
+      "weighted_error": 1.6952,
+      "harm_per_100_messages": 169.5238,
+      "ambiguous_share": 0.1158,
+      "outcomes": {
+        "spurious_new": 10,
+        "correct": 186,
+        "merged_new": 30,
+        "wrong_existing": 249,
+        "oneoff_into_topic": 20
+      },
+      "oneoff_into_topic": 1.0,
+      "switch": {
+        "precision": 0.5,
+        "recall": 0.013,
+        "f1": 0.0253
+      },
+      "bcubed": {
+        "precision": 0.3676,
+        "recall": 0.9059,
+        "f1": 0.523
+      },
+      "topics_per_thread": 1.195,
+      "threads_per_topic": 3.5,
+      "refs_recall": 0.0,
+      "by_action": {
+        "continue": 0.0369,
+        "new": 0.025,
+        "return": 0.0,
+        "switch": 0.0606
+      },
+      "by_tag": {
+        "cross": 0.0526,
+        "cue": 0.0,
+        "explicit": 0.0472,
+        "implicit": 0.0261,
+        "long_gap": 0.0,
+        "pronoun": 0.0606,
+        "twin": 0.0
+      },
+      "by_lang": {
+        "en": 0.0,
+        "zh": 0.0833
+      },
+      "tokens_per_message": {
+        "input": 1847.0,
+        "output": 61.5,
+        "cache_hit": 0.0
+      },
+      "model_calls_share": 1.0,
+      "calls_per_message": 1.0566,
+      "by_tier": {
+        "fast": {
+          "n": 0,
+          "share": 0.0
+        },
+        "quick": {
+          "n": 467,
+          "share": 0.9434
+        },
+        "recheck": {
+          "n": 28,
+          "share": 0.0566
+        },
+        "review": {
+          "n": 0,
+          "share": 0.0
+        },
+        "rules": {
+          "n": 0,
+          "share": 0.0
+        }
+      },
+      "cache_hit_rate": 0.0,
+      "latency_ms": {
+        "p50": 0.022300000000086584,
+        "p90": 0.03400000000056025
+      },
+      "usd_per_1000_messages": 0.665918,
+      "routing_usd_per_1000_messages": 0.627874,
+      "card_usd_per_1000_messages": 0.038044,
+      "auxiliary_usd_per_1000_messages": null
+    }
+  }
+}

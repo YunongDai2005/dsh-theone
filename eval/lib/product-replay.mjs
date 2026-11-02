@@ -254,19 +254,20 @@ async function routeEventSession(session, { mode = 'closed', policy = 'theone', 
   cards = false, routingShadow = true, stateAblation = 'none' } = {}) {
   if (!['open', 'closed'].includes(mode)) throw new Error('--mode open|closed')
   if (policy !== 'theone' || merge !== 'none' || decide !== 'joint') throw new Error('routing-v1 uses the product policy')
-  if (!['none', 'drop-bindings'].includes(stateAblation)) throw new Error('state ablation must be none|drop-bindings')
+  if (!['none', 'drop-user-refs', 'drop-bindings'].includes(stateAblation)) throw new Error('state ablation must be none|drop-user-refs|drop-bindings')
   const root = await mkdtemp(join(tmpdir(), 'theone-event-replay-'))
   let app, instance = 0, seq = 0
   const inputs = new Map(), rows = []
   const catalog = session.catalog ?? (mode === 'closed' ? session.threads.map(t => ({
     id: t.id, title: t.title, summary: t.description || t.title, entities: [], keywords: [], lastState: 'waiting' })) : [])
-  // Same input consumer as POST /api/theone/messages. Ownership never comes from gold.
-  const submit = (turn, mode = 'followup') => app.ctx.theone.submitMessage(app.gateway.id, turn.text,
-    stateAblation === 'drop-bindings' ? {} : {
-      ...(turn.input?.reply_to ? { replyTo: turn.input.reply_to } : {}),
-      ...(turn.input?.pending_response ? { pendingResponse: turn.input.pending_response } : {}),
-      ...(turn.input?.steering_of !== undefined ? { steeringOf: inputs.get(turn.input.steering_of).id } : {}),
-    }, mode)
+  // User-selected references are optional. Native same-round steering identity is
+  // host-owned; removing it would change arrival timing as well as observations.
+  const inputBinding = turn => stateAblation === 'drop-bindings' ? {} : {
+    ...(stateAblation === 'none' && turn.input?.reply_to ? { replyTo: turn.input.reply_to } : {}),
+    ...(stateAblation === 'none' && turn.input?.pending_response ? { pendingResponse: turn.input.pending_response } : {}),
+    ...(turn.input?.steering_of !== undefined ? { steeringOf: inputs.get(turn.input.steering_of).id } : {}),
+  }
+  const submit = (turn, mode = 'followup') => app.ctx.theone.submitMessage(app.gateway.id, turn.text, inputBinding(turn), mode)
   try {
     await writeFile(join(root, 'contexts.json'), JSON.stringify(catalog))
     app = await openEventRuntime(root, client, { cards, routingShadow }, instance)
@@ -323,7 +324,7 @@ async function routeEventSession(session, { mode = 'closed', policy = 'theone', 
       const before = eventSnapshot(app, root, inputs)
       let input
       const next = session.turns[position + 1]
-      const steered = stateAblation === 'none' && next?.input?.steering_of === turn.i ? next : undefined
+      const steered = stateAblation !== 'drop-bindings' && next?.input?.steering_of === turn.i ? next : undefined
       let steerInput, steerBefore, routeRecords, workerCount = 0
       if (steered) app.model.onWorker = async () => {
         routeRecords = [...app.model.records]
@@ -360,8 +361,9 @@ async function routeEventSession(session, { mode = 'closed', policy = 'theone', 
           usage_by_call: calls, usage: calls.reduce((a, c) => ({ input: a.input + (c.input ?? 0), output: a.output + (c.output ?? 0),
             cache_hit: a.cache_hit + (c.cache_hit ?? 0) }), { input: 0, output: 0, cache_hit: 0 }),
           latency_ms: calls.reduce((n, c) => n + (c.latency_ms ?? 0), 0), elapsed_ms: Math.round(performance.now() - started),
-          events: eventResults, binding: { requested: t.input ?? {}, applied: receipt?.binding?.status === 'applied', resolution: receipt?.binding ?? null,
-            unsupported, ablated: stateAblation === 'drop-bindings' },
+          events: eventResults, continuation: receipt?.continuation ?? null, temporary: receipt?.temporary ?? null,
+          binding: { requested: t.input ?? {}, submitted: inputBinding(t), applied: receipt?.binding?.status === 'applied', resolution: receipt?.binding ?? null,
+            unsupported, ablated: stateAblation !== 'none' },
           state_before: stateBefore, state_after: after, snapshot_phase: steered ? 'after-shared-round' : 'after-turn',
           ...extra }
       }

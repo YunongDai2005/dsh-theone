@@ -116,7 +116,7 @@ test('restart recovers provenance, focus, temporary return and unresolved owners
   } finally { await reopened?.close(); await f.close() }
 })
 
-test('an actual arithmetic detour restores only shadow focus, leaving product routing unchanged', async () => {
+test('an actual arithmetic detour preserves product mounting as well as shadow focus', async () => {
   const f = await setup()
   try {
     await ask(f.app.gateway, 'Qwen 那个')
@@ -124,7 +124,7 @@ test('an actual arithmetic detour restores only shadow focus, leaving product ro
     const result = await ask(f.app.gateway, '插一句，17 + 23 是多少？')
     const route = f.app.ctx.theone.store.route(result.input.id)!
     assert.equal(route.decision.action, 'CREATE')
-    assert.equal(f.app.ctx.theone.store.current('test-gateway'), route.decision.contextId)
+    assert.equal(f.app.ctx.theone.store.current('test-gateway'), before.topicId)
     const shadow = f.shadow.snapshot('test-gateway')
     assert.equal(shadow.focus.topicId, before.topicId)
     assert.equal(shadow.focus.messageId, before.messageId)

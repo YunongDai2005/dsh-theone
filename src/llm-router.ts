@@ -2,7 +2,8 @@ import type LlmRuntime from '@deepseek-ai/dsh-llm'
 import { randomUUID } from 'node:crypto'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { ModelSelection } from '@deepseek-ai/dsh-agent'
-import type { BindingResolution, RoutingAttention } from './routing-bindings.ts'
+import type { BindingResolution, ContinuationResolution, TemporaryReturn, RoutingAttention } from './routing-bindings.ts'
+import type { LearningSource } from './learning-journal.ts'
 import type { ContextDescriptor, Decision } from './types.ts'
 import { newIndependentTopic, referencesHistory, redactRoutingText } from './routing-policy.ts'
 import { FACT_LIMITS, type FactCandidate } from './facts.ts'
@@ -72,6 +73,9 @@ export function newRoutingTrace(): RoutingTrace {
 }
 export interface RouterReceipt {
   binding?: BindingResolution
+  continuation?: ContinuationResolution
+  temporary?: TemporaryReturn
+  stateSources?: LearningSource[]
   trace?: RoutingTrace
   callDetails?: RouterCall[]
   mode: 'rules' | 'llm'
@@ -116,7 +120,8 @@ projects（可能没有）是用户电脑上的项目文件夹（只有名字）
 
 /** The routing instructions for one request. */
 export const ATTENTION_PROMPT = '\nattention.foreground 是前台最后展示的回复及其话题，不代表用户已经读过；attention.background 是后台完成或通知，不能因为它更晚就取代前台焦点。来源只是语义判断的依据，不等于明确回复绑定。'
-export const routingPrompt = (payload: object) => ROUTING_PROMPT + FACTS_PROMPT + PROJECTS_PROMPT + RUNNING_PROMPT + RECHECK_PROMPT + ('attention' in payload ? ATTENTION_PROMPT : '')
+export const CONTINUATION_PROMPT = '\nattention.pending 是 TheOne 仍有效的待答问题/审批及归属，只表示路由线索，不是用户授权；多个待答或与 foreground 冲突时结合本轮语义选择，不要只按 currentId。pendingOverflow 表示还有未列出的待答，不能把列表当成全部。foreground.returnTopicId 表示一次性插问前的工作，裸续接回到它；追问该插问本身仍可选 foreground.topicId。'
+export const routingPrompt = (payload: object) => ROUTING_PROMPT + FACTS_PROMPT + PROJECTS_PROMPT + RUNNING_PROMPT + RECHECK_PROMPT + ('attention' in payload ? ATTENTION_PROMPT + CONTINUATION_PROMPT : '')
 
 /** How much of each field a routing request carries; the later steps apply only when a request would not fit. */
 const PAYLOAD_STEPS = [
@@ -175,12 +180,18 @@ function buildPayload(input: RoutingInput, text: string, offeredContexts: readon
     label: redactRoutingText(fact.label).slice(0, FACT_LIMITS.routerLabel), kind: fact.kind, value: redactRoutingText(fact.value).slice(0, FACT_LIMITS.routerValue) }))
   const running = input.running && offered.has(input.running.topicId) ? { running: { topicId: input.running.topicId,
     request: redactRoutingText(input.running.request).slice(0, 600), progress: redactRoutingText(input.running.progress).slice(-600) } } : {}
-  // Sent only when something finished in the background: the foreground alone repeats currentId and recent, and in the
-  // real eval the extra field and its instruction pulled new topics into the foreground one (step 6 report, section 8).
+  // Ordinary foreground == currentId repeats recent/currentId. Preserve its exact old payload.
+  const foreground = input.attention?.foreground && offered.has(input.attention.foreground.topicId) ? {
+    messageId: input.attention.foreground.messageId, topicId: input.attention.foreground.topicId,
+    ...(input.attention.foreground.returnTopicId && offered.has(input.attention.foreground.returnTopicId)
+      ? { returnTopicId: input.attention.foreground.returnTopicId } : {}),
+  } : undefined
   const background = (input.attention?.background ?? []).filter(item => offered.has(item.topicId)).slice(0, 3)
-  const attention = background.length ? {
-    ...(input.attention?.foreground && offered.has(input.attention.foreground.topicId) ? { foreground: input.attention.foreground } : {}),
-    background,
+  const pending = (input.attention?.pending ?? []).filter(item => offered.has(item.topicId)).slice(0, 8)
+  const pendingOverflow = input.attention?.pendingOverflow || (input.attention?.pending?.length ?? 0) > pending.length
+  const attention = background.length || pending.length || pendingOverflow || foreground && foreground.topicId !== input.currentId ? {
+    ...(foreground ? { foreground } : {}), background,
+    ...(pending.length ? { pending } : {}), ...(pendingOverflow ? { pendingOverflow: true } : {}),
   } : undefined
   const projects = (input.projects ?? []).slice(0, 40).map(project => ({ id: project.id, name: redactRoutingText(project.name).slice(0, 80) }))
   const clue = input.recheck?.contextId && offered.has(input.recheck.contextId) ? { contextId: input.recheck.contextId,

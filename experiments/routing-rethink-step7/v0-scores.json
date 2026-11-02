@@ -1,0 +1,65 @@
+{
+  "identical": 12,
+  "records": [
+    {
+      "path": "eval/data/interleave-v0/predictions/product-v1-closed-dev-cards-deepseek-v4.1-flash.jsonl",
+      "messages": 1971,
+      "score_sha256": "5f1548a340d6ce3231e8c73763669aa21b7b2e02de1e2315c28077d1563f8b1d"
+    },
+    {
+      "path": "eval/data/interleave-v0/predictions/product-v1-closed-test-cards-deepseek-v4.1-flash.jsonl",
+      "messages": 495,
+      "score_sha256": "6f5596ec5292fe8d4043e5e0e21468d1de05539fde6e6122ed4bbf71ba29c144"
+    },
+    {
+      "path": "eval/data/interleave-v0/predictions/product-v1-open-dev-cards-deepseek-v4.1-flash.jsonl",
+      "messages": 1971,
+      "score_sha256": "e3311a03a6979ab8ef6eb9b2aab5fd12e443646634c81b7119ca99b75bad50c2"
+    },
+    {
+      "path": "eval/data/interleave-v0/predictions/product-v1-open-test-cards-deepseek-v4.1-flash.jsonl",
+      "messages": 495,
+      "score_sha256": "51a6f027384f031f174473ea4332269d6ace4a37ccdb42204b9ab19ad4a76b3f"
+    },
+    {
+      "path": "eval/data/interleave-v0/predictions/product-v1-step3-closed-dev-cards-deepseek-v4.1-flash.jsonl",
+      "messages": 1971,
+      "score_sha256": "cd01e487ba17ed2228de8badbba9c31b18ed1517762d47c47080ee7d70abf46c"
+    },
+    {
+      "path": "eval/data/interleave-v0/predictions/product-v1-step3-closed-test-cards-deepseek-v4.1-flash.jsonl",
+      "messages": 495,
+      "score_sha256": "93b8204fb90d676e4cd8ab1d446eeac6142b677926ca5618db89df7c048d253f"
+    },
+    {
+      "path": "eval/data/interleave-v0/predictions/product-v1-step3-open-dev-cards-deepseek-v4.1-flash.jsonl",
+      "messages": 1971,
+      "score_sha256": "8d39384d07efd3b7d7e9131f9e4c8d69729fdcd9c6c77f27650489cf4c3ad277"
+    },
+    {
+      "path": "eval/data/interleave-v0/predictions/product-v1-step3-open-test-cards-deepseek-v4.1-flash.jsonl",
+      "messages": 495,
+      "score_sha256": "fab740bd65c0c04cf22f296df7133fb10af5177c6b65ca1a34e58504745878ac"
+    },
+    {
+      "path": "eval/data/interleave-v0/predictions/product-v1-step6-closed-dev-cards-deepseek-v4.1-flash.jsonl",
+      "messages": 1971,
+      "score_sha256": "d1877c9707c03a04bc9bcbbe43f6d62fb82a0f83aeb128f48f980e9e15196f7e"
+    },
+    {
+      "path": "eval/data/interleave-v0/predictions/product-v1-step6-closed-test-cards-deepseek-v4.1-flash.jsonl",
+      "messages": 495,
+      "score_sha256": "48dceccda7c4ce338750b46ddc00180d73761cfee8c584b9a095279e523fc1b9"
+    },
+    {
+      "path": "eval/data/interleave-v0/predictions/product-v1-step6-open-dev-cards-deepseek-v4.1-flash.jsonl",
+      "messages": 1971,
+      "score_sha256": "f14e9806b1eba00d955563ad037ec718e7308c09da4f6c09bed90b6d2573b31f"
+    },
+    {
+      "path": "eval/data/interleave-v0/predictions/product-v1-step6-open-test-cards-deepseek-v4.1-flash.jsonl",
+      "messages": 495,
+      "score_sha256": "0d7eba211bc357a4dced9bd1641e4a4fc0231f675c9212d0346e60a8f9ae42cf"
+    }
+  ]
+}

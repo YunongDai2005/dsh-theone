@@ -16,6 +16,7 @@ export interface BindingReference {
         callId?: string;
         questionIds?: string[];
     };
+    temporary?: TemporaryReturn;
 }
 export interface SteeringOwner {
     inputId: string;
@@ -30,15 +31,36 @@ export interface BindingResolution {
     sources?: LearningSource[];
     reason?: string;
 }
+export interface TemporaryReturn {
+    returnTopicId?: string;
+    sources: LearningSource[];
+}
+/** An inference from server observations, never an explicit reply or an approval grant. */
+export interface ContinuationResolution {
+    status: 'none' | 'applied' | 'conflict';
+    kind?: 'pending' | 'foreground' | 'temporary-return';
+    topicId?: string;
+    refs?: string[];
+    sources?: LearningSource[];
+}
 export interface RoutingAttention {
     foreground?: {
         messageId: string;
         topicId: string;
+        returnTopicId?: string;
     };
     background: {
         messageId: string;
         topicId: string;
     }[];
+    pending?: {
+        id: string;
+        topicId: string;
+        kind: 'question' | 'approval';
+    }[];
+    pendingOverflow?: boolean;
+    /** Receipt provenance only; buildPayload never sends these sources. */
+    sources?: LearningSource[];
 }
 /** Server-owned provenance, separate from optional shadow observations. No text or grants.
  * Pending requests expire on runtime restart: an old UI answer must never revive a closed wait.
@@ -56,7 +78,10 @@ export declare class RoutingBindings {
     rememberInput(session: string, message: string, input: BindingInput): void;
     input(session: string, message: string): BindingInput;
     resolve(input: BindingInput, topics: ReadonlySet<string>, steering?: SteeringOwner): BindingResolution;
-    /** Bounded reads; learning validity uses LearningJournal's existing stage cache. */
+    /** Bounded reads; validity always uses LearningJournal's existing stage cache. */
+    private observations;
+    temporaryReturn(topics: ReadonlySet<string>, currentId?: string): TemporaryReturn;
+    continuation(topics: ReadonlySet<string>, currentId: string | undefined, resume: boolean): ContinuationResolution;
     attention(topics: ReadonlySet<string>): RoutingAttention | undefined;
     references(topics: ReadonlySet<string>): BindingReference[];
 }

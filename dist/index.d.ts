@@ -229,6 +229,7 @@ export default class TheOne extends Service {
     private resolveBinding;
     private bindingDecision;
     private bindingSources;
+    private routeSources;
     private routeBinding;
     private forwardToWorker;
     private recordBindingEvent;

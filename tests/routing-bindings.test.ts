@@ -143,11 +143,11 @@ test('a corrected bound route retracts learning and invalidates replies produced
   } finally { await app.dispose() }
 })
 
-test('a bound route still checks another project before executing a write', async () => {
+for (const automatic of [false, true]) test((automatic ? 'an automatic continuation' : 'a bound route') + ' still checks another project before executing a write', async () => {
   const app = await setup()
   let edits = 0, checks = 0
   try {
-    record(app, 'ref', B)
+    record(app, 'ref', B, automatic ? 'approval' : 'reply')
     await app.ctx.plugin(Storage)
     await app.ctx.plugin(JsonStorage, { root: join(app.root, 'workspace-store') })
     await app.ctx.plugin(StorageDomain, { backend: 'json' })
@@ -165,7 +165,7 @@ test('a bound route still checks another project before executing a write', asyn
       yield { type: 'block-end', index: 0, block: { type: 'tool-call', id: ToolCallId('bound-edit'), name: 'edit', arguments: JSON.stringify({ file_path: join(target, 'report.txt') }) } }
       yield { type: 'finish', reason: { kind: 'tool-calls' } }
     }
-    const result = await send(app, { replyTo: 'ref' })
+    const result = await send(app, automatic ? {} : { replyTo: 'ref' }, automatic ? 'ok' : 'follow the reply')
     assert.equal(result.route?.decision.contextId, B)
     assert.equal(checks, 1)
     assert.equal(edits, 0)
@@ -319,5 +319,251 @@ test('correcting a binding ancestor also invalidates replies derived through tha
     const last = await send(app, { replyTo: app.gateway.id + ':' + reply2.seq })
     assert.equal(last.receipt?.binding?.status, 'rejected')
     assert.ok(routingCalls(app).length > 0)
+  } finally { await app.dispose() }
+})
+
+for (const kind of ['question', 'approval'] as const) test('a bare continuation uses the unique live ' + kind + ' owner without user references', async () => {
+  const app = await setup()
+  try {
+    record(app, 'waiting', B, kind)
+    const result = await send(app, {}, '继续')
+    assert.equal(result.route?.decision.contextId, B)
+    assert.equal(result.receipt?.calls, 0)
+    assert.equal(result.receipt?.binding, undefined, 'inferred continuation is not an explicit binding')
+    assert.equal(app.ctx.theone.store.learningJournal.stage(app.ctx.theone.store.learningJournal.source(result.messageId, B)), 'inferred')
+    assert.equal(app.model.requests.filter(r => !r.system?.startsWith(ROUTING_PROMPT)).length, 1, 'one worker executes the input')
+  } finally { await app.dispose() }
+})
+
+test('a bare continuation follows a non-current foreground reply without a user reference', async () => {
+  const app = await setup()
+  try {
+    record(app, 'front', B)
+    const result = await send(app, {}, 'ok')
+    assert.equal(result.route?.decision.contextId, B)
+    assert.equal(result.receipt?.calls, 0)
+    assert.equal(result.receipt?.binding, undefined)
+  } finally { await app.dispose() }
+})
+
+for (const scenario of ['two-owners', 'same-owner-two-requests', 'foreground-conflict'] as const)
+test(scenario + ' delegates a bare continuation to the model with live state', async () => {
+  const app = await setup()
+  try {
+    record(app, 'q', B, 'question')
+    if (scenario === 'foreground-conflict') record(app, 'front', A)
+    else record(app, 'other', scenario === 'two-owners' ? A : B, 'approval')
+    await send(app, {}, '好的')
+    assert.ok(routingCalls(app).length > 0, 'conflicting state must not force a fast route')
+    const payload = JSON.parse(routingCalls(app)[0].messages[0].content.flatMap(b => b.type === 'text' ? b.text : []).join(''))
+    assert.equal(payload.attention.pending.length, scenario === 'foreground-conflict' ? 1 : 2)
+    if (scenario === 'foreground-conflict') assert.equal(payload.attention.foreground.topicId, A)
+  } finally { await app.dispose() }
+})
+
+test('a non-current foreground source reaches semantic routing even without background events', async () => {
+  const app = await setup()
+  try {
+    record(app, 'front', B)
+    await send(app, {}, '下一步该怎么处理这个方案')
+    const payload = JSON.parse(routingCalls(app)[0].messages[0].content.flatMap(b => b.type === 'text' ? b.text : []).join(''))
+    assert.equal(payload.attention.foreground.topicId, B)
+  } finally { await app.dispose() }
+})
+
+for (const invalid of ['closed', 'deleted', 'excluded', 'background'] as const)
+test('a ' + invalid + ' pending request cannot capture an unmarked continuation', async () => {
+  const app = await setup()
+  try {
+    const store = app.ctx.theone.store
+    const source = store.learningJournal.source('old', B)
+    app.ctx.theone.bindings.record({ id: 'old-q', sessionId: app.gateway.id, topicId: B, kind: 'question',
+      source: invalid === 'background' ? 'background' : 'foreground', sources: [source] })
+    if (invalid === 'closed') app.ctx.theone.bindings.closeReference('old-q')
+    if (invalid === 'deleted') store.deleteTopic(B)
+    if (invalid === 'excluded') store.learningJournal.move('old', A)
+    const result = await send(app, {}, '继续')
+    assert.equal(result.route?.decision.contextId, A)
+    assert.equal(result.receipt?.calls, 0)
+  } finally { await app.dispose() }
+})
+
+test('temporary arithmetic is isolated and an unmarked continuation returns to the original topic', async () => {
+  const app = await setup()
+  try {
+    await ask(app.gateway, 'Qwen 的当前进度')
+    app.model.requests.length = 0
+    const oneoff = await send(app, {}, '17 * 23?')
+    assert.equal(oneoff.route?.decision.action, 'CREATE')
+    assert.notEqual(oneoff.route?.decision.contextId, A)
+    assert.equal(app.ctx.theone.store.current('test-gateway'), A)
+    const resumed = await send(app, {}, 'continue')
+    assert.equal(resumed.route?.decision.contextId, A)
+    assert.equal(resumed.receipt?.calls, 0)
+    assert.equal(routingCalls(app).length, 0)
+  } finally { await app.dispose() }
+})
+
+test('asking why after temporary arithmetic can still refer to the arithmetic reply', async () => {
+  const app = await setup()
+  try {
+    const oneoff = await send(app, {}, '17 * 23?')
+    assert.notEqual(oneoff.route?.decision.contextId, A)
+    const followup = await send(app, {}, 'why?')
+    assert.equal(followup.route?.decision.contextId, oneoff.route?.decision.contextId)
+  } finally { await app.dispose() }
+})
+
+test('automatic foreground continuation inherits retractable learning sources', async () => {
+  const app = await setup()
+  try {
+    record(app, 'front', B)
+    const parent = await send(app, { replyTo: 'front' })
+    app.ctx.theone.store.mount('test-gateway', A)
+    const child = await send(app, {}, '继续')
+    assert.equal(child.route?.decision.contextId, B)
+    const store = app.ctx.theone.store
+    const sessionId = store.contexts().find(t => t.id === B)!.workingSessionId
+    const sources = store.learningJournal.turns(sessionId).find(t => t.source.messageId === child.messageId)!.sources
+    assert.ok(sources.some(s => s.messageId === parent.messageId))
+    store.withLearning(sources, () => store.learnTerms(B, ['auto-state-poison'], 8))
+    const response = await app.api.fetch(new Request('http://dsh.internal/api/theone/routes', { method: 'POST',
+      headers: { 'content-type': 'application/json' }, body: JSON.stringify({ messageId: parent.messageId, contextId: A }) }))
+    assert.equal(response?.status, 200)
+    await app.ctx.theone.learning
+    assert.ok(!store.learnedTerms().get(B)?.includes('auto-state-poison'))
+    assert.equal(store.learningJournal.valid(sources), false)
+  } finally { await app.dispose() }
+})
+
+test('more pending requests than the payload budget remain a conflict', async () => {
+  const app = await setup()
+  try {
+    for (let i = 0; i < 40; i++) record(app, 'q' + i, i % 2 ? A : B, 'question')
+    await send(app, {}, '继续')
+    assert.ok(routingCalls(app).length > 0)
+    const payload = JSON.parse(routingCalls(app)[0].messages[0].content.flatMap(b => b.type === 'text' ? b.text : []).join(''))
+    assert.ok(payload.attention.pending.length <= 8)
+    assert.equal(payload.attention.pendingOverflow, true)
+  } finally { await app.dispose() }
+})
+
+test('temporary arithmetic also works when no topic has been mounted', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'theone-first-aside-'))
+  const model = new FixtureModel()
+  const app = await harness(root, model, { routerMode: 'llm' })
+  try {
+    const result = await ask(app.gateway, '17 * 23?')
+    assert.equal(app.ctx.theone.store.route(result.input.id)?.decision.action, 'CREATE')
+    assert.equal(app.ctx.theone.store.route(result.input.id)?.status, 'completed')
+  } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
+})
+
+test('semantic routing from conflicting state retains the observed sources for retraction', async () => {
+  const app = await setup()
+  try {
+    const store = app.ctx.theone.store
+    const source = store.learningJournal.source('pending-parent', B)
+    app.ctx.theone.bindings.record({ id: 'q', sessionId: app.gateway.id, topicId: B, kind: 'question', source: 'foreground', sources: [source] })
+    record(app, 'front', A)
+    const result = await send(app, {}, '那下一步怎么做')
+    const worker = store.contexts().find(t => t.id === A)!.workingSessionId
+    const parents = store.learningJournal.turns(worker).find(t => t.source.messageId === result.messageId)!.sources
+    assert.ok(parents.some(s => s.messageId === 'pending-parent'))
+    store.withLearning(parents, () => store.learnTerms(A, ['semantic-state-poison'], 8))
+    store.learningJournal.move('pending-parent', A)
+    assert.equal(store.learningJournal.valid(parents), false)
+    assert.ok(!store.learnedTerms().get(A)?.includes('semantic-state-poison'))
+  } finally { await app.dispose() }
+})
+
+for (const conflict of [false, true]) test(conflict ? 'semantic in-flight routing preserves pending-state sources' : 'an unmarked continuation arriving during a reply can reach another live pending owner once', async () => {
+  const app = await setup()
+  let childId: string | undefined
+  const text = conflict ? 'explain the next step' : 'continue'
+  const delivered: { topicId: string; text: string }[] = []
+  try {
+    app.model.behavior = async function* (options) {
+      if (options.system?.startsWith(ROUTING_PROMPT)) {
+        yield* textResponse(JSON.stringify({ action: 'EXISTING', contextId: A, reason: 'fixture' })); return
+      }
+      const context = options.messages.find(m => m.role === 'user' && 'source' in m && m.source?.kind === 'theone-context')
+      const topicId = context && 'source' in context ? (context.source as { contextId: string }).contextId : ''
+      const last = options.messages.filter(m => m.role === 'user' && 'source' in m && m.source?.kind === 'user').at(-1)
+      delivered.push({ topicId, text: last?.content.flatMap(b => b.type === 'text' ? b.text : []).join('') ?? '' })
+      if (!childId) {
+        const sources = [app.ctx.theone.store.learningJournal.source('wait-parent', B)]
+        app.ctx.theone.bindings.record({ id: 'waiting', topicId: B, kind: 'question', sessionId: app.gateway.id, source: 'foreground', sources })
+        if (conflict) record(app, 'front', A)
+        childId = app.ctx.theone.submitMessage(app.gateway.id, text, {}, 'steer').id
+        await new Promise(resolve => setImmediate(resolve))
+      }
+      yield* textResponse('done')
+    }
+    await ask(app.gateway, 'Qwen 的报告')
+    assert.ok(childId)
+    assert.equal(app.ctx.theone.store.route(childId)?.decision.contextId, conflict ? A : B)
+    assert.equal(app.ctx.theone.store.route(childId)?.status, 'completed')
+    assert.equal(delivered.filter(d => d.text === text).length, 1)
+    assert.equal(delivered.find(d => d.text === text)?.topicId, conflict ? A : B)
+    const worker = app.ctx.theone.store.contexts().find(t => t.id === (conflict ? A : B))!.workingSessionId
+    assert.ok(app.ctx.theone.store.learningJournal.turns(worker).some(t => t.source.messageId === childId && t.sources.some(s => s.messageId === 'wait-parent')))
+  } finally { await app.dispose() }
+})
+
+test('temporary returns survive a restart without reviving expired pending waits', async () => {
+  const app = await setup()
+  let reopened: Awaited<ReturnType<typeof harness>> | undefined
+  try {
+    await ask(app.gateway, 'Qwen 的报告')
+    await send(app, {}, '17 * 23?')
+    record(app, 'expired', B, 'question')
+    await app.close()
+    reopened = await harness(app.root, app.model, { routerMode: 'llm' })
+    const result = await ask(reopened.gateway, '继续')
+    assert.equal(reopened.ctx.theone.store.route(result.input.id)?.decision.contextId, A)
+    assert.equal(reopened.ctx.theone.store.routeReceipt(result.input.id)?.calls, 0)
+  } finally { await (reopened?.close() ?? app.close()); await rm(app.root, { recursive: true, force: true }) }
+})
+
+test('semantic routing includes a pending owner outside the first sixteen lexical candidates', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'theone-state-catalog-'))
+  const model = new FixtureModel()
+  model.behavior = async function* (options) {
+    if (options.system?.startsWith(ROUTING_PROMPT)) { yield* textResponse(JSON.stringify({ action: 'EXISTING', contextId: A, reason: 'fixture' })); return }
+    yield* textResponse('done')
+  }
+  const app = await harness(root, model, { routerMode: 'llm', historyCatalog: true })
+  try {
+    await app.ctx.theone.catalog!.close()
+    const topics = Array.from({ length: 24 }, (_, i) => ({ id: 'state-' + i.toString().padStart(2, '0'), title: 'Other ' + i,
+      summary: 'Other project', entities: [], keywords: [], lastState: 'waiting' }))
+    app.ctx.theone.store.seed(topics)
+    app.ctx.theone.store.mount('test-gateway', A)
+    for (const [id, topicId, kind] of [['front', A, 'reply'], ['q', 'state-23', 'question']] as const)
+      app.ctx.theone.bindings.record({ id, topicId, kind, sessionId: app.gateway.id, source: 'foreground', sources: [] })
+    await ask(app.gateway, '继续')
+    const calls = model.requests.filter(r => r.system?.startsWith(ROUTING_PROMPT))
+    const payload = JSON.parse(calls[0].messages[0].content.flatMap(b => b.type === 'text' ? b.text : []).join(''))
+    assert.ok(payload.contexts.some((c: { id: string }) => c.id === 'state-23'))
+    assert.ok(payload.contexts.length <= 16)
+    assert.equal(payload.attention.pending[0].topicId, 'state-23')
+    assert.equal('sources' in payload.attention, false)
+  } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
+})
+
+test('an invalidated temporary return cannot force a route or contaminate new model learning', async () => {
+  const app = await setup()
+  try {
+    const parent = await send(app, {}, 'Qwen 当前进度')
+    await send(app, {}, '17 * 23?')
+    app.ctx.theone.store.learningJournal.move(parent.messageId, B)
+    app.model.requests.length = 0
+    const result = await send(app, {}, 'continue')
+    assert.ok(routingCalls(app).length > 0)
+    const store = app.ctx.theone.store
+    const worker = store.contexts().find(t => t.id === result.route?.decision.contextId)!.workingSessionId
+    const sources = store.learningJournal.turns(worker).find(t => t.source.messageId === result.messageId)!.sources
+    assert.equal(store.learningJournal.valid(sources), true)
   } finally { await app.dispose() }
 })
