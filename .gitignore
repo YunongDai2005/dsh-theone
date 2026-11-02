@@ -28,3 +28,4 @@ eval/test/__pycache__/
 eval/__pycache__/
 !eval/data/*/sessions.jsonl
 .codex-runs/
+eval/data/private-*/
