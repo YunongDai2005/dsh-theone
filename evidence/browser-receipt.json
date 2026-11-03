@@ -1,0 +1,20 @@
+{
+  "checked_at": "2026-11-03T17:37:43.683Z",
+  "input": "five synthetic tickets; four synthetic shipments",
+  "workflow_id": "4f970503554f4838a9d562689969678e",
+  "internal_records": 4,
+  "held": 1,
+  "real_browser": true,
+  "actual_process_restart": true,
+  "replay_executions": 1,
+  "other_workspace_read_status": 404,
+  "mobile_width": 390,
+  "horizontal_overflow": false,
+  "console_errors": [],
+  "video": "local-browser-workflow.webm",
+  "model_calls": 0,
+  "provider_calls": 0,
+  "external_messages": 0,
+  "deployed_on_vultr": false,
+  "review_actor": "Test automation; not an independent human review."
+}

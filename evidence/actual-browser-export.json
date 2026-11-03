@@ -1,0 +1,268 @@
+{
+  "format": "dispatch-ledger/v1",
+  "scope": "Internal support records and unsent drafts; input provenance is user supplied, demo fixtures are synthetic.",
+  "workflow": {
+    "id": "4f970503554f4838a9d562689969678e",
+    "created": "2026-11-03T17:37:08.731754+00:00",
+    "state": "completed",
+    "revision": 7,
+    "data": {
+      "tickets": [
+        {
+          "ticket_id": "T-1041",
+          "customer": "Alex Example",
+          "order_id": "ORD-401",
+          "issue": "Where is my shipment?"
+        },
+        {
+          "ticket_id": "T-1042",
+          "customer": "Sam Example",
+          "order_id": "ORD-402",
+          "issue": "Where is my shipment?"
+        },
+        {
+          "ticket_id": "T-1043",
+          "customer": "Jo Example",
+          "order_id": "ORD-403",
+          "issue": "Not received"
+        },
+        {
+          "ticket_id": "T-1044",
+          "customer": "Lee Example",
+          "order_id": "ORD-404",
+          "issue": "damaged"
+        },
+        {
+          "ticket_id": "T-1045",
+          "customer": "Ren Example",
+          "order_id": "ORD-999",
+          "issue": "Tracking unavailable"
+        }
+      ],
+      "shipments": [
+        {
+          "order_id": "ORD-401",
+          "status": "in_transit",
+          "days_idle": 1,
+          "carrier": "Example Parcel",
+          "tracking": "DEMO-401"
+        },
+        {
+          "order_id": "ORD-402",
+          "status": "exception",
+          "days_idle": 5,
+          "carrier": "Example Parcel",
+          "tracking": "DEMO-402"
+        },
+        {
+          "order_id": "ORD-403",
+          "status": "delivered",
+          "days_idle": 0,
+          "carrier": "Example Courier",
+          "tracking": "DEMO-403"
+        },
+        {
+          "order_id": "ORD-404",
+          "status": "delivered",
+          "days_idle": 1,
+          "carrier": "Example Courier",
+          "tracking": "DEMO-404"
+        }
+      ],
+      "source_sha256": "f5fa9cb87be61085dcb8bb0fd75ac80e6d1dca1bcafb6f86b80bf933052a3453",
+      "rules_version": "1",
+      "cases": [
+        {
+          "ticket_id": "T-1041",
+          "customer": "Alex Example",
+          "order_id": "ORD-401",
+          "issue": "Where is my shipment?",
+          "shipment": {
+            "order_id": "ORD-401",
+            "status": "in_transit",
+            "days_idle": 1,
+            "carrier": "Example Parcel",
+            "tracking": "DEMO-401"
+          },
+          "rule": "TRACKING_UPDATE",
+          "priority": "low",
+          "action": "Prepare tracking update",
+          "reason": "Status in_transit, 1 idle days: below the 3-day follow-up threshold.",
+          "draft": "Hello Alex Example, your order ORD-401 is marked in_transit in the supplied snapshot. Carrier: Example Parcel. Tracking reference: DEMO-401.",
+          "decision": "approve",
+          "note": "Checked synthetic ticket against the supplied shipment record. Approve internal follow-up only."
+        },
+        {
+          "ticket_id": "T-1042",
+          "customer": "Sam Example",
+          "order_id": "ORD-402",
+          "issue": "Where is my shipment?",
+          "shipment": {
+            "order_id": "ORD-402",
+            "status": "exception",
+            "days_idle": 5,
+            "carrier": "Example Parcel",
+            "tracking": "DEMO-402"
+          },
+          "rule": "CARRIER_FOLLOWUP",
+          "priority": "medium",
+          "action": "Prepare carrier follow-up",
+          "reason": "Shipment status is exception; 5 idle days in the supplied snapshot. Follow-up threshold is 3 days.",
+          "draft": "Hello Sam Example, order ORD-402 needs a delivery investigation. An internal follow-up has been prepared for Example Parcel; no response has been received yet.",
+          "decision": "approve",
+          "note": "Checked synthetic ticket against the supplied shipment record. Approve internal follow-up only."
+        },
+        {
+          "ticket_id": "T-1043",
+          "customer": "Jo Example",
+          "order_id": "ORD-403",
+          "issue": "Not received",
+          "shipment": {
+            "order_id": "ORD-403",
+            "status": "delivered",
+            "days_idle": 0,
+            "carrier": "Example Courier",
+            "tracking": "DEMO-403"
+          },
+          "rule": "DELIVERY_DISPUTE",
+          "priority": "high",
+          "action": "Verify delivery",
+          "reason": "Snapshot says delivered while a support ticket remains open. Verify delivery evidence before resolving.",
+          "draft": "Hello Jo Example, the supplied record marks order ORD-403 as delivered. We need to check its delivery evidence with you.",
+          "decision": "approve",
+          "note": "Checked synthetic ticket against the supplied shipment record. Approve internal follow-up only."
+        },
+        {
+          "ticket_id": "T-1044",
+          "customer": "Lee Example",
+          "order_id": "ORD-404",
+          "issue": "damaged",
+          "shipment": {
+            "order_id": "ORD-404",
+            "status": "delivered",
+            "days_idle": 1,
+            "carrier": "Example Courier",
+            "tracking": "DEMO-404"
+          },
+          "rule": "DAMAGE_REVIEW",
+          "priority": "high",
+          "action": "Review damage report",
+          "reason": "Customer reports damage. Evidence and a human decision are required; no replacement or refund is promised.",
+          "draft": "Hello Lee Example, we have prepared an internal review for the damage reported on order ORD-404. Please keep the packaging and provide photographs.",
+          "decision": "approve",
+          "note": "Checked synthetic ticket against the supplied shipment record. Approve internal follow-up only."
+        },
+        {
+          "ticket_id": "T-1045",
+          "customer": "Ren Example",
+          "order_id": "ORD-999",
+          "issue": "Tracking unavailable",
+          "shipment": null,
+          "rule": "MISSING_ORDER",
+          "priority": "high",
+          "action": "Investigate order",
+          "reason": "No matching order in the supplied shipment snapshot.",
+          "draft": "Hello Ren Example, we need to verify order ORD-999 before providing a delivery update.",
+          "decision": "hold",
+          "note": "Order absent from snapshot; held for source verification."
+        }
+      ],
+      "events": [
+        {
+          "at": "2026-11-03T17:37:08.731754+00:00",
+          "event": "imported",
+          "detail": "Validated 5 tickets and 4 shipments."
+        },
+        {
+          "at": "2026-11-03T17:37:08.795617+00:00",
+          "event": "analyzed",
+          "detail": "Rules v1 evaluated 5 tickets. Prior decisions cleared; revision 1."
+        },
+        {
+          "at": "2026-11-03T17:37:18.030348+00:00",
+          "event": "reviewed",
+          "detail": "T-1041: approve. Note: Checked synthetic ticket against the supplied shipment record. Approve internal follow-up only."
+        },
+        {
+          "at": "2026-11-03T17:37:27.186460+00:00",
+          "event": "reviewed",
+          "detail": "T-1042: approve. Note: Checked synthetic ticket against the supplied shipment record. Approve internal follow-up only."
+        },
+        {
+          "at": "2026-11-03T17:37:30.265916+00:00",
+          "event": "reviewed",
+          "detail": "T-1043: approve. Note: Checked synthetic ticket against the supplied shipment record. Approve internal follow-up only."
+        },
+        {
+          "at": "2026-11-03T17:37:33.344486+00:00",
+          "event": "reviewed",
+          "detail": "T-1044: approve. Note: Checked synthetic ticket against the supplied shipment record. Approve internal follow-up only."
+        },
+        {
+          "at": "2026-11-03T17:37:36.420185+00:00",
+          "event": "reviewed",
+          "detail": "T-1045: hold. Note: Order absent from snapshot; held for source verification."
+        },
+        {
+          "at": "2026-11-03T17:37:36.454054+00:00",
+          "event": "executed",
+          "detail": "Internal handoff records and reply drafts committed atomically. Held tickets preserved; nothing sent externally."
+        }
+      ]
+    },
+    "artifacts": [
+      {
+        "record_id": "4f970503554f4838a9d562689969678e:T-1041",
+        "ticket_id": "T-1041",
+        "order_id": "ORD-401",
+        "action": "Prepare tracking update",
+        "priority": "low",
+        "rule": "TRACKING_UPDATE",
+        "draft": "Hello Alex Example, your order ORD-401 is marked in_transit in the supplied snapshot. Carrier: Example Parcel. Tracking reference: DEMO-401.",
+        "review_note": "Checked synthetic ticket against the supplied shipment record. Approve internal follow-up only.",
+        "created_at": "2026-11-03T17:37:36.453985+00:00",
+        "source_sha256": "f5fa9cb87be61085dcb8bb0fd75ac80e6d1dca1bcafb6f86b80bf933052a3453",
+        "delivery_status": "internal_record_only_not_sent"
+      },
+      {
+        "record_id": "4f970503554f4838a9d562689969678e:T-1042",
+        "ticket_id": "T-1042",
+        "order_id": "ORD-402",
+        "action": "Prepare carrier follow-up",
+        "priority": "medium",
+        "rule": "CARRIER_FOLLOWUP",
+        "draft": "Hello Sam Example, order ORD-402 needs a delivery investigation. An internal follow-up has been prepared for Example Parcel; no response has been received yet.",
+        "review_note": "Checked synthetic ticket against the supplied shipment record. Approve internal follow-up only.",
+        "created_at": "2026-11-03T17:37:36.453985+00:00",
+        "source_sha256": "f5fa9cb87be61085dcb8bb0fd75ac80e6d1dca1bcafb6f86b80bf933052a3453",
+        "delivery_status": "internal_record_only_not_sent"
+      },
+      {
+        "record_id": "4f970503554f4838a9d562689969678e:T-1043",
+        "ticket_id": "T-1043",
+        "order_id": "ORD-403",
+        "action": "Verify delivery",
+        "priority": "high",
+        "rule": "DELIVERY_DISPUTE",
+        "draft": "Hello Jo Example, the supplied record marks order ORD-403 as delivered. We need to check its delivery evidence with you.",
+        "review_note": "Checked synthetic ticket against the supplied shipment record. Approve internal follow-up only.",
+        "created_at": "2026-11-03T17:37:36.453985+00:00",
+        "source_sha256": "f5fa9cb87be61085dcb8bb0fd75ac80e6d1dca1bcafb6f86b80bf933052a3453",
+        "delivery_status": "internal_record_only_not_sent"
+      },
+      {
+        "record_id": "4f970503554f4838a9d562689969678e:T-1044",
+        "ticket_id": "T-1044",
+        "order_id": "ORD-404",
+        "action": "Review damage report",
+        "priority": "high",
+        "rule": "DAMAGE_REVIEW",
+        "draft": "Hello Lee Example, we have prepared an internal review for the damage reported on order ORD-404. Please keep the packaging and provide photographs.",
+        "review_note": "Checked synthetic ticket against the supplied shipment record. Approve internal follow-up only.",
+        "created_at": "2026-11-03T17:37:36.453985+00:00",
+        "source_sha256": "f5fa9cb87be61085dcb8bb0fd75ac80e6d1dca1bcafb6f86b80bf933052a3453",
+        "delivery_status": "internal_record_only_not_sent"
+      }
+    ]
+  }
+}

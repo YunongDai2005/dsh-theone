@@ -1,0 +1,5 @@
+order_id,status,days_idle,carrier,tracking
+ORD-401,in_transit,1,Example Parcel,DEMO-401
+ORD-402,exception,5,Example Parcel,DEMO-402
+ORD-403,delivered,0,Example Courier,DEMO-403
+ORD-404,delivered,1,Example Courier,DEMO-404

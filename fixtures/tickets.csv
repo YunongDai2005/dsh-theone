@@ -1,0 +1,6 @@
+ticket_id,customer,order_id,issue
+T-1041,Alex Example,ORD-401,Where is my shipment?
+T-1042,Sam Example,ORD-402,Where is my shipment?
+T-1043,Jo Example,ORD-403,Not received
+T-1044,Lee Example,ORD-404,damaged
+T-1045,Ren Example,ORD-999,Tracking unavailable

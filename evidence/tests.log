@@ -1,0 +1,18 @@
+test_cookie_forgery_has_no_access_to_run (test_workflow.HTTPTests.test_cookie_forgery_has_no_access_to_run) ... ok
+test_cross_origin_and_bad_host_denied (test_workflow.HTTPTests.test_cross_origin_and_bad_host_denied) ... ok
+test_real_http_restart_retains_workspace (test_workflow.HTTPTests.test_real_http_restart_retains_workspace) ... ok
+test_cannot_execute_before_every_decision (test_workflow.WorkflowTests.test_cannot_execute_before_every_decision) ... ok
+test_completed_immutable_and_export_carries_review_and_source (test_workflow.WorkflowTests.test_completed_immutable_and_export_carries_review_and_source) ... ok
+test_concurrent_replay_commits_only_once (test_workflow.WorkflowTests.test_concurrent_replay_commits_only_once) ... ok
+test_csv_export_defends_formula_cells (test_workflow.WorkflowTests.test_csv_export_defends_formula_cells) ... ok
+test_expected_five_policy_branches (test_workflow.WorkflowTests.test_expected_five_policy_branches) ... ok
+test_reject_duplicate_ids_bad_days_and_row_limit (test_workflow.WorkflowTests.test_reject_duplicate_ids_bad_days_and_row_limit) ... ok
+test_stale_review_rejected_and_reanalysis_clears_decisions (test_workflow.WorkflowTests.test_stale_review_rejected_and_reanalysis_clears_decisions) ... ok
+test_threshold_boundary_and_no_inferred_carrier_fact (test_workflow.WorkflowTests.test_threshold_boundary_and_no_inferred_carrier_fact) ... ok
+test_transaction_rolls_back_after_actual_first_insert (test_workflow.WorkflowTests.test_transaction_rolls_back_after_actual_first_insert) ... ok
+test_unauthorized_workspace_cannot_read_or_write (test_workflow.WorkflowTests.test_unauthorized_workspace_cannot_read_or_write) ... ok
+
+----------------------------------------------------------------------
+Ran 13 tests in 2.208s
+
+OK
