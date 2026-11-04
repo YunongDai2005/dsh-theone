@@ -14,7 +14,7 @@ function* response(value: unknown) {
   }
 }
 
-test('a rejected second look retains the quick tier and counts both calls and their cached tokens', { timeout: 30000 }, async () => {
+test('a rejected second look retains the quick tier and counts the failed retry and all cached tokens', { timeout: 30000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'theone-receipt-recheck-'))
   const model = new FixtureModel()
   model.behavior = async function* (options) {
@@ -29,7 +29,7 @@ test('a rejected second look retains the quick tier and counts both calls and th
     const { input } = await ask(app.gateway, 'Plan a pottery class for Saturday')
     assert.equal(app.ctx.theone.store.route(input.id)?.decision.action, 'CREATE')
     const receipt = app.ctx.theone.store.recentRoutes('test-gateway', 1)[0].receipt as Record<string, unknown>
-    assert.deepEqual([receipt.tier, receipt.calls, receipt.cacheHitTokens, receipt.promptTokens], ['quick', 2, 14, 34])
+    assert.deepEqual([receipt.tier, receipt.calls, receipt.cacheHitTokens, receipt.promptTokens], ['quick', 3, 21, 51])
   } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
 })
 
@@ -60,10 +60,10 @@ for (const failReview of [false, true]) {
         } else yield* textResponse('done')
       }
       const { input } = await ask(app.gateway, 'Could we pick up that old project again?')
-      assert.equal(calls, 5, 'quick, second look and three concurrent catalog pages')
+      assert.equal(calls, failReview ? 6 : 5, 'quick, second look, three concurrent catalog pages and a failed-page retry')
       const receipt = app.ctx.theone.store.recentRoutes('test-gateway', 1)[0].receipt as Record<string, unknown>
       assert.deepEqual([receipt.tier, receipt.calls, receipt.cacheHitTokens, receipt.promptTokens, receipt.completionTokens],
-        [failReview ? 'rules' : 'review', 5, 35, 85, 15])
+        [failReview ? 'rules' : 'review', failReview ? 6 : 5, failReview ? 42 : 35, failReview ? 102 : 85, failReview ? 18 : 15])
       if (!failReview) assert.equal(app.ctx.theone.store.route(input.id)?.decision.contextId, target)
     } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
   })

@@ -66,6 +66,7 @@ test('compact round trips every action and optional field through the existing s
     { action: 'EXISTING', contextId: b, reason: '关联', relatedIds: [a], imports: ['fact1'] },
     ...[true, false, undefined].map(historyIndependent => ({ action: 'CREATE', title: 'New work', reason: 'new',
       ...(historyIndependent === undefined ? {} : { historyIndependent }), relatedIds: [b], imports: ['fact1'], projectId: 'project1' })),
+    ...[true, false].map(aside => ({ action: 'CREATE', title: 'Conversion', reason: 'one off', aside })),
     { action: 'CLARIFY', question: 'Which plan?', reason: 'ambiguous', candidateIds: [a, b] },
   ]
   for (const row of decisions) {

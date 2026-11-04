@@ -938,7 +938,10 @@ export default class TheOne extends Service {
                         proposed = settled;
                     }
                     signal.throwIfAborted();
-                    route = this.store.plan(input.id, agent.id, config.gatewayKey, proposed, !temporary);
+                    const modelAside = proposed.action === 'CREATE' && proposed.aside === true && !!currentId && topics.has(currentId);
+                    if (modelAside)
+                        receipt.temporary = this.bindings.temporaryReturn(topics, currentId);
+                    route = this.store.plan(input.id, agent.id, config.gatewayKey, proposed, !temporary && !modelAside);
                     if (goalId !== undefined && route.decision.contextId)
                         this.goalTopics.set(goalId, route.decision.contextId);
                 }
@@ -2957,36 +2960,43 @@ export default class TheOne extends Service {
     /** Count every request that ran, including failed or unused concurrent review pages. */
     async decideRouting(input, signal, receipt, sessionId, options, layer = options?.think ? 'recheck' : 'quick') {
         const started = performance.now();
-        const detail = { layer, candidateIds: input.contexts.map(context => context.id), sent: true, elapsedMs: 0 };
-        (receipt.callDetails ??= []).push(detail);
-        receipt.calls = (receipt.calls ?? 0) + 1;
-        const record = (usage) => {
-            receipt.cacheHitTokens = (receipt.cacheHitTokens ?? 0) + (usage?.prompt_cache_hit_tokens ?? 0);
-            if (!usage)
-                return;
-            Object.assign(detail, { promptTokens: usage.prompt_tokens, completionTokens: usage.completion_tokens, ...(usage.prompt_cache_hit_tokens === undefined ? {} : { cacheHitTokens: usage.prompt_cache_hit_tokens }) });
-            receipt.promptTokens = (receipt.promptTokens ?? 0) + usage.prompt_tokens;
-            receipt.completionTokens = (receipt.completionTokens ?? 0) + usage.completion_tokens;
+        const attempts = [];
+        const candidateIds = input.contexts.map(context => context.id);
+        const record = (detail) => {
+            // Register at stream invocation, not resolution: parallel review retries must match transport order.
+            const call = Object.assign(detail, { layer, candidateIds });
+            attempts.push(call);
+            (receipt.callDetails ??= []).push(call);
         };
+        const legacy = (usage) => ({ ...(usage ? { promptTokens: usage.prompt_tokens,
+                completionTokens: usage.completion_tokens, ...(usage.prompt_cache_hit_tokens === undefined ? {} : { cacheHitTokens: usage.prompt_cache_hit_tokens }) } : {}) });
         try {
-            const result = await this.router.decide(input, signal, sessionId, options);
-            record(result.usage);
-            Object.assign(detail, { model: result.model, elapsedMs: result.elapsedMs });
+            const result = await this.router.decide(input, signal, sessionId, { ...options, onAttempt: record });
+            // Alternate RoutingRouter implementations may only supply aggregate usage.
+            if (!attempts.length)
+                record({ attempt: 1, sent: true, model: result.model, elapsedMs: result.elapsedMs, ...legacy(result.usage) });
             return result;
         }
         catch (error) {
-            detail.elapsedMs = Math.round(performance.now() - started);
-            if (error instanceof RouterFailure) {
-                detail.errorCode = error.code;
-                detail.elapsedMs = error.meta?.elapsedMs ?? detail.elapsedMs;
-                record(error.meta?.usage);
-                // These failures happen before a model request can be sent.
-                if (['ROUTER_MODEL_MISSING', 'ROUTER_CIRCUIT_OPEN', 'ROUTER_INPUT_INVALID', 'ROUTER_RECURSION_BLOCKED'].includes(error.code)) {
-                    receipt.calls--;
-                    detail.sent = false;
-                }
+            if (!attempts.length) {
+                const failure = error instanceof RouterFailure ? error : undefined;
+                const sent = !failure?.meta?.attempts && !['ROUTER_MODEL_MISSING', 'ROUTER_CIRCUIT_OPEN', 'ROUTER_INPUT_INVALID', 'ROUTER_RECURSION_BLOCKED'].includes(failure?.code ?? '');
+                record({ attempt: 1, sent, elapsedMs: failure?.meta?.elapsedMs ?? Math.round(performance.now() - started),
+                    ...(failure ? { errorCode: failure.code, ...(failure.detail ? { errorDetail: failure.detail } : {}) } : {}), ...legacy(failure?.meta?.usage) });
             }
             throw error;
+        }
+        finally {
+            receipt.calls = (receipt.calls ?? 0) + attempts.filter(call => call.sent).length;
+            receipt.cacheHitTokens = (receipt.cacheHitTokens ?? 0) + attempts.reduce((sum, call) => sum + (call.cacheHitTokens ?? 0), 0);
+            for (const call of attempts) {
+                if (call.promptTokens !== undefined)
+                    receipt.promptTokens = (receipt.promptTokens ?? 0) + call.promptTokens;
+                if (call.completionTokens !== undefined)
+                    receipt.completionTokens = (receipt.completionTokens ?? 0) + call.completionTokens;
+            }
+            if (attempts.length > 1)
+                ((receipt.trace ??= newRoutingTrace()).retries ??= []).push({ layer, candidateIds, attempts: attempts.length });
         }
     }
     /**
@@ -3095,7 +3105,7 @@ export default class TheOne extends Service {
                 signal.throwIfAborted();
                 if (!(error instanceof RouterFailure))
                     throw error;
-                Object.assign(receipt, { tier: 'rules', errorCode: error.code, elapsedMs: error.meta?.elapsedMs });
+                Object.assign(receipt, { tier: 'rules', errorCode: error.code, errorDetail: error.detail, elapsedMs: error.meta?.elapsedMs });
                 if (error.code === 'ROUTER_MODEL_MISSING')
                     proposed = { action: 'CLARIFY', reason: error.code, question: '请先在 DSH 中选择一个已配置的聊天模型，再打开 TheOne。无需另配 API Key。' };
                 else {
@@ -3241,6 +3251,8 @@ export default class TheOne extends Service {
             return undefined;
         if (proposed.action === 'CREATE' && this.catalog?.incomplete && !proposed.historyIndependent)
             return undefined;
+        if (proposed.action === 'CREATE' && proposed.aside === true)
+            receipt.temporary = this.bindings.temporaryReturn(new Set(contexts.map(context => context.id)), runningId);
         return proposed;
     }
     /**
@@ -3682,6 +3694,7 @@ export default class TheOne extends Service {
                 if (!(error instanceof RouterFailure))
                     throw error;
                 receipt.errorCode = error.code;
+                receipt.errorDetail = error.detail;
                 byRules = true;
                 decision = resolveContext(query, contexts);
             }

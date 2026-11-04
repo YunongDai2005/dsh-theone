@@ -120,6 +120,7 @@ class RoutingV1ScoreTest(unittest.TestCase):
             self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(), record['prediction_sha256'])
             with patch.dict(os.environ, {"EVAL_PRICES": fixture["prices"]}):
                 result = score.evaluate(sessions, score.read_jsonl(path), record['split'])
+            result.pop('topics_per_thread_clear')  # New additive metric; every original field/hash stays identical.
             raw = json.dumps(result, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode()
             self.assertEqual(hashlib.sha256(raw).hexdigest(), record['score_sha256'])
             self.assertEqual(result, record['score'])

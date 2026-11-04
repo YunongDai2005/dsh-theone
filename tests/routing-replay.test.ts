@@ -57,7 +57,7 @@ for (const routingShadow of [false, true]) for (const fixture of fixtures) test(
     assert.equal(selected, fixture.want)
     assert.equal(requests.length, fixture.layers.length)
     const frozen = { requestHash: fingerprint(requests), calls: requests.length, action: route.decision.action, selected }
-    assert.deepEqual(frozen, baseline[fixture.id], 'pre-change product requests and decisions must stay byte-identical')
+    assert.deepEqual(frozen, baseline[fixture.id], 'product requests and decisions must match the retry/aside protocol baseline')
     assert.ok(receipt.trace, 'persist the whole routing chain, not just the final tier')
     assert.equal(receipt.trace.autoSettled, !!fixture.auto)
     assert.deepEqual(receipt.callDetails.map((call: any) => call.layer), fixture.layers)

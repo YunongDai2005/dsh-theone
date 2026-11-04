@@ -96,6 +96,13 @@ function transportCalls(records, detailAt) {
   })
 }
 
+// Codes and rule names are product-safe. Raw answers remain in the evaluation transport only.
+function failureDetail(receipt) {
+  const failed = receipt?.callDetails?.findLast(call => call.errorCode)
+  const code = receipt?.errorCode ?? failed?.errorCode
+  return code ? { code, detail: receipt?.errorCode ? receipt.errorDetail ?? null : failed.errorDetail ?? null } : null
+}
+
 export function validatePredictionKeys(sessions, rows) {
   const expected = new Set()
   for (const session of sessions) for (const turn of session.turns) {
@@ -171,7 +178,7 @@ export async function routeSession(session, options = {}) {
       const usage = calls.reduce((total, call) => ({ input: total.input + (call.input ?? 0), output: total.output + (call.output ?? 0), cache_hit: total.cache_hit + (call.cache_hit ?? 0) }), { input: 0, output: 0, cache_hit: 0 })
       rows.push({ session_id: session.session_id, i: turn.i, replay: 'product-v1', mode, policy,
         pred: route.decision.action === 'CLARIFY' ? 'CLARIFY' : route.decision.contextId ?? 'ERROR', action: route.decision.action,
-        refs: route.decision.relatedIds ?? [], decision: route.decision, trace: receipt.trace, call_details: receipt.callDetails,
+        refs: route.decision.relatedIds ?? [], decision: route.decision, trace: receipt.trace, call_details: receipt.callDetails, error_detail: failureDetail(receipt),
         tier: receipt.tier === 'rules' && !receipt.calls ? 'fast' : receipt.tier, via: receipt.mode,
         calls: calls.length, logical_calls: receipt.calls, usage_by_call: calls, usage,
         latency_ms: calls.reduce((sum, call) => sum + (call.latency_ms ?? 0), 0), elapsed_ms: Math.round(performance.now() - started),
@@ -358,7 +365,7 @@ async function routeEventSession(session, { mode = 'closed', policy = 'theone', 
           state_ablation: stateAblation, at: t.at, pred, action: route?.decision.action ?? 'FORWARDED',
           refs: route?.decision.relatedIds ?? [], ...(route ? { decision: route.decision } : {}),
           ...(receipt?.errorCode ? { error: receipt.errorCode } : {}),
-          trace: receipt?.trace ?? null, call_details: receipt?.callDetails ?? [], receipt_missing: !receipt?.trace,
+          trace: receipt?.trace ?? null, error_detail: failureDetail(receipt), call_details: receipt?.callDetails ?? [], receipt_missing: !receipt?.trace,
           tier: receipt ? receipt.tier === 'rules' && !receipt.calls ? 'fast' : receipt.tier : 'unattributed',
           via: receipt?.mode ?? 'native-delivery', calls: calls.length, logical_calls: receipt?.calls ?? null,
           usage_by_call: calls, usage: calls.reduce((a, c) => ({ input: a.input + (c.input ?? 0), output: a.output + (c.output ?? 0),

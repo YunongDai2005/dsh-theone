@@ -202,7 +202,7 @@ def evaluate(sessions, predictions, split="dev", ablation_predictions=None):
     # that spanned threads; and how many messages had their reply held for the waiting window.
     by_burst, waited = defaultdict(lambda: [0, 0]), [0, 0]
     switch, refs = Counter(), [0, 0]
-    fragments, merges, pairs = [], [], []
+    fragments, clear_fragments, merges, pairs = [], [], [], []
     tokens = Counter()
     latency, calls = [], []
     tiers, card_tokens, auxiliary_tokens = Counter(), Counter(), Counter()
@@ -216,6 +216,7 @@ def evaluate(sessions, predictions, split="dev", ablation_predictions=None):
         outcomes, _ = score_session(session, rows, mode)
         prev_gold = prev_pred = None
         topics_per_gold, golds_per_topic = defaultdict(set), defaultdict(set)
+        clear_topics_per_gold = defaultdict(set)
         for o in outcomes:
             t, kind, row = o["turn"], o["kind"], o["row"] or {}
             usage = row.get("usage") or {}
@@ -276,12 +277,15 @@ def evaluate(sessions, predictions, split="dev", ablation_predictions=None):
             if o["pred"] not in SPECIAL:
                 prev_pred = o["pred"]
                 topics_per_gold[gold].add(o["pred"])
+                if not o["ambiguous"]:
+                    clear_topics_per_gold[gold].add(o["pred"])
                 golds_per_topic[o["pred"]].add(gold)
                 pairs.append((f"{session['session_id']}/{gold}", f"{session['session_id']}/{o['pred']}"))
             if t["gold"]["refs"]:
                 refs[1] += 1
                 refs[0] += any(r in t["gold"]["refs"] for r in o["refs"] if r)
         fragments += [len(v) for v in topics_per_gold.values()]
+        clear_fragments += [len(v) for v in clear_topics_per_gold.values()]
         merges += [len(v) for v in golds_per_topic.values()]
 
     def rate(pair):
@@ -314,6 +318,7 @@ def evaluate(sessions, predictions, split="dev", ablation_predictions=None):
         "switch": {"precision": round(sp, 4), "recall": round(sr, 4), "f1": round(sf, 4)},
         "bcubed": {"precision": round(bp, 4), "recall": round(br, 4), "f1": round(bf, 4)},
         "topics_per_thread": round(sum(fragments) / len(fragments), 3) if fragments else None,
+        "topics_per_thread_clear": round(sum(clear_fragments) / len(clear_fragments), 3) if clear_fragments else None,
         "threads_per_topic": round(sum(merges) / len(merges), 3) if merges else None,
         "refs_recall": rate(refs),
         "by_action": {k: rate(v) for k, v in sorted(by_action.items())},
@@ -354,7 +359,7 @@ def table(results):
     if len(groups) > 1:
         return "\n\n".join(f"### {protocol} (separate protocol)\n\n" + table(group) for protocol, group in groups.items())
     cols = [("accuracy", "acc"), ("accuracy_lenient", "acc (lenient)"), ("weighted_error", "weighted err"),
-            ("oneoff_into_topic", "one-off into topic"), ("topics_per_thread", "topics/thread"), ("threads_per_topic", "threads/topic"),
+            ("oneoff_into_topic", "one-off into topic"), ("topics_per_thread", "topics/thread"), ("topics_per_thread_clear", "topics/thread (clear)"), ("threads_per_topic", "threads/topic"),
             ("refs_recall", "refs recall")]
     lines = [f"Replay protocol: {next(iter(groups), 'legacy-v0')}", "", "| system | mode | " + " | ".join(c[1] for c in cols) + " | switch F1 | B³ F1 | input tok/msg |",
              "|---" * (len(cols) + 5) + "|"]

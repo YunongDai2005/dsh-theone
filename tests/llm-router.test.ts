@@ -73,10 +73,10 @@ test('unavailable routes cool down, probe again, and reset after success',async(
  status=500
  // Failures together (within two seconds) count once; three in a row pause the router briefly.
  for(let i=0;i<3;i++)await assert.rejects(client.decide(input),RouterFailure)
- assert.equal(model.state.calls,5)
+ assert.equal(model.state.calls,8)
  for(let i=0;i<2;i++){time+=3000;await assert.rejects(client.decide(input),RouterFailure)}
  await assert.rejects(client.decide(input),error=>error instanceof RouterFailure && error.code==='ROUTER_CIRCUIT_OPEN' && error.meta?.retryAfterMs===30000)
- assert.equal(model.state.calls,7)
+ assert.equal(model.state.calls,12)
  // A rate limit pauses only briefly.
  time+=30000;status=200
  await client.decide(input)
@@ -158,7 +158,7 @@ test('gateway reserves admission during LLM classification; cancellation preserv
   assert.ok(invalidNotice?.type==='user/message' && invalidNotice.data.source.kind==='theone-route')
   assert.equal(invalidNotice.data.source.router?.errorCode,'ROUTER_INVALID_DECISION')
   assert.equal(invalidNotice.data.source.router?.tier,'rules')
-  assert.equal(invalidNotice.data.source.router?.calls,1)
+  assert.equal(invalidNotice.data.source.router?.calls,2)
   behavior='valid'
   const valid=await ask(app.gateway,'Qwen')
   assert.equal(valid.output,'模拟回答：ctx_qwen_9070xt')
@@ -265,7 +265,7 @@ test('every routing request uses identical instructions, including the second th
  for (const payload of [{}, { symbols: [{ id: 'f' }] }, { projects: [{ id: 'p' }] }, { running: { topicId: 'topic' } }, { recheck: { previous: 'CREATE' } }])
   assert.equal(routingPrompt(payload), plain)
  const schema = JSON.parse(ROUTING_PROMPT.match(/输出 JSON：(\{[^\n]+\})。/)![1])
- assert.deepEqual(Object.keys(schema), ['action', 'contextId', 'relatedIds', 'imports', 'title', 'historyIndependent', 'projectId', 'candidateIds', 'question', 'reason'])
+ assert.deepEqual(Object.keys(schema), ['action', 'contextId', 'relatedIds', 'imports', 'title', 'historyIndependent', 'aside', 'projectId', 'candidateIds', 'question', 'reason'])
  assert.match(schema.reason, /40/)
 })
 

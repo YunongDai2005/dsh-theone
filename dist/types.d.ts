@@ -39,6 +39,8 @@ export interface Decision {
     question?: string;
     /** CREATE can proceed during indexing only when the request needs no missing history. */
     historyIndependent?: boolean;
+    /** CREATE: a self-contained question that temporarily leaves the current work. */
+    aside?: boolean;
     /** Other topics this request also draws on; the routed topic does the work. */
     relatedIds?: string[];
     /** Topics the message may have meant instead (an unclear pick, or a first pick the second look changed): reference only, never learned as related. */

@@ -1,0 +1,81 @@
+# 路由失败重试、模型插问与评分口径实施报告
+
+基于 `routing-depth` 分支的 `b59ac2c`，按 `.codex-runs/briefs/routing-retry-aside.md` 实施。全程离线，没有调用真实模型 API，也没有查找或读取 Key。
+
+## 行为变化
+
+1. JSON 解析失败现在为 `ROUTER_INVALID_JSON`，detail 为 `json-parse`；`ROUTER_REQUEST_FAILED` 保留给请求/传输失败。语义验证的每个拒绝分支都有固定英文规则名，例如 `unknown-context-id`、`missing-title`、`bad-action`、`aside-action`。错误对象、回执和 trace 不携带无效模型输出或传输异常原文。
+2. `DshRouter.decide` 对无效 JSON、无效决策、不完整响应、无效 compact ID，以及无 HTTP 状态或 5xx 的请求失败，最多重试一次。401、403、429、其他 4xx、调用方取消、熔断、缺少模型、递归调用不重试。两次尝试共享同一个超时 signal 和总预算；system、user、会话标识与输入消息复用。熔断只在本次 decide 最终失败后计数，保留原有并发失败的两秒合并窗口。
+3. 成功结果或最终失败 metadata 提供 `attempts`，usage 汇总两次尝试。产品 `callDetails` 每次尝试一条，含 `attempt`、失败码和规则名；`trace.retries` 标明重试层、候选及次数。记录在实际发起 stream 时入队，确保并发目录复核的重试与 eval 传输记录顺序一致。未发送的调用不增加 calls。
+4. v0 和 routing-v1 的产品回放均输出 `error_detail: { code, detail }`；最终失败优先，成功恢复时仍保留最后一次失败的诊断。主分类和纠正路由均传播 detail。现有 `usage_by_call` 汇总会纳入重试的调用、token、缓存 token、延迟及费用。未添加可选的 `error_output`，产品数据库和日志不新增原始输出存储。
+5. 路由提示词和类型加入可选布尔 `aside`，只接受 CREATE；非 CREATE 的非空 aside 被拒绝。compact 提示词要求只在 true 时输出。false 或省略会归一为原有决策形状。最终 CREATE + aside=true 且存在有效当前话题时，主入口与运行中补充入口均复用 temporaryReturn，创建插问话题但不挂载；裸续接返回原工作，追问插问仍可进入其话题。无当前话题时正常挂载，不设置 temporary。初判被复核改成非 aside 时也不启用临时返回。规则回退逻辑、状态表保持原样。
+6. 评分新增 `topics_per_thread_clear` 和表格列 `topics/thread (clear)`，只统计非 ambiguous 且有有效落点的线程消息。纯 ambiguous 线程、one-off、ERROR、CLARIFY 不进入该口径；沿用准确率对 routing-v1 state ablation 的 ambiguous 判定。没有改变任何旧评分字段或其数值。
+
+## 修改文件
+
+| 文件 | 用途 |
+|---|---|
+| `src/llm-router.ts` | 错误分类、规则名、重试、超时/usage/尝试记录，以及 aside 提示和校验 |
+| `src/index.ts` | 两个插问入口、按尝试记录回执、主分类与纠正失败的 detail |
+| `src/types.ts`、`src/routing-experiments.ts` | aside 类型和 compact 提示 |
+| `dist/index.js`、`dist/llm-router.js`、`dist/llm-router.d.ts`、`dist/routing-experiments.js`、`dist/types.d.ts` | 与改动的后端源码同步 |
+| `eval/lib/product-replay.mjs` | v0/v1 预测失败诊断 |
+| `eval/score.py` | 新增清晰金标碎片口径和表格列 |
+| `tests/routing-retry.test.ts`、`tests/routing-aside.test.ts` | 新增重试、取消、超时、熔断、privacy、aside 和运行中补充测试 |
+| `tests/llm-router.test.ts`、`tests/routing-receipts.test.ts` | 更新重试次数、token 及输出 schema 预期 |
+| `tests/routing-experiments.test.ts`、`tests/routing-replay.test.ts` | compact aside 往返校验，产品与回放一致性 |
+| `eval/fixtures/routing-flow.json`、`eval/fixtures/routing-flow-baseline.json` | 有意增加重试的调用层列表，以及新提示词对应的请求指纹；原动作和选中话题逐项核对不变 |
+| `eval/test/product-replay.test.mjs`、`eval/test/routing-v1.test.mjs` | 重试成功/耗尽、并发复核归属、usage、失败详情及纠正入口 |
+| `eval/test/test_score.py`、`eval/test/test_score_routing_v1.py` | 新口径边界，以及排除新增字段后的原评分内容和哈希验证 |
+| 本报告 | 行为变化、基线证据、验证和环境限制 |
+
+## 修改前后假模型回放
+
+修改源码前保存完整基线，修改后再次运行同一脚本：`.codex-runs/routing-retry-aside/replay.mjs before` / `after`。脚本调用 `eval/run-router.mjs` 的 product-v1 实际产品路径，读取完整 `eval/data/interleave-v0/sessions.jsonl`，使用 `eval/test/fake-model.mjs` 的原始回答函数。该假模型不输出 aside、不制造失败。每次调用固定返回 input=17、cache_hit=7、output=3 的测试用量，避免把提示词长度估算误当作真实 token 收益。
+
+open 和 closed 各 2,466 行，修改前后共 9,864 行回放输出，全部零失败。比较脚本为 `.codex-runs/routing-retry-aside/compare.py`：逐会话按首次出现归一化随机 UUID；只排除耗时字段 `elapsedMs`、`elapsed_ms`、`latency_ms` 以及新增观测字段 `attempt`、`error_detail`。其余整行深比较，包含 pred、action、decision、refs、trace、候选列表、calls、logical_calls、usage_by_call、usage，4,932 对预测零差异。同时额外断言修改后所有 attempt=1、error_detail=null。
+
+归一后 SHA-256：
+
+- open：`3300fee6a0a7e591a7d0ae90a089990dd64cfdd4f9e556cc451f917c905f5166`
+- closed：`00daf12923c234e012b2bd11a9447353c3b2e40e8a79ad89df75a82d348b0913`
+
+提示词有意新增 aside 指令，因此不会宣称请求字节与旧提示词相同；重试的两次请求相同由独立测试验证。这些离线结果不代表真实模型准确率、延迟或费用改善。
+
+## 真实预测文件的评分兼容核对
+
+只读既有文件 `eval/data/interleave-v0/predictions/cache-5e36590a72d5/none-open.jsonl`，修改前保存 dev/test/all 的完整评分。修改后仅移除新字段，再与修改前的全部 30 个字段深比较，三组完全一致。既有 `v0-score-baseline.json` 测试也继续验证旧字段及其 SHA-256，未重写旧评分基线。
+
+| 范围 | 原 topics_per_thread，改前后不变 | 新 topics_per_thread_clear |
+|---|---:|---:|
+| dev | 1.395 | 1.136 |
+| test | 1.293 | 1.049 |
+| all | 1.374 | 1.118 |
+
+预测文件 SHA-256：`e46eece3f3fbb9a5338445f02aa62610f9bced64b817947b761c2daa8d2ab0b4`；语料 SHA-256：`be37451e752841c6eea81c5c71dca2c82b6198cbe258f440e559deabef4a25a6`。
+
+## 验证与限制
+
+新测试先在旧实现上执行，确认缺少重试、aside 和新评分字段；随后实现并复验。单独补测还复现并修复了纠正路由 detail 丢失。
+
+- 相关产品测试：174 项通过，零失败、零跳过。
+- `node --test --test-isolation=none eval/test/*.test.mjs`：67 项通过，零失败、零跳过。
+- `py -m unittest discover -s eval/test`：125 项通过。
+- `npm.cmd run typecheck`：通过。
+- `node node_modules/typescript/bin/tsc -p tsconfig.json`：通过，对应后端 dist 已同步。
+- `git diff --check`：通过。
+- `npm.cmd test`：默认隔离进程启动被沙箱 `spawn EPERM` 拒绝，未把该命令算作通过。
+- 额外尝试的 `tests/route-stats.test.ts` 在内部 `execFileSync` 启动 CLI 时被 `spawnSync EPERM` 拒绝，未改这项无关测试。主路由相关测试使用下面的无隔离命令执行。
+- `npm.cmd run build`：两个 TypeScript 编译阶段成功，`scripts/build-client.mjs` 的 esbuild 子进程被 `spawn EPERM` 拒绝。没有改前端源码；恢复本次编译中间产物覆盖的 `dist/client.js` 为任务开始时的版本，避免交付未打包的前端文件。完整打包仍须在可启动子进程的环境执行。
+
+相关产品测试命令（Node v24.21.0 的参数属性需要 `--experimental-transform-types`）：
+
+```powershell
+node --experimental-transform-types --test --test-isolation=none tests/dsh-router.test.ts tests/llm-router.test.ts tests/routing-bindings.test.ts tests/routing-receipts.test.ts tests/routing-replay.test.ts tests/routing-experiments.test.ts tests/mid-reply.test.ts tests/routing-retry.test.ts tests/routing-aside.test.ts tests/routing-evidence.test.ts tests/routing-policy.test.ts tests/routing-shadow.test.ts tests/fallbacks.test.ts tests/router.test.ts
+```
+
+日志与前后基线留在被忽略的 `.codex-runs/routing-retry-aside/`，不纳入提交。未触碰任务禁止的目录或已有无关未跟踪文件。
+
+## 提交状态
+
+任务文件写“不提交”，但本轮用户明确要求“验证、提交”，因此以本轮指令为准尝试本地提交。仅对本任务的 24 个文件执行 git add，创建 `.git/index.lock` 时收到 `Permission denied`，退出码 128。当前沙箱将 `.git` 设为只读，暂存被拒绝，因此未执行 git commit、未产生新提交；索引为空，HEAD 仍为 `b59ac2c`。未请求弹窗授权、未修改权限、未绕过限制。全部修改与报告已保留在工作区，没有推送或发布。

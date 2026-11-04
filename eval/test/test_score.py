@@ -173,3 +173,22 @@ class BillingScoreTest(unittest.TestCase):
             row.update(calls=0, tier='fast', latency_ms=0)
         r = score.evaluate([session()], predictions)
         self.assertEqual(r['usd_per_1000_messages'], 0)
+
+class ClearFragmentsTest(unittest.TestCase):
+    def test_clear_fragmentation_excludes_only_ambiguous_landings(self):
+        s = session()
+        s['turns'][1]['ambiguous'] = True
+        r = score.evaluate([s], rows(['t1', 'extra', 't2', 't2', 'oneoff', 't1', 't2'], 'closed'))
+        self.assertEqual(r['topics_per_thread'], 1.5)
+        self.assertEqual(r['topics_per_thread_clear'], 1.0)
+        self.assertIn('topics/thread (clear)', score.table([('fixture', r)]))
+
+    def test_clear_fragmentation_omits_ambiguous_only_threads_and_special_predictions(self):
+        s = session()
+        for t in s['turns']:
+            t['ambiguous'] = t['gold']['thread'] == 't2'
+        r = score.evaluate([s], rows(['t1', 'ERROR', 't2', 'extra', 'oneoff', 'CLARIFY', 't2'], 'closed'))
+        self.assertEqual(r['topics_per_thread'], 1.5)
+        self.assertEqual(r['topics_per_thread_clear'], 1.0)
+        for t in s['turns']: t['ambiguous'] = True
+        self.assertIsNone(score.evaluate([s], rows(['t1'] * 7, 'closed'))['topics_per_thread_clear'])

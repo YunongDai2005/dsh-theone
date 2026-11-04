@@ -243,3 +243,15 @@ test('step7 templates provide unmarked unique waits and identifiable distant cat
   }
   assert.ok(data.some(s => s.scenario === 'question_conflict' && s.turns[0].gold.requires_user_ref))
 })
+
+test('event replay preserves router retry failures and charges both attempts', async () => {
+  let n = 0
+  const client = { model: 'fixture', complete: async () => ({ value: ++n === 1 ? 'bad JSON' : JSON.stringify({ action: 'EXISTING', contextId: 'a', reason: 'named' }),
+    calls: 1, latency_ms: 4, usage: { input: 17, cached: 7, output: 3 }, usage_by_call: [{ input: 17, cache_hit: 7, output: 3 }] }) }
+  const [row] = await routeSession(session([turn(0, 'Garden design plan', 'a')]), { client })
+  assert.equal(row.pred, 'a')
+  assert.equal(row.calls, 2)
+  assert.deepEqual(row.error_detail, { code: 'ROUTER_INVALID_JSON', detail: 'json-parse' })
+  assert.deepEqual(row.usage, { input: 34, cache_hit: 14, output: 6 })
+  assert.deepEqual(row.call_details.map(c => c.attempt), [1, 2])
+})
