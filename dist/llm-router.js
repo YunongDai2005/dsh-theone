@@ -164,6 +164,9 @@ export function validateRoutingDecision(value, input) {
         const ids = [...new Set(row.relatedIds ?? [])].filter(id => id !== chosen && input.contexts.some(context => context.id === id)).slice(0, 3);
         return ids.length ? { relatedIds: ids } : {};
     };
+    const existing = (contextId) => ({
+        action: !input.currentId ? 'MOUNT' : contextId === input.currentId ? 'KEEP' : 'SWAP', contextId, reason, ...related(contextId), ...imports,
+    });
     if (row.action === 'EXISTING') {
         if (typeof row.contextId !== 'string' || !input.contexts.some(context => context.id === row.contextId))
             return fail('unknown-context-id');
@@ -171,7 +174,7 @@ export function validateRoutingDecision(value, input) {
             return fail('unexpected-title');
         if (row.question != null)
             return fail('unexpected-question');
-        return { action: !input.currentId ? 'MOUNT' : row.contextId === input.currentId ? 'KEEP' : 'SWAP', contextId: row.contextId, reason, ...related(row.contextId), ...imports };
+        return existing(row.contextId);
     }
     if (row.contextId != null)
         return fail('unexpected-context-id');
@@ -183,10 +186,14 @@ export function validateRoutingDecision(value, input) {
         if (row.question != null)
             return fail('unexpected-question');
         const title = row.title.trim();
-        if (input.contexts.some(context => context.title.toLowerCase() === title.toLowerCase()))
+        const matches = input.contexts.filter(context => context.title.trim().toLowerCase() === title.toLowerCase());
+        if (matches.length > 1)
             return fail('duplicate-title');
         if (row.historyIndependent != null && typeof row.historyIndependent !== 'boolean')
             return fail('bad-history-independent');
+        // A unique title names an existing topic; CREATE-only fields do not follow it.
+        if (matches.length === 1)
+            return existing(matches[0].id);
         // A project folder only from the offered list; anything else is ignored rather than failing the route.
         const project = typeof row.projectId === 'string' && (input.projects ?? []).some(item => item.id === row.projectId) ? { projectId: row.projectId } : {};
         return { action: 'CREATE', title, reason, ...related(), ...imports, ...project, ...(row.aside === true ? { aside: true } : {}),

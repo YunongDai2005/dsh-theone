@@ -31,12 +31,11 @@ function routed(route:(payload:ReturnType<typeof routingPayload>,signal?:AbortSi
   yield* textResponse(`模拟回答：${descriptor && 'source' in descriptor && descriptor.source?.kind==='theone-context'?descriptor.source.contextId:'?'}`)
  }
 }
-test('unknown targets and duplicate creations never reach the store',()=>{
+test('unknown targets and malformed decisions never reach the store',()=>{
  for(const value of [
   {...decision,contextId:'missing'}, {...decision,action:'SWAP'}, {...decision,action:'MOUNT'},
   {...decision,action:'KEEP',contextId:'other'}, {...decision,action:'CREATE',title:'new'},
   {...decision,action:'CLARIFY',question:'which?'},
-  {action:'CREATE',contextId:null,title:'研究',question:null,reason:'duplicate'},
  ]) assert.throws(()=>validateRoutingDecision(value,input),RouterFailure)
  assert.equal(validateRoutingDecision(decision,{...input,currentId:undefined}).action,'MOUNT')
  assert.equal(validateRoutingDecision(decision,input).action,'KEEP')

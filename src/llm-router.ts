@@ -53,7 +53,7 @@ export interface RoutingResult { decision: Decision; model: string; elapsedMs: n
 export interface RoutingTrace {
   candidateIds: string[]
   initial?: Decision
-  recheck: { attempted: boolean; trigger?: 'create' | 'clarify' | 'evidence-conflict'; previous?: string; contextId?: string; terms?: string[]; accepted?: boolean }
+  recheck: { attempted: boolean; skipped?: 'aside'; trigger?: 'create' | 'clarify' | 'evidence-conflict'; previous?: string; contextId?: string; terms?: string[]; accepted?: boolean }
   review: { attempted: boolean; pages: string[][] }
   autoSettled: boolean
   retries?: { layer: RouterCall['layer']; candidateIds: string[]; attempts: number }[]
@@ -244,11 +244,14 @@ export function validateRoutingDecision(value: unknown, input: RoutingInput): De
     const ids = [...new Set((row.relatedIds as string[] | undefined) ?? [])].filter(id => id !== chosen && input.contexts.some(context => context.id === id)).slice(0, 3)
     return ids.length ? { relatedIds: ids } : {}
   }
+  const existing = (contextId: string): Decision => ({
+    action: !input.currentId ? 'MOUNT' : contextId === input.currentId ? 'KEEP' : 'SWAP', contextId, reason, ...related(contextId), ...imports,
+  })
   if (row.action === 'EXISTING') {
     if (typeof row.contextId !== 'string' || !input.contexts.some(context => context.id === row.contextId)) return fail('unknown-context-id')
     if (row.title != null) return fail('unexpected-title')
     if (row.question != null) return fail('unexpected-question')
-    return { action: !input.currentId ? 'MOUNT' : row.contextId === input.currentId ? 'KEEP' : 'SWAP', contextId: row.contextId, reason, ...related(row.contextId), ...imports }
+    return existing(row.contextId)
   }
   if (row.contextId != null) return fail('unexpected-context-id')
   if (row.action === 'CREATE') {
@@ -256,8 +259,11 @@ export function validateRoutingDecision(value: unknown, input: RoutingInput): De
     if (row.title.length > 80) return fail('title-too-long')
     if (row.question != null) return fail('unexpected-question')
     const title = row.title.trim()
-    if (input.contexts.some(context => context.title.toLowerCase() === title.toLowerCase())) return fail('duplicate-title')
+    const matches = input.contexts.filter(context => context.title.trim().toLowerCase() === title.toLowerCase())
+    if (matches.length > 1) return fail('duplicate-title')
     if (row.historyIndependent != null && typeof row.historyIndependent !== 'boolean') return fail('bad-history-independent')
+    // A unique title names an existing topic; CREATE-only fields do not follow it.
+    if (matches.length === 1) return existing(matches[0].id)
     // A project folder only from the offered list; anything else is ignored rather than failing the route.
     const project = typeof row.projectId === 'string' && (input.projects ?? []).some(item => item.id === row.projectId) ? { projectId: row.projectId } : {}
     return { action: 'CREATE', title, reason, ...related(), ...imports, ...project, ...(row.aside === true ? { aside: true } : {}),

@@ -2749,7 +2749,10 @@ export default class TheOne extends Service {
         // Clues: numbers, codes and names of the message that only one topic was sent or knows.
         const evidence = this.routingEvidence(text, allContexts).filter(item => contexts.some(context => context.id === item.contextId))
         const recheck = secondLook(proposed, evidence)
-        if (recheck) {
+        // One-off asides need no create-only recheck; conflicting evidence still gets a second look.
+        if (recheck && proposed.action === 'CREATE' && proposed.aside === true && !recheck.contextId) {
+          trace.recheck = { attempted: false, skipped: 'aside' }
+        } else if (recheck) {
           trace.recheck = { attempted: true, trigger: recheck.contextId ? 'evidence-conflict' : proposed.action === 'CREATE' ? 'create' : 'clarify', ...recheck, accepted: false }
           try {
             const second = await this.decideRouting({text,contexts,catalogOrder,currentId,recent,attention,historyIncomplete: this.catalog?.incomplete,corrections,...facts,running,...folders,recheck},signal,receipt,agent.id,{think:true})

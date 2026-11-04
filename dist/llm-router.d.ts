@@ -83,6 +83,7 @@ export interface RoutingTrace {
     initial?: Decision;
     recheck: {
         attempted: boolean;
+        skipped?: 'aside';
         trigger?: 'create' | 'clarify' | 'evidence-conflict';
         previous?: string;
         contextId?: string;
