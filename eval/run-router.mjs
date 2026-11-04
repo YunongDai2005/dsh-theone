@@ -54,14 +54,20 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const suffix = values['state-ablation'] === 'none' ? '' : '-' + values['state-ablation']
   const out = values.out ?? join(dirname(values.data), 'predictions', `${name}${suffix}${values.variant === 'none' ? '' : '-' + values.variant}.jsonl`)
   if (sessions.some(isRoutingV1) && existsSync(out)) throw new Error('Refusing to overwrite routing-v1 predictions: ' + out)
-  const rows = []
-  // Keep temporary databases/runtimes bounded as well as HTTP concurrency.
-  for (let offset = 0; offset < sessions.length; offset += 4) {
-    const batch = await Promise.all(sessions.slice(offset, offset + 4).map(session => routeSession(session, { ...values, client, stateAblation: values['state-ablation'],
-      bursts: { same: Number(values.same), cross: Number(values.cross), seed: Number(values['burst-seed']) } })))
-    rows.push(...batch.flat())
-    console.error(`${Math.min(offset + 4, sessions.length)}/${sessions.length} sessions · ${client.usage}`)
-  }
+  // Messages within a session run in order; sessions run side by side in a rolling pool so one
+  // slow session never holds up the rest. EVAL_SESSIONS bounds temporary databases/runtimes.
+  const width = Math.max(1, Number(process.env.EVAL_SESSIONS ?? 4) || 4)
+  const results = new Array(sessions.length)
+  let next = 0, finished = 0
+  await Promise.all(Array.from({ length: Math.min(width, sessions.length) }, async () => {
+    while (next < sessions.length) {
+      const index = next++
+      results[index] = await routeSession(sessions[index], { ...values, client, stateAblation: values['state-ablation'],
+        bursts: { same: Number(values.same), cross: Number(values.cross), seed: Number(values['burst-seed']) } })
+      console.error(`${++finished}/${sessions.length} sessions · ${client.usage}`)
+    }
+  }))
+  const rows = results.flat()
   validatePredictionKeys(sessions, rows)
   mkdirSync(dirname(out), { recursive: true })
   writeFileSync(out, rows.map(row => JSON.stringify(row)).join('\n') + '\n')
