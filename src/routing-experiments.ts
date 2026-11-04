@@ -108,9 +108,12 @@ function object(value: unknown): DecisionRow {
   return value as DecisionRow
 }
 function mapIds(row: DecisionRow, mapping: Map<string, string>): DecisionRow {
+  // currentId stays a full id in the payload, so a model may answer with an offered full id; that is unambiguous.
+  const offered = new Set(mapping.values())
   const lookup = (id: unknown) => {
-    if (typeof id !== 'string' || !mapping.has(id)) throw new RouterFailure('ROUTER_COMPACT_ID_INVALID')
-    return mapping.get(id)!
+    if (typeof id === 'string' && mapping.has(id)) return mapping.get(id)!
+    if (typeof id === 'string' && offered.has(id)) return id
+    throw new RouterFailure('ROUTER_COMPACT_ID_INVALID')
   }
   const result = { ...row }
   if (result.contextId != null) result.contextId = lookup(result.contextId)

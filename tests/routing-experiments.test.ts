@@ -93,6 +93,9 @@ test('compact ids stay stable across order/epochs and stale or unoffered ids fai
   assert.equal(first.payload.contexts[1].routeId, next.payload.contexts[0].routeId)
   assert.deepEqual(exp.expandDecision({ action: 'EXISTING', contextId: first.payload.contexts[0].routeId }, first.aliases),
     { action: 'EXISTING', contextId: a, reason: 'match' })
+  assert.deepEqual(exp.expandDecision({ action: 'KEEP', contextId: a }, first.aliases), { action: 'KEEP', contextId: a, reason: 'match' },
+    'an offered full id, as given in currentId, is accepted')
+  assert.throws(() => exp.expandDecision({ action: 'KEEP', contextId: a }, next.aliases), /ROUTER_COMPACT_ID_INVALID/)
 })
 
 test('disabled experiments preserve request bytes and snapshot fixes optional attention template churn', () => {
