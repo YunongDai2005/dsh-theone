@@ -111,6 +111,8 @@ export default class TheOne extends Service {
     private readonly projects;
     readonly catalog?: HistoryCatalog;
     private readonly workers;
+    /** Per live Worker: a restart deliberately sends the full briefing again. */
+    private readonly workerBriefings;
     private router?;
     private readonly workerSelections;
     private active;

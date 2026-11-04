@@ -17,11 +17,12 @@ function* toolCall(name: string, args: object): Generator<StreamChunk> {
   yield { type: 'finish', reason: { kind: 'tool-calls' } }
 }
 const text = (message: GenerateOptions['messages'][number] | undefined) => JSON.stringify(message ?? '')
-/** The cross-topic reference given with this run: after the run's own descriptor, not earlier runs'. */
+/** References just before this run's user input; a run need not carry a full descriptor. */
 const briefing = (request: GenerateOptions | undefined) => {
   const messages = request?.messages ?? []
-  const start = messages.findLastIndex(m => 'source' in m && m.source?.kind === 'theone-context')
-  return messages.slice(start + 1).filter(m => 'source' in m && m.source?.kind === 'theone-links')
+  const end = messages.findLastIndex(m => 'source' in m && m.source?.kind === 'user')
+  const start = messages.findLastIndex((m, index) => index < end && 'source' in m && m.source?.kind === 'user')
+  return messages.slice(start + 1, end).filter(m => 'source' in m && m.source?.kind === 'theone-links')
     .flatMap(m => m.content.flatMap(b => b.type === 'text' ? [b.text] : [])).join('\n')
 }
 const toolResult = (request: GenerateOptions | undefined) => text(request?.messages.at(-1))

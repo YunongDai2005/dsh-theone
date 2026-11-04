@@ -112,10 +112,11 @@ test('work cut off mid-way lists what it had done; "continue" tells the topic on
     assert.match(resumed, /上次的这条消息做到一半时，DSH 重启打断了你：「把 Qwen 的配置改成 16G」/)
     assert.match(resumed, /修改 config\/qwen\.yaml/)
     // Only once.
+    const offset = t.worker.session.snapshotEvents().length
     await ask(t.app.gateway, 'Qwen 还有别的要改吗')
-    const later = model.requests.at(-1)!
-    const latestBriefing = later.messages.filter(item => 'source' in item && item.source?.kind === 'theone-context').at(-1)
-    const text = latestBriefing && 'content' in latestBriefing && Array.isArray(latestBriefing.content) ? latestBriefing.content.map(block => block.type === 'text' ? block.text : '').join('') : ''
+    const text = t.worker.session.snapshotEvents().slice(offset).flatMap(event =>
+      event.type === 'user/message' && event.data.source.kind === 'theone-context'
+        ? event.data.content.flatMap(block => block.type === 'text' ? [block.text] : []) : []).join('\n')
     assert.equal(text.includes('重启打断了你'), false)
   } finally { await t.close() }
 })
@@ -154,15 +155,17 @@ test('after "wrong topic", the wrong topic leaves that turn out of its history, 
     // Its history no longer offers that turn.
     assert.equal((await app.ctx.theone.searchHistory('ctx_qwen_9070xt', '显存设置调低')).length, 0)
     // The next time it works it is told, once.
-    const textOf = (request: (typeof model.requests)[number]) => {
-      const briefing = request.messages.filter(item => 'source' in item && item.source?.kind === 'theone-context').at(-1)
-      return briefing && 'content' in briefing && Array.isArray(briefing.content) ? briefing.content.map(block => block.type === 'text' ? block.text : '').join('') : ''
-    }
+    const worker = app.ctx.agents.get(SessionId(store.contexts().find(item => item.id === 'ctx_qwen_9070xt')!.workingSessionId))!
+    const textSince = (offset: number) => worker.session.snapshotEvents().slice(offset).flatMap(event =>
+      event.type === 'user/message' && event.data.source.kind === 'theone-context'
+        ? event.data.content.flatMap(block => block.type === 'text' ? [block.text] : []) : []).join('\n')
+    let offset = worker.session.snapshotEvents().length
     await ask(app.gateway, 'Qwen 换个问题，驱动版本多少')
-    assert.match(textOf(model.requests.at(-1)!), new RegExp(`之前交给你的这条消息分错了，已经转给「${thesis.title}」处理`))
-    assert.ok(!textOf(model.requests.at(-1)!).includes('Qwen 的显存设置调低'), 'the notice must not reintroduce the excluded request')
+    assert.match(textSince(offset), new RegExp(`之前交给你的这条消息分错了，已经转给「${thesis.title}」处理`))
+    assert.ok(!textSince(offset).includes('Qwen 的显存设置调低'), 'the notice must not reintroduce the excluded request')
     assert.deepEqual(store.misrouteEffects(first.input.id), [{ contextId: 'ctx_qwen_9070xt', changes: ['修改 config/qwen.yaml'] }])
+    offset = worker.session.snapshotEvents().length
     await ask(app.gateway, 'Qwen 还有一个问题')
-    assert.equal(textOf(model.requests.at(-1)!).includes('分错了'), false)
+    assert.equal(textSince(offset).includes('分错了'), false)
   } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
 })
