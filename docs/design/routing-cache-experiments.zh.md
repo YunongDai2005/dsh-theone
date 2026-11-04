@@ -202,21 +202,49 @@ foreach ($mode in @('open', 'closed')) {
 - 没有触碰用户原有未跟踪的 `.claude/`、`.dsh/`、`.workbuddy/`、`promo*/`、`outreach/`、`experiments/agent-workbench-wallpaper/`、`scripts/ui-check.mjs`。
 - 任务文件写“不要 commit”，用户本轮明确要求“验证、提交”，按本轮指令处理本地提交。当前沙箱将 `.git` 设为只读；最终提交结果见下方记录，不涉及 push、合并或发布。
 
-提交记录：已按用户本轮指令执行精确文件列表的 `git add`，在创建 `.git/index.lock` 时被拒绝（`Permission denied`，退出码 128）。因为暂存失败，后续 `git commit` 未执行；没有产生新提交，HEAD 仍为 `332907d`。未请求提权或弹出确认，也未尝试绕过沙箱。所有实现、报告和验证产物已保留。
+提交记录：沙箱写不了 `.git`，所以 Codex 没能提交，由作者审查后提交为 `4c842c5`。冒烟测试发现一个问题，修复后提交为 `36f8b1f`，见下一节。
 
-作者在允许写 `.git` 的普通终端可仅提交本任务文件：
+## 7. 作者补测：真实模型结果（2026-11-04）
 
-```powershell
-$files = @(
-  'src/index.ts', 'src/llm-router.ts', 'src/routing-experiments.ts',
-  'dist/index.d.ts', 'dist/index.js', 'dist/llm-router.d.ts', 'dist/llm-router.js',
-  'dist/routing-experiments.d.ts', 'dist/routing-experiments.js',
-  'eval/run-router.mjs', 'eval/lib/product-replay.mjs', 'eval/test/fake-model.mjs',
-  'eval/cache-audit.mjs', 'eval/cache-report.py',
-  'eval/test/cache-audit.test.mjs', 'eval/test/cache-experiments.test.mjs', 'eval/test/test_cache_report.py',
-  'tests/routing-experiments.test.ts', 'docs/design/routing-cache-experiments.zh.md'
-)
-git add -- $files
-if ($LASTEXITCODE -eq 0) { git commit -m 'Add opt-in routing snapshot and compact cache experiments' }
-```
+模型 DeepSeek V4.1 Flash，经 OpenCode Go 调用，`reasoning_effort: none`，开 cards；价格按 Go 非高峰 0.15 / 0.003 / 0.60 美元每百万 token 计。每组用独立的 `--cache-salt`，并且同一 mode 的各组同时跑。
+
+### 冒烟发现的问题
+
+第一次冒烟时，`snapshot+compact` 在 51 条里有 3 条报 `ROUTER_COMPACT_ID_INVALID`。原因是 `currentId` 仍以完整 id 发给模型，模型照着它回了完整 id。修复（`36f8b1f`）：本次候选里的完整 id 也接受，不在候选里的照旧拒绝，并补了测试。修复后冒烟 0 错误，之后各组都没有出现 `COMPACT` 类失败。
+
+### 第一轮：四组（`cache-26e14a000b7e`）
+
+| 组 | 基线 | snapshot | compact | snapshot+compact |
+|---|---|---|---|---|
+| open dev 准确率 | 97.4% | 93.0%（+30/−103） | 97.4%（+21/−22） | 91.2%（+32/−133） |
+| open test | 98.8% | 92.6% | 97.6%（+4/−9） | 90.5% |
+| closed dev | 96.3% | 91.1% | 98.0%（+50/−21） | 92.8% |
+| closed test | 98.3% | 91.7% | 98.8%（+6/−4） | 92.4% |
+| harm/100（open dev） | 7.7 | 22.3 | 8.0 | 27.0 |
+| 缓存命中（open dev） | 56.1% | 62.5% | 57.1% | 61.7% |
+| 每条输入 / 未命中 token（open dev） | 2916 / 1281 | 3515 / 1319 | 2951 / 1267 | 3567 / 1367 |
+| 每条输出 token（open dev） | 121 | 189 | 58 | 116 |
+| $/千条（open dev） | 0.297 | 0.346 | 0.258 | 0.309 |
+| 路由耗时 p50（open dev） | 2.06 s | 2.15 s | 1.73 s | 1.77 s |
+
+### 第二轮：基线 vs compact 复测（`cache-5e36590a72d5`）
+
+| 组 | 准确率 基线 → compact | 改对 / 改错 | harm/100 | 输出 token/条 | $/千条 | p50 |
+|---|---|---:|---|---|---|---|
+| open dev | 97.5% → 97.9% | 17 / 12 | 7.6 → 6.3 | 126 → 56 | 0.291 → 0.258 | 2.06 → 1.77 s |
+| open test | 99.1% → 98.3% | 2 / 5 | 3.1 → 6.4 | 124 → 47 | 0.228 → 0.198 | 1.88 → 1.51 s |
+| closed dev | 98.1% → 97.1% | 18 / 34 | 3.7 → 3.0 | 94 → 39 | 0.214 → 0.176 | 1.85 → 1.49 s |
+| closed test | 93.3% → 98.3% | 27 / 6 | 3.1 → 3.6 | 86 → 27 | 0.229 → 0.185 | 1.68 → 1.32 s |
+
+### 结论
+
+- **snapshot 否决。**
+  - **准确率：**四组都下降 5～7 个百分点，harm 是基线的 3～5 倍。错误主要出在切换和回到旧话题上，按动作统计的准确率从约 97% 降到 80～89%；`merged_new` 和 `wrong_existing` 都增加了。快照把 epoch 开始时的 recent 放在前面，新消息追加在覆盖层里，模型往往按旧的 recent 判断。
+  - **成本：**服务端命中率提高约 6 个百分点，和离线估算的 +7 pp 接近。但离线估算里每条未命中 token 会减少约 40%，实际请求变长了约 20%，未命中 token 并没有减少，费用反而增加 6～16%。复核时模型要先理清覆盖关系，平均输出从 242 token 涨到 612 token。
+- **compact 可以采用。**
+  - **费用和速度：**两轮共 8 组，输出 token 都减少 55～69%，费用减少 11～18%，路由耗时 p50 减少 14～21%。
+  - **准确率：**8 组配对合计改对 145 条、改错 113 条，没有看到整体变差。open test 两轮都略低（−1.19、−0.71 pp），但两轮合计只有 6 条改对、14 条改错，样本小。第二轮 closed test 基线只有 93.3%，比平时低很多，这一组的 +5 pp 主要是基线自己的波动。
+- **缓存命中率本身没有提高。**这次所有组都加了 salt，从冷缓存开始，所以基线命中率只有 56～73%，低于之前不加 salt 时测的约 77%。命中率要再往上走，得另想办法：snapshot 证明，冻结 recent 这条路会伤到准确率。
+
+未改默认值：`routingVariant` 仍默认为 `none`。
 
