@@ -32,6 +32,7 @@ import { RoutingBindings, parseBindingInput, type BindingInput, type BindingReso
 import { RoutingShadow, temporaryArithmetic, type MessageOrigin } from './routing-shadow.ts'
 import { resolveContext } from './router.ts'
 import { DshRouter, RouterFailure, newRoutingTrace } from './llm-router.ts'
+import type { RoutingVariant } from './routing-experiments.ts'
 import { continuesCurrent, resumesWork, mergeSimilarity, newIndependentTopic, redactRoutingText, settleUnclear, similarity, spokenCorrection, textFeatures, topicTerms } from './routing-policy.ts'
 import { modelJson } from './model-json.ts'
 import type { RecentMessage, RouterCall, RouterReceipt, RouterUsage, RoutingInput, RoutingRouter } from './llm-router.ts'
@@ -91,6 +92,8 @@ export interface Config {
   maxDescriptorChars: number
   maxResponseChars: number
   routerMode?: 'rules' | 'llm'
+  /** Opt-in cache experiments; none preserves the original wire protocol. */
+  routingVariant?: RoutingVariant
   /** @deprecated The direct DeepSeek router was removed; routing always uses DSH. Accepted and ignored. */
   routerTransport?: 'dsh' | 'legacy'
   historyCatalog?: boolean
@@ -329,6 +332,7 @@ export default class TheOne extends Service {
     maxDescriptorChars: z.number().step(1).min(128).default(4000),
     maxResponseChars: z.number().step(1).min(128).default(100000),
     routerMode: z.union([z.const('rules'), z.const('llm')]).default('llm'),
+    routingVariant: z.union([z.const('none'), z.const('snapshot'), z.const('compact'), z.const('snapshot+compact')]).default('none'),
     // Settings of the removed direct router, still accepted so existing profile patches keep loading.
     routerTransport: z.union([z.const('dsh'), z.const('legacy')]),
     routerBaseUrl: z.string(), routerModel: z.string(), routerApiKeyEnv: z.string(),
@@ -1468,7 +1472,7 @@ export default class TheOne extends Service {
   }
 
   private routerFor(mode: Config['routerMode']): RoutingRouter | undefined {
-    return (mode ?? 'llm') === 'llm' ? new DshRouter(this.ctx.llm, () => this.backingModel()) : undefined
+    return (mode ?? 'llm') === 'llm' ? new DshRouter(this.ctx.llm, () => this.backingModel(), 30000, Date.now, this.config.routingVariant) : undefined
   }
 
   /** Saved settings take effect for the next message; only the background catalog waits for a restart. */

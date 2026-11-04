@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { RoutingExperiments } from "./routing-experiments.js";
 import { SessionId } from '@deepseek-ai/dsh-session';
 import { newIndependentTopic, referencesHistory, redactRoutingText } from "./routing-policy.js";
 import { FACT_LIMITS } from "./facts.js";
@@ -205,14 +206,17 @@ export class DshRouter {
     selection;
     timeoutMs;
     now;
+    variant;
+    experiments = new RoutingExperiments();
     failures = 0;
     lastFailureAt = -Infinity;
     blockedUntil = 0;
-    constructor(llm, selection, timeoutMs = 30000, now = Date.now) {
+    constructor(llm, selection, timeoutMs = 30000, now = Date.now, variant = 'none') {
         this.llm = llm;
         this.selection = selection;
         this.timeoutMs = timeoutMs;
         this.now = now;
+        this.variant = variant;
     }
     /** With `think`, the model's own default reasoning is kept, for a decision asked again. */
     async decide(input, signal, sessionId, options = {}) {
@@ -225,6 +229,7 @@ export class DshRouter {
         const bounded = signal ? AbortSignal.any([signal, AbortSignal.timeout(this.timeoutMs)]) : AbortSignal.timeout(this.timeoutMs);
         let usage;
         try {
+            const request = this.experiments.prepare(payload, this.variant, sessionId);
             const selection = this.selection();
             if (!selection.provider || !selection.model)
                 throw new RouterFailure('ROUTER_MODEL_MISSING');
@@ -238,8 +243,8 @@ export class DshRouter {
                 ...(offEffort && !options.think ? { reasoningEffort: offEffort } : {}) }, bounded);
             bounded.throwIfAborted();
             let output = '', stopped = false;
-            for await (const chunk of call.stream({ ...call.config, system: routingPrompt(payload), sessionId: sessionId ?? SessionId(randomUUID()),
-                messages: [{ role: 'user', content: [{ type: 'text', text: JSON.stringify(payload) }] }], signal: bounded })) {
+            for await (const chunk of call.stream({ ...call.config, system: request.system, sessionId: sessionId ?? SessionId(randomUUID()),
+                messages: [{ role: 'user', content: [{ type: 'text', text: request.user }] }], signal: bounded })) {
                 bounded.throwIfAborted();
                 if (stopped)
                     throw new RouterFailure('ROUTER_RESPONSE_INCOMPLETE');
@@ -266,7 +271,7 @@ export class DshRouter {
             if (!stopped)
                 throw new RouterFailure('ROUTER_RESPONSE_INCOMPLETE');
             const json = answerJson(output);
-            const decision = validateRoutingDecision(JSON.parse(json), { ...input, currentId: payload.currentId ?? undefined });
+            const decision = validateRoutingDecision(request.decode(JSON.parse(json)), { ...input, currentId: payload.currentId ?? undefined });
             this.failures = 0;
             this.blockedUntil = 0;
             return { decision, model: call.config.model, elapsedMs: Math.round(performance.now() - start), usage };

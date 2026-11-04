@@ -250,6 +250,7 @@ export default class TheOne extends Service {
         maxDescriptorChars: z.number().step(1).min(128).default(4000),
         maxResponseChars: z.number().step(1).min(128).default(100000),
         routerMode: z.union([z.const('rules'), z.const('llm')]).default('llm'),
+        routingVariant: z.union([z.const('none'), z.const('snapshot'), z.const('compact'), z.const('snapshot+compact')]).default('none'),
         // Settings of the removed direct router, still accepted so existing profile patches keep loading.
         routerTransport: z.union([z.const('dsh'), z.const('legacy')]),
         routerBaseUrl: z.string(), routerModel: z.string(), routerApiKeyEnv: z.string(),
@@ -1620,7 +1621,7 @@ export default class TheOne extends Service {
             restartRequired: RESTART_SETTINGS_KEYS.some(key => savedValues[key] !== activeEditable[key]) };
     }
     routerFor(mode) {
-        return (mode ?? 'llm') === 'llm' ? new DshRouter(this.ctx.llm, () => this.backingModel()) : undefined;
+        return (mode ?? 'llm') === 'llm' ? new DshRouter(this.ctx.llm, () => this.backingModel(), 30000, Date.now, this.config.routingVariant) : undefined;
     }
     /** Saved settings take effect for the next message; only the background catalog waits for a restart. */
     async applySettings(values, descriptors) {

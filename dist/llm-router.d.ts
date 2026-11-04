@@ -1,4 +1,5 @@
 import type LlmRuntime from '@deepseek-ai/dsh-llm';
+import { type RoutingVariant } from './routing-experiments.ts';
 import { SessionId } from '@deepseek-ai/dsh-session';
 import type { ModelSelection } from '@deepseek-ai/dsh-agent';
 import type { BindingResolution, ContinuationResolution, TemporaryReturn, RoutingAttention } from './routing-bindings.ts';
@@ -175,10 +176,12 @@ export declare class DshRouter implements RoutingRouter {
     private readonly selection;
     private readonly timeoutMs;
     private readonly now;
+    private readonly variant;
+    private experiments;
     private failures;
     private lastFailureAt;
     private blockedUntil;
-    constructor(llm: Pick<LlmRuntime, 'prepareCall' | 'resolveModelInfo'>, selection: () => ModelSelection, timeoutMs?: number, now?: () => number);
+    constructor(llm: Pick<LlmRuntime, 'prepareCall' | 'resolveModelInfo'>, selection: () => ModelSelection, timeoutMs?: number, now?: () => number, variant?: RoutingVariant);
     /** With `think`, the model's own default reasoning is kept, for a decision asked again. */
     decide(input: RoutingInput, signal?: AbortSignal, sessionId?: SessionId, options?: {
         think?: boolean;

@@ -22,6 +22,7 @@ import { isRoutingV1, validateRoutingSession } from './routing-v1.mjs'
 import TheOne, { TERMS_PROMPT } from '../../dist/index.js'
 import { ROUTING_PROMPT } from '../../dist/llm-router.js'
 import { CARD_PROMPT } from '../../dist/topic-memory.js'
+import { materializeSnapshot } from '../../dist/routing-experiments.js'
 
 function* textResponse(text, usage) {
   yield { type: 'block-start', index: 0, blockType: 'text' }
@@ -40,11 +41,11 @@ class ReplayModel extends LlmAdapter {
   workerActions = []
   workerInputs = []
   onWorker = undefined
-  constructor(client) { super(); this.client = client }
+  constructor(client, cacheSalt) { super(); this.client = client; this.cacheSalt = cacheSalt }
   providerRetryPolicy() { return resolveRetryPolicy({ mode: 'normal', maxRetries: 0 }, 'replay.retry') }
   async resolveModel(provider, model) { return { provider, id: model, name: model } }
   async *stream(options) {
-    const routing = options.system?.startsWith(ROUTING_PROMPT)
+    const routing = options.system?.startsWith(ROUTING_PROMPT.split('\n')[0])
     const card = options.system === CARD_PROMPT
     const terms = options.system === TERMS_PROMPT
     if (!routing && !card && !terms) {
@@ -70,10 +71,12 @@ class ReplayModel extends LlmAdapter {
     const record = {}
     records.push(record) // Reserve invocation order before concurrent pages finish.
     const user = options.messages[0].content.filter(block => block.type === 'text').map(block => block.text).join('\n')
-    const payload = JSON.parse(user)
+    const wire = JSON.parse(user)
+    const payload = wire.protocol === 'snapshot-v1' ? materializeSnapshot(wire) : wire
+    const system = this.cacheSalt === undefined ? options.system : `[cache-salt:${JSON.stringify(this.cacheSalt)}]\n` + options.system
     const tag = `${card ? 'card' : terms ? 'terms' : 'route'}:${this.tag}:${payload.recheck ? 'recheck:' : ''}${records.length}`
     try {
-      const answer = await this.client.complete({ system: options.system, user, maxTokens: options.maxTokens,
+      const answer = await this.client.complete({ system, user, maxTokens: options.maxTokens,
         json: false, details: true, tag, session: this.tag.split(':').filter((_, index) => index !== 2).join(':'), ...(payload.recheck ? { override: { reasoning_effort: null, thinking: null } } : {}) })
       Object.assign(record, answer)
       yield* textResponse(typeof answer.value === 'string' ? answer.value : JSON.stringify(answer.value), answer.usage)
@@ -114,14 +117,14 @@ export function validatePredictionKeys(sessions, rows) {
 export async function routeSession(session, options = {}) {
   validateRoutingSession(session)
   if (isRoutingV1(session)) return routeEventSession(session, options)
-  const { mode = 'closed', policy = 'theone', client, merge = 'none', decide = 'joint', cards = false, routingShadow = true } = options
+  const { mode = 'closed', policy = 'theone', client, merge = 'none', decide = 'joint', cards = false, routingShadow = true, variant = 'none', cacheSalt } = options
   if (policy !== 'theone' || merge !== 'none' || decide !== 'joint')
     throw new Error('product-v1 uses the product policy and sequential arrivals; use --replay legacy-v0 for policy/burst ablations')
   if (!['open', 'closed'].includes(mode)) throw new Error('--mode open|closed')
   validatePredictionKeys([session], session.turns.map(turn => ({ session_id: session.session_id, i: turn.i, pred: 'pending' })))
   const root = await mkdtemp(join(tmpdir(), 'theone-product-replay-'))
   const ctx = new Context()
-  const model = new ReplayModel(client)
+  const model = new ReplayModel(client, cacheSalt)
   const gatewayKey = 'replay'
   const rows = []
   try {
@@ -142,7 +145,7 @@ export async function routeSession(session, options = {}) {
     await ctx.plugin(DefaultModel, { provider: 'replay', model: client.model ?? 'fixture' })
     await ctx.plugin(TheOne, { databasePath: join(root, 'contexts.db'), contextsPath: descriptorPath, gatewayKey,
       historyCatalog: true, routerMode: 'llm', workerProvider: 'replay', workerModel: client.model ?? 'fixture',
-      maxDescriptorChars: 4000, maxResponseChars: 100000, topicCards: cards, routingShadow })
+      maxDescriptorChars: 4000, maxResponseChars: 100000, topicCards: cards, routingShadow, routingVariant: variant })
     // The snapshot is the catalog. Background indexing would introduce unseen
     // data/model calls; candidates() still uses the real local search service.
     await ctx.theone.catalog.close()
@@ -183,8 +186,8 @@ export async function routeSession(session, options = {}) {
 
 
 // v1 uses the same real gateway and database as v0, with a separate event driver.
-async function openEventRuntime(root, client, { cards, routingShadow }, instance) {
-  const ctx = new Context(), model = new ReplayModel(client)
+async function openEventRuntime(root, client, { cards, routingShadow, variant, cacheSalt }, instance) {
+  const ctx = new Context(), model = new ReplayModel(client, cacheSalt)
   try {
     await ctx.plugin(LlmRuntime)
     await ctx.plugin(SessionStore)
@@ -199,7 +202,7 @@ async function openEventRuntime(root, client, { cards, routingShadow }, instance
     await ctx.plugin(DefaultModel, { provider: 'replay', model: client.model ?? 'fixture' })
     await ctx.plugin(TheOne, { databasePath: join(root, 'contexts.db'), contextsPath: join(root, 'contexts.json'), gatewayKey: 'replay',
       historyCatalog: true, routerMode: 'llm', workerProvider: 'replay', workerModel: client.model ?? 'fixture',
-      maxDescriptorChars: 4000, maxResponseChars: 100000, topicCards: cards, factLinks: true, routingShadow })
+      maxDescriptorChars: 4000, maxResponseChars: 100000, topicCards: cards, factLinks: true, routingShadow, routingVariant: variant })
     await ctx.theone.catalog.close()
     const gateway = (await ctx.agents.create({ sessionId: SessionId(randomUUID()), agentOptions: { provider: 'theone', model: 'gateway' } })).agent
     const connection = new HostConnectionService(ctx, [], undefined)
@@ -251,7 +254,7 @@ function eventSnapshot(app, root, inputs) {
 }
 
 async function routeEventSession(session, { mode = 'closed', policy = 'theone', client, merge = 'none', decide = 'joint',
-  cards = false, routingShadow = true, stateAblation = 'none' } = {}) {
+  cards = false, routingShadow = true, stateAblation = 'none', variant = 'none', cacheSalt } = {}) {
   if (!['open', 'closed'].includes(mode)) throw new Error('--mode open|closed')
   if (policy !== 'theone' || merge !== 'none' || decide !== 'joint') throw new Error('routing-v1 uses the product policy')
   if (!['none', 'drop-user-refs', 'drop-bindings'].includes(stateAblation)) throw new Error('state ablation must be none|drop-user-refs|drop-bindings')
@@ -270,7 +273,7 @@ async function routeEventSession(session, { mode = 'closed', policy = 'theone', 
   const submit = (turn, mode = 'followup') => app.ctx.theone.submitMessage(app.gateway.id, turn.text, inputBinding(turn), mode)
   try {
     await writeFile(join(root, 'contexts.json'), JSON.stringify(catalog))
-    app = await openEventRuntime(root, client, { cards, routingShadow }, instance)
+    app = await openEventRuntime(root, client, { cards, routingShadow, variant, cacheSalt }, instance)
     if (session.current_id) app.ctx.theone.store.mount('replay', session.current_id)
     for (let position = 0; position < session.turns.length; position++) {
       const turn = session.turns[position], eventResults = [], eventUsage = []
@@ -286,7 +289,7 @@ async function routeEventSession(session, { mode = 'closed', policy = 'theone', 
           const before = app.instance
           await closeEventRuntime(app)
           app = undefined
-          app = await openEventRuntime(root, client, { cards, routingShadow }, ++instance)
+          app = await openEventRuntime(root, client, { cards, routingShadow, variant, cacheSalt }, ++instance)
           eventResults.push({ ...event, status: 'applied', instance_before: before, instance_after: instance, reused_database: true,
             elapsed_time_applied: false })
           reset()

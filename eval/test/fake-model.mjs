@@ -1,12 +1,14 @@
 // A stand-in model for dry runs and tests: answers each pipeline step from its JSON payload, so the
 // whole pipeline runs offline. Its messages are crude on purpose; never publish its output.
+import { materializeSnapshot, compressDecision } from '../../dist/routing-experiments.js'
 const TOPICS = {
   en: ['Kitchen tap replacement', 'Rust CLI release', 'Lisbon weekend trip', 'Half marathon training', 'Tax return 2026', 'Wedding seating plan'],
   zh: ['换厨房水龙头', '记账小程序上线', '成都周末旅行', '半马训练计划', '年度个税申报', '婚礼座位安排'],
 }
 
-export default async function answer({ user, tag }) {
-  const payload = JSON.parse(user)
+export default async function answer({ user, tag, system = '' }) {
+  const wire = JSON.parse(user)
+  const payload = wire.protocol === 'snapshot-v1' ? materializeSnapshot(wire) : wire
   const step = tag.split(':')[0]
   if (step === 'routing-render') return JSON.stringify({ messages: payload.plan.map(turn => ({ i: turn.i, text: turn.text, reply: turn.reply ?? '' })) })
   if (step === 'terms') return '[]'
@@ -132,7 +134,11 @@ export default async function answer({ user, tag }) {
     // TheOne's routing payload: stay on the current topic unless a title is named; create otherwise.
     // With facts offered: import those whose topic and name the message mentions.
     const imports = (payload.symbols ?? []).filter(symbol => payload.text.includes(symbol.topic) && payload.text.includes(symbol.label)).map(symbol => symbol.id)
-    const decide = decision => JSON.stringify(payload.symbols ? { ...decision, imports } : decision)
+    const decide = decision => {
+      const full = payload.symbols ? { ...decision, imports } : decision
+      return JSON.stringify(system.includes('使用 compact-v1')
+        ? compressDecision(full, new Map(payload.contexts.map(c => [c.routeId, c.id]))) : full)
+    }
     const named = payload.contexts.find(context => payload.text.toLowerCase().startsWith(context.title.toLowerCase()))
     if (named) return decide({ action: 'EXISTING', contextId: named.id, title: null, question: null, reason: 'named', historyIndependent: null, candidateIds: [], relatedIds: [] })
     if (payload.currentId) return decide({ action: 'EXISTING', contextId: payload.currentId, title: null, question: null, reason: 'continues', historyIndependent: null, candidateIds: [], relatedIds: [] })

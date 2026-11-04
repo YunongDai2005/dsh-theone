@@ -7,6 +7,7 @@ import { HistoryCatalog } from './history-catalog.ts';
 import { ContextStore } from './store.ts';
 import { RoutingBindings, type BindingInput } from './routing-bindings.ts';
 import { RoutingShadow } from './routing-shadow.ts';
+import type { RoutingVariant } from './routing-experiments.ts';
 import type { RouterReceipt } from './llm-router.ts';
 import type { LinkageSnapshot } from './catalog-types.ts';
 import { type SettingsSnapshot } from './settings-types.ts';
@@ -27,6 +28,8 @@ export interface Config {
     maxDescriptorChars: number;
     maxResponseChars: number;
     routerMode?: 'rules' | 'llm';
+    /** Opt-in cache experiments; none preserves the original wire protocol. */
+    routingVariant?: RoutingVariant;
     /** @deprecated The direct DeepSeek router was removed; routing always uses DSH. Accepted and ignored. */
     routerTransport?: 'dsh' | 'legacy';
     historyCatalog?: boolean;
