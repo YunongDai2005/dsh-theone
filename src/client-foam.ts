@@ -180,6 +180,9 @@ export function createFoam(options: FoamOptions): Foam {
   host.appendChild(svg)
   const defs = svg.firstChild as SVGDefsElement, layer = svg.children[1] as SVGGElement, necks = svg.children[2] as SVGGElement, vlayer = svg.children[3] as SVGGElement
   const tip = document.createElement('div'); tip.className = 'theone-foam-tip'; document.body.appendChild(tip)
+  // The cells are drawn, not focusable: a visually hidden list of buttons gives keyboard and screen-reader users the same topics.
+  const list = document.createElement('div'); list.className = 'theone-foam-list'; list.setAttribute('role', 'list'); host.appendChild(list)
+  const keys = new Map<string, HTMLButtonElement>()
 
   const cells: Cell[] = [], ves: Vesicle[] = []
   let links = new Map<string, number>(), bonds: [Cell, Cell][] = []
@@ -347,8 +350,34 @@ export function createFoam(options: FoamOptions): Foam {
     for (const link of model.links ?? []) { links.set(link.a + '|' + link.b, link.weight); links.set(link.b + '|' + link.a, link.weight) }
     bonds = (model.pendingMerges ?? []).map(m => [byId(m.id), byId(m.into)] as [Cell | undefined, Cell | undefined]).filter((b): b is [Cell, Cell] => !!b[0] && !!b[1])
     first = false
+    syncList()
     for (let i = 0; i < pending.length;) { if (apply(pending[i])) pending.splice(i, 1); else i++ }
     if (pending.length > 20) pending.splice(0, pending.length - 20)
+  }
+  function describe(c: Cell): string {
+    const status = c.state === 'running' ? text('running', { s: Math.max(0, Math.round((Date.now() - (c.startedAt ?? Date.now())) / 1000)) })
+      : c.state === 'wait' ? text('waiting') : c.state === 'fail' ? text('failed') : c.state === 'queued' ? text('queued') : c.state === 'done' ? text('answered') : ''
+    return status ? c.title + ' · ' + status : c.title
+  }
+  function syncList() {
+    const shown = topics().filter(c => !c.aside || busy(c))
+    for (const [id, el] of keys) if (!shown.some(c => c.id === id)) { el.remove(); keys.delete(id) }
+    for (const c of shown) {
+      let el = keys.get(c.id)
+      if (!el) {
+        const b = el = document.createElement('button')
+        b.type = 'button'; b.setAttribute('role', 'listitem')
+        b.addEventListener('focus', () => c.g.classList.add('fuse'))
+        b.addEventListener('blur', () => c.g.classList.remove('fuse'))
+        b.addEventListener('click', () => { if (!c.cur) actions.mount(c.id) })
+        b.addEventListener('keydown', e => {
+          if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) { e.preventDefault(); const r = c.m.getBoundingClientRect(); openMenu(r.left + r.width / 2, r.bottom, c) }
+        })
+        keys.set(c.id, b); list.appendChild(b)
+      }
+      el.textContent = describe(c)
+      el.setAttribute('aria-current', c.cur ? 'true' : 'false')
+    }
   }
   function event(e: FoamEvent) { if (!apply(e)) pending.push(e) }
 
@@ -718,7 +747,7 @@ export function createFoam(options: FoamOptions): Foam {
       cancelAnimationFrame(raf); clearInterval(tipTimer)
       window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up)
       document.removeEventListener('pointerdown', outside, true); document.removeEventListener('keydown', keydown, true)
-      closeMenu(); tip.remove(); svg.remove(); host.classList.remove('theone-foam')
+      closeMenu(); tip.remove(); svg.remove(); list.remove(); host.classList.remove('theone-foam')
     },
   }
 }
@@ -728,6 +757,7 @@ export const foamCss = `
 .theone-foam{position:fixed;left:0;top:0;width:0;height:8px;z-index:20;pointer-events:none;--foam-bg:var(--dsw-specific-sidebar-fill,#f7f7f5);--foam-tint:#fff5ec;--foam-accent:#a75b1e;--foam-heat:#ff7800;--foam-line:#c99267;--foam-done:#ffffff;--foam-idle-line:#d8d3ca;--foam-idle-dot:#cdb8a3;--foam-queue-line:#c4c1b8;--foam-queue-ink:#9a988f;--foam-fail:#b9785f;--foam-text:var(--dsw-alias-label-primary,#2b2b2b);--foam-muted:var(--dsw-alias-label-secondary,#8a8a86)}
 [data-ds-dark-theme] .theone-foam{--foam-bg:var(--dsw-specific-sidebar-fill,#1f1f22);--foam-tint:#1d2a37;--foam-accent:#93c8f3;--foam-heat:#80caff;--foam-line:#5d87ab;--foam-done:#2b2b30;--foam-idle-line:#4a515a;--foam-idle-dot:#5a7086;--foam-queue-line:#4d555e;--foam-queue-ink:#7f8a94;--foam-fail:#c98a74}
 .theone-foam>svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.theone-foam-list{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .theone-cell{cursor:grab;pointer-events:auto}
 .theone-cell.drag{cursor:grabbing}
 .theone-cell [data-part=body]{stroke:none;fill:var(--foam-bg);transition:fill .8s ease}
