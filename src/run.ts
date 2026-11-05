@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto'
+import type { BubbleWorkItem, WorkPhase } from './bubble-types.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
@@ -18,6 +20,24 @@ interface Step { readonly turn: number; readonly step: number; attempt: Attempt 
  * main chat's tool calls then resolve with the Worker's results instead of running a second time.
  */
 export class WorkerRun {
+  readonly executionId = randomUUID()
+  observe?: () => void
+  readonly delivery: BubbleWorkItem['delivery'] = { phase: 'waiting', shownSteps: 0, committedSteps: 0, commit: null }
+  private started = false
+  private waits = 0
+  get observedPhase(): WorkPhase {
+    if (this.done) return this.failure ? 'failed' : this.cancelled ? 'stopped' : this.outcome?.kind === 'completed' ? 'succeeded' : 'failed'
+    return this.waits ? 'waiting_user' : this.started ? 'running' : 'starting'
+  }
+  select(): void { this.delivery.phase = 'selected'; this.observe?.() }
+  waiting(delta: number): void { this.waits = Math.max(0, this.waits + delta); this.observe?.() }
+  commit(eventSeq: number): void {
+    if (this.delivery.commit?.eventSeq === eventSeq) return
+    this.delivery.committedSteps++; this.delivery.commit = { sessionId: this.gateway.id, eventSeq }; this.observe?.()
+  }
+  endDelivery(abandon: boolean): void {
+    this.delivery.phase = abandon ? 'discarded' : this.delivery.committedSteps > 0 ? 'shown' : 'unknown'; this.observe?.()
+  }
   private readonly steps: Step[] = []
   /** Main-chat steps opened for this run; step n shows Worker step n. */
   private shown = 0
@@ -95,12 +115,13 @@ export class WorkerRun {
   start(contexts: UserMessage[], input: UserMessage, after?: Promise<void>): void {
     if (after) {
       this.settled = after.then(async () => {
-        if (this.cancelled) { this.done = true; this.wake(); return }
+        if (this.cancelled) { this.done = true; this.observe?.(); this.wake(); return }
         this.start(contexts, input)
         await this.settled
-      }).catch(error => { this.failure = error; this.done = true; this.wake() })
+      }).catch(error => { this.failure = error; this.done = true; this.observe?.(); this.wake() })
       return
     }
+    this.started = true; this.observe?.()
     for (const context of contexts) this.worker.inject(context)
     this.worker.followup(input)
     this.follow()
@@ -108,10 +129,12 @@ export class WorkerRun {
 
   /** Follow work the Worker took up on its own (a subagent reporting back, say) until it is idle again. */
   follow(): void {
+    this.started = true; this.observe?.()
     this.settled = this.worker.whenIdle().then(() => undefined, error => {
       this.failure ??= error instanceof Error ? error : new Error(String(error))
     }).finally(() => {
       this.done = true
+      this.observe?.()
       for (const entry of this.results.values()) for (const { reject } of entry.waiting.splice(0)) reject(new Error('Worker did not complete this tool call'))
       this.wake()
     })
@@ -123,10 +146,11 @@ export class WorkerRun {
     const copy = createUserMessage({ source: message.source, content: message.content })
     this.forwarded.set(message.id, copy.id)
     this.worker.steer(copy)
+    this.observe?.()
   }
   withdraw(messageId: string): void {
     const copy = this.forwarded.get(messageId)
-    if (copy) { this.forwarded.delete(messageId); this.worker.inbox.remove(copy as UserMessage['id']) }
+    if (copy) { this.forwarded.delete(messageId); this.worker.inbox.remove(copy as UserMessage['id']); this.observe?.() }
   }
 
   /** Whether the Worker has started a step the main chat has not shown. */
@@ -164,6 +188,7 @@ export class WorkerRun {
   async *stream(signal?: AbortSignal): AsyncIterable<StreamChunk> {
     const index = this.restarting ? this.shown - 1 : this.shown++
     this.restarting = false
+    this.delivery.phase = 'showing'; this.delivery.shownSteps = this.shown; this.observe?.()
     let attempt: Attempt | undefined
     let sent = 0
     let finished = false

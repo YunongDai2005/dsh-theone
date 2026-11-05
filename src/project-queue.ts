@@ -18,6 +18,7 @@ export function projectKey(folder: string): string {
 export class ProjectQueue {
   private readonly tails = new Map<string, Promise<void>>()
   private readonly lifetime = new AbortController()
+  isBusy(key: string): boolean { return this.tails.has(key) }
   async acquire(key: string, signal?: AbortSignal): Promise<() => void> {
     const bounded = signal ? AbortSignal.any([signal, this.lifetime.signal]) : this.lifetime.signal
     bounded.throwIfAborted()

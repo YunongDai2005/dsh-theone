@@ -59,6 +59,9 @@ import type { AppHost } from './remote-app.ts'
 import { PersistentWork, type ResearchTask } from './persistent-work.ts'
 import type { WorkJob, WorkNotice } from './work-store.ts'
 import type { WorkScope, WorkOutcome } from './work-scheduler.ts'
+import { BubbleActivity } from './bubble-activity.ts'
+import { projectBubbles } from './bubble-projection.ts'
+import type { BubbleView, BubbleWorkItem } from './bubble-types.ts'
 import { ProjectQueue, projectKey } from './project-queue.ts'
 
 function redactDescriptor(text: string): string {
@@ -350,6 +353,7 @@ export default class TheOne extends Service {
   readonly bindings: RoutingBindings
   readonly shadow?: RoutingShadow
   shadowError?: string
+  readonly bubbleActivity = new BubbleActivity()
   readonly store: ContextStore
   readonly work: PersistentWork
   private readonly projects = new ProjectQueue()
@@ -502,6 +506,8 @@ export default class TheOne extends Service {
     ctx.on('session/event', (session, event) => {
       this.observeShadow(shadow => this.recordShadowEvent(shadow, session, event))
       this.recordBindingEvent(session, event)
+      if (event.type === 'assistant/message') this.runs.get(session.id)?.commit(event.seq)
+      if (event.type === 'turn/end' && this.store.isGateway(session.id)) this.bubbleActivity.releaseClaim(session.id)
       if (event.type === 'permission/preset' || event.type === 'sandbox/mode' || event.type === 'approval/policy') {
         // The user can tighten access while a model or reviewer is still running.
         // Apply the new policy before the next tool, including set-aside topics.
@@ -553,7 +559,10 @@ export default class TheOne extends Service {
     // A message sent during a reply: about that reply, it reaches the Worker at its next step (an
     // interjection) or waits for it (queued), as in an ordinary session; about another matter, that
     // topic starts on it now, in the background.
+    const bubbleGateway = (agent: Agent) => agent.options.provider === 'theone' || this.store.isGateway(agent.id)
+    ctx.on('agent/inbox/claimed', ({ agent, message }) => { if (bubbleGateway(agent)) this.bubbleActivity.claim(agent, message) })
     ctx.on('agent/inbox/inserted', ({ agent, message }) => {
+      if (bubbleGateway(agent) && !this.moving.has(message.id)) this.bubbleActivity.input(agent, message)
       // A topic woken by something other than the user or TheOne (a subagent reporting back) carries
       // on where nobody sees it; main chat shows that work, as an ordinary chat would.
       if (WAKING_SOURCES.has(message.source.kind as string) && !this.relays.has(message.id) && !this.runForWorker(agent)) {
@@ -568,6 +577,7 @@ export default class TheOne extends Service {
     })
     ctx.on('agent/inbox/discarded', ({ agent, message }) => {
       if (this.moving.has(message.id)) return
+      if (bubbleGateway(agent)) this.bubbleActivity.discard(agent.id, message.id)
       this.runs.get(agent.id)?.withdraw(message.id)
       // Deleted from the queue: whatever started on it stops.
       this.sorting.get(message.id)?.abort.abort()
@@ -806,6 +816,7 @@ export default class TheOne extends Service {
       if (provider === 'theone') this.pickedModel = parseVia(pickedNow ?? agent.options.model)
       else if (provider && pickedNow) this.pickedModel = { provider, model: pickedNow }
       let users = decision.messages.filter(message => message.source.kind === 'user')
+      this.bubbleActivity.batch(agent, users.length ? users : decision.messages.filter(message => goalRoundOf(message) !== undefined || this.isRelay(message)))
       // A goal set in main chat advances by rounds DSH queues here; each round goes to the goal's topic.
       const goalRounds = users.length ? [] : decision.messages.filter(message => goalRoundOf(message) !== undefined)
       const relays = users.length || goalRounds.length ? [] : decision.messages.filter(message => this.isRelay(message))
@@ -935,6 +946,8 @@ export default class TheOne extends Service {
           ...(relays.length ? { source: input.source.kind === 'user-question-reply' ? 'foreground' as const : 'background' as const } : {}),
         })
       })
+      this.bubbleActivity.assign(agent, input, route.decision, this.bubbleTemporary(route.decision, receipt))
+      this.bubbleActivity.releaseClaim(agent.id)
       receipt.trace.final = { ...route.decision }
       this.store.recordRouteDetail(input.id, redactRoutingText(text).replace(/\s+/g, ' ').trim().slice(0, 160) || attachmentLabel,
         Object.fromEntries(Object.entries(receipt).filter(([, value]) => value !== undefined)))
@@ -961,6 +974,19 @@ export default class TheOne extends Service {
         content: [{ type: 'text', text: summary }],
       })] }
     })
+  }
+
+  /** Reads in-memory observations and store facts without loading sessions or starting work. */
+  bubbleView(gatewayId = this.store.latestGateway(this.config.gatewayKey)): BubbleView {
+    const agent = gatewayId ? this.ctx.agents.get(SessionId(gatewayId)) : undefined
+    return projectBubbles(this.store, { scope: { gatewayKey: this.config.gatewayKey, gatewayId: gatewayId ?? null },
+      workItems: this.bubbleActivity.snapshot(), busy: this.busy, linkScope: this.config.linkScope,
+      gateway: agent ? this.bubbleActivity.gateway(agent, this.store.current(this.config.gatewayKey) ?? null) : null })
+  }
+
+  private bubbleTemporary(decision: Decision, receipt: RouterReceipt): BubbleWorkItem['temporary'] {
+    if (!receipt.temporary) return undefined
+    return { kind: decision.aside ? 'model_aside' : 'arithmetic', returnContextId: receipt.temporary.returnTopicId ?? null }
   }
 
   private workTasks() {
@@ -1727,6 +1753,7 @@ export default class TheOne extends Service {
 
   private forwardToWorker(run: WorkerRun, message: UserMessage): void {
     run.forward(message)
+    this.bubbleActivity.forward(run, message)
     const route = this.store.route(message.id), contextId = route?.decision.contextId
     if (!contextId || this.routeBinding(message.id)?.status !== 'applied' && !this.store.routeReceipt(message.id)?.continuation && !this.store.routeReceipt(message.id)?.stateSources?.length) return
     const source = this.store.learningJournal.source(message.id, contextId)
@@ -2633,6 +2660,7 @@ export default class TheOne extends Service {
     try {
       if (run) {
         this.runs.set(gateway.id, run)
+        run.select()
         this.reservedGateway = undefined
         if (background?.todo !== undefined) (gateway.session as unknown as { append(type: string, data: unknown): void }).append('todo/write', background.todo)
         for (const record of background?.records ?? []) this.mirrorRecord(gateway, run.worker.id, record)
@@ -2655,11 +2683,12 @@ export default class TheOne extends Service {
         : stepInput(options.messages, input))
       run = await this.startRun(gateway, route, input, workerInput, started => {
         this.runs.set(gateway.id, started)
+        started.select()
         this.reservedGateway = undefined
       }, options.signal, options.reasoningEffort)
       yield* run.stream(options.signal)
     } catch (error) {
-      if (!run) this.store.finish(input.id, 'failed')
+      if (!run) { this.store.finish(input.id, 'failed'); this.bubbleActivity.failed(gateway, input) }
       throw error
     } finally {
       // A started run stays active until the main chat's turn ends with it (see finishRun).
@@ -2860,6 +2889,7 @@ export default class TheOne extends Service {
    * on it now in the background, and an interjection becomes its own turn instead of joining the reply.
    */
   private sortMidReply(gateway: Agent, run: WorkerRun, message: UserMessage, interjection: boolean): void {
+    this.bubbleActivity.routing(gateway, message)
     const abort = new AbortController()
     const receipt: RouterReceipt = { mode: 'llm', tier: 'rules', calls: 0, cacheHitTokens: 0 }
     const decided = this.otherMatter(gateway, run, message, receipt, abort.signal).catch(() => undefined)
@@ -2867,6 +2897,7 @@ export default class TheOne extends Service {
     const settled = decided.then(async decision => {
       if (!decision) {
         if (interjection && pending() && run.canForward && !run.forwarded.has(message.id)) this.forwardToWorker(run, message)
+        else this.bubbleActivity.queue(gateway, message, 'topic_busy', this.store.route(run.inputId)?.decision.contextId)
         return
       }
       if (pending()) this.requeue(gateway, message)
@@ -2938,11 +2969,15 @@ export default class TheOne extends Service {
    * message simply waits its turn.
    */
   private async startBackground(gateway: Agent, message: UserMessage, decision: Decision, receipt: RouterReceipt, signal: AbortSignal): Promise<void> {
-    if (this.background.size + this.starting.size >= 2 || signal.aborted || this.store.route(message.id)) return
+    if (this.background.size + this.starting.size >= 2 || signal.aborted || this.store.route(message.id)) {
+      if (!signal.aborted && !this.store.route(message.id)) this.bubbleActivity.queue(gateway, message, 'capacity', decision.contextId)
+      return
+    }
     const working = [...this.runs.values(), ...[...this.background.values()].map(entry => entry.run)]
       .map(run => this.store.route(run.inputId)?.decision.contextId)
-    if (decision.action !== 'CREATE' && [...working, ...this.starting.values()].includes(decision.contextId)) return
+    if (decision.action !== 'CREATE' && [...working, ...this.starting.values()].includes(decision.contextId)) { this.bubbleActivity.queue(gateway, message, 'topic_busy', decision.contextId); return }
     const route = this.store.plan(message.id, gateway.id, this.config.gatewayKey, decision, false)
+    this.bubbleActivity.assign(gateway, message, route.decision, this.bubbleTemporary(decision, receipt))
     this.store.claim(message.id)
     // Hold the place before the topic starts, so requests made at the same moment cannot all pass the check.
     this.starting.set(message.id, route.decision.contextId)
@@ -2955,6 +2990,7 @@ export default class TheOne extends Service {
       this.starting.delete(message.id)
       const entry = this.background.get(message.id)
       this.background.delete(message.id)
+      this.bubbleActivity.failed(gateway, message)
       entry?.run.cancel()
       entry?.run.dispose()
       this.store.forget(message.id)
@@ -2979,6 +3015,8 @@ export default class TheOne extends Service {
     this.observeShadow(shadow => shadow.bind(this.config.gatewayKey, gateway.id, note.id, { topicId: contextId, source: answered ? 'foreground' : 'background' }))
     this.relays.add(note.id)
     const run = new WorkerRun(this.ctx, worker, gateway, note.id, this.config.maxResponseChars, names => this.showWorkerTools(gateway, worker, names))
+    this.bubbleActivity.input(gateway, note)
+    this.bubbleActivity.register(run, contextId, 'background')
     run.request = messageText(cause)
     run.follow()
     const current = this.store.current(this.config.gatewayKey)
@@ -3118,7 +3156,7 @@ export default class TheOne extends Service {
     try {
       gateway.inbox.remove(message.id)
       gateway.inbox.append('next-turn', message)
-    } finally { this.moving.delete(message.id) }
+    } finally { this.moving.delete(message.id); this.bubbleActivity.releaseClaim(gateway.id, [message.id]); this.bubbleActivity.publish([], gateway.id) }
   }
 
   /** Stop background work on a message main chat will not show (deleted, or answered with other input). */
@@ -3126,6 +3164,7 @@ export default class TheOne extends Service {
     const entry = this.background.get(messageId)
     if (!entry) return
     this.background.delete(messageId)
+    entry.run.endDelivery(true)
     entry.run.cancel()
     void entry.run.settled.then(() => { entry.run.dispose(); this.stowWhenIdle(entry.run.worker.id) })
     this.store.forget(messageId)
@@ -3143,6 +3182,7 @@ export default class TheOne extends Service {
     register: (run: WorkerRun) => void, signal?: AbortSignal, reasoningEffort?: ReasoningEffortId, takeOver = false, after?: Promise<void>): Promise<WorkerRun> {
     const context = this.store.contexts().find(context => context.id === route.decision.contextId)
     if (!context) throw new Error('Routed Context is missing')
+    this.bubbleActivity.starting(gateway, input, context.id)
     const worker = await this.worker(context, gateway.id, signal, reasoningEffort)
     if (worker.status !== 'idle' || worker.inbox.nextTurn.length || worker.inbox.nextStep.length) {
       throw new Error('Worker has unfinished input; inspect its DSH session before continuing')
@@ -3152,7 +3192,9 @@ export default class TheOne extends Service {
     this.syncPlanMode(gateway, worker)
     await this.readyToRun(worker.id)
     const folder = this.projectOf(worker.session.header.cwd)?.path ?? this.store.origin(context.id)?.cwd
+    if (folder && !takeOver && this.projects.isBusy(projectKey(folder))) this.bubbleActivity.starting(gateway, input, context.id, true)
     const release = folder && !takeOver ? await this.projects.acquire(projectKey(folder), signal) : () => {}
+    this.bubbleActivity.starting(gateway, input, context.id)
     try {
       signal?.throwIfAborted()
       if (worker.status !== 'idle' || worker.inbox.nextTurn.length || worker.inbox.nextStep.length) throw new Error('Worker became busy while waiting for its project')
@@ -3162,6 +3204,7 @@ export default class TheOne extends Service {
       const refreshed = this.store.contexts().find(item => item.id === context.id) ?? context
       const run = new WorkerRun(this.ctx, worker, gateway, input.id, this.config.maxResponseChars, names => this.showWorkerTools(gateway, worker, names))
       run.request = messageText(input)
+      this.bubbleActivity.register(run, context.id, this.starting.has(input.id) ? 'background' : 'foreground')
       register(run)
       const resume = this.resumeFor(context.id, worker, input.id) + this.misrouteFor(context.id)
         + returnNote(this.lastActive(context.id, worker, input.id))
@@ -3702,8 +3745,10 @@ export default class TheOne extends Service {
       if (topicId) pending = shadow.openPending(this.config.gatewayKey, { topicId, kind, messageId: run?.inputId, basis: 'host-request' })
     })
     this.asking.set(worker.id, (this.asking.get(worker.id) ?? 0) + 1)
+    run?.waiting(1)
     try { return await ask() }
     finally {
+      run?.waiting(-1)
       this.bindings.closeReference(bindingId)
       if (pending) this.observeShadow(shadow => shadow.closePending(this.config.gatewayKey, pending!))
       const left = (this.asking.get(worker.id) ?? 1) - 1
@@ -4011,6 +4056,7 @@ export default class TheOne extends Service {
     this.handedFrom.delete(gatewayId)
     if (abandon) { run.cancel(); this.store.finish(run.inputId, 'failed') }
     const closing = run.settled.then(() => {
+      run.endDelivery(abandon)
       run.dispose()
       this.stowWhenIdle(run.worker.id)
       if (!abandon) this.store.finish(run.inputId, !run.failure && run.outcome?.kind === 'completed' ? 'completed' : 'failed')
@@ -4037,6 +4083,7 @@ export default class TheOne extends Service {
         this.queueCard(run.worker, contextId)
       this.active = false
       this.closing.delete(gatewayId)
+      this.bubbleActivity.publish([], gatewayId)
     })
     this.closing.set(gatewayId, closing)
     return closing
