@@ -53,6 +53,7 @@ export class WorkerRun {
   outcome?: TurnEndReason
   done = false
   private cancelled = false
+  get stopRequested(): boolean { return this.cancelled }
   settled: Promise<void> = Promise.resolve()
 
   constructor(ctx: Context, readonly worker: Agent, readonly gateway: Agent, readonly inputId: string,
@@ -113,6 +114,7 @@ export class WorkerRun {
 
   /** Give the Worker its context and input; the run ends when the Worker is idle again. */
   start(contexts: UserMessage[], input: UserMessage, after?: Promise<void>): void {
+    if (this.cancelled) { this.done = true; this.observe?.(); this.wake(); return }
     if (after) {
       this.settled = after.then(async () => {
         if (this.cancelled) { this.done = true; this.observe?.(); this.wake(); return }

@@ -180,16 +180,29 @@ export class BubbleActivity {
     discard(gatewayId, messageId) {
         const item = this.find(gatewayId, messageId);
         if (item) {
+            const before = item.delivery.phase;
             if (item.executionId && item.primaryMessageId !== messageId)
                 item.messageIds = item.messageIds.filter(id => id !== messageId);
             else {
                 item.delivery.phase = 'discarded';
-                if (!item.executionId)
+                if (!item.executionId) {
                     item.phase = 'stopped';
+                    item.outcome = 'stopped';
+                }
             }
-            this.changed(item);
+            this.changed(item, before);
         }
         this.releaseClaim(gatewayId, [messageId]);
+    }
+    stopped(workItemId) {
+        const item = this.items.get(workItemId);
+        if (!item)
+            return;
+        const before = item.delivery.phase;
+        item.phase = 'stopped';
+        item.outcome = 'stopped';
+        item.delivery.phase = 'discarded';
+        this.changed(item, before);
     }
     standalone(agent, message, phase) {
         const item = this.input(agent, message);
@@ -211,16 +224,19 @@ export class BubbleActivity {
         for (const item of this.items.values())
             if (item.gatewayId === gatewayId && !item.executionId &&
                 (item.delivery.phase === 'showing' || item.messageIds.some(id => claimed.includes(id)))) {
+                const before = item.delivery.phase;
                 item.delivery.phase = completed && item.delivery.committedSteps > 0 ? 'shown' : 'discarded';
                 if (item.phase === 'routing')
                     item.phase = 'failed';
-                this.changed(item);
+                this.changed(item, before);
             }
         this.releaseClaim(gatewayId);
         this.publish([], gatewayId);
     }
     failed(agent, message) {
         const item = this.input(agent, message);
+        if (item.delivery.phase === 'discarded' && item.phase === 'stopped')
+            return;
         item.phase = 'failed';
         item.outcome = 'failed';
         this.changed(item);
@@ -235,9 +251,10 @@ export class BubbleActivity {
             nextTurn: inbox(agent.inbox.nextTurn), nextStep: inbox(agent.inbox.nextStep),
             claimed: this.claimed.has(agent.id) ? [structuredClone(this.claimed.get(agent.id))] : [] };
     }
-    changed(item) {
+    changed(item, deliveryBefore) {
         item.updatedAt = Date.now();
-        this.publish([{ type: 'work.changed', workItemId: item.id, executionId: item.executionId, phase: item.phase, ...(item.queueReason ? { queueReason: item.queueReason } : {}) }], item.gatewayId);
+        this.publish([{ type: 'work.changed', workItemId: item.id, executionId: item.executionId, phase: item.phase, ...(item.queueReason ? { queueReason: item.queueReason } : {}) },
+            ...(deliveryBefore && deliveryBefore !== item.delivery.phase ? [{ type: 'delivery.changed', workItemId: item.id, executionId: item.executionId, phase: item.delivery.phase }] : [])], item.gatewayId);
     }
     prune() {
         const settled = [...this.items.values()].filter(item => ['shown', 'discarded'].includes(item.delivery.phase) && ['succeeded', 'failed', 'stopped', 'superseded'].includes(item.phase));

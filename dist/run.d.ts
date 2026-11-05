@@ -42,6 +42,7 @@ export declare class WorkerRun {
     outcome?: TurnEndReason;
     done: boolean;
     private cancelled;
+    get stopRequested(): boolean;
     settled: Promise<void>;
     constructor(ctx: Context, worker: Agent, gateway: Agent, inputId: string, maxChars: number, beforeToolCalls: (names: string[]) => void);
     /** The Worker recorded facts itself this run, so no extraction is needed afterwards. */

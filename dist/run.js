@@ -51,6 +51,7 @@ export class WorkerRun {
     outcome;
     done = false;
     cancelled = false;
+    get stopRequested() { return this.cancelled; }
     settled = Promise.resolve();
     constructor(ctx, worker, gateway, inputId, maxChars, beforeToolCalls) {
         this.worker = worker;
@@ -124,6 +125,12 @@ export class WorkerRun {
     }
     /** Give the Worker its context and input; the run ends when the Worker is idle again. */
     start(contexts, input, after) {
+        if (this.cancelled) {
+            this.done = true;
+            this.observe?.();
+            this.wake();
+            return;
+        }
         if (after) {
             this.settled = after.then(async () => {
                 if (this.cancelled) {

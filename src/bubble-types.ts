@@ -8,7 +8,7 @@ export type DeliveryPhase = 'waiting' | 'selected' | 'showing' | 'shown' | 'disc
 export type QueueReason = 'host_queue' | 'capacity' | 'topic_busy' | 'project_busy' | 'handoff'
 export interface Capability {
   allowed: boolean
-  reason?: 'gateway_busy' | 'topic_busy' | 'unavailable' | 'pending_delivery' | 'unsupported'
+  reason?: 'gateway_busy' | 'topic_busy' | 'unavailable' | 'pending_delivery' | 'unsupported' | 'already_delivered' | 'already_stopped' | 'not_running'
 }
 export interface BubbleTopic {
   id: string; title: string; label: string | null; openSessionId: string

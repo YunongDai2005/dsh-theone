@@ -1030,7 +1030,7 @@ export default class TheOne extends Service {
   /** Reads in-memory observations and store facts without loading sessions or starting work. */
   bubbleView(gatewayId: string | null | undefined = this.store.latestGateway(this.config.gatewayKey)): BubbleView {
     const agent = gatewayId ? this.ctx.agents.get(SessionId(gatewayId)) : undefined
-    const workItems = this.bubbleActivity.snapshot(), latestRuns = this.store.latestTopicRuns()
+    const workItems = this.bubbleActivity.snapshot().map(item => ({ ...item, stop: this.workStopTarget(item).capability })), latestRuns = this.store.latestTopicRuns()
     const doneCapabilities = new Map(this.store.contexts().map(topic => [topic.id, this.topicDoneCapability(topic.id, workItems, latestRuns)]))
     return projectBubbles(this.store, { scope: { gatewayKey: this.config.gatewayKey, gatewayId: gatewayId ?? null },
       workItems, doneCapabilities, sessionCreatedAt: this.bubbleSessionDates, merges: this.mergeQueue?.active(), busy: this.busy || this.maintenance.isBusy(), linkScope: this.config.linkScope,
@@ -1038,6 +1038,67 @@ export default class TheOne extends Service {
       health: { catalog: !this.catalog ? 'unavailable' : this.catalog.snapshot().status.consent !== 'granted' ? 'consent_required'
         : this.catalog.snapshot().status.running ? 'indexing' : this.catalog.snapshot().status.searchUnavailable ? 'unavailable' : 'ready',
         router: this.router ? 'unknown' : 'rules' } })
+  }
+
+  /** The API and snapshot use the same live ownership check; persisted observations cannot cancel work. */
+  private workStopTarget(item: BubbleWorkItem): { capability: Capability; error?: string; gateway?: Agent; run?: WorkerRun; effect?: 'stopped' | 'withdrawn' } {
+    const denied = (error: string, reason: Capability['reason']) => ({ capability: { allowed: false, reason }, error })
+    if (item.delivery.phase === 'shown') return denied('WORK_ALREADY_DELIVERED', 'already_delivered')
+    if (item.phase === 'stopped' || item.delivery.phase === 'discarded') return denied('WORK_ALREADY_STOPPED', 'already_stopped')
+    const gateway = this.ctx.agents.get(SessionId(item.gatewayId))
+    if (!gateway) return denied('WORK_UNAVAILABLE', 'unavailable')
+    const run = [...this.runs.values(), ...[...this.background.values()].map(entry => entry.run)]
+      .find(candidate => candidate.executionId === item.executionId)
+    if (run?.stopRequested) return denied('WORK_ALREADY_STOPPED', 'already_stopped')
+    if (run && !run.done) return { capability: { allowed: true }, gateway, run, effect: 'stopped' }
+    if (item.executionId) return denied('WORK_NOT_STOPPABLE', 'not_running')
+    const pending = new Set([...gateway.inbox.nextTurn, ...gateway.inbox.nextStep].map(message => String(message.id)))
+    if (['queued', 'routing', 'starting'].includes(item.phase) && item.messageIds.length && item.messageIds.every(id => pending.has(id)))
+      return { capability: { allowed: true }, gateway, effect: 'withdrawn' }
+    const claimed = this.bubbleActivity.gateway(gateway, null).claimed.flatMap(batch => batch.messageIds)
+    if (['routing', 'starting'].includes(item.phase) && !this.runs.has(gateway.id) &&
+      item.messageIds.length && item.messageIds.every(id => claimed.includes(id)))
+      return { capability: { allowed: true }, gateway, effect: 'stopped' }
+    return denied('WORK_NOT_STOPPABLE', 'unsupported')
+  }
+
+  private async stopWork(workItemId: string): Promise<{ workItemId: string; executionId: string | null; effect: 'stopped' | 'withdrawn' }> {
+    const item = this.bubbleActivity.snapshot().find(item => item.id === workItemId)
+    if (!item) {
+      if ([...this.store.latestTopicRuns().values()].some(run => 'record:' + run.messageId === workItemId)) throw new Error('WORK_NOT_STOPPABLE')
+      throw new Error('UNKNOWN_WORK_ITEM')
+    }
+    const target = this.workStopTarget(item)
+    if (!target.capability.allowed) throw new Error(target.error)
+    const gateway = target.gateway!, run = target.run
+    if (target.effect === 'withdrawn') {
+      for (const id of item.messageIds) gateway.inbox.remove(id as UserMessage['id'])
+    } else if (run) {
+      run.cancel()
+      if (this.runs.get(gateway.id) === run) {
+        gateway.cancel({ kind: 'parent' })
+        this.bubbleActivity.publish([], gateway.id)
+        await run.settled
+        await this.finishRun(gateway.id, true)
+      } else {
+        // Stop delivering this input without dropBackground's route/history deletion.
+        for (const id of item.messageIds) {
+          this.moving.add(id)
+          try { gateway.inbox.remove(id as UserMessage['id']) } finally { this.moving.delete(id) }
+        }
+        run.endDelivery(true)
+        await run.settled
+        if (this.background.get(run.inputId)?.run === run) this.background.delete(run.inputId)
+        this.store.finish(run.inputId, 'failed'); this.store.endTopicRun(run.inputId, 'stopped')
+        run.dispose(); this.stowWhenIdle(run.worker.id)
+        this.bubbleActivity.publish([], gateway.id)
+      }
+    } else {
+      gateway.cancel({ kind: 'parent' })
+      await gateway.whenIdle()
+      this.bubbleActivity.stopped(workItemId)
+    }
+    return { workItemId, executionId: item.executionId, effect: target.effect! }
   }
 
   private topicDoneCapability(contextId: string, items = this.bubbleActivity.snapshot(), latestRuns = this.store.latestTopicRuns()): Capability {
@@ -1276,6 +1337,10 @@ export default class TheOne extends Service {
         try { row = await request.json() as Record<string, unknown> } catch { return Response.json({ error: 'INVALID_INPUT' }, { status: 400 }) }
         try {
           if (!row || typeof row !== 'object' || Array.isArray(row)) throw new Error('INVALID_INPUT')
+          if (row.action === 'stop') {
+            if (typeof row.workItemId !== 'string' || !row.workItemId) throw new Error('INVALID_INPUT')
+            return Response.json(await this.stopWork(row.workItemId), { headers: { 'cache-control': 'no-store' } })
+          }
           if (row.action === 'cancelMerge') {
             if (typeof row.operationId !== 'string' || !row.operationId) throw new Error('INVALID_INPUT')
             return Response.json(this.mergeQueue.cancel(row.operationId), { headers: { 'cache-control': 'no-store' } })
@@ -1291,7 +1356,7 @@ export default class TheOne extends Service {
         }
         catch (error) {
           const code = error instanceof Error && /^[A-Z_]+$/.test(error.message) ? error.message : 'INVALID_INPUT'
-          return Response.json({ error: code }, { status: code === 'UNKNOWN_MERGE' ? 404 : ['GATEWAY_BUSY', 'TOPIC_BUSY', 'TOPIC_HIDDEN', 'REQUEST_ID_CONFLICT', 'MERGE_CONFLICT', 'MERGE_EXECUTING', 'MERGE_FINISHED', 'MERGE_UNAVAILABLE'].includes(code) ? 409 : 400 })
+          return Response.json({ error: code }, { status: ['UNKNOWN_MERGE', 'UNKNOWN_WORK_ITEM'].includes(code) ? 404 : ['GATEWAY_BUSY', 'TOPIC_BUSY', 'TOPIC_HIDDEN', 'REQUEST_ID_CONFLICT', 'MERGE_CONFLICT', 'MERGE_EXECUTING', 'MERGE_FINISHED', 'MERGE_UNAVAILABLE', 'WORK_ALREADY_DELIVERED', 'WORK_ALREADY_STOPPED', 'WORK_NOT_STOPPABLE', 'WORK_UNAVAILABLE'].includes(code) ? 409 : 400 })
         }
       } }))
       // Is a newer TheOne out, and install it with DSH's plugin manager (it loads after a restart).
@@ -3002,6 +3067,7 @@ export default class TheOne extends Service {
     const decided = this.otherMatter(gateway, run, message, receipt, abort.signal).catch(() => undefined)
     const pending = () => gateway.inbox.nextStep.some(item => item.id === message.id)
     const settled = decided.then(async decision => {
+      if (abort.signal.aborted) return
       if (!decision) {
         if (interjection && pending() && run.canForward && !run.forwarded.has(message.id)) this.forwardToWorker(run, message)
         else this.bubbleActivity.queue(gateway, message, 'topic_busy', this.store.route(run.inputId)?.decision.contextId)
@@ -3315,6 +3381,7 @@ export default class TheOne extends Service {
         run.request = messageText(input)
         this.bubbleActivity.register(run, context.id, this.starting.has(input.id) ? 'background' : 'foreground')
         register(run)
+        this.bubbleActivity.publish([], gateway.id)
         const resume = this.resumeFor(context.id, worker, input.id) + this.misrouteFor(context.id)
           + returnNote(this.lastActive(context.id, worker, input.id))
         this.store.startTopicRun(input.id, context.id, worker.id)

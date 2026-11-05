@@ -170,6 +170,9 @@ export default class TheOne extends Service {
     constructor(ctx: Context, config: Config);
     /** Reads in-memory observations and store facts without loading sessions or starting work. */
     bubbleView(gatewayId?: string | null | undefined): BubbleView;
+    /** The API and snapshot use the same live ownership check; persisted observations cannot cancel work. */
+    private workStopTarget;
+    private stopWork;
     private topicDoneCapability;
     private bubbleTemporary;
     private workTasks;

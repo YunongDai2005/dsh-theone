@@ -25,6 +25,7 @@ export declare class BubbleActivity {
     observe(run: WorkerRun): void;
     forward(run: WorkerRun, message: UserMessage): void;
     discard(gatewayId: string, messageId: string): void;
+    stopped(workItemId: string): void;
     standalone(agent: Agent, message: UserMessage, phase: BubbleWorkItem['phase']): void;
     commitStandalone(gatewayId: string, eventSeq: number): void;
     endTurn(gatewayId: string, completed: boolean): void;
