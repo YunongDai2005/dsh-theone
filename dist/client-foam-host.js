@@ -34,13 +34,15 @@ export function modelFromBubbles(snapshot) {
         const weight = Math.min(1, .65 * recency + .35 * Math.min(1, topic.usage.recentCalls / 12));
         const live = items.find(item => LIVE.has(item.phase));
         const busy = phase !== 'idle';
-        return { id: topic.id, title: topic.title, phase, weight, current: topic.current, group: topic.groupId ?? undefined,
+        return { id: topic.id, title: topic.title, label: topic.label ?? undefined, phase, weight, current: topic.current, group: topic.groupId ?? undefined,
             aside: !busy && !topic.current && (topic.effectiveDone || topic.archived),
             oneOff: items.length > 0 && items.every(item => item.temporary?.kind === 'model_aside'),
             startedAt: live ? live.updatedAt : undefined };
     });
     const links = snapshot.edges.map(edge => ({ a: edge.a, b: edge.b, weight: edge.relation === 'kept_apart' ? -.3 : Math.max(0, Math.min(1, edge.strength)) }));
-    return { topics, links };
+    // Merges waiting for TheOne to go quiet hold the two cells together by a neck.
+    const pendingMerges = (snapshot.merges ?? []).filter(merge => merge.state === 'queued' || merge.state === 'executing').map(merge => ({ id: merge.sourceId, into: merge.targetId }));
+    return { topics, links, pendingMerges };
 }
 /** What each routing event looks like on the cluster. Hints and bookkeeping events play nothing. */
 export function foamEventsFrom(events, snapshot) {
@@ -96,6 +98,17 @@ export function mountFoamHost(options) {
     host.setAttribute('translate', 'no');
     document.body.appendChild(host);
     const sessionOf = new Map();
+    let latest;
+    /** The work item a stop gesture means: the topic's running (or waiting) execution, or its queued input. */
+    const workOf = (id, queued) => latest?.workItems.find(item => item.contextId === id && item.stop.allowed
+        && (queued ? item.phase === 'queued' : LIVE.has(item.phase) || item.phase === 'waiting_user'));
+    const stopWork = (id, queued) => {
+        const item = workOf(id, queued);
+        if (item)
+            act({ action: 'stop', workItemId: item.id });
+        else
+            options.openMainChat();
+    };
     const failed = () => { refresh(); };
     const act = (body) => { void post('/api/theone/topics', body, signal).then(ok => { if (!ok)
         failed();
@@ -121,8 +134,8 @@ export function mountFoamHost(options) {
                 void readCatalog(false).then(() => { const found = sessionOf.get(id); if (found)
                     options.openSession(found); });
         },
-        stop: () => options.openMainChat(),
-        cancelQueued: () => options.openMainChat(),
+        stop: id => stopWork(id, false),
+        cancelQueued: id => stopWork(id, true),
         remove: () => options.openWorkspace(),
         showAnswer: () => options.openMainChat(),
         answer: () => options.openMainChat(),
@@ -191,6 +204,10 @@ export function mountFoamHost(options) {
                 const body = await response.json();
                 failures = 0;
                 if (body.kind === 'update') {
+                    latest = body.snapshot;
+                    for (const topic of body.snapshot.topics)
+                        if (topic.openSessionId)
+                            sessionOf.set(topic.id, topic.openSessionId);
                     show(modelFromBubbles(body.snapshot));
                     if (!body.reset)
                         for (const event of foamEventsFrom(body.events, body.snapshot))

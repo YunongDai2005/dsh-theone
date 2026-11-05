@@ -1036,10 +1036,14 @@ function createFoam(options) {
     void T;
   }
   const frame = (n) => {
-    const dt = Math.min(1 / 30, (n - last) / 1e3);
+    let left = Math.min(4 / 30, Math.max(0, (n - last) / 1e3));
     last = n;
-    if (!reduced) t += dt;
-    step(dt);
+    do {
+      const dt = Math.min(1 / 30, left);
+      left -= dt;
+      if (!reduced) t += dt;
+      step(dt);
+    } while (left > 1e-3);
     raf = requestAnimationFrame(frame);
   };
   raf = requestAnimationFrame(frame);
@@ -1139,6 +1143,7 @@ function modelFromBubbles(snapshot) {
     return {
       id: topic.id,
       title: topic.title,
+      label: topic.label ?? void 0,
       phase,
       weight,
       current: topic.current,
@@ -1149,7 +1154,8 @@ function modelFromBubbles(snapshot) {
     };
   });
   const links = snapshot.edges.map((edge) => ({ a: edge.a, b: edge.b, weight: edge.relation === "kept_apart" ? -0.3 : Math.max(0, Math.min(1, edge.strength)) }));
-  return { topics, links };
+  const pendingMerges = (snapshot.merges ?? []).filter((merge) => merge.state === "queued" || merge.state === "executing").map((merge) => ({ id: merge.sourceId, into: merge.targetId }));
+  return { topics, links, pendingMerges };
 }
 function foamEventsFrom(events, snapshot) {
   const items = new Map(snapshot.workItems.map((item) => [item.id, item]));
@@ -1196,6 +1202,13 @@ function mountFoamHost(options) {
   host.setAttribute("translate", "no");
   document.body.appendChild(host);
   const sessionOf = /* @__PURE__ */ new Map();
+  let latest;
+  const workOf = (id, queued) => latest?.workItems.find((item) => item.contextId === id && item.stop.allowed && (queued ? item.phase === "queued" : LIVE.has(item.phase) || item.phase === "waiting_user"));
+  const stopWork = (id, queued) => {
+    const item = workOf(id, queued);
+    if (item) act({ action: "stop", workItemId: item.id });
+    else options.openMainChat();
+  };
   const failed = () => {
     refresh();
   };
@@ -1231,8 +1244,8 @@ function mountFoamHost(options) {
         if (found) options.openSession(found);
       });
     },
-    stop: () => options.openMainChat(),
-    cancelQueued: () => options.openMainChat(),
+    stop: (id) => stopWork(id, false),
+    cancelQueued: (id) => stopWork(id, true),
     remove: () => options.openWorkspace(),
     showAnswer: () => options.openMainChat(),
     answer: () => options.openMainChat(),
@@ -1299,6 +1312,8 @@ function mountFoamHost(options) {
         const body = await response.json();
         failures = 0;
         if (body.kind === "update") {
+          latest = body.snapshot;
+          for (const topic of body.snapshot.topics) if (topic.openSessionId) sessionOf.set(topic.id, topic.openSessionId);
           show(modelFromBubbles(body.snapshot));
           if (!body.reset) for (const event of foamEventsFrom(body.events, body.snapshot)) foam.event(event);
           cursor = body.snapshot.cursor;

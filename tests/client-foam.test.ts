@@ -17,6 +17,17 @@ const snapshot = (topics: BubbleTopic[], workItems: BubbleWorkItem[] = [], edges
   scope: { gatewayKey: 'default', gatewayId: 'g' }, cursor: { epoch: 'e', version: 1, seq: 0 }, eventFloor: 0, serverTime: NOW,
   topics, workItems, gateway: null, edges, merges: [], health: { catalog: 'ready', router: 'ready' } })
 
+test('a topic keeps its short label, and merges still waiting hold their two cells together', () => {
+  const snap = snapshot([topic('a', { title: '想去日本旅游，帮我看看行程', label: '日本' }), topic('b'), topic('c')])
+  const merge = (operationId: string, sourceId: string, state: BubbleSnapshot['merges'][number]['state']) =>
+    ({ operationId, requestId: operationId, sourceId, targetId: 'b', whenIdle: true, state, createdAt: NOW, updatedAt: NOW, expiresAt: NOW + 300000 })
+  snap.merges = [merge('1', 'a', 'queued'), merge('2', 'c', 'cancelled')]
+  const model = modelFromBubbles(snap)
+  assert.equal(model.topics[0].label, '日本')
+  assert.equal(model.topics[1].label, undefined)
+  assert.deepEqual(model.pendingMerges, [{ id: 'a', into: 'b' }])
+})
+
 test('a topic shows what its work is doing: waiting on the user first, then answering, answered, queued, failed', () => {
   const model = modelFromBubbles(snapshot([topic('a'), topic('b'), topic('c'), topic('d'), topic('e'), topic('f')], [
     work('1', 'a', 'running'), work('2', 'a', 'waiting_user'),
