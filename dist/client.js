@@ -124,8 +124,1226 @@ var GatewayNavigation = class {
   }
 };
 
+// src/client-foam.ts
+var NS = "http://www.w3.org/2000/svg";
+var MAX_VISIBLE = 14;
+var N = 48;
+var GAP = 2;
+var SOFT = 2.2;
+var MINI = 0.32;
+var MARK_R = 7.4;
+var fx = (v) => v.toFixed(2);
+var clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
+var ease = (v, target, rate, dt) => v + (target - v) * Math.min(1, dt * rate);
+var now = () => performance.now();
+function curve(p) {
+  const n = p.length;
+  let d = `M${fx(p[0][0])} ${fx(p[0][1])}`;
+  for (let i = 0; i < n; i++) {
+    const p0 = p[(i + n - 1) % n], p1 = p[i], p2 = p[(i + 1) % n], p3 = p[(i + 2) % n];
+    d += `C${fx(p1[0] + (p2[0] - p0[0]) / 6)} ${fx(p1[1] + (p2[1] - p0[1]) / 6)} ${fx(p2[0] - (p3[0] - p1[0]) / 6)} ${fx(p2[1] - (p3[1] - p1[1]) / 6)} ${fx(p2[0])} ${fx(p2[1])}`;
+  }
+  return d + "Z";
+}
+var smin = (a, b, k) => {
+  const h3 = Math.max(k - Math.abs(a - b), 0) / k;
+  return Math.min(a, b) - h3 * h3 * k / 4;
+};
+function polygonArea(p) {
+  let s = 0;
+  for (let i = 0; i < p.length; i++) {
+    const [x1, y1] = p[i], [x2, y2] = p[(i + 1) % p.length];
+    s += x1 * y2 - x2 * y1;
+  }
+  return Math.abs(s) / 2;
+}
+function bridge(c1, r1, c2, r2, reach = r2 * 2.5, v = 0.5, hs = 2.4) {
+  const d = Math.hypot(c2.x - c1.x, c2.y - c1.y), maxD = r1 + reach;
+  if (r1 <= 0 || r2 <= 0 || d > maxD || d <= Math.abs(r1 - r2)) return null;
+  let u1 = 0, u2 = 0;
+  if (d < r1 + r2) {
+    u1 = Math.acos(clamp((r1 * r1 + d * d - r2 * r2) / (2 * r1 * d), -1, 1));
+    u2 = Math.acos(clamp((r2 * r2 + d * d - r1 * r1) / (2 * r2 * d), -1, 1));
+  }
+  const ab = Math.atan2(c2.y - c1.y, c2.x - c1.x), spread = Math.acos(clamp((r1 - r2) / d, -1, 1));
+  const a1 = ab + u1 + (spread - u1) * v, a2 = ab - u1 - (spread - u1) * v;
+  const a3 = ab + Math.PI - u2 - (Math.PI - u2 - spread) * v, a4 = ab - Math.PI + u2 + (Math.PI - u2 - spread) * v;
+  const P = (c, a, r) => [c.x + r * Math.cos(a), c.y + r * Math.sin(a)];
+  const p1 = P(c1, a1, r1), p2 = P(c1, a2, r1), p3 = P(c2, a3, r2), p4 = P(c2, a4, r2);
+  const tot = r1 + r2, k = Math.min(v * hs, Math.hypot(p1[0] - p3[0], p1[1] - p3[1]) / tot) * Math.min(1, d * 2 / tot);
+  const H = (p, a, r) => [p[0] + r * Math.cos(a), p[1] + r * Math.sin(a)];
+  const h1 = H(p1, a1 - Math.PI / 2, r1 * k), h22 = H(p2, a2 + Math.PI / 2, r1 * k), h3 = H(p3, a3 + Math.PI / 2, r2 * k), h4 = H(p4, a4 - Math.PI / 2, r2 * k);
+  const s = (p) => fx(p[0]) + " " + fx(p[1]);
+  return {
+    edge: `M${s(p1)}C${s(h1)} ${s(h3)} ${s(p3)}M${s(p4)}C${s(h4)} ${s(h22)} ${s(p2)}`,
+    fill: `M${s(p1)}C${s(h1)} ${s(h3)} ${s(p3)}L${s(p4)}C${s(h4)} ${s(h22)} ${s(p2)}Z`
+  };
+}
+function foamLabel(name, radius) {
+  const chars = [...name], big = radius >= 25 ? 10.5 : 9.5, small = radius >= 25 ? 9.5 : 8.8;
+  const width = (s) => s.reduce((w, ch) => w + (/[⺀-￿]/.test(ch) ? 1 : 0.6), 0);
+  const tries = [[1, big], [1, small], [2, big], [2, small]];
+  for (const [lines, font] of tries) {
+    if (lines === 1 && font === small && width(chars) > 3 && radius < 25) continue;
+    if (lines === 2 && (chars.length < 4 || width(chars) > 8)) continue;
+    const lh = font * 1.2, per = Math.ceil(chars.length / lines);
+    const parts = lines === 1 ? [chars] : [chars.slice(0, per), chars.slice(per)];
+    const widest = Math.max(...parts.map(width)) * font;
+    if (widest > 2 * radius * (lines === 1 ? 0.8 : 0.74) - 4 || 9 + lines * lh > 2 * radius * 0.82) continue;
+    return { lines: parts.map((p) => p.join("")), font, lh };
+  }
+  return { lines: [], font: big, lh: 0 };
+}
+function createFoam(options) {
+  const { host, actions } = options;
+  const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  host.classList.add("theone-foam");
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("aria-hidden", "true");
+  svg.innerHTML = '<defs></defs><g data-part="cells"></g><g data-part="necks"></g><g data-part="vesicles"></g>';
+  host.appendChild(svg);
+  const defs = svg.firstChild, layer = svg.children[1], necks = svg.children[2], vlayer = svg.children[3];
+  const tip2 = document.createElement("div");
+  tip2.className = "theone-foam-tip";
+  document.body.appendChild(tip2);
+  const list = document.createElement("div");
+  list.className = "theone-foam-list";
+  list.setAttribute("role", "list");
+  host.appendChild(list);
+  const keys = /* @__PURE__ */ new Map();
+  const cells = [], ves = [];
+  let links = /* @__PURE__ */ new Map(), bonds = [];
+  let rail = false, sz = 1, height = 8, pulse = 0, folded = 0, uid = 0, first = true;
+  let L = { x: 0, y: 0 }, ptr = null;
+  let drag = null;
+  let target = null;
+  let clarifying = null;
+  let menu = null, tipOwner = null, raf = 0, last = now(), t = 0;
+  const pending = [];
+  const sizeOf = (c) => c.kind === "more" ? 16 : c.oneOff ? 21 : c.state === "running" || c.state === "done" || c.state === "wait" || c.state === "fail" || c.cur ? 29 : c.state === "queued" ? 24 : 16 + 9 * c.w;
+  const named = (c) => c.kind === "more" || c.cur || c.state !== "idle" || c.ask || c.mode === "bud";
+  const busy = (c) => c.state === "running" || c.state === "queued" || c.state === "wait" || c.state === "done";
+  const topics = () => cells.filter((c) => c.kind === "topic" && c.mode !== "leave");
+  const byId = (id) => cells.find((c) => c.kind === "topic" && c.id === id && c.mode !== "leave");
+  const linkW = (c, o) => (c.group && c.group === o.group ? 0.8 : 0) + (links.get(c.id + "|" + o.id) ?? 0);
+  const local = (e) => {
+    const r = host.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  };
+  const pos = (c) => ({ x: c.cx, y: c.cy });
+  const markPos = () => ({ x: L.x, y: L.y });
+  function makeCell(id, title, spawn) {
+    const gid = `theone-foam-${uid++}`;
+    const gr = document.createElementNS(NS, "radialGradient");
+    gr.id = gid;
+    gr.setAttribute("r", "62%");
+    gr.innerHTML = '<stop offset="0%" stop-color="var(--foam-heat)"/><stop offset="100%" stop-color="var(--foam-heat)" stop-opacity="0"/>';
+    defs.appendChild(gr);
+    const g = document.createElementNS(NS, "g");
+    g.setAttribute("class", "theone-cell idle");
+    g.innerHTML = `<path data-part="body"/><path data-part="heat" fill="url(#${gid})"/><path data-part="membrane"/><circle data-part="nucleus"/><text></text>`;
+    layer.appendChild(g);
+    const neck = document.createElementNS(NS, "g");
+    neck.setAttribute("class", "theone-neck");
+    neck.innerHTML = '<path data-part="fill"/><path data-part="edge"/>';
+    necks.appendChild(neck);
+    const w = host.clientWidth;
+    const c = {
+      id,
+      kind: "topic",
+      title,
+      state: "idle",
+      cur: false,
+      ask: false,
+      aside: false,
+      oneOff: false,
+      w: 0.05,
+      g,
+      gr,
+      stop: gr.firstChild,
+      b: g.children[0],
+      h: g.children[1],
+      m: g.children[2],
+      n: g.children[3],
+      label: g.children[4],
+      neck,
+      nf: neck.children[0],
+      ne: neck.children[1],
+      mode: spawn ? "bud" : "live",
+      age: 0,
+      hidden: false,
+      away: false,
+      rebud: false,
+      x: spawn ? L.x : w / 2 + (Math.random() - 0.5) * 90,
+      y: spawn ? L.y : 30 + Math.random() * 100,
+      vx: 0,
+      vy: 0,
+      svx: 0,
+      svy: 0,
+      tx: 0,
+      ty: 0,
+      R: 20,
+      scale: spawn ? 0.12 : 1,
+      alpha: 1,
+      heat: 0,
+      solid: 1,
+      kick: 0,
+      flash: 0,
+      reveal: 0,
+      want: 0,
+      nx: 0,
+      ny: 0,
+      cx: 0,
+      cy: 0,
+      phase: Math.random() * 6,
+      shownKey: "",
+      full: false,
+      lay: { lines: [], font: 9.5, lh: 0 },
+      showing: false
+    };
+    let hover = 0;
+    g.addEventListener("pointerdown", (e) => {
+      if (e.button || c.mode !== "live" || c.kind === "more") return;
+      e.preventDefault();
+      clearTimeout(hover);
+      hideTip();
+      const p = local(e);
+      drag = { cell: c, dx: p.x - c.x, dy: p.y - c.y, trail: [{ x: e.clientX, y: e.clientY, t: now() }] };
+      c.tx = c.x;
+      c.ty = c.y;
+      g.classList.add("drag");
+    });
+    g.addEventListener("click", () => {
+      if (c.kind === "more" && !drag) actions.openWorkspace();
+    });
+    g.addEventListener("pointerenter", () => {
+      if (drag) return;
+      clearTimeout(hover);
+      hover = window.setTimeout(() => {
+        if (!drag) showTip(c);
+      }, 420);
+    });
+    g.addEventListener("pointerleave", () => {
+      clearTimeout(hover);
+      if (tipOwner === c) hideTip();
+    });
+    g.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      clearTimeout(hover);
+      hideTip();
+      openMenu(e.clientX, e.clientY, c);
+    });
+    cells.push(c);
+    return c;
+  }
+  const more = makeCell("", "+0", false);
+  more.kind = "more";
+  more.g.classList.add("more");
+  more.hidden = true;
+  more.scale = 0;
+  function setState(c, state) {
+    if (c.state === state) return;
+    c.g.classList.remove(c.state);
+    c.state = state;
+    c.g.classList.add(state);
+  }
+  function light(c, related = []) {
+    c.flash = 1;
+    c.kick = 1;
+    c.g.classList.add("lit");
+    window.setTimeout(() => c.g.classList.remove("lit"), 900);
+    for (const o of related) {
+      o.flash = Math.max(o.flash, 0.45);
+      o.kick = Math.max(o.kick, 0.5);
+    }
+  }
+  function vesicle(from, to, arrive, dur = 0.7, hold = 0) {
+    const el = document.createElementNS(NS, "g");
+    el.setAttribute("class", "theone-vesicle");
+    el.innerHTML = '<circle data-part="membrane" r="3.4"/><circle data-part="nucleus" r="1.3"/>';
+    vlayer.appendChild(el);
+    const v = { el, from, to, arrive, t: 0, dur, hold, toMark: false };
+    ves.push(v);
+    return v;
+  }
+  function routeTo(c, related) {
+    pulse = Math.max(pulse, 0.55);
+    if (c.hidden || c.scale < 0.3) {
+      c.rebud = true;
+      c.onBorn = () => light(c, related);
+      return;
+    }
+    vesicle(markPos, () => pos(c), () => light(c, related));
+  }
+  function fuse(c, into) {
+    if (c.mode !== "live" && c.mode !== "bud") return;
+    c.mode = "leave";
+    c.into = into;
+    c.g.style.pointerEvents = "none";
+    bonds = bonds.filter((b) => b[0] !== c && b[1] !== c);
+  }
+  function fade(c) {
+    if (c.mode === "leave") return;
+    c.mode = "leave";
+    c.into = void 0;
+    c.g.style.pointerEvents = "none";
+    bonds = bonds.filter((b) => b[0] !== c && b[1] !== c);
+  }
+  function apply2(event2) {
+    if (event2.kind === "route") {
+      const c = byId(event2.to);
+      if (!c) return false;
+      if (clarifying) {
+        apply2({ kind: "resolve", to: event2.to });
+        return true;
+      }
+      routeTo(c, (event2.related ?? []).map(byId).filter((o) => !!o && o !== c));
+      for (const o of (event2.alternates ?? []).map(byId)) if (o && o !== c && !o.hidden) {
+        o.flash = Math.max(o.flash, 0.3);
+        o.g.classList.add("ask");
+        window.setTimeout(() => {
+          if (!o.ask) o.g.classList.remove("ask");
+        }, 1400);
+      }
+    } else if (event2.kind === "supplement") {
+      const c = byId(event2.to);
+      if (!c) return false;
+      if (!c.hidden) {
+        const v = vesicle(markPos, () => pos(c), () => {
+          c.kick = Math.max(c.kick, 0.5);
+        }, 0.55);
+        v.el.setAttribute("data-small", "true");
+      }
+    } else if (event2.kind === "create") {
+      const c = byId(event2.to);
+      if (!c) return false;
+      pulse = Math.max(pulse, 0.55);
+      if (c.mode === "bud") c.onBorn = () => light(c);
+      else light(c);
+    } else if (event2.kind === "clarify") {
+      const list2 = event2.candidates.map(byId).filter((c) => !!c && !c.hidden).slice(0, 3);
+      if (list2.length < 2) return true;
+      endClarify();
+      pulse = Math.max(pulse, 0.55);
+      const mid = () => ({ x: list2.reduce((s, c) => s + c.cx, 0) / list2.length, y: list2.reduce((s, c) => s + c.cy, 0) / list2.length - 4 });
+      clarifying = { cells: list2 };
+      for (const c of list2) {
+        c.ask = true;
+        c.g.classList.add("ask");
+      }
+      clarifying.ves = vesicle(markPos, mid, () => {
+      }, 0.7, () => !clarifying || clarifying.cells !== list2);
+    } else if (event2.kind === "resolve") {
+      const held = clarifying?.ves, from = held ? { x: held.el.transform.baseVal.consolidate()?.matrix.e ?? L.x, y: held.el.transform.baseVal.consolidate()?.matrix.f ?? L.y } : markPos();
+      endClarify();
+      const c = event2.to ? byId(event2.to) : void 0;
+      if (c) vesicle(() => from, () => pos(c), () => light(c), 0.45);
+    } else if (event2.kind === "correct") {
+      const a = byId(event2.from), b = byId(event2.to);
+      if (!b) return false;
+      if (a && !a.hidden) {
+        a.flash = 0;
+        a.kick = 0.6;
+        vesicle(() => pos(a), () => pos(b), () => light(b), 0.6);
+      } else routeTo(b, []);
+    } else if (event2.kind === "merged") {
+      const a = byId(event2.id), b = byId(event2.into);
+      if (a && b) fuse(a, b);
+      else if (a) fade(a);
+    }
+    return true;
+  }
+  function endClarify() {
+    if (!clarifying) return;
+    for (const c of clarifying.cells) {
+      c.ask = false;
+      c.g.classList.remove("ask");
+    }
+    clarifying = null;
+  }
+  function update(model) {
+    const seen = /* @__PURE__ */ new Set();
+    for (const topic of model.topics) {
+      seen.add(topic.id);
+      let c = byId(topic.id);
+      if (!c) c = makeCell(topic.id, topic.title, !first);
+      const was = c.state;
+      c.title = topic.title;
+      c.w = clamp(topic.weight);
+      c.group = topic.group;
+      c.aside = !!topic.aside;
+      c.oneOff = !!topic.oneOff;
+      c.startedAt = topic.startedAt;
+      c.ask = c.ask || !!topic.asking;
+      c.g.classList.toggle("ask", c.ask);
+      if (c.cur !== !!topic.current) {
+        c.cur = !!topic.current;
+        c.g.classList.toggle("cur", c.cur);
+      }
+      const state = topic.phase === "answered" ? "done" : topic.phase === "waiting" ? "wait" : topic.phase === "failed" ? "fail" : topic.phase;
+      if (was === "done" && state !== "done" && !c.hidden) {
+        c.showing = true;
+        vesicle(() => pos(c), markPos, () => {
+          pulse = 1;
+          c.showing = false;
+        }, 0.6).toMark = true;
+      }
+      if (was !== "running" && state === "running") c.kick = Math.max(c.kick, 0.8);
+      if (was === "running" && state === "done") c.kick = 1;
+      setState(c, state);
+    }
+    for (const c of topics()) if (!seen.has(c.id)) fade(c);
+    links = /* @__PURE__ */ new Map();
+    for (const link of model.links ?? []) {
+      links.set(link.a + "|" + link.b, link.weight);
+      links.set(link.b + "|" + link.a, link.weight);
+    }
+    bonds = (model.pendingMerges ?? []).map((m) => [byId(m.id), byId(m.into)]).filter((b) => !!b[0] && !!b[1]);
+    first = false;
+    syncList();
+    for (let i = 0; i < pending.length; ) {
+      if (apply2(pending[i])) pending.splice(i, 1);
+      else i++;
+    }
+    if (pending.length > 20) pending.splice(0, pending.length - 20);
+  }
+  function describe(c) {
+    const status = c.state === "running" ? text("running", { s: Math.max(0, Math.round((Date.now() - (c.startedAt ?? Date.now())) / 1e3)) }) : c.state === "wait" ? text("waiting") : c.state === "fail" ? text("failed") : c.state === "queued" ? text("queued") : c.state === "done" ? text("answered") : "";
+    return status ? c.title + " \xB7 " + status : c.title;
+  }
+  function syncList() {
+    const shown = topics().filter((c) => !c.aside || busy(c));
+    for (const [id, el] of keys) if (!shown.some((c) => c.id === id)) {
+      el.remove();
+      keys.delete(id);
+    }
+    for (const c of shown) {
+      let el = keys.get(c.id);
+      if (!el) {
+        const b = el = document.createElement("button");
+        b.type = "button";
+        b.setAttribute("role", "listitem");
+        b.addEventListener("focus", () => c.g.classList.add("fuse"));
+        b.addEventListener("blur", () => c.g.classList.remove("fuse"));
+        b.addEventListener("click", () => {
+          if (!c.cur) actions.mount(c.id);
+        });
+        b.addEventListener("keydown", (e) => {
+          if (e.key === "ContextMenu" || e.shiftKey && e.key === "F10") {
+            e.preventDefault();
+            const r = c.m.getBoundingClientRect();
+            openMenu(r.left + r.width / 2, r.bottom, c);
+          }
+        });
+        keys.set(c.id, b);
+        list.appendChild(b);
+      }
+      el.textContent = describe(c);
+      el.setAttribute("aria-current", c.cur ? "true" : "false");
+    }
+  }
+  function event(e) {
+    if (!apply2(e)) pending.push(e);
+  }
+  function text(key, vars) {
+    return actions.text(key, vars);
+  }
+  function tipText(c) {
+    if (c.kind === "more") return text("more", { n: folded });
+    const who = c.full ? "" : c.title + " \xB7 ";
+    const b = bonds.find((x) => x[0] === c || x[1] === c);
+    if (b) return who + text("bond", { name: (b[0] === c ? b[1] : b[0]).title });
+    if (c.ask) return who + text("asking");
+    if (c.state === "wait") return who + text("waiting");
+    if (c.state === "fail") return who + text("failed");
+    if (c.state === "queued") return who + text("queued");
+    if (c.state === "done") return who + text("answered");
+    if (c.state === "running") return who + text("running", { s: Math.max(0, Math.round((Date.now() - (c.startedAt ?? Date.now())) / 1e3)) });
+    return c.full ? "" : c.title;
+  }
+  function placeTip(x, y, s) {
+    if (!s) {
+      tip2.classList.remove("on");
+      return;
+    }
+    tip2.textContent = s;
+    tip2.style.left = x + "px";
+    tip2.style.top = y + "px";
+    tip2.classList.add("on");
+  }
+  function showTip(c) {
+    tipOwner = c;
+    const r = c.m.getBoundingClientRect();
+    placeTip(r.left + r.width / 2, r.top - 28, tipText(c));
+  }
+  function hideTip() {
+    tipOwner = null;
+    tip2.classList.remove("on");
+  }
+  const tipTimer = window.setInterval(() => {
+    if (tipOwner) showTip(tipOwner);
+  }, 500);
+  function closeMenu() {
+    menu?.remove();
+    menu = null;
+  }
+  function openMenu(x, y, c) {
+    closeMenu();
+    const items = c.kind === "more" ? [[text("menuWorkspace"), actions.openWorkspace]] : c.state === "running" ? [[text("menuOpen"), () => actions.open(c.id)], null, [text("menuStop"), () => actions.stop(c.id)]] : c.state === "queued" ? [[text("menuOpen"), () => actions.open(c.id)], [text("menuCancel"), () => actions.cancelQueued(c.id)]] : c.state === "done" ? [[text("menuShowNow"), () => actions.showAnswer(c.id)], [text("menuOpen"), () => actions.open(c.id)]] : c.state === "wait" ? [[text("menuAnswer"), () => actions.answer(c.id)], [text("menuOpen"), () => actions.open(c.id)]] : [
+      [text("menuContinue"), () => actions.mount(c.id)],
+      [text("menuOpen"), () => actions.open(c.id)],
+      ...c.cur ? [] : [[text("menuAside"), () => actions.putAside(c.id)]],
+      null,
+      [text("menuDelete"), () => actions.remove(c.id)]
+    ];
+    const el = menu = document.createElement("div");
+    el.className = "theone-foam-menu";
+    el.setAttribute("role", "menu");
+    for (const item of items) {
+      if (!item) {
+        el.appendChild(document.createElement("hr"));
+        continue;
+      }
+      const row = document.createElement("button");
+      row.type = "button";
+      row.setAttribute("role", "menuitem");
+      row.textContent = item[0];
+      row.onclick = () => {
+        closeMenu();
+        item[1]();
+      };
+      el.appendChild(row);
+    }
+    document.body.appendChild(el);
+    const b = el.getBoundingClientRect();
+    el.style.left = Math.min(x, innerWidth - b.width - 8) + "px";
+    el.style.top = Math.min(y, innerHeight - b.height - 8) + "px";
+    el.querySelector("button")?.focus();
+  }
+  const outside = (e) => {
+    if (menu && !menu.contains(e.target)) closeMenu();
+  };
+  const keydown = (e) => {
+    if (e.key === "Escape") closeMenu();
+  };
+  function dropTarget(e, c) {
+    for (const el of document.elementsFromPoint(e.clientX, e.clientY)) {
+      if (c.g.contains(el)) continue;
+      const mark = options.mark();
+      const card = mark?.closest("button");
+      if (card?.contains(el)) return { kind: "main" };
+      const g = el.closest(".theone-cell"), o = g && cells.find((x) => x.g === g && x.mode === "live" && x.kind === "topic");
+      if (o && o !== c) return { kind: "cell", cell: o };
+      const row = el.closest('[data-row-key^="session:"]');
+      if (row) return { kind: "session", el: row, id: row.getAttribute("data-row-key").slice(8) };
+    }
+    return null;
+  }
+  function setTarget(next) {
+    const was = target;
+    if (was?.kind === next?.kind && was?.cell === next?.cell && was?.el === next?.el) return;
+    if (was?.kind === "cell") was.cell.g.classList.remove("fuse");
+    if (was?.kind === "session") was.el.removeAttribute("data-theone-drop");
+    if (was?.kind === "main") options.mark()?.closest("button")?.removeAttribute("data-theone-drop");
+    if (next?.kind === "cell") next.cell.g.classList.add("fuse");
+    if (next?.kind === "session") next.el.setAttribute("data-theone-drop", "true");
+    if (next?.kind === "main") options.mark()?.closest("button")?.setAttribute("data-theone-drop", "true");
+    target = next;
+  }
+  function dropText(c, hit) {
+    if (hit.kind === "main") return c.cur ? "" : text("dropMain", { name: c.title });
+    if (hit.kind === "cell") return text(busy(c) || busy(hit.cell) ? "dropMergeLater" : "dropMerge", { name: hit.cell.title });
+    return text("dropSession", { name: c.title });
+  }
+  const move = (e) => {
+    const p = local(e), r = host.getBoundingClientRect();
+    ptr = e.clientX > r.left - 24 && e.clientX < r.right + 24 && e.clientY > r.top - 10 && e.clientY < r.bottom + 24 ? p : null;
+    if (!drag) return;
+    const c = drag.cell;
+    c.tx = p.x - drag.dx;
+    c.ty = p.y - drag.dy;
+    drag.trail.push({ x: e.clientX, y: e.clientY, t: now() });
+    if (drag.trail.length > 8) drag.trail.shift();
+    const hit = dropTarget(e, c);
+    setTarget(hit);
+    placeTip(e.clientX, e.clientY - 32, hit ? dropText(c, hit) : "");
+  };
+  const up = (e) => {
+    if (!drag) return;
+    const c = drag.cell, hit = target, trail = drag.trail;
+    c.g.classList.remove("drag");
+    drag = null;
+    hideTip();
+    setTarget(null);
+    if (hit?.kind === "main") {
+      if (!c.cur) actions.mount(c.id);
+      return;
+    }
+    if (hit?.kind === "cell") {
+      bonds = [...bonds.filter((b) => b[0] !== c && b[1] !== c), [c, hit.cell]];
+      actions.merge(c.id, hit.cell.id, busy(c) || busy(hit.cell));
+      return;
+    }
+    if (hit?.kind === "session") {
+      const icon = hit.el.querySelector("svg, img, i") ?? hit.el;
+      const box = () => {
+        const a = icon.getBoundingClientRect(), b = host.getBoundingClientRect();
+        return { x: a.left + a.width / 2 - b.left, y: a.top + a.height / 2 - b.top };
+      };
+      vesicle(box, () => pos(c), () => light(c));
+      actions.attach(c.id, hit.id);
+      return;
+    }
+    const firstS = trail.find((s) => now() - s.t < 90) ?? trail[0], lastS = trail[trail.length - 1];
+    if (!firstS || !lastS) return;
+    const dt = Math.max(16, lastS.t - firstS.t) / 1e3, vx = (lastS.x - firstS.x) / dt, vy = (lastS.y - firstS.y) / dt;
+    const sr = options.side()?.getBoundingClientRect();
+    const out = !!sr && (e.clientX > sr.right + 6 || e.clientX < sr.left - 6);
+    if (Math.hypot(vx, vy) <= 1100 && !out) return;
+    if (busy(c) || c.cur) {
+      c.vx = -vx * 0.15;
+      c.vy = -vy * 0.15;
+      c.kick = 1;
+      placeTip(e.clientX, e.clientY - 32, text(c.cur ? "currentFling" : "busyFling"));
+      window.setTimeout(hideTip, 1300);
+      return;
+    }
+    const v = out && Math.hypot(vx, vy) < 400 ? { x: sr && e.clientX > sr.right ? 900 : -900, y: 0 } : { x: vx, y: vy };
+    const k = Math.min(1, 2600 / Math.hypot(v.x, v.y));
+    c.mode = "fling";
+    c.age = 0;
+    c.vx = v.x * k;
+    c.vy = v.y * k;
+    c.g.style.pointerEvents = "none";
+    bonds = bonds.filter((b) => b[0] !== c && b[1] !== c);
+    actions.putAside(c.id);
+  };
+  window.addEventListener("pointermove", move);
+  window.addEventListener("pointerup", up);
+  document.addEventListener("pointerdown", outside, true);
+  document.addEventListener("keydown", keydown, true);
+  function step(dt) {
+    const T = now();
+    options.place?.();
+    sz = ease(sz, rail ? MINI : 1, 4, dt);
+    const words = clamp((sz - 0.72) / 0.28);
+    const all = topics().filter((c) => c.mode !== "fling");
+    const prio = (c) => (c.cur || c.state !== "idle" || c.ask || c.mode === "bud" ? 10 : 0) + c.w;
+    const order = all.filter((c) => !c.aside || busy(c) || c.rebud).sort((a, b) => prio(b) - prio(a));
+    const keep = new Set(order.length > MAX_VISIBLE ? order.slice(0, MAX_VISIBLE - 1) : order);
+    folded = all.filter((c) => !keep.has(c)).length;
+    for (const c of all) {
+      const isFolded = !keep.has(c), hide = c.mode === "live" && (isFolded || rail && !c.cur && c.state === "idle");
+      if (c.hidden && !hide && c.mode === "live" && c.away && c.rebud) {
+        c.mode = "bud";
+        c.age = 0;
+        c.x = L.x;
+        c.y = L.y;
+        c.scale = 0.12;
+        pulse = Math.max(pulse, 0.7);
+      }
+      if (c.mode === "live") {
+        c.hidden = hide;
+        c.away = hide && isFolded;
+      }
+      if (!hide) c.rebud = false;
+    }
+    more.hidden = !folded || rail;
+    const moreName = "+" + folded;
+    if (more.title !== moreName) {
+      more.title = moreName;
+      more.kick = 0.8;
+    }
+    for (const b of [...bonds]) if (b.some((c) => c.mode !== "live")) bonds.splice(bonds.indexOf(b), 1);
+    const live = cells.filter((c) => c.mode === "live" && !c.hidden);
+    let top = Infinity, bottom = -Infinity, x0 = Infinity, x1 = -Infinity;
+    for (const c of live) if (drag?.cell !== c) {
+      top = Math.min(top, c.y - c.R);
+      bottom = Math.max(bottom, c.y + c.R);
+      x0 = Math.min(x0, c.x - c.R);
+      x1 = Math.max(x1, c.x + c.R);
+    }
+    const want = bottom > top ? Math.min(320, bottom - top + 14 * sz + 4) : 4;
+    const nextHeight = ease(height, want, 3, dt);
+    if (Math.abs(nextHeight - height) > 0.2) {
+      height = nextHeight;
+      host.style.height = fx(height) + "px";
+      options.onHeight(height);
+    }
+    const fr = host.getBoundingClientRect(), mark = options.mark(), mr = mark?.getBoundingClientRect();
+    const w = fr.width, h3 = Math.max(height, 8), cx = w / 2, cy = Math.max(14, h3 / 2);
+    if (mr) L = { x: mr.left + mr.width / 2 - fr.left, y: mr.top + mr.height / 2 - fr.top };
+    const markR = MARK_R + pulse * pulse * 0.8;
+    const shiftX = x1 > x0 ? (cx - (x0 + x1) / 2) * 3 : 0, shiftY = bottom > top ? (cy - (top + bottom) / 2) * 2 : 0;
+    for (const c of cells) {
+      let fx2 = 0, fy2 = 0, damp = 0.06;
+      c.age += dt;
+      if (c.mode === "bud") {
+        const dx = cx - L.x, dy = cy - L.y, d = Math.hypot(dx, dy) || 1;
+        const reach = markR + sizeOf(c) * sz * c.scale * 0.95 + c.age * 9 * sz;
+        fx2 = (L.x + dx / d * reach - c.x) * 90;
+        fy2 = (L.y + dy / d * reach - c.y) * 90;
+        damp = 2e-3;
+        if (c.age > 0.8) {
+          c.mode = "live";
+          c.hidden = false;
+          c.away = false;
+          c.vx += dx / d * 120;
+          c.vy += dy / d * 120;
+          c.onBorn?.();
+          c.onBorn = void 0;
+        }
+      } else if (c.mode === "leave") {
+        if (c.into && cells.includes(c.into)) {
+          fx2 = (c.into.cx - c.x) * 40;
+          fy2 = (c.into.cy - c.y) * 40;
+          damp = 3e-3;
+        }
+      } else if (c.mode === "fling") {
+        damp = 0.35;
+      } else if (c.hidden) {
+        fx2 = (cx - c.x) * 4;
+        fy2 = (cy - c.y) * 4;
+      } else {
+        const act = c.cur || c.state !== "idle" ? 1 : c.w;
+        const ox = cx - c.x, oy = (cy - c.y) * 1.8, od = Math.hypot(ox, oy) || 1, pull = Math.min(od, 30 * sz) * 1.6;
+        fx2 += ox / od * pull + shiftX;
+        fy2 += oy / od * pull + shiftY - 28 * (act - 0.45) * sz;
+        const wob = (c.state === "running" ? 14 : c.state === "idle" ? 3 + 4 * c.w : 5) * sz;
+        fx2 += wob * Math.sin(t * 0.31 + c.phase) + wob * 0.5 * Math.sin(t * 0.83 + c.phase * 2);
+        fy2 += wob * Math.cos(t * 0.27 + c.phase * 1.4);
+        for (const o of live) {
+          if (o === c) continue;
+          const dx = o.x - c.x, dy = o.y - c.y, d = Math.hypot(dx, dy) || 0.01, rest = (c.R + o.R) * 0.93, lw = linkW(c, o);
+          const f = d < rest ? -(rest - d) * 40 : d < rest * 1.5 ? (d - rest) * Math.max(4, 11 + 12 * lw) : lw > 0 && d < rest * 3.2 ? (d - rest) * 6 * lw : 0;
+          fx2 += dx / d * f;
+          fy2 += dy / d * f;
+        }
+        if (ptr && !drag) {
+          const dx = ptr.x - c.x, dy = ptr.y - c.y, d = Math.hypot(dx, dy) || 1, reach = 80 * sz;
+          if (d < reach) {
+            const f = (c.state === "running" ? 16 : 6) * (1 - d / reach);
+            fx2 += dx / d * f;
+            fy2 += dy / d * f;
+          }
+        }
+        if (drag?.cell !== c) {
+          const pad = c.R * 0.8;
+          if (c.x < pad) fx2 += (pad - c.x) * 30;
+          if (c.x > w - pad) fx2 -= (c.x - (w - pad)) * 30;
+          if (c.y < pad * 0.7) fy2 += (pad * 0.7 - c.y) * 30;
+          if (c.y > h3 - pad * 0.7) fy2 -= (c.y - (h3 - pad * 0.7)) * 30;
+        }
+      }
+      if (drag?.cell === c) {
+        fx2 += (c.tx - c.x) * 70;
+        fy2 += (c.ty - c.y) * 70;
+      }
+      c.vx = (c.vx + fx2 * dt) * Math.pow(damp, dt);
+      c.vy = (c.vy + fy2 * dt) * Math.pow(damp, dt);
+      c.x += c.vx * dt;
+      c.y += c.vy * dt;
+    }
+    for (const [c, o] of bonds) {
+      const dx = o.x - c.x, dy = o.y - c.y, d = Math.hypot(dx, dy) || 1, f = (d - (c.R + o.R) * 0.9) * 10 * dt;
+      c.vx += dx / d * f;
+      c.vy += dy / d * f;
+      o.vx -= dx / d * f;
+      o.vy -= dy / d * f;
+    }
+    for (const c of [...cells]) {
+      if (c.mode === "leave") {
+        const o = c.into, alive = !!o && cells.includes(o);
+        if (alive) {
+          const d2 = Math.hypot(c.x - o.cx, c.y - o.cy);
+          c.scale = ease(c.scale, clamp((d2 - o.R * 0.3) / 50, 0.08, 1), 6, dt);
+          if (d2 < o.R * 0.45 || c.age > 3) c.alpha = ease(c.alpha, 0, 14, dt);
+        } else {
+          c.scale = ease(c.scale, 0, 5, dt);
+          c.alpha = ease(c.alpha, 0, 4, dt);
+        }
+        if (c.alpha < 0.04 || c.scale < 0.03) {
+          c.g.remove();
+          c.neck.remove();
+          c.gr.remove();
+          cells.splice(cells.indexOf(c), 1);
+          if (alive) {
+            o.kick = 1;
+            o.flash = 0.7;
+          }
+          continue;
+        }
+      } else if (c.mode === "fling") {
+        const sr = options.side()?.getBoundingClientRect(), gx0 = fr.left + c.x, gy0 = fr.top + c.y;
+        const outBy = sr ? Math.max(gx0 - sr.right, sr.left - gx0, gy0 - sr.bottom, sr.top - gy0, 0) : 0;
+        c.alpha = clamp(1 - outBy / 90);
+        if (c.alpha < 0.03 || c.age > 1.4) {
+          c.mode = "live";
+          c.aside = true;
+          c.hidden = true;
+          c.away = true;
+          c.alpha = 1;
+          c.scale = 0;
+          c.vx = c.vy = 0;
+          c.x = cx;
+          c.y = cy;
+          c.g.style.pointerEvents = "";
+          more.kick = 1;
+          continue;
+        }
+      } else if (c.mode === "bud") c.scale = ease(c.scale, 0.2 + c.age * 0.45, 5, dt);
+      else c.scale = ease(c.scale, c.hidden ? 0 : 1, c.hidden ? 5 : 2.5, dt);
+      c.g.style.display = c.scale < 0.02 ? "none" : "";
+      if (c.scale < 0.02) {
+        c.nf.setAttribute("d", "");
+        c.ne.setAttribute("d", "");
+        continue;
+      }
+      c.heat = ease(c.heat, c.state === "running" ? 1 : 0, 1.3, dt);
+      c.solid = ease(c.solid, c.state === "queued" ? 0 : 1, 2.2, dt);
+      c.kick = Math.max(0, c.kick - dt / 0.9);
+      c.flash = Math.max(0, c.flash - dt / 1.4);
+      if (c.ask) c.flash = Math.max(c.flash, 0.25 + 0.15 * Math.sin(t * 3));
+      const running = c.state === "running", tt = running ? t : 0;
+      let near = 0;
+      if (c.mode === "live" && c.kind === "topic" && sz > 0.7) {
+        if (drag) near = drag.cell === c || target?.kind === "cell" && target.cell === c ? 1 : 0;
+        else if (ptr) {
+          const d2 = Math.hypot(ptr.x - c.cx, ptr.y - c.cy) - c.R * 0.4;
+          near = clamp(1 - d2 / 52);
+          near = near * near * (3 - 2 * near);
+        }
+      }
+      c.reveal = ease(c.reveal, near, near > c.reveal ? 9 : 4, dt);
+      const r0 = sizeOf(c) * sz * (1 + (named(c) ? 0.04 : 0.2) * c.reveal);
+      c.svx = ease(c.svx, c.vx, 8, dt);
+      c.svy = ease(c.svy, c.vy, 8, dt);
+      const speed = Math.hypot(c.svx, c.svy), st = Math.min(c.mode === "fling" ? 0.2 : 0.12, speed / 1100), ux0 = c.svx / (speed || 1), uy0 = c.svy / (speed || 1);
+      const sigh = 1 + 0.1 * Math.sin(Math.PI * (1 - c.kick)) * (c.kick > 0 ? 1 : 0);
+      const pts = [];
+      for (let i = 0; i < N; i++) {
+        const th = i / N * Math.PI * 2, ux = Math.cos(th), uy = Math.sin(th), along = ux * ux0 + uy * uy0;
+        let r = (c.R + (running ? (0.35 * Math.sin(2 * th + tt * 0.5 + c.phase) + 0.25 * Math.sin(3 * th - tt * 0.37 + c.phase)) * sz : 0)) * c.scale * sigh;
+        r *= 1 + st * (2 * along * along - 1);
+        if (c.mode === "live") for (const o of live) {
+          if (o === c) continue;
+          const ox = o.x - c.x, oy = o.y - c.y, D = Math.hypot(ox, oy);
+          if (D < 0.01 || D > c.R + o.R + 4) continue;
+          const dot = (ux * ox + uy * oy) / D;
+          if (dot <= 0.05) continue;
+          r = smin(r, (D / 2 + (c.R * c.R - o.R * o.R) / (2 * D) - GAP / 2) / dot, SOFT * sz);
+        }
+        r = Math.max(r, c.R * c.scale * 0.35);
+        pts.push([c.x + r * ux, c.y + r * uy]);
+      }
+      if (c.mode === "live" && !c.hidden && drag?.cell !== c) {
+        const area = polygonArea(pts) / Math.max(0.01, (c.scale * sigh) ** 2);
+        c.R = Math.min(ease(c.R, r0 * Math.sqrt(Math.PI * r0 * r0 / Math.max(area, 1)), 2, dt), r0 * 1.2);
+      } else c.R = ease(c.R, r0, 4, dt);
+      let gx = 0, gy = 0;
+      for (const p of pts) {
+        gx += p[0];
+        gy += p[1];
+      }
+      gx /= N;
+      gy /= N;
+      c.cx = gx;
+      c.cy = gy;
+      const d = curve(pts);
+      c.b.setAttribute("d", d);
+      c.h.setAttribute("d", d);
+      c.m.setAttribute("d", d);
+      c.b.style.fillOpacity = fx(c.solid);
+      c.h.style.opacity = fx(Math.min(1, c.heat + c.flash));
+      c.stop.setAttribute("stop-opacity", fx(0.18 * (1 + 1.4 * c.flash)));
+      if (c.solid < 0.985) c.m.setAttribute("stroke-dasharray", `2.5 ${fx(3.5 * (1 - c.solid))}`);
+      else if (c.kind === "topic" && !c.ask) c.m.removeAttribute("stroke-dasharray");
+      if (c.heat + c.flash > 0.01) {
+        c.gr.setAttribute("cx", fx(50 + 16 * Math.sin(t * 0.23 + c.phase)) + "%");
+        c.gr.setAttribute("cy", fx(46 + 13 * Math.sin(t * 0.19 + c.phase * 1.3)) + "%");
+      }
+      c.g.style.opacity = fx(c.alpha);
+      const rr = (c.mode === "live" ? r0 : c.R) * c.scale;
+      const lay = c.kind === "more" ? { lines: [c.title], font: 10, lh: 12 } : foamLabel(c.title, rr);
+      const key = lay.lines.join("\n") + "|" + lay.font;
+      if (key !== c.shownKey) {
+        c.shownKey = key;
+        c.lay = lay;
+        c.label.textContent = "";
+        for (const line of lay.lines) {
+          const span = document.createElementNS(NS, "tspan");
+          span.setAttribute("x", "0");
+          span.textContent = line;
+          c.label.appendChild(span);
+        }
+        c.label.setAttribute("font-size", String(lay.font));
+      }
+      c.want = ease(c.want, named(c) ? 1 : 0, 2.5, dt);
+      const vis = words * clamp((c.scale - 0.6) / 0.4) * (lay.lines.length ? 1 : 0) * Math.max(c.want, c.reveal);
+      c.full = c.kind === "more" || vis > 0.5 && lay.lines.join("") === c.title;
+      c.label.style.opacity = fx(vis);
+      c.nx = ease(c.nx, running ? 1.4 * Math.sin(tt * 0.53 + c.phase) + 0.5 * Math.sin(tt * 1.1 + c.phase * 2) : 0, 3, dt);
+      c.ny = ease(c.ny, running ? Math.sin(tt * 0.41 + c.phase * 1.7) : 0, 3, dt);
+      const nr = c.kind === "more" ? 0 : c.state === "wait" ? 3.4 : c.state === "done" ? 3.2 : c.cur ? 2.9 : running ? 2.6 + 0.15 * Math.sin(tt * 0.6 + c.phase) : c.state === "queued" ? 2.4 : 1.8 + c.w * 0.8;
+      const lines = c.lay.lines.length, block = c.kind === "more" ? 0 : lines ? 2 * nr + 4 + lines * c.lay.lh : 0, room = clamp(vis * 1.4);
+      const top0 = gy - block / 2 * c.scale;
+      c.n.setAttribute("cx", fx(gx + c.nx * sz));
+      c.n.setAttribute("cy", fx(gy + ((lines ? top0 + nr * c.scale : gy) - gy) * room + c.ny * sz));
+      c.n.setAttribute("r", fx(nr * c.scale * Math.max(0.62, sz)));
+      const ty = c.kind === "more" ? gy : top0 + (2 * nr + 4 + c.lay.lh / 2) * c.scale;
+      c.label.setAttribute("transform", `translate(${fx(gx)} ${fx(ty)}) scale(${fx(Math.max(0.01, c.scale))})`);
+      Array.from(c.label.children).forEach((s, i) => s.setAttribute("y", fx(i * c.lay.lh)));
+      let neck = null, other;
+      if (c.mode === "bud") neck = bridge(L, markR, { x: gx, y: gy }, rr);
+      else if (c.mode !== "fling") {
+        other = c.mode === "leave" ? c.into : bonds.find((b) => b[0] === c)?.[1] ?? (drag?.cell === c && target?.kind === "cell" ? target.cell : void 0);
+        if (other && cells.includes(other)) neck = bridge(pos(other), other.R * other.scale, { x: gx, y: gy }, rr, c.mode === "leave" ? rr * 1.6 : rr + 6 * sz);
+      }
+      c.nf.setAttribute("d", neck ? neck.fill : "");
+      c.ne.setAttribute("d", neck ? neck.edge : "");
+      if (neck) c.nf.style.fill = other?.state === "done" ? "var(--foam-done)" : other && other.state === "idle" && !other.cur ? "var(--foam-bg)" : "var(--foam-tint)";
+      c.neck.style.opacity = fx(c.alpha);
+    }
+    for (const v of [...ves]) {
+      v.t += dt / v.dur;
+      const p0 = v.from(), p2 = v.to(), k = v.t >= 1 ? 1 : v.t < 0.5 ? 2 * v.t * v.t : 1 - (-2 * v.t + 2) ** 2 / 2;
+      const mx = (p0.x + p2.x) / 2, my = (p0.y + p2.y) / 2, dx = p2.x - p0.x, dy = p2.y - p0.y;
+      const c1 = { x: mx - dy * 0.22, y: my + dx * 0.22 };
+      let x = (1 - k) ** 2 * p0.x + 2 * (1 - k) * k * c1.x + k * k * p2.x, y = (1 - k) ** 2 * p0.y + 2 * (1 - k) * k * c1.y + k * k * p2.y;
+      const holding = typeof v.hold === "function" ? !v.hold() : v.t < 1 + v.hold / v.dur;
+      if (v.t >= 1 && v.hold && holding) {
+        x += 2.2 * Math.sin(t * 2.1);
+        y += 1.6 * Math.sin(t * 2.9);
+      }
+      const grow = v.hold ? clamp(k / 0.15) : clamp(k / 0.15) * clamp((1 - k) / 0.2 + 0.25);
+      v.el.setAttribute("transform", `translate(${fx(x)} ${fx(y)}) scale(${fx(grow * Math.max(0.7, sz) * (v.el.hasAttribute("data-small") ? 0.7 : 1))})`);
+      if (v.t >= 1 && !(v.hold && holding)) {
+        v.el.remove();
+        ves.splice(ves.indexOf(v), 1);
+        v.arrive();
+      }
+    }
+    pulse = Math.max(0, pulse - dt * 1.4);
+    options.onPulse?.(pulse * pulse);
+    void T;
+  }
+  const frame = (n) => {
+    const dt = Math.min(1 / 30, (n - last) / 1e3);
+    last = n;
+    if (!reduced) t += dt;
+    step(dt);
+    raf = requestAnimationFrame(frame);
+  };
+  raf = requestAnimationFrame(frame);
+  return {
+    update,
+    event,
+    setRail(on) {
+      rail = on;
+    },
+    destroy() {
+      cancelAnimationFrame(raf);
+      clearInterval(tipTimer);
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      document.removeEventListener("pointerdown", outside, true);
+      document.removeEventListener("keydown", keydown, true);
+      closeMenu();
+      tip2.remove();
+      svg.remove();
+      list.remove();
+      host.classList.remove("theone-foam");
+    }
+  };
+}
+var foamCss = `
+.theone-foam{position:fixed;left:0;top:0;width:0;height:8px;z-index:20;pointer-events:none;--foam-bg:var(--dsw-specific-sidebar-fill,#f7f7f5);--foam-tint:#fff5ec;--foam-accent:#a75b1e;--foam-heat:#ff7800;--foam-line:#c99267;--foam-done:#ffffff;--foam-idle-line:#d8d3ca;--foam-idle-dot:#cdb8a3;--foam-queue-line:#c4c1b8;--foam-queue-ink:#9a988f;--foam-fail:#b9785f;--foam-text:var(--dsw-alias-label-primary,#2b2b2b);--foam-muted:var(--dsw-alias-label-secondary,#8a8a86)}
+[data-ds-dark-theme] .theone-foam{--foam-bg:var(--dsw-specific-sidebar-fill,#1f1f22);--foam-tint:#1d2a37;--foam-accent:#93c8f3;--foam-heat:#80caff;--foam-line:#5d87ab;--foam-done:#2b2b30;--foam-idle-line:#4a515a;--foam-idle-dot:#5a7086;--foam-queue-line:#4d555e;--foam-queue-ink:#7f8a94;--foam-fail:#c98a74}
+.theone-foam>svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.theone-foam-list{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.theone-cell{cursor:grab;pointer-events:auto}
+.theone-cell.drag{cursor:grabbing}
+.theone-cell [data-part=body]{stroke:none;fill:var(--foam-bg);transition:fill .8s ease}
+.theone-cell [data-part=membrane]{fill:none;stroke:var(--foam-idle-line);stroke-width:1.2;stroke-linejoin:round;stroke-linecap:round;transition:stroke .8s ease,stroke-width .4s ease}
+.theone-cell [data-part=nucleus]{fill:var(--foam-idle-dot);transition:fill .6s ease,stroke .6s ease}
+.theone-cell text{fill:var(--foam-muted);text-anchor:middle;dominant-baseline:middle;pointer-events:none;user-select:none;letter-spacing:.02em;transition:fill .6s ease}
+.theone-cell.running [data-part=body],.theone-cell.queued [data-part=body]{fill:var(--foam-tint)}
+.theone-cell.running [data-part=membrane]{stroke:var(--foam-line);stroke-width:1.3}
+.theone-cell.running [data-part=nucleus],.theone-cell.done [data-part=nucleus]{fill:var(--foam-accent)}
+.theone-cell.running text,.theone-cell.done text{fill:var(--foam-text)}
+.theone-cell.done [data-part=body]{fill:var(--foam-done)}
+.theone-cell.done [data-part=membrane]{stroke:var(--foam-line);stroke-width:1.3}
+.theone-cell.queued [data-part=membrane]{stroke:var(--foam-queue-line)}
+.theone-cell.queued [data-part=nucleus]{fill:transparent;stroke:var(--foam-queue-ink);stroke-width:1}
+.theone-cell.queued text{fill:var(--foam-queue-ink)}
+.theone-cell.wait [data-part=body]{fill:var(--foam-tint)}
+.theone-cell.wait [data-part=membrane]{stroke:var(--foam-accent);stroke-width:1.4}
+.theone-cell.wait [data-part=nucleus]{fill:transparent;stroke:var(--foam-accent);stroke-width:1.4}
+.theone-cell.wait text{fill:var(--foam-text)}
+.theone-cell.fail [data-part=membrane]{stroke:var(--foam-fail);stroke-dasharray:1.5 2.5}
+.theone-cell.fail [data-part=nucleus]{fill:transparent;stroke:var(--foam-fail);stroke-width:1.2}
+.theone-cell.fail text{fill:var(--foam-fail)}
+.theone-cell.cur [data-part=body]{fill:var(--foam-tint)}
+.theone-cell.cur [data-part=membrane]{stroke:var(--foam-accent);stroke-width:1.4}
+.theone-cell.cur [data-part=nucleus]{fill:var(--foam-accent)}
+.theone-cell.cur text{fill:var(--foam-accent)}
+.theone-cell.lit [data-part=membrane]{stroke:var(--foam-accent);stroke-width:1.6;transition-duration:.15s}
+.theone-cell.ask [data-part=membrane]{stroke:var(--foam-accent);stroke-dasharray:3 3}
+.theone-cell.fuse [data-part=membrane]{stroke:var(--foam-accent);stroke-width:1.6}
+.theone-cell.more{cursor:pointer}
+.theone-cell.more [data-part=membrane]{stroke-dasharray:1.2 3}
+.theone-neck [data-part=edge]{fill:none;stroke:var(--foam-line);stroke-width:1.3;stroke-linecap:round}
+.theone-vesicle [data-part=membrane]{fill:var(--foam-tint);stroke:var(--foam-accent);stroke-width:1.1}
+.theone-vesicle [data-part=nucleus]{fill:var(--foam-accent)}
+html[data-theone-foam] button:has(.theone-workspace-entry){display:none}
+[data-row-key][data-theone-drop=true]{background:color-mix(in srgb,#ff7800 10%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,#a75b1e 40%,transparent);border-radius:10px}
+.theone-foam-tip{position:fixed;z-index:1000;padding:4px 8px;border-radius:7px;background:var(--dsw-alias-label-primary,#2e2d2a);color:var(--dsw-alias-bg-base,#f4f3ef);font-size:11.5px;line-height:1.5;white-space:nowrap;pointer-events:none;opacity:0;transform:translate(-50%,3px);transition:opacity .12s,transform .12s}
+.theone-foam-tip.on{opacity:1;transform:translate(-50%,0)}
+.theone-foam-menu{position:fixed;z-index:1000;min-width:168px;padding:4px;border:.5px solid var(--dsw-alias-border-l2,#8885);border-radius:var(--dsw-radius-lg,12px);background:var(--dsw-specific-menu,var(--dsw-alias-bg-layer-2,#fff));backdrop-filter:blur(24px) saturate(1.4);box-shadow:var(--dsw-elevation-prominent,0 8px 30px #0003);color:var(--dsw-alias-label-primary)}
+.theone-foam-menu button{display:flex;width:100%;height:34px;align-items:center;padding:0 12px;border:0;border-radius:var(--dsw-radius-md,8px);background:none;color:inherit;font:inherit;font-size:13.5px;cursor:pointer;text-align:left}
+.theone-foam-menu button:hover,.theone-foam-menu button:focus-visible{background:var(--dsw-alias-interactive-bg-hover,#0000000a);outline:none}
+.theone-foam-menu hr{border:0;border-top:.5px solid var(--dsw-alias-border-l2,#8885);margin:4px 2px}
+@media(prefers-reduced-motion:reduce){.theone-cell [data-part=membrane],.theone-cell [data-part=body]{transition:none}}
+`;
+
+// src/client-foam-host.ts
+var LIVE = /* @__PURE__ */ new Set(["routing", "starting", "running", "recovering"]);
+function phaseOf(items) {
+  if (items.some((item) => item.phase === "waiting_user" || item.waits?.length)) return "waiting";
+  if (items.some((item) => LIVE.has(item.phase))) return "running";
+  if (items.some((item) => item.phase === "succeeded" && (item.delivery.phase === "waiting" || item.delivery.phase === "selected"))) return "answered";
+  if (items.some((item) => item.phase === "queued")) return "queued";
+  if (items.some((item) => (item.phase === "failed" || item.phase === "interrupted") && item.delivery.phase !== "shown")) return "failed";
+  return "idle";
+}
+function modelFromBubbles(snapshot) {
+  const now2 = snapshot.serverTime;
+  const byTopic = /* @__PURE__ */ new Map();
+  for (const item of snapshot.workItems) if (item.contextId) byTopic.set(item.contextId, [...byTopic.get(item.contextId) ?? [], item]);
+  const topics = snapshot.topics.map((topic) => {
+    const items = byTopic.get(topic.id) ?? [];
+    const phase = phaseOf(items);
+    const last = topic.usage.lastUsedAt ?? topic.lastActivityAt;
+    const recency = last ? Math.pow(0.5, Math.max(0, now2 - last) / (3 * 864e5)) : 0;
+    const weight = Math.min(1, 0.65 * recency + 0.35 * Math.min(1, topic.usage.recentCalls / 12));
+    const live = items.find((item) => LIVE.has(item.phase));
+    const busy = phase !== "idle";
+    return {
+      id: topic.id,
+      title: topic.title,
+      phase,
+      weight,
+      current: topic.current,
+      group: topic.groupId ?? void 0,
+      aside: !busy && !topic.current && (topic.effectiveDone || topic.archived),
+      oneOff: items.length > 0 && items.every((item) => item.temporary?.kind === "model_aside"),
+      startedAt: live ? live.updatedAt : void 0
+    };
+  });
+  const links = snapshot.edges.map((edge) => ({ a: edge.a, b: edge.b, weight: edge.relation === "kept_apart" ? -0.3 : Math.max(0, Math.min(1, edge.strength)) }));
+  return { topics, links };
+}
+function foamEventsFrom(events, snapshot) {
+  const items = new Map(snapshot.workItems.map((item) => [item.id, item]));
+  const out = [];
+  for (const event of events) {
+    if (event.type === "route.assigned") {
+      if (event.created) out.push({ kind: "create", to: event.contextId });
+      else if (items.get(event.workItemId)?.source === "steering") out.push({ kind: "supplement", to: event.contextId });
+      else out.push({ kind: "route", to: event.contextId, alternates: event.alternateIds });
+    } else if (event.type === "route.blocked" && event.candidateIds.length > 1) out.push({ kind: "clarify", candidates: event.candidateIds });
+    else if (event.type === "route.moved") out.push({ kind: "correct", from: event.fromId, to: event.toId });
+    else if (event.type === "topic.merged") out.push({ kind: "merged", id: event.sourceId, into: event.targetId });
+  }
+  return out;
+}
+var post = async (path, body, signal) => {
+  const response = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal, cache: "no-store" });
+  return response.ok;
+};
+function modelFromCatalog(snapshot) {
+  const groupOf = /* @__PURE__ */ new Map();
+  for (const group of snapshot.groups) for (const id of group.contextIds) groupOf.set(id, group.id);
+  const visible = snapshot.contexts.filter((context) => context.hidden !== "orphaned" && context.hidden !== "excluded");
+  const topics = visible.map((context) => {
+    const status = context.topicStatus;
+    const phase = status === "waiting" ? "waiting" : "idle";
+    return {
+      id: context.id,
+      title: context.title,
+      phase,
+      group: groupOf.get(context.id),
+      weight: status === "active" ? 0.7 : status === "dormant" ? 0.15 : 0.4,
+      aside: status === "done" || context.hidden === "archived"
+    };
+  });
+  const links = [];
+  for (const [id, entry] of Object.entries(snapshot.linkage?.topics ?? {}))
+    for (const other of entry.related) if (id < other.id) links.push({ a: id, b: other.id, weight: other.reasons.includes("manual") ? 1 : other.reasons.includes("learned") ? 0.5 : 0.3 });
+  return { topics, links };
+}
+function mountFoamHost(options) {
+  const { button, signal } = options;
+  const host = document.createElement("div");
+  host.setAttribute("translate", "no");
+  document.body.appendChild(host);
+  const sessionOf = /* @__PURE__ */ new Map();
+  const failed = () => {
+    refresh();
+  };
+  const act = (body) => {
+    void post("/api/theone/topics", body, signal).then((ok) => {
+      if (!ok) failed();
+      else refresh();
+    }).catch(failed);
+  };
+  const actions = {
+    mount: (id) => {
+      void options.mount(id).finally(refresh);
+    },
+    merge: (id, into, whenIdle) => {
+      void fetch("/api/theone/topics", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        signal,
+        cache: "no-store",
+        body: JSON.stringify({ action: "merge", id, into, ...whenIdle ? { whenIdle: true, requestId: `${id}>${into}` } : {} })
+      }).then((response) => {
+        if (response.status === 200) foam.event({ kind: "merged", id, into });
+        refresh();
+      }).catch(failed);
+    },
+    attach: (id, sessionId) => act({ action: "attach", id, sessionId }),
+    putAside: (id) => act({ action: "status", id, done: true }),
+    open: (id) => {
+      const session = sessionOf.get(id);
+      if (session) options.openSession(session);
+      else void readCatalog(false).then(() => {
+        const found = sessionOf.get(id);
+        if (found) options.openSession(found);
+      });
+    },
+    stop: () => options.openMainChat(),
+    cancelQueued: () => options.openMainChat(),
+    remove: () => options.openWorkspace(),
+    showAnswer: () => options.openMainChat(),
+    answer: () => options.openMainChat(),
+    openWorkspace: options.openWorkspace,
+    text: options.text
+  };
+  const foam = createFoam({
+    host,
+    actions,
+    mark: () => button.querySelector(".theone-symbol"),
+    side: () => button.closest("[data-sidebar-collapsed]") ?? button.closest("nav")?.parentElement ?? null,
+    place: () => {
+      const r = button.getBoundingClientRect();
+      if (!r.width || !button.isConnected) {
+        host.style.visibility = "hidden";
+        return;
+      }
+      host.style.visibility = "";
+      host.style.left = `${r.left}px`;
+      host.style.top = `${r.bottom}px`;
+      host.style.width = `${r.width}px`;
+    },
+    onHeight: (height) => {
+      button.style.marginBottom = `${Math.round(height) + 10}px`;
+    },
+    onPulse: (amount) => {
+      const mark = button.querySelector(".theone-symbol");
+      if (mark) mark.style.transform = amount > 2e-3 ? `scale(${(1 + 0.12 * amount).toFixed(3)})` : "";
+    }
+  });
+  const show = (model) => {
+    foam.update(model);
+    options.onTopics?.(model.topics.length);
+  };
+  let readingCatalog = false;
+  async function readCatalog(feed2) {
+    if (readingCatalog || signal.aborted) return;
+    readingCatalog = true;
+    try {
+      const response = await fetch("/api/theone/catalog", { signal, cache: "no-store" });
+      if (!response.ok) return;
+      const snapshot = await response.json();
+      for (const context of snapshot.contexts) sessionOf.set(context.id, context.sourceSessionIds[0] ?? context.workingSessionId);
+      if (feed2) show(modelFromCatalog(snapshot));
+    } catch {
+    } finally {
+      readingCatalog = false;
+    }
+  }
+  let cursor, legacy = false, wake, failures = 0;
+  async function feed() {
+    while (!signal.aborted && !legacy) {
+      wake = new AbortController();
+      const hidden = document.visibilityState !== "visible";
+      const query = cursor ? `?epoch=${encodeURIComponent(cursor.epoch)}&since=${cursor.version}&after=${cursor.seq}&waitMs=${hidden ? 0 : 25e3}` : "?waitMs=0";
+      try {
+        const response = await fetch(`/api/theone/bubbles${query}`, { signal: AbortSignal.any([signal, wake.signal]), cache: "no-store" });
+        if (response.status === 404) {
+          legacy = true;
+          break;
+        }
+        if (!response.ok) throw new Error(String(response.status));
+        const body = await response.json();
+        failures = 0;
+        if (body.kind === "update") {
+          show(modelFromBubbles(body.snapshot));
+          if (!body.reset) for (const event of foamEventsFrom(body.events, body.snapshot)) foam.event(event);
+          cursor = body.snapshot.cursor;
+        } else cursor = body.cursor;
+        if (hidden) await pause(8e3);
+      } catch {
+        if (signal.aborted) break;
+        if (wake.signal.aborted) continue;
+        failures++;
+        await pause(Math.min(3e4, 1e3 * 2 ** Math.min(failures, 5)) * (0.75 + Math.random() * 0.5));
+      }
+    }
+    if (legacy && !signal.aborted) {
+      void readCatalog(true);
+      legacyTimer = window.setInterval(() => {
+        if (document.visibilityState === "visible") void readCatalog(true);
+      }, 4e3);
+    }
+  }
+  const pause = (ms) => new Promise((resolve) => {
+    const timer = window.setTimeout(resolve, ms);
+    wake?.signal.addEventListener("abort", () => {
+      clearTimeout(timer);
+      resolve();
+    }, { once: true });
+  });
+  let legacyTimer = 0;
+  function refresh() {
+    if (legacy) void readCatalog(true);
+    else wake?.abort();
+  }
+  void readCatalog(false);
+  void feed();
+  const focus = () => refresh();
+  window.addEventListener("focus", focus);
+  document.addEventListener("visibilitychange", focus);
+  return {
+    setRail: (on) => foam.setRail(on),
+    refresh,
+    destroy() {
+      clearInterval(legacyTimer);
+      wake?.abort();
+      window.removeEventListener("focus", focus);
+      document.removeEventListener("visibilitychange", focus);
+      foam.destroy();
+      host.remove();
+      button.style.marginBottom = "";
+      button.querySelector(".theone-symbol")?.style.removeProperty("transform");
+    }
+  };
+}
+
 // src/client-season.ts
-var halloween = (now = /* @__PURE__ */ new Date()) => now.getMonth() === 9 && now.getDate() >= 30;
+var halloween = (now2 = /* @__PURE__ */ new Date()) => now2.getMonth() === 9 && now2.getDate() >= 30;
 
 // src/client-setup.ts
 var escape = (text) => text.replace(/[&<>"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[char]);
@@ -243,9 +1461,9 @@ async function openSetup({ t, cellFrame, signal, onClose }) {
   paint(0);
   if (!still) {
     let time = 0, last = performance.now();
-    frame = requestAnimationFrame(function step(now) {
-      time += Math.min(0.05, (now - last) / 1e3) * 0.7;
-      last = now;
+    frame = requestAnimationFrame(function step(now2) {
+      time += Math.min(0.05, (now2 - last) / 1e3) * 0.7;
+      last = now2;
       paint(time);
       frame = requestAnimationFrame(step);
     });
@@ -589,6 +1807,29 @@ var zh = {
   "settings.help.contextsPath": "\u53EF\u9009\u3002\u5BFC\u5165\u81EA\u5B9A\u4E49\u8BDD\u9898\u76EE\u5F55\uFF08JSON\uFF09\u3002\u6E05\u7A7A\u6B64\u9879\u4E0D\u4F1A\u5220\u9664\u5DF2\u5BFC\u5165\u7684\u8BDD\u9898\u3002",
   "settings.help.gatewayKey": "\u7528\u4E8E\u533A\u5206\u4E3B\u804A\u5929\u5165\u53E3\uFF0C\u901A\u5E38\u4FDD\u6301 default\u3002\u4EC5\u53EF\u901A\u8FC7\u73AF\u5883\u53D8\u91CF THEONE_GATEWAY_KEY \u4FEE\u6539\u3002",
   "catalog.title": "\u8BDD\u9898\u5DE5\u4F5C\u533A",
+  "foam.more": "\u8FD8\u6709 {n} \u4E2A\u8BDD\u9898 \xB7 \u70B9\u5F00\u8BDD\u9898\u5DE5\u4F5C\u533A",
+  "foam.running": "\u6B63\u5728\u56DE\u7B54 {s} \u79D2",
+  "foam.queued": "\u6392\u961F\u4E2D",
+  "foam.answered": "\u7B54\u597D\u4E86\uFF0C\u7B49\u4E3B\u804A\u5929\u5C55\u793A",
+  "foam.waiting": "\u5728\u7B49\u4F60\u56DE\u7B54",
+  "foam.failed": "\u8FD9\u6B21\u6CA1\u6709\u5B8C\u6210",
+  "foam.menuAnswer": "\u53BB\u56DE\u7B54",
+  "foam.asking": "\u4E3B\u804A\u5929\u5728\u95EE\u4F60\u662F\u4E0D\u662F\u8FD9\u4E2A\u8BDD\u9898",
+  "foam.bond": "\u7B54\u5B8C\u540E\u548C\u300C{name}\u300D\u5408\u5E76",
+  "foam.dropMain": "\u4E3B\u804A\u5929\u63A5\u7740\u804A\u300C{name}\u300D",
+  "foam.dropMerge": "\u5E76\u8FDB\u300C{name}\u300D",
+  "foam.dropMergeLater": "\u7B54\u5B8C\u540E\u5E76\u8FDB\u300C{name}\u300D",
+  "foam.dropSession": "\u628A\u8FD9\u4E2A\u4F1A\u8BDD\u5173\u8054\u8FDB\u300C{name}\u300D",
+  "foam.busyFling": "\u6B63\u5728\u56DE\u7B54\uFF0C\u7B54\u5B8C\u624D\u80FD\u653E\u4E00\u8FB9",
+  "foam.currentFling": "\u4E3B\u804A\u5929\u6B63\u5728\u8FD9\u4E2A\u8BDD\u9898\u91CC",
+  "foam.menuContinue": "\u5728\u4E3B\u804A\u5929\u91CC\u63A5\u7740\u804A",
+  "foam.menuOpen": "\u6253\u5F00\u8BDD\u9898",
+  "foam.menuAside": "\u5148\u653E\u4E00\u8FB9",
+  "foam.menuDelete": "\u5220\u9664\u8BDD\u9898",
+  "foam.menuStop": "\u505C\u6B62",
+  "foam.menuCancel": "\u53D6\u6D88\u6392\u961F",
+  "foam.menuShowNow": "\u73B0\u5728\u5728\u4E3B\u804A\u5929\u91CC\u770B",
+  "foam.menuWorkspace": "\u6253\u5F00\u8BDD\u9898\u5DE5\u4F5C\u533A",
   "catalog.subtitle": "\u76F8\u5173\u7684\u4E8B\u653E\u5728\u4E00\u8D77\uFF0C\u56DE\u4E3B\u804A\u5929\u63A5\u7740\u804A\u3002",
   "catalog.figTopics": "\u4E2A\u8BDD\u9898",
   "catalog.figGroups": "\u5DE5\u4F5C\u533A",
@@ -1017,6 +2258,29 @@ var en = {
   "settings.help.contextsPath": "Optional. Import a custom topic list (JSON). Clearing this does not remove imported topics.",
   "settings.help.gatewayKey": "Distinguishes main chat entries; usually default. Can only be changed with THEONE_GATEWAY_KEY.",
   "catalog.title": "Topic workspaces",
+  "foam.more": "{n} more topics \xB7 open Topic workspaces",
+  "foam.running": "Answering \xB7 {s}s",
+  "foam.queued": "Waiting for a free slot",
+  "foam.answered": "Answered, shows in main chat next",
+  "foam.waiting": "Waiting for your answer",
+  "foam.failed": "Did not finish this time",
+  "foam.menuAnswer": "Answer it",
+  "foam.asking": "Main chat is asking whether you mean this one",
+  "foam.bond": 'Merges into "{name}" once answered',
+  "foam.dropMain": 'Carry on with "{name}" in main chat',
+  "foam.dropMerge": 'Merge into "{name}"',
+  "foam.dropMergeLater": 'Merge into "{name}" once answered',
+  "foam.dropSession": 'Attach this chat to "{name}"',
+  "foam.busyFling": "Still answering; set it aside afterwards",
+  "foam.currentFling": "Main chat is in this topic",
+  "foam.menuContinue": "Carry on in main chat",
+  "foam.menuOpen": "Open topic",
+  "foam.menuAside": "Set aside",
+  "foam.menuDelete": "Delete topic",
+  "foam.menuStop": "Stop",
+  "foam.menuCancel": "Cancel",
+  "foam.menuShowNow": "Show in main chat now",
+  "foam.menuWorkspace": "Open Topic workspaces",
   "catalog.subtitle": "Related things together. Carry on in main chat.",
   "catalog.figTopics": "topics",
   "catalog.figGroups": "Workspaces",
@@ -1249,7 +2513,7 @@ var en = {
   "route.reason.router-fallback": "Classifier unavailable; routed by rules"
 };
 
-// node_modules/qrcode-generator/dist/qrcode.mjs
+// ../dsh-theone/node_modules/qrcode-generator/dist/qrcode.mjs
 var qrcode = function(typeNumber, errorCorrectionLevel) {
   const PAD0 = 236;
   const PAD1 = 17;
@@ -3619,9 +4883,9 @@ function apply(ctx) {
         nucleus.setAttribute("r", fix(frame2.r));
       };
       const pace = cellWaves.map((wave) => wave * (0.85 + Math.random() * 0.3));
-      let t2 = 0, speed = tempo.current, last = performance.now(), frame = requestAnimationFrame(function step(now) {
-        const dt = Math.min(0.05, (now - last) / 1e3);
-        last = now;
+      let t2 = 0, speed = tempo.current, last = performance.now(), frame = requestAnimationFrame(function step(now2) {
+        const dt = Math.min(0.05, (now2 - last) / 1e3);
+        last = now2;
         speed += (tempo.current - speed) * Math.min(1, dt * 2);
         t2 += dt * speed;
         paint(pose(t2, pace));
@@ -3750,6 +5014,41 @@ function apply(ctx) {
         button.style.removeProperty("--one-pointer-y");
       };
     }, [active, size]);
+    const foam = (0, import_react2.useRef)(void 0);
+    (0, import_react2.useEffect)(() => {
+      const button = marker.current?.closest("button");
+      if (!button) return;
+      const host = foam.current = mountFoamHost({
+        button,
+        signal: lifetime.signal,
+        text: (key, vars) => t2(`foam.${key}`, vars),
+        async mount(contextId) {
+          const response = await fetch("/api/theone/context/mount", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ contextId }),
+            signal: lifetime.signal
+          });
+          if (response.ok) await navigation.open();
+        },
+        openSession: (id2) => ctx.uiWorkspace.openSession(id2),
+        openWorkspace: () => ctx.layout.selectPanel(catalogPanelId),
+        openMainChat: () => {
+          void navigation.open();
+        },
+        onTopics: (count) => {
+          document.documentElement.toggleAttribute("data-theone-foam", count > 0);
+        }
+      });
+      return () => {
+        host.destroy();
+        foam.current = void 0;
+        document.documentElement.removeAttribute("data-theone-foam");
+      };
+    }, []);
+    (0, import_react2.useEffect)(() => {
+      foam.current?.setRail(size !== 16);
+    }, [size]);
     return (0, import_react2.createElement)(
       "span",
       { ref: marker, className: "theone-nav", translate: "no", "data-wide": size === 16, "data-active": active },
@@ -4740,7 +6039,7 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
     "HISTORY_SEARCH_UNAVAILABLE"
   ]);
   const routeReason = (reason) => ROUTE_REASONS.has(reason) ? t(`route.reason.${reason}`) : reason.startsWith("router-fallback:") ? t("route.reason.router-fallback") : reason.startsWith("handback:") ? t("route.reason.handback") : reason;
-  function TopicManager({ topic, constraints, groups, contexts, post, busy }) {
+  function TopicManager({ topic, constraints, groups, contexts, post: post2, busy }) {
     const t2 = useText();
     const [title, setTitle] = (0, import_react2.useState)(topic.title);
     const [summary, setSummary] = (0, import_react2.useState)(topic.summary);
@@ -4775,7 +6074,7 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
           type: "button",
           disabled: busy || !edited || !title.trim() || !summary.trim(),
           onClick: () => {
-            void post("/api/theone/topics", { action: "edit", id: topic.id, title, summary, constraints: rules });
+            void post2("/api/theone/topics", { action: "edit", id: topic.id, title, summary, constraints: rules });
           }
         }, t2("manage.save"))
       ),
@@ -4794,7 +6093,7 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
           type: "button",
           disabled: busy || group === groupOf || group === "__new" && !groupTitle.trim(),
           onClick: () => {
-            void post("/api/theone/topics", { action: "move", id: topic.id, ...group === "__new" ? { groupTitle } : group ? { groupId: group } : {} });
+            void post2("/api/theone/topics", { action: "move", id: topic.id, ...group === "__new" ? { groupTitle } : group ? { groupId: group } : {} });
           }
         }, t2("manage.move"))
       )),
@@ -4810,7 +6109,7 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
           choices: (sessions ?? []).filter((item) => !own.has(item.id)).map((item) => ({ value: item.id, label: item.title }))
         }),
         (0, import_react2.createElement)("button", { type: "button", disabled: busy || !session, onClick: () => {
-          void post("/api/theone/topics", { action: "attach", id: topic.id, sessionId: session }).then((ok) => {
+          void post2("/api/theone/topics", { action: "attach", id: topic.id, sessionId: session }).then((ok) => {
             if (ok) setSession("");
           });
         } }, t2("manage.attachButton"))
@@ -4838,7 +6137,7 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
             className: confirm === "merge" ? "theone-danger" : void 0,
             onClick: () => {
               if (confirm !== "merge") setConfirm("merge");
-              else void post("/api/theone/topics", { action: "merge", id: topic.id, into });
+              else void post2("/api/theone/topics", { action: "merge", id: topic.id, into });
             }
           },
           t2(confirm === "merge" ? "manage.confirm" : "manage.mergeButton")
@@ -4856,7 +6155,7 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
             className: "theone-danger",
             onClick: () => {
               if (confirm !== "delete") setConfirm("delete");
-              else void post("/api/theone/topics", { action: "delete", id: topic.id });
+              else void post2("/api/theone/topics", { action: "delete", id: topic.id });
             }
           },
           t2(confirm === "delete" ? "manage.deleteConfirm" : "manage.delete")
@@ -4993,7 +6292,7 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
     );
   }
   const label = (text) => text.replace(/\s*[:：]\s*$/, "");
-  function RouteList({ routes, stats, contexts, post, busy }) {
+  function RouteList({ routes, stats, contexts, post: post2, busy }) {
     const t2 = useText();
     const titleOf = (id) => contexts.find((context) => context.id === id)?.title ?? t2("routes.removed");
     return (0, import_react2.createElement)(
@@ -5041,17 +6340,17 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
               { className: "theone-route-fixed" },
               t2("routes.corrected", { title: titleOf(route.correctedTo) }),
               " ",
-              (0, import_react2.createElement)("button", { type: "button", className: "theone-quiet", disabled: busy, onClick: () => void post("/api/theone/routes", { messageId: route.messageId, undo: true }) }, t2("routes.undo"))
+              (0, import_react2.createElement)("button", { type: "button", className: "theone-quiet", disabled: busy, onClick: () => void post2("/api/theone/routes", { messageId: route.messageId, undo: true }) }, t2("routes.undo"))
             ) : (0, import_react2.createElement)(
               import_react2.Fragment,
               null,
-              ...(route.decision.alternateIds ?? []).filter((id) => id !== target && contexts.some((context) => context.id === id)).slice(0, 2).map((id) => (0, import_react2.createElement)("button", { key: id, type: "button", className: "theone-quiet", disabled: busy, onClick: () => void post("/api/theone/routes", { messageId: route.messageId, contextId: id }) }, t2("routes.moveTo", { title: titleOf(id) }))),
+              ...(route.decision.alternateIds ?? []).filter((id) => id !== target && contexts.some((context) => context.id === id)).slice(0, 2).map((id) => (0, import_react2.createElement)("button", { key: id, type: "button", className: "theone-quiet", disabled: busy, onClick: () => void post2("/api/theone/routes", { messageId: route.messageId, contextId: id }) }, t2("routes.moveTo", { title: titleOf(id) }))),
               (0, import_react2.createElement)(Dropdown, {
                 label: t2("routes.move"),
                 value: "",
                 disabled: busy,
                 onChange: (value) => {
-                  if (value) void post("/api/theone/routes", { messageId: route.messageId, contextId: value });
+                  if (value) void post2("/api/theone/routes", { messageId: route.messageId, contextId: value });
                 },
                 placeholder: t2("routes.move"),
                 choices: contexts.filter((context) => context.id !== target).map((context) => ({ value: context.id, label: context.title }))
@@ -5155,7 +6454,7 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
         setError("catalog.sourceError");
       }
     }
-    const post = async (path, body) => {
+    const post2 = async (path, body) => {
       setBusy(path);
       setError(void 0);
       try {
@@ -5203,7 +6502,7 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
       }
     }
     async function consent(value) {
-      if (await post("/api/theone/catalog/consent", { consent: value })) {
+      if (await post2("/api/theone/catalog/consent", { consent: value })) {
         setReconsidering(false);
         choosingRef.current = false;
         setChoosing(false);
@@ -5491,7 +6790,7 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
         "form",
         { className: "theone-manage theone-create", onSubmit: (event) => {
           event.preventDefault();
-          void post("/api/theone/topics", { action: "create", title: newTitle });
+          void post2("/api/theone/topics", { action: "create", title: newTitle });
         } },
         (0, import_react2.createElement)("input", { value: newTitle, maxLength: 80, autoFocus: true, placeholder: t2("manage.title"), disabled: !!busy, onChange: (event) => setNewTitle(event.target.value) }),
         (0, import_react2.createElement)("button", { type: "submit", className: "theone-primary", disabled: !!busy || !newTitle.trim() }, t2("manage.createButton")),
@@ -5583,7 +6882,7 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
                   t2("topic.mergedFrom", { title: merge.title }),
                   " ",
                   (0, import_react2.createElement)("button", { type: "button", className: "theone-quiet", disabled: !!busy, onClick: () => {
-                    void post("/api/theone/topics", { action: "unmerge", id: merge.sourceId });
+                    void post2("/api/theone/topics", { action: "unmerge", id: merge.sourceId });
                   } }, t2("topic.unmerge"))
                 ))
               ),
@@ -5613,7 +6912,7 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
                       type: "button",
                       disabled: !!busy,
                       onClick: () => {
-                        void post("/api/theone/topics", { action: "status", id, done: topic.topicStatus !== "done" });
+                        void post2("/api/theone/topics", { action: "status", id, done: topic.topicStatus !== "done" });
                       }
                     },
                     t2(topic.topicStatus === "done" ? "topic.reopen" : "topic.markDone")
@@ -5627,14 +6926,14 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
                   }, t2("topic.source") + (topic.sourceSessionIds.length > 1 ? " " + (i + 1) : "")))
                 ),
                 linkRow(id),
-                (0, import_react2.createElement)(TopicManager, { key: `${id}:${topic.title}:${topic.summary}:${constraints}`, topic, constraints, groups: snapshot.groups, contexts: snapshot.contexts, post, busy: !!busy })
+                (0, import_react2.createElement)(TopicManager, { key: `${id}:${topic.title}:${topic.summary}:${constraints}`, topic, constraints, groups: snapshot.groups, contexts: snapshot.contexts, post: post2, busy: !!busy })
               ) : null
             )];
           }))
         );
       })),
       // How messages were sorted is for checking now and then, so it comes after the topics.
-      snapshot && routes.length ? (0, import_react2.createElement)(RouteList, { routes, stats: routeStats, contexts: snapshot.contexts, post, busy: !!busy }) : null,
+      snapshot && routes.length ? (0, import_react2.createElement)(RouteList, { routes, stats: routeStats, contexts: snapshot.contexts, post: post2, busy: !!busy }) : null,
       // Where to find people and the project, for whoever wants them: quiet links at the foot, no prompt.
       (0, import_react2.createElement)(
         "footer",
@@ -5649,7 +6948,7 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
   ctx.effect(() => {
     const style = document.createElement("style");
     style.dataset.plugin = "dsh-theone";
-    style.textContent = sidebarCss + catalogCss + settingsCss + composerCss + setupCss;
+    style.textContent = sidebarCss + foamCss + catalogCss + settingsCss + composerCss + setupCss;
     document.head.append(style);
     return () => {
       lifetime.abort();
@@ -5796,7 +7095,7 @@ ${body}` }, (0, import_react2.createElement)("strong", null, title), " ", body),
     ctx.slots.register({ name: "sidebar.panellist", id: panelId, order: -1e3, label: () => t("gateway.title") }, SidebarEntry),
     ctx.slots.register({ name: "sidebar.panellist", id: catalogPanelId, order: -999, label: () => t("catalog.title") }, ({ size }) => {
       const t2 = useText();
-      return (0, import_react2.createElement)("span", { className: "theone-catalog-entry", translate: "no" }, icon("grid", 16), size === 16 ? (0, import_react2.createElement)("span", null, t2("catalog.title")) : null);
+      return (0, import_react2.createElement)("span", { className: "theone-catalog-entry theone-workspace-entry", translate: "no" }, icon("grid", 16), size === 16 ? (0, import_react2.createElement)("span", null, t2("catalog.title")) : null);
     })
   ]);
 }
