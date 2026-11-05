@@ -23,6 +23,8 @@ export interface FoamHostOptions {
     openMainChat(): void;
     /** How many topics the cluster shows; with none, the Topic workspaces row stays as the way in. */
     onTopics?(count: number): void;
+    /** The sidebar is collapsed when the cluster mounts. */
+    rail?: boolean;
 }
 export interface FoamHost {
     setRail(on: boolean): void;

@@ -607,7 +607,7 @@ export function apply(ctx: Context) {
       const button = marker.current?.closest('button')
       if (!button) return
       const host = foam.current = mountFoamHost({
-        button, signal: lifetime.signal,
+        button, signal: lifetime.signal, rail: size !== 16,
         text: (key, vars) => t(`foam.${key}` as TheOneLocaleKey, vars),
         async mount(contextId) {
           const response = await fetch('/api/theone/context/mount', { method: 'POST', headers: { 'content-type': 'application/json' },

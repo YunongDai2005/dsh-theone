@@ -85,6 +85,8 @@ export interface FoamOptions {
   place?(): void
   /** How much the mark should swell right now (0..1): a message left, or an answer arrived. */
   onPulse?(amount: number): void
+  /** The sidebar starts collapsed: begin with the small cells instead of shrinking into them. */
+  rail?: boolean
 }
 
 export interface Foam {
@@ -199,7 +201,7 @@ export function createFoam(options: FoamOptions): Foam {
 
   const cells: Cell[] = [], ves: Vesicle[] = []
   let links = new Map<string, number>(), bonds: [Cell, Cell][] = []
-  let rail = false, sz = 1, height = 8, pulse = 0, folded = 0, uid = 0, first = true
+  let rail = !!options.rail, sz = rail ? MINI : 1, height = 8, pulse = 0, folded = 0, uid = 0, first = true
   let L: Pt = { x: 0, y: 0 }, ptr: Pt | null = null
   let drag: { cell: Cell; dx: number; dy: number; trail: { x: number; y: number; t: number }[] } | null = null
   let target: { kind: 'main' } | { kind: 'cell'; cell: Cell } | { kind: 'session'; el: Element; id: string } | null = null

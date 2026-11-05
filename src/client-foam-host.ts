@@ -70,6 +70,8 @@ export interface FoamHostOptions {
   openMainChat(): void
   /** How many topics the cluster shows; with none, the Topic workspaces row stays as the way in. */
   onTopics?(count: number): void
+  /** The sidebar is collapsed when the cluster mounts. */
+  rail?: boolean
 }
 
 export interface FoamHost { setRail(on: boolean): void; refresh(): void; destroy(): void }
@@ -131,7 +133,7 @@ export function mountFoamHost(options: FoamHostOptions): FoamHost {
     text: options.text,
   }
   const foam: Foam = createFoam({
-    host, actions,
+    host, actions, rail: options.rail,
     mark: () => button.querySelector('.theone-symbol'),
     side: () => button.closest('[data-sidebar-collapsed]') ?? button.closest('nav')?.parentElement ?? null,
     place: () => {

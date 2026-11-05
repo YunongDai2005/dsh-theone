@@ -130,7 +130,7 @@ export function mountFoamHost(options) {
         text: options.text,
     };
     const foam = createFoam({
-        host, actions,
+        host, actions, rail: options.rail,
         mark: () => button.querySelector('.theone-symbol'),
         side: () => button.closest('[data-sidebar-collapsed]') ?? button.closest('nav')?.parentElement ?? null,
         place: () => {

@@ -103,6 +103,8 @@ export interface FoamOptions {
     place?(): void;
     /** How much the mark should swell right now (0..1): a message left, or an answer arrived. */
     onPulse?(amount: number): void;
+    /** The sidebar starts collapsed: begin with the small cells instead of shrinking into them. */
+    rail?: boolean;
 }
 export interface Foam {
     update(model: FoamModel): void;

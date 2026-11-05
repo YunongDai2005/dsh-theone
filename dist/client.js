@@ -219,7 +219,7 @@ function createFoam(options) {
   const keys = /* @__PURE__ */ new Map();
   const cells = [], ves = [];
   let links = /* @__PURE__ */ new Map(), bonds = [];
-  let rail = false, sz = 1, height = 8, pulse = 0, folded = 0, uid = 0, first = true;
+  let rail = !!options.rail, sz = rail ? MINI : 1, height = 8, pulse = 0, folded = 0, uid = 0, first = true;
   let L = { x: 0, y: 0 }, ptr = null;
   let drag = null;
   let target = null;
@@ -1242,6 +1242,7 @@ function mountFoamHost(options) {
   const foam = createFoam({
     host,
     actions,
+    rail: options.rail,
     mark: () => button.querySelector(".theone-symbol"),
     side: () => button.closest("[data-sidebar-collapsed]") ?? button.closest("nav")?.parentElement ?? null,
     place: () => {
@@ -5029,6 +5030,7 @@ function apply(ctx) {
       const host = foam.current = mountFoamHost({
         button,
         signal: lifetime.signal,
+        rail: size !== 16,
         text: (key, vars) => t2(`foam.${key}`, vars),
         async mount(contextId) {
           const response = await fetch("/api/theone/context/mount", {

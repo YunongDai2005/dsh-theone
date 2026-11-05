@@ -103,7 +103,7 @@ export function createFoam(options) {
     const keys = new Map();
     const cells = [], ves = [];
     let links = new Map(), bonds = [];
-    let rail = false, sz = 1, height = 8, pulse = 0, folded = 0, uid = 0, first = true;
+    let rail = !!options.rail, sz = rail ? MINI : 1, height = 8, pulse = 0, folded = 0, uid = 0, first = true;
     let L = { x: 0, y: 0 }, ptr = null;
     let drag = null;
     let target = null;
