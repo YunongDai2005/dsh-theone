@@ -585,7 +585,8 @@ export function createFoam(options: FoamOptions): Foam {
       } else {
         const act = c.cur || c.state !== 'idle' ? 1 : c.w
         const ox = cx - c.x, oy = (cy - c.y) * 1.8, od = Math.hypot(ox, oy) || 1, pull = Math.min(od, 30 * sz) * 1.6
-        fx2 += ox / od * pull + shiftX; fy2 += oy / od * pull + shiftY - 28 * (act - .45) * sz
+        // The topic main chat is in rises closest to the card it belongs to.
+        fx2 += ox / od * pull + shiftX; fy2 += oy / od * pull + shiftY - (28 * (act - .45) + (c.cur ? 45 : 0)) * sz
         const wob = (c.state === 'running' ? 14 : c.state === 'idle' ? 3 + 4 * c.w : 5) * sz
         fx2 += wob * Math.sin(t * .31 + c.phase) + wob * .5 * Math.sin(t * .83 + c.phase * 2)
         fy2 += wob * Math.cos(t * .27 + c.phase * 1.4)
