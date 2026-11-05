@@ -60,11 +60,14 @@ export function projectBubbles(store, input) {
         const lifecycle = topicStatus({ latest: effectiveRun, declaredDoneAt: declared.get(context.id)?.at,
             dormant: activityLabel(lastAt.get(context.id), dormancy.perTopic.get(context.id) ?? dormancy.global, now).dormant,
             asking: ownWork.some(item => item.phase === 'waiting_user') });
+        const sources = store.sources(context.id).filter(id => id !== context.workingSessionId);
+        sources.sort((a, b) => (input.sessionCreatedAt?.get(b) ?? 0) - (input.sessionCreatedAt?.get(a) ?? 0) || (a < b ? -1 : a > b ? 1 : 0));
+        const openSessionId = sources[0] ?? context.workingSessionId;
         const used = usage.get(context.id);
         const queueMerge = input.merges?.some(op => op.sourceId === context.id || op.targetId === context.id)
             ? { allowed: false, reason: 'topic_busy' } : { allowed: true };
         const idle = input.busy ? { allowed: false, reason: 'gateway_busy' } : { allowed: true };
-        return { id: context.id, title: context.title, label: bubbleLabel(context), topicRevision: null, current: context.id === current, lifecycle,
+        return { id: context.id, title: context.title, label: bubbleLabel(context), openSessionId, topicRevision: null, current: context.id === current, lifecycle,
             declaredDoneAt: declared.get(context.id)?.at ?? null, effectiveDone: lifecycle === 'done', archived: hidden.get(context.id) === 'archived',
             private: privateIds.has(context.id), groupId: groups.get(context.id) ?? null, project: null,
             usage: { completedCalls: used?.completedCalls ?? 0, recentCalls: used?.recentCalls ?? 0, lastUsedAt: used?.lastUsedAt ?? null },

@@ -68,9 +68,17 @@ test('plugin teardown releases requests before the database closes; unregister a
     app.ctx.theone.store.rememberGateway('test-gateway', app.gateway.id)
     const initial = app.ctx.theone.bubbles.read({ gatewayId: app.gateway.id }); if (initial.kind !== 'update') throw new Error('missing head')
     const cursor = initial.snapshot.cursor, url = 'http://dsh.internal/api/theone/bubbles?' + new URLSearchParams({ gatewayId: app.gateway.id, epoch: cursor.epoch, since: String(cursor.version), after: String(cursor.seq), waitMs: '25000' })
-    const pending = handler.fetch(new Request(url))
-    assert.equal(app.ctx.theone.bubbles.pendingRequests, 1)
     const aggregator = app.ctx.theone.bubbles
+    const registered = Promise.withResolvers<void>(), poll = aggregator.poll.bind(aggregator)
+    aggregator.poll = (query, signal) => {
+      const result = poll(query, signal)
+      registered.resolve()
+      return result
+    }
+    const pending = handler.fetch(new Request(url))
+    // Header initialization may precede registration; teardown still has to release a real waiter.
+    await registered.promise
+    assert.equal(aggregator.pendingRequests, 1)
     const close = app.ctx.theone.store.close.bind(app.ctx.theone.store)
     let pendingAtClose = -1
     app.ctx.theone.store.close = () => { pendingAtClose = aggregator.pendingRequests; close() }

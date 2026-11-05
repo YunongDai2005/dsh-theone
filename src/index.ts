@@ -359,6 +359,9 @@ export default class TheOne extends Service {
   shadowError?: string
   readonly bubbles: BubbleAggregator
   readonly bubbleActivity = new BubbleActivity()
+  private readonly bubbleSessionDates = new Map<string, number>()
+  private readonly bubbleSessionsReady: Promise<void>
+  private readonly bubbleSessionsAbort = new AbortController()
   readonly store: ContextStore
   readonly work: PersistentWork
   private readonly maintenance = new TopicMaintenance()
@@ -461,6 +464,7 @@ export default class TheOne extends Service {
     ctx.effect(() => async () => {
       this.stopping = true
       this.bubbles?.close()
+      this.bubbleSessionsAbort.abort()
       this.maintenance.close()
       await this.mergeQueue?.close()
       if (!this.reloadingSelf && !this.selectedInProfile(profileDir()))
@@ -518,6 +522,16 @@ export default class TheOne extends Service {
       changed: op => this.bubbles?.publish([{ type: 'merge.changed', ...op }]),
     })
     this.bubbles = new BubbleAggregator(config.gatewayKey, id => this.bubbleView(id), () => { const latest = this.store.latestGateway(config.gatewayKey); return [...this.store.gatewayIds(config.gatewayKey).filter(id => id !== latest), ...(latest ? [latest] : [])] }, { unavailableIds: () => this.store.unreachable(), topicIds: () => this.store.contexts().map(topic => topic.id) })
+    // Header metadata only: no session replay, indexing or recovery on the observation path.
+    this.bubbleSessionsReady = this.ctx.sessionQuery.listSessions(this.bubbleSessionsAbort.signal).then(records => {
+      if (this.stopping) return
+      for (const { header } of records) this.bubbleSessionDates.set(header.id, header.createdAt)
+      this.bubbles.publish()
+    }).catch(() => { /* Unknown dates retain deterministic source-id ordering. */ })
+    ctx.on('session/created', session => {
+      this.bubbleSessionDates.set(session.id, session.header.createdAt)
+      this.bubbles.publish()
+    })
     if (this.catalog) this.catalog.onStatusChange = () => this.bubbles.publish()
     ctx.effect(() => this.bubbleActivity.subscribe((events, id) => this.bubbles.publish(events, id)))
     ctx.effect(() => this.store.subscribe(change => {
@@ -1019,7 +1033,7 @@ export default class TheOne extends Service {
     const workItems = this.bubbleActivity.snapshot(), latestRuns = this.store.latestTopicRuns()
     const doneCapabilities = new Map(this.store.contexts().map(topic => [topic.id, this.topicDoneCapability(topic.id, workItems, latestRuns)]))
     return projectBubbles(this.store, { scope: { gatewayKey: this.config.gatewayKey, gatewayId: gatewayId ?? null },
-      workItems, doneCapabilities, merges: this.mergeQueue?.active(), busy: this.busy || this.maintenance.isBusy(), linkScope: this.config.linkScope,
+      workItems, doneCapabilities, sessionCreatedAt: this.bubbleSessionDates, merges: this.mergeQueue?.active(), busy: this.busy || this.maintenance.isBusy(), linkScope: this.config.linkScope,
       gateway: agent ? this.bubbleActivity.gateway(agent, this.store.current(this.config.gatewayKey) ?? null) : null,
       health: { catalog: !this.catalog ? 'unavailable' : this.catalog.snapshot().status.consent !== 'granted' ? 'consent_required'
         : this.catalog.snapshot().status.running ? 'indexing' : this.catalog.snapshot().status.searchUnavailable ? 'unavailable' : 'ready',
@@ -1080,7 +1094,7 @@ export default class TheOne extends Service {
       if (!connection?.fetch?.register) return
       child.effect(() => connection.fetch!.register({ path: '/api/theone/bubbles', methods: ['GET'], requestBody: 'buffered', fetch: async request => {
         const headers = { 'cache-control': 'no-store' }
-        try { return Response.json(await this.bubbles.poll(parseBubbleQuery(new URL(request.url)), request.signal), { headers }) }
+        try { await this.bubbleSessionsReady; return Response.json(await this.bubbles.poll(parseBubbleQuery(new URL(request.url)), request.signal), { headers }) }
         catch (error) {
           const code = error instanceof Error ? error.message : 'INVALID_CURSOR'
           return Response.json({ error: code }, { status: code === 'BUBBLES_CLOSED' ? 503 : code === 'TOO_MANY_WAITERS' ? 429 : code === 'REQUEST_ABORTED' ? 499 : code === 'UNKNOWN_GATEWAY' ? 404 : 400, headers })

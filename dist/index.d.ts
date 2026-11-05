@@ -112,6 +112,9 @@ export default class TheOne extends Service {
     shadowError?: string;
     readonly bubbles: BubbleAggregator;
     readonly bubbleActivity: BubbleActivity;
+    private readonly bubbleSessionDates;
+    private readonly bubbleSessionsReady;
+    private readonly bubbleSessionsAbort;
     readonly store: ContextStore;
     readonly work: PersistentWork;
     private readonly maintenance;

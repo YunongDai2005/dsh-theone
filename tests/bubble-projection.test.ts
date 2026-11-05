@@ -145,3 +145,20 @@ for (const row of [
     assert.deepEqual(db.prepare('SELECT total_changes() AS n').get(), before)
   } finally { store.close() }
 })
+
+test('openSessionId prefers the newest source over the Worker, with deterministic ties', () => {
+  const store = setup()
+  try {
+    store.attachSession('a', 'a-older'); store.attachSession('a', 'z-newest')
+    const worker = store.contexts().find(t => t.id === 'a')!.workingSessionId
+    store.addSource('a', worker)
+    const sessionCreatedAt = new Map([['a-older', 100], ['z-newest', 200], [worker, 300]])
+    const view = projectBubbles(store, { scope, sessionCreatedAt })
+    assert.equal(view.topics.find(t => t.id === 'a')!.openSessionId, 'z-newest')
+    assert.equal(view.topics.find(t => t.id === 'b')!.openSessionId, store.contexts().find(t => t.id === 'b')!.workingSessionId)
+    sessionCreatedAt.set('a-older', 200)
+    assert.equal(projectBubbles(store, { scope, sessionCreatedAt }).topics.find(t => t.id === 'a')!.openSessionId, 'a-older')
+    store.replaceHidden([{ id: 'a', reason: 'archived' }])
+    assert.equal(projectBubbles(store, { scope, sessionCreatedAt }).topics.find(t => t.id === 'a')!.openSessionId, 'a-older')
+  } finally { store.close() }
+})

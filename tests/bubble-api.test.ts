@@ -104,3 +104,30 @@ test('committed merge and unmerge events retain the removed source id without ex
     assert.ok(undone.events.some(e => e.type === 'topic.unmerged' && e.sourceId === 'ctx_thesis' && e.targetId === 'ctx_qwen_9070xt'))
   } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
 })
+
+test('open-session metadata survives restart and includes archived cold sources without loading Workers', { timeout: 15000 }, async () => {
+  const { SessionId } = await import('@deepseek-ai/dsh-session')
+  const root = await mkdtemp(join(tmpdir(), 'theone-bubble-sessions-'))
+  let app = await harness(root)
+  try {
+    const older = (await app.ctx.agents.create({ sessionId: SessionId('a-old-source'), agentOptions: { provider: 'fixture', model: 'fixture' } })).agent.session
+    await new Promise(resolve => setTimeout(resolve, 5))
+    const newer = (await app.ctx.agents.create({ sessionId: SessionId('z-new-source'), agentOptions: { provider: 'fixture', model: 'fixture' } })).agent.session
+    const store = app.ctx.theone.store
+    store.attachSession('ctx_thesis', older.id); store.attachSession('ctx_thesis', newer.id)
+    store.mount('test-gateway', 'ctx_thesis')
+    store.replaceHidden([{ id: 'ctx_thesis', reason: 'archived' }])
+    const workerId = store.contexts().find(t => t.id === 'ctx_thesis')!.workingSessionId
+    await app.ctx.sessions.flush(older); await app.ctx.sessions.flush(newer)
+    await app.close(); app = await harness(root)
+    assert.ok((await app.ctx.sessionQuery.listSessions()).some(r => r.header.id === newer.id), 'newer source must be materialized on disk')
+    const handler = peered(new HostConnectionService(app.ctx, [], undefined as never))
+    await new Promise<void>(resolve => setImmediate(resolve))
+    const response = await handler.fetch(new Request('http://dsh.internal/api/theone/bubbles'))
+    const read = await response.json() as BubbleReadResponse
+    assert.equal(read.kind, 'update'); if (read.kind !== 'update') return
+    assert.equal(read.snapshot.topics.find(t => t.id === 'ctx_thesis')!.openSessionId, newer.id)
+    assert.equal(app.model.requests.length, 0)
+    assert.equal(app.ctx.agents.get(SessionId(workerId)), undefined)
+  } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
+})

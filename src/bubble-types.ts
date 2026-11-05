@@ -11,7 +11,7 @@ export interface Capability {
   reason?: 'gateway_busy' | 'topic_busy' | 'unavailable' | 'pending_delivery' | 'unsupported'
 }
 export interface BubbleTopic {
-  id: string; title: string; label: string | null
+  id: string; title: string; label: string | null; openSessionId: string
   /** Reserved for structural preconditions; not implemented in phase one. */
   topicRevision: number | null
   current: boolean; lifecycle: TopicLifecycle; declaredDoneAt: number | null; effectiveDone: boolean
