@@ -384,12 +384,12 @@ export declare const zh: {
     readonly 'setup.tagNoneHint': "对话界面保持简洁，TheOne 在后台安静地整理。";
     readonly 'setup.newBadge': "新版本";
     readonly 'setup.newTitle': "TheOne 有哪些新变化";
-    readonly 'setup.new.mark': "活起来的标识";
-    readonly 'setup.new.markHint': "TheOne 的标识变成了一个会呼吸的细胞，打开主聊天时会更活跃一些。";
-    readonly 'setup.new.sessions': "话题会话可以放回侧边栏";
-    readonly 'setup.new.sessionsHint': "话题会话可以和你的其他会话放在一起，也可以继续收在话题列表里。";
-    readonly 'setup.new.pumpkin': "万圣节小彩蛋";
-    readonly 'setup.new.pumpkinHint': "10 月 30 日和 31 日，细胞会变成一颗南瓜。";
+    readonly 'setup.new.cluster': "话题都在主聊天下面";
+    readonly 'setup.new.clusterHint': "每个话题是一颗细胞，挤在主聊天下面；最近用过的更大，正在做事的会发光。";
+    readonly 'setup.new.route': "说一句话，看它去了哪";
+    readonly 'setup.new.routeHint': "每句话会飞进对应的话题；拿不准时，点亮着的另一个话题就能换过去。";
+    readonly 'setup.new.quiet': "聊天里只有对话";
+    readonly 'setup.new.quietHint': "分到哪个话题、正在做什么，都在侧栏的细胞上看，不再写进主聊天。";
     readonly 'setup.doneTitle': "一切就绪";
     readonly 'setup.doneBody': "现在，直接说出你想做的事吧。\n以上设置随时可以在 TheOne 设置中更改。";
     readonly 'setup.apps': "还可以在 TheOne 设置里连接微信、Telegram 或 iMessage。";

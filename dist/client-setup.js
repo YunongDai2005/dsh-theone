@@ -32,9 +32,12 @@ const cell = (size) => `<svg class="theone-setup-cell" width="${size}" height="$
 const notices = ['switch', 'all', 'hidden'];
 /** What changed in this version, shown to people who update; each line is a picture, a name and one sentence. */
 const news = [
-    { key: 'mark', svg: '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M17.4 10c0 4.2-3.2 7.3-7.4 7.3S2.6 14.2 2.6 10 5.8 2.6 10 2.6s7.4 3.2 7.4 7.4Z" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="10.4" cy="9.6" r="2.9" fill="currentColor"/></svg>' },
-    { key: 'sessions', svg: `<svg viewBox="0 0 36 24" aria-hidden="true">${icons.sidebar}</svg>` },
-    { key: 'pumpkin', svg: '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 5.6c-1-.9-2.6-1-4-.4C3.8 6.1 2.4 8.4 2.6 11c.3 3.5 3.4 5.6 7.4 5.6s7.1-2.1 7.4-5.6c.2-2.6-1.2-4.9-3.4-5.8-1.4-.6-3-.5-4 .4Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M10 5.4c0-1.4.6-2.4 1.8-2.9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>' },
+    // Three cells clinging together, the biggest one in use.
+    { key: 'cluster', svg: '<svg viewBox="0 0 20 20" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="7.2" cy="8" r="4.6"/><circle cx="13.6" cy="7.4" r="3.4"/><circle cx="11.6" cy="14.2" r="3.6"/></g><circle cx="7.2" cy="8" r="1.5" fill="currentColor"/><circle cx="13.6" cy="7.4" r="1" fill="currentColor"/><circle cx="11.6" cy="14.2" r="1" fill="currentColor"/></svg>' },
+    // A small vesicle arcing from the mark into a topic.
+    { key: 'route', svg: '<svg viewBox="0 0 20 20" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="5" cy="6" r="3"/><circle cx="14.2" cy="13.6" r="4.2"/><path d="M7.6 7.8c2.6.4 4 1.6 4.6 3.4" stroke-dasharray="1.4 2" stroke-linecap="round"/></g><circle cx="5" cy="6" r="1" fill="currentColor"/><circle cx="14.2" cy="13.6" r="1.4" fill="currentColor"/></svg>' },
+    // A speech bubble with nothing but the conversation in it.
+    { key: 'quiet', svg: '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 4.6h12a1.6 1.6 0 0 1 1.6 1.6v6.6a1.6 1.6 0 0 1-1.6 1.6H9l-3.4 2.8v-2.8H4a1.6 1.6 0 0 1-1.6-1.6V6.2A1.6 1.6 0 0 1 4 4.6Z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M6 8.4h8M6 11h5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>' },
 ];
 export async function openSetup({ t, cellFrame, signal, onClose }) {
     const read = async (path) => {

@@ -145,6 +145,8 @@ The conversations are model-written from a script and this version has no assist
 
 ## Recent changes
 
+Version 0.5.0 turns every topic into a cell under main chat so you can see where each message goes, keeps routing receipts out of main chat, and makes routing faster and cheaper.
+
 Version 0.4.5 adds a short setup after installing or updating, lets topic sessions sit in the sidebar, and turns TheOne's mark into a breathing cell that becomes a pumpkin for Halloween.
 
 Version 0.4.4 fixes right-click Settings in the desktop app and main chat sometimes sticking while it opens, draws drop-downs in DSH's style, and puts a pumpkin on the main chat entry for Halloween.
@@ -212,7 +214,7 @@ TheOne's settings live in DSH's own Settings: open DSH Settings and choose **The
 
 | Setting | What it does |
 | --- | --- |
-| Topic notices | How main chat shows topic changes: hidden (default; the topic workspace shows where each message went), one line only when the topic changes, or on every message with the reason |
+| Topic notices | How main chat shows topic changes: hidden (default; the topic cluster in the sidebar shows where each message went, and main chat holds only the conversation), one line only when the topic changes, or on every message with the reason |
 | Linking scope | Learn automatically (default), same workspace only, or off |
 | Model | Follow DSH (default) or pin the background model from any model configured in DSH; a pinned model takes precedence over main chat's selector |
 | Routing | LLM decision (default) or rule-based |

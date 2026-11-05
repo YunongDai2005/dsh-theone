@@ -1427,9 +1427,12 @@ var arrow = '<svg viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M3
 var cell = (size) => `<svg class="theone-setup-cell" width="${size}" height="${size}" viewBox="0 0 20 20" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><circle fill="currentColor"/></svg>`;
 var notices = ["switch", "all", "hidden"];
 var news = [
-  { key: "mark", svg: '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M17.4 10c0 4.2-3.2 7.3-7.4 7.3S2.6 14.2 2.6 10 5.8 2.6 10 2.6s7.4 3.2 7.4 7.4Z" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="10.4" cy="9.6" r="2.9" fill="currentColor"/></svg>' },
-  { key: "sessions", svg: `<svg viewBox="0 0 36 24" aria-hidden="true">${icons.sidebar}</svg>` },
-  { key: "pumpkin", svg: '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 5.6c-1-.9-2.6-1-4-.4C3.8 6.1 2.4 8.4 2.6 11c.3 3.5 3.4 5.6 7.4 5.6s7.1-2.1 7.4-5.6c.2-2.6-1.2-4.9-3.4-5.8-1.4-.6-3-.5-4 .4Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M10 5.4c0-1.4.6-2.4 1.8-2.9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>' }
+  // Three cells clinging together, the biggest one in use.
+  { key: "cluster", svg: '<svg viewBox="0 0 20 20" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="7.2" cy="8" r="4.6"/><circle cx="13.6" cy="7.4" r="3.4"/><circle cx="11.6" cy="14.2" r="3.6"/></g><circle cx="7.2" cy="8" r="1.5" fill="currentColor"/><circle cx="13.6" cy="7.4" r="1" fill="currentColor"/><circle cx="11.6" cy="14.2" r="1" fill="currentColor"/></svg>' },
+  // A small vesicle arcing from the mark into a topic.
+  { key: "route", svg: '<svg viewBox="0 0 20 20" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="5" cy="6" r="3"/><circle cx="14.2" cy="13.6" r="4.2"/><path d="M7.6 7.8c2.6.4 4 1.6 4.6 3.4" stroke-dasharray="1.4 2" stroke-linecap="round"/></g><circle cx="5" cy="6" r="1" fill="currentColor"/><circle cx="14.2" cy="13.6" r="1.4" fill="currentColor"/></svg>' },
+  // A speech bubble with nothing but the conversation in it.
+  { key: "quiet", svg: '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 4.6h12a1.6 1.6 0 0 1 1.6 1.6v6.6a1.6 1.6 0 0 1-1.6 1.6H9l-3.4 2.8v-2.8H4a1.6 1.6 0 0 1-1.6-1.6V6.2A1.6 1.6 0 0 1 4 4.6Z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M6 8.4h8M6 11h5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>' }
 ];
 async function openSetup({ t, cellFrame, signal, onClose }) {
   const read = async (path) => {
@@ -2050,12 +2053,12 @@ var zh = {
   "setup.tagNoneHint": "\u5BF9\u8BDD\u754C\u9762\u4FDD\u6301\u7B80\u6D01\uFF0CTheOne \u5728\u540E\u53F0\u5B89\u9759\u5730\u6574\u7406\u3002",
   "setup.newBadge": "\u65B0\u7248\u672C",
   "setup.newTitle": "TheOne \u6709\u54EA\u4E9B\u65B0\u53D8\u5316",
-  "setup.new.mark": "\u6D3B\u8D77\u6765\u7684\u6807\u8BC6",
-  "setup.new.markHint": "TheOne \u7684\u6807\u8BC6\u53D8\u6210\u4E86\u4E00\u4E2A\u4F1A\u547C\u5438\u7684\u7EC6\u80DE\uFF0C\u6253\u5F00\u4E3B\u804A\u5929\u65F6\u4F1A\u66F4\u6D3B\u8DC3\u4E00\u4E9B\u3002",
-  "setup.new.sessions": "\u8BDD\u9898\u4F1A\u8BDD\u53EF\u4EE5\u653E\u56DE\u4FA7\u8FB9\u680F",
-  "setup.new.sessionsHint": "\u8BDD\u9898\u4F1A\u8BDD\u53EF\u4EE5\u548C\u4F60\u7684\u5176\u4ED6\u4F1A\u8BDD\u653E\u5728\u4E00\u8D77\uFF0C\u4E5F\u53EF\u4EE5\u7EE7\u7EED\u6536\u5728\u8BDD\u9898\u5217\u8868\u91CC\u3002",
-  "setup.new.pumpkin": "\u4E07\u5723\u8282\u5C0F\u5F69\u86CB",
-  "setup.new.pumpkinHint": "10 \u6708 30 \u65E5\u548C 31 \u65E5\uFF0C\u7EC6\u80DE\u4F1A\u53D8\u6210\u4E00\u9897\u5357\u74DC\u3002",
+  "setup.new.cluster": "\u8BDD\u9898\u90FD\u5728\u4E3B\u804A\u5929\u4E0B\u9762",
+  "setup.new.clusterHint": "\u6BCF\u4E2A\u8BDD\u9898\u662F\u4E00\u9897\u7EC6\u80DE\uFF0C\u6324\u5728\u4E3B\u804A\u5929\u4E0B\u9762\uFF1B\u6700\u8FD1\u7528\u8FC7\u7684\u66F4\u5927\uFF0C\u6B63\u5728\u505A\u4E8B\u7684\u4F1A\u53D1\u5149\u3002",
+  "setup.new.route": "\u8BF4\u4E00\u53E5\u8BDD\uFF0C\u770B\u5B83\u53BB\u4E86\u54EA",
+  "setup.new.routeHint": "\u6BCF\u53E5\u8BDD\u4F1A\u98DE\u8FDB\u5BF9\u5E94\u7684\u8BDD\u9898\uFF1B\u62FF\u4E0D\u51C6\u65F6\uFF0C\u70B9\u4EAE\u7740\u7684\u53E6\u4E00\u4E2A\u8BDD\u9898\u5C31\u80FD\u6362\u8FC7\u53BB\u3002",
+  "setup.new.quiet": "\u804A\u5929\u91CC\u53EA\u6709\u5BF9\u8BDD",
+  "setup.new.quietHint": "\u5206\u5230\u54EA\u4E2A\u8BDD\u9898\u3001\u6B63\u5728\u505A\u4EC0\u4E48\uFF0C\u90FD\u5728\u4FA7\u680F\u7684\u7EC6\u80DE\u4E0A\u770B\uFF0C\u4E0D\u518D\u5199\u8FDB\u4E3B\u804A\u5929\u3002",
   "setup.doneTitle": "\u4E00\u5207\u5C31\u7EEA",
   "setup.doneBody": "\u73B0\u5728\uFF0C\u76F4\u63A5\u8BF4\u51FA\u4F60\u60F3\u505A\u7684\u4E8B\u5427\u3002\n\u4EE5\u4E0A\u8BBE\u7F6E\u968F\u65F6\u53EF\u4EE5\u5728 TheOne \u8BBE\u7F6E\u4E2D\u66F4\u6539\u3002",
   "setup.apps": "\u8FD8\u53EF\u4EE5\u5728 TheOne \u8BBE\u7F6E\u91CC\u8FDE\u63A5\u5FAE\u4FE1\u3001Telegram \u6216 iMessage\u3002",
@@ -2503,12 +2506,12 @@ var en = {
   "setup.tagNoneHint": "The conversation stays clean while TheOne organizes quietly in the background.",
   "setup.newBadge": "New version",
   "setup.newTitle": "What's new in TheOne",
-  "setup.new.mark": "A mark that comes alive",
-  "setup.new.markHint": "TheOne\u2019s mark is now a breathing cell, a little livelier while main chat is open.",
-  "setup.new.sessions": "Topic sessions in the sidebar",
-  "setup.new.sessionsHint": "Topic sessions can sit with your other sessions, or stay in the topic list.",
-  "setup.new.pumpkin": "A Halloween surprise",
-  "setup.new.pumpkinHint": "On 30 and 31 October, the cell turns into a pumpkin.",
+  "setup.new.cluster": "Every topic under main chat",
+  "setup.new.clusterHint": "Each topic is a cell clinging under main chat; recent ones are bigger, busy ones glow.",
+  "setup.new.route": "See where each message goes",
+  "setup.new.routeHint": "Each message flies into its topic; when TheOne was unsure, click the other lit topic to move it.",
+  "setup.new.quiet": "Only the conversation in chat",
+  "setup.new.quietHint": "Which topic a message went to and what is running show on the cells, not in main chat.",
   "setup.doneTitle": "You're all set",
   "setup.doneBody": "Now just say what you want to do.\nYou can change these any time in TheOne settings.",
   "setup.apps": "You can also connect WeChat, Telegram or iMessage in TheOne settings.",
