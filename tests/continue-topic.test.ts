@@ -17,9 +17,10 @@ function said(agent: Agent, offset: number) {
     ? [event.data.message.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('')] : [])
 }
 
-test('"Continue chatting" on another topic says in main chat which topic comes next', async () => {
+// With topic notices on, main chat says which topic comes next; hidden (the default), the sidebar's cluster shows it and chat stays quiet.
+for (const routeNotice of ['switch', 'hidden'] as const) test(`"Continue chatting" on another topic ${routeNotice === 'hidden' ? 'adds nothing to main chat with topic notices hidden' : 'says in main chat which topic comes next'}`, async () => {
   const root = await mkdtemp(join(tmpdir(), 'theone-continue-'))
-  const app = await harness(root)
+  const app = await harness(root, undefined, { theoneConfig: { routeNotice } })
   try {
     await app.ctx.plugin(Storage)
     await app.ctx.plugin(JsonStorage, { root: join(root, 'workspace-store') })
@@ -42,10 +43,13 @@ test('"Continue chatting" on another topic says in main chat which topic comes n
     let offset = app.gateway.session.snapshotEvents().length
     await continueTopic(other.id)
     const notes = said(app.gateway, offset)
-    assert.equal(notes.length, 1)
-    assert.ok(notes[0].startsWith(`接下来继续「${other.title}」`), notes[0])
-    assert.ok(!notes[0].includes('等待首次执行'), 'a placeholder is not where a topic left off')
-    assert.ok(!notes[0].includes('。。'), notes[0])
+    if (routeNotice === 'hidden') assert.deepEqual(notes, [])
+    else {
+      assert.equal(notes.length, 1)
+      assert.ok(notes[0].startsWith(`接下来继续「${other.title}」`), notes[0])
+      assert.ok(!notes[0].includes('等待首次执行'), 'a placeholder is not where a topic left off')
+      assert.ok(!notes[0].includes('。。'), notes[0])
+    }
     // Opening main chat again, or continuing the topic already in use, adds nothing.
     offset = app.gateway.session.snapshotEvents().length
     assert.equal((await post('gateway/prepare', { sessionId: app.gateway.id })).status, 200)

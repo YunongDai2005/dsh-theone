@@ -1014,8 +1014,9 @@ export default class TheOne extends Service {
       // The notice speaks the language the message was written in.
       const english = writtenInEnglish(text)
       const why = notice === 'all' ? ` · ${reasonLabel(route.decision.reason, english)}` : ''
-      // Where routing hesitated, say so even with notices hidden: the topic workspace moves it in one click.
-      const maybe = (route.decision.alternateIds ?? []).flatMap(id => titleOf(id) ?? [])
+      // Where routing hesitated, the topic cluster lets the other candidates flicker and moves the message in one click;
+      // main chat says so only when the user asked for topic notices.
+      const maybe = notice === 'hidden' ? [] : (route.decision.alternateIds ?? []).flatMap(id => titleOf(id) ?? [])
       const hesitated = maybe.length ? (english ? ` · may be about ${maybe.map(title => `"${title}"`).join(' or ')}: move it in Topic workspaces` : ` · 也可能是「${maybe.join('」或「')}」，可以在话题工作区一键换`) : ''
       const summary = `${mark} ${titleOf(route.decision.contextId) ?? (english ? 'needs a topic' : '请补充话题')}${references.length ? (english ? ` · reference: ${references.join(', ')}` : ` · 参考：${references.join('、')}`) : ''}${hesitated}${why}`.slice(0, 200)
       const switched = route.decision.action === 'MOUNT' || route.decision.action === 'SWAP' || route.decision.action === 'CREATE'
@@ -4195,6 +4196,8 @@ export default class TheOne extends Service {
   private announceMount(gatewayId: string): void {
     const contextId = this.mountNotice
     this.mountNotice = undefined
+    // With topic notices hidden (the default) the sidebar's cluster marks the topic main chat continues; chat holds only the conversation.
+    if ((this.config.routeNotice ?? 'hidden') === 'hidden') return
     if (!contextId || this.store.current(this.config.gatewayKey) !== contextId) return
     const context = this.store.contexts().find(item => item.id === contextId)
     const agent = this.ctx.agents.get(SessionId(gatewayId))

@@ -7,7 +7,7 @@ import { harness, ask } from './harness.ts'
 
 test('a message naming two topics is not asked about, in either language: the first does the work, the other comes along', { timeout: 30000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'theone-language-'))
-  const app = await harness(root)
+  const app = await harness(root, undefined, { theoneConfig: { routeNotice: 'switch' } })
   try {
     for (const text of ['Qwen or the thesis status?', 'Qwen 和论文的进度？']) {
       const result = await ask(app.gateway, text)
@@ -15,7 +15,7 @@ test('a message naming two topics is not asked about, in either language: the fi
       const decision = app.ctx.theone.store.route(result.input.id)?.decision
       assert.equal(decision?.reason, 'unclear-settled')
       assert.deepEqual(decision?.alternateIds, ['ctx_thesis'])
-      // Notices are hidden by default, but a route that hesitated says so, in the message's language.
+      // With topic notices on, a route that hesitated says so in the message's language (hidden, the sidebar's cluster shows it instead).
       const notice = result.events.find(event => event.type === 'user/message' && event.data.source.kind === 'theone-route')
       assert.ok(notice?.type === 'user/message')
       assert.match(notice.data.content.map(block => block.type === 'text' ? block.text : '').join(''), /may be about "Video Attention Thesis"|也可能是「Video Attention Thesis」/)
