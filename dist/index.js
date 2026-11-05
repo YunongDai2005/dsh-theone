@@ -38,6 +38,9 @@ import { WeixinBridge } from "./weixin.js";
 import { TelegramApp } from "./telegram.js";
 import { IMessageApp } from "./imessage.js";
 import { PersistentWork } from "./persistent-work.js";
+import { BubbleAggregator, parseBubbleQuery } from "./bubble-aggregator.js";
+import { BubbleActivity } from "./bubble-activity.js";
+import { doneCapability, projectBubbles } from "./bubble-projection.js";
 import { ProjectQueue, projectKey } from "./project-queue.js";
 function redactDescriptor(text) {
     return text.replace(/\bsk-[a-zA-Z0-9_-]{16,}|\bBearer\s+\S+/gi, '[REDACTED]')
@@ -268,6 +271,8 @@ export default class TheOne extends Service {
     bindings;
     shadow;
     shadowError;
+    bubbles;
+    bubbleActivity = new BubbleActivity();
     store;
     work;
     projects = new ProjectQueue();
@@ -388,6 +393,7 @@ export default class TheOne extends Service {
         this.noticeBoard = new NoticeBoard(this.updater.current, config.noticeUrl || NOTICE_URL);
         ctx.effect(() => async () => {
             this.stopping = true;
+            this.bubbles?.close();
             if (!this.reloadingSelf && !this.selectedInProfile(profileDir()))
                 await this.releaseDefaultModel().catch(error => console.warn('TheOne could not switch DSH\'s default model back.', error));
             for (const timer of this.stowTimers.values())
@@ -446,12 +452,41 @@ export default class TheOne extends Service {
         this.imessage = new IMessageApp(ctx, host('imessage'));
         for (const app of [this.weixin, this.telegram, this.imessage])
             app.apply();
+        this.bubbles = new BubbleAggregator(config.gatewayKey, id => this.bubbleView(id), () => { const latest = this.store.latestGateway(config.gatewayKey); return [...this.store.gatewayIds(config.gatewayKey).filter(id => id !== latest), ...(latest ? [latest] : [])]; }, { unavailableIds: () => this.store.unreachable(), topicIds: () => this.store.contexts().map(topic => topic.id) });
+        if (this.catalog)
+            this.catalog.onStatusChange = () => this.bubbles.publish();
+        ctx.effect(() => this.bubbleActivity.subscribe((events, id) => this.bubbles.publish(events, id)));
+        ctx.effect(() => this.store.subscribe(change => {
+            const events = [];
+            if (change.kind === 'uncorrectRoute' && change.result) {
+                const original = this.store.route(String(change.args[0]))?.decision.contextId;
+                if (original)
+                    events.push({ type: 'route.moved', messageId: String(change.args[0]), fromId: String(change.result), toId: original, cause: 'undo', reexecute: false });
+            }
+            if (change.kind === 'mergeTopics')
+                events.push({ type: 'topic.merged', sourceId: String(change.args[0]), targetId: String(change.args[1]) });
+            if (change.kind === 'unmergeTopic')
+                events.push({ type: 'topic.unmerged', sourceId: String(change.args[0]), targetId: String(change.result) });
+            this.bubbles.publish(events);
+        }));
+        const bubbleTimer = setInterval(() => this.bubbles.publish(), 60000);
+        bubbleTimer.unref();
+        ctx.effect(() => () => clearInterval(bubbleTimer));
         this.registerCatalogChannel();
         this.work.start();
         this.adapter = ctx.llm.registerAdapter(['theone'], new GatewayAdapter(this));
         ctx.on('session/event', (session, event) => {
             this.observeShadow(shadow => this.recordShadowEvent(shadow, session, event));
             this.recordBindingEvent(session, event);
+            if (event.type === 'assistant/message') {
+                const run = this.runs.get(session.id);
+                if (run)
+                    run.commit(event.seq);
+                else
+                    this.bubbleActivity.commitStandalone(session.id, event.seq);
+            }
+            if (event.type === 'turn/end' && this.store.isGateway(session.id))
+                this.bubbleActivity.endTurn(session.id, event.data.reason.kind === 'completed');
             if (event.type === 'permission/preset' || event.type === 'sandbox/mode' || event.type === 'approval/policy') {
                 // The user can tighten access while a model or reviewer is still running.
                 // Apply the new policy before the next tool, including set-aside topics.
@@ -515,7 +550,12 @@ export default class TheOne extends Service {
         // A message sent during a reply: about that reply, it reaches the Worker at its next step (an
         // interjection) or waits for it (queued), as in an ordinary session; about another matter, that
         // topic starts on it now, in the background.
+        const bubbleGateway = (agent) => agent.options.provider === 'theone' || this.store.isGateway(agent.id);
+        ctx.on('agent/inbox/claimed', ({ agent, message }) => { if (bubbleGateway(agent))
+            this.bubbleActivity.claim(agent, message); });
         ctx.on('agent/inbox/inserted', ({ agent, message }) => {
+            if (bubbleGateway(agent) && !this.moving.has(message.id))
+                this.bubbleActivity.input(agent, message);
             // A topic woken by something other than the user or TheOne (a subagent reporting back) carries
             // on where nobody sees it; main chat shows that work, as an ordinary chat would.
             if (WAKING_SOURCES.has(message.source.kind) && !this.relays.has(message.id) && !this.runForWorker(agent)) {
@@ -537,6 +577,8 @@ export default class TheOne extends Service {
         ctx.on('agent/inbox/discarded', ({ agent, message }) => {
             if (this.moving.has(message.id))
                 return;
+            if (bubbleGateway(agent))
+                this.bubbleActivity.discard(agent.id, message.id);
             this.runs.get(agent.id)?.withdraw(message.id);
             // Deleted from the queue: whatever started on it stops.
             this.sorting.get(message.id)?.abort.abort();
@@ -800,6 +842,7 @@ export default class TheOne extends Service {
             else if (provider && pickedNow)
                 this.pickedModel = { provider, model: pickedNow };
             let users = decision.messages.filter(message => message.source.kind === 'user');
+            this.bubbleActivity.batch(agent, users.length ? users : decision.messages.filter(message => goalRoundOf(message) !== undefined || this.isRelay(message)));
             // A goal set in main chat advances by rounds DSH queues here; each round goes to the goal's topic.
             const goalRounds = users.length ? [] : decision.messages.filter(message => goalRoundOf(message) !== undefined);
             const relays = users.length || goalRounds.length ? [] : decision.messages.filter(message => this.isRelay(message));
@@ -960,10 +1003,12 @@ export default class TheOne extends Service {
                         ...(relays.length ? { source: input.source.kind === 'user-question-reply' ? 'foreground' : 'background' } : {}),
                     });
             });
+            this.bubbleActivity.assign(agent, input, route.decision, this.bubbleTemporary(route.decision, receipt));
+            this.bubbleActivity.releaseClaim(agent.id);
             receipt.trace.final = { ...route.decision };
             this.store.recordRouteDetail(input.id, redactRoutingText(text).replace(/\s+/g, ' ').trim().slice(0, 160) || attachmentLabel, Object.fromEntries(Object.entries(receipt).filter(([, value]) => value !== undefined)));
             if (route.decision.correctionOf && route.decision.contextId)
-                this.applyCorrection(route.decision.correctionOf, route.decision.contextId, previous?.text);
+                this.applyCorrection(route.decision.correctionOf, route.decision.contextId, previous?.text, 1, true, 'spoken_correction');
             // A routing proposal alone does not teach relatedness.
             const titleOf = (id) => this.store.contexts().find(context => context.id === id)?.title;
             const references = (route.decision.relatedIds ?? []).flatMap(id => titleOf(id) ?? []);
@@ -987,6 +1032,39 @@ export default class TheOne extends Service {
                         content: [{ type: 'text', text: summary }],
                     })] };
         });
+    }
+    /** Reads in-memory observations and store facts without loading sessions or starting work. */
+    bubbleView(gatewayId = this.store.latestGateway(this.config.gatewayKey)) {
+        const agent = gatewayId ? this.ctx.agents.get(SessionId(gatewayId)) : undefined;
+        const workItems = this.bubbleActivity.snapshot(), latestRuns = this.store.latestTopicRuns();
+        const doneCapabilities = new Map(this.store.contexts().map(topic => [topic.id, this.topicDoneCapability(topic.id, workItems, latestRuns)]));
+        return projectBubbles(this.store, { scope: { gatewayKey: this.config.gatewayKey, gatewayId: gatewayId ?? null },
+            workItems, doneCapabilities, busy: this.busy, linkScope: this.config.linkScope,
+            gateway: agent ? this.bubbleActivity.gateway(agent, this.store.current(this.config.gatewayKey) ?? null) : null,
+            health: { catalog: !this.catalog ? 'unavailable' : this.catalog.snapshot().status.consent !== 'granted' ? 'consent_required'
+                    : this.catalog.snapshot().status.running ? 'indexing' : this.catalog.snapshot().status.searchUnavailable ? 'unavailable' : 'ready',
+                router: this.router ? 'unknown' : 'rules' } });
+    }
+    topicDoneCapability(contextId, items = this.bubbleActivity.snapshot(), latestRuns = this.store.latestTopicRuns()) {
+        const observed = doneCapability(items.filter(item => item.contextId === contextId));
+        if (!observed.allowed)
+            return observed;
+        const record = latestRuns.get(contextId);
+        if (record && !items.some(item => item.contextId === contextId && item.messageIds.includes(record.messageId))) {
+            if (record.outcome === 'running')
+                return { allowed: false, reason: 'topic_busy' };
+            if (this.store.route(record.messageId)?.status === 'running')
+                return { allowed: false, reason: 'pending_delivery' };
+        }
+        const worker = this.workers.get(contextId)?.agent;
+        if ([...this.starting.values()].includes(contextId) || worker && (this.asking.has(worker.id) || worker.status !== 'idle' || worker.inbox.nextTurn.length || worker.inbox.nextStep.length))
+            return { allowed: false, reason: 'topic_busy' };
+        return { allowed: true };
+    }
+    bubbleTemporary(decision, receipt) {
+        if (!receipt.temporary)
+            return undefined;
+        return { kind: decision.aside ? 'model_aside' : 'arithmetic', returnContextId: receipt.temporary.returnTopicId ?? null };
     }
     workTasks() {
         return this.work.store.list().filter(job => job.kind === 'research').map(job => ({
@@ -1018,9 +1096,20 @@ export default class TheOne extends Service {
     /** DSH Connection protects plugin routes inside its authenticated /api fence. */
     registerCatalogChannel() {
         this.ctx.inject(['connection'], child => {
+            // Preserve the existing PUT settings route; the host's route disposer is asynchronous.
             const connection = child.get('connection');
             if (!connection?.fetch?.register)
                 return;
+            child.effect(() => connection.fetch.register({ path: '/api/theone/bubbles', methods: ['GET'], requestBody: 'buffered', fetch: async (request) => {
+                    const headers = { 'cache-control': 'no-store' };
+                    try {
+                        return Response.json(await this.bubbles.poll(parseBubbleQuery(new URL(request.url)), request.signal), { headers });
+                    }
+                    catch (error) {
+                        const code = error instanceof Error ? error.message : 'INVALID_CURSOR';
+                        return Response.json({ error: code }, { status: code === 'BUBBLES_CLOSED' ? 503 : code === 'TOO_MANY_WAITERS' ? 429 : code === 'REQUEST_ABORTED' ? 499 : code === 'UNKNOWN_GATEWAY' ? 404 : 400, headers });
+                    }
+                } }));
             child.effect(() => connection.fetch.register({ path: '/api/theone/messages', methods: ['POST'], requestBody: 'buffered', fetch: async (request) => {
                     try {
                         const body = await request.json();
@@ -1258,7 +1347,7 @@ export default class TheOne extends Service {
                     }
                     catch (error) {
                         const code = error instanceof Error && /^[A-Z_]+$/.test(error.message) ? error.message : 'INVALID_INPUT';
-                        return Response.json({ error: code }, { status: code === 'GATEWAY_BUSY' ? 409 : 400 });
+                        return Response.json({ error: code }, { status: code === 'GATEWAY_BUSY' || code === 'TOPIC_BUSY' ? 409 : 400 });
                     }
                 } }));
             // Is a newer TheOne out, and install it with DSH's plugin manager (it loads after a restart).
@@ -1432,6 +1521,8 @@ export default class TheOne extends Service {
                 const id = known(row.id);
                 if (typeof row.done !== 'boolean')
                     throw new Error('INVALID_INPUT');
+                if (row.done && !this.topicDoneCapability(id).allowed)
+                    throw new Error('TOPIC_BUSY');
                 this.store.declareTopic(id, row.done ? 'done' : undefined);
                 return { id };
             }
@@ -1908,6 +1999,7 @@ export default class TheOne extends Service {
     }
     forwardToWorker(run, message) {
         run.forward(message);
+        this.bubbleActivity.forward(run, message);
         const route = this.store.route(message.id), contextId = route?.decision.contextId;
         if (!contextId || this.routeBinding(message.id)?.status !== 'applied' && !this.store.routeReceipt(message.id)?.continuation && !this.store.routeReceipt(message.id)?.stateSources?.length)
             return;
@@ -2908,7 +3000,9 @@ export default class TheOne extends Service {
         else if (route.status === 'running') {
             // Started in the background, yet nothing here follows it: a restart cut it off. What the topic
             // session holds decides: finished work is shown, unfinished work is described, never redone.
+            this.bubbleActivity.standalone(gateway, input, 'recovering');
             yield* this.realign(input, route.decision.contextId);
+            this.bubbleActivity.standalone(gateway, input, this.store.topicRun(input.id)?.outcome === 'completed' ? 'succeeded' : 'interrupted');
             return;
         }
         else
@@ -2918,6 +3012,7 @@ export default class TheOne extends Service {
         try {
             if (run) {
                 this.runs.set(gateway.id, run);
+                run.select();
                 this.reservedGateway = undefined;
                 if (background?.todo !== undefined)
                     gateway.session.append('todo/write', background.todo);
@@ -2927,6 +3022,7 @@ export default class TheOne extends Service {
                 return;
             }
             if (route.decision.action === 'CLARIFY') {
+                this.bubbleActivity.standalone(gateway, input, 'failed');
                 const text = clarifyText(route.decision, messageText(input));
                 yield { type: 'block-start', index: 0, blockType: 'text' };
                 yield { type: 'text-delta', index: 0, text };
@@ -2942,13 +3038,16 @@ export default class TheOne extends Service {
                 : stepInput(options.messages, input));
             run = await this.startRun(gateway, route, input, workerInput, started => {
                 this.runs.set(gateway.id, started);
+                started.select();
                 this.reservedGateway = undefined;
             }, options.signal, options.reasoningEffort);
             yield* run.stream(options.signal);
         }
         catch (error) {
-            if (!run)
+            if (!run) {
                 this.store.finish(input.id, 'failed');
+                this.bubbleActivity.failed(gateway, input);
+            }
             throw error;
         }
         finally {
@@ -2956,6 +3055,7 @@ export default class TheOne extends Service {
             if (!run) {
                 this.active = false;
                 this.reservedGateway = undefined;
+                this.bubbleActivity.publish([], gateway.id);
             }
         }
     }
@@ -3180,6 +3280,7 @@ export default class TheOne extends Service {
      * on it now in the background, and an interjection becomes its own turn instead of joining the reply.
      */
     sortMidReply(gateway, run, message, interjection) {
+        this.bubbleActivity.routing(gateway, message);
         const abort = new AbortController();
         const receipt = { mode: 'llm', tier: 'rules', calls: 0, cacheHitTokens: 0 };
         const decided = this.otherMatter(gateway, run, message, receipt, abort.signal).catch(() => undefined);
@@ -3188,6 +3289,8 @@ export default class TheOne extends Service {
             if (!decision) {
                 if (interjection && pending() && run.canForward && !run.forwarded.has(message.id))
                     this.forwardToWorker(run, message);
+                else
+                    this.bubbleActivity.queue(gateway, message, 'topic_busy', this.store.route(run.inputId)?.decision.contextId);
                 return;
             }
             if (pending())
@@ -3267,13 +3370,19 @@ export default class TheOne extends Service {
      * message simply waits its turn.
      */
     async startBackground(gateway, message, decision, receipt, signal) {
-        if (this.background.size + this.starting.size >= 2 || signal.aborted || this.store.route(message.id))
+        if (this.background.size + this.starting.size >= 2 || signal.aborted || this.store.route(message.id)) {
+            if (!signal.aborted && !this.store.route(message.id))
+                this.bubbleActivity.queue(gateway, message, 'capacity', decision.contextId);
             return;
+        }
         const working = [...this.runs.values(), ...[...this.background.values()].map(entry => entry.run)]
             .map(run => this.store.route(run.inputId)?.decision.contextId);
-        if (decision.action !== 'CREATE' && [...working, ...this.starting.values()].includes(decision.contextId))
+        if (decision.action !== 'CREATE' && [...working, ...this.starting.values()].includes(decision.contextId)) {
+            this.bubbleActivity.queue(gateway, message, 'topic_busy', decision.contextId);
             return;
+        }
         const route = this.store.plan(message.id, gateway.id, this.config.gatewayKey, decision, false);
+        this.bubbleActivity.assign(gateway, message, route.decision, this.bubbleTemporary(decision, receipt));
         this.store.claim(message.id);
         // Hold the place before the topic starts, so requests made at the same moment cannot all pass the check.
         this.starting.set(message.id, route.decision.contextId);
@@ -3287,6 +3396,7 @@ export default class TheOne extends Service {
             this.starting.delete(message.id);
             const entry = this.background.get(message.id);
             this.background.delete(message.id);
+            this.bubbleActivity.failed(gateway, message);
             entry?.run.cancel();
             entry?.run.dispose();
             this.store.forget(message.id);
@@ -3312,6 +3422,8 @@ export default class TheOne extends Service {
         this.observeShadow(shadow => shadow.bind(this.config.gatewayKey, gateway.id, note.id, { topicId: contextId, source: answered ? 'foreground' : 'background' }));
         this.relays.add(note.id);
         const run = new WorkerRun(this.ctx, worker, gateway, note.id, this.config.maxResponseChars, names => this.showWorkerTools(gateway, worker, names));
+        this.bubbleActivity.input(gateway, note);
+        this.bubbleActivity.register(run, contextId, 'background');
         run.request = messageText(cause);
         run.follow();
         const current = this.store.current(this.config.gatewayKey);
@@ -3455,6 +3567,8 @@ export default class TheOne extends Service {
         }
         finally {
             this.moving.delete(message.id);
+            this.bubbleActivity.releaseClaim(gateway.id, [message.id]);
+            this.bubbleActivity.publish([], gateway.id);
         }
     }
     /** Stop background work on a message main chat will not show (deleted, or answered with other input). */
@@ -3463,6 +3577,7 @@ export default class TheOne extends Service {
         if (!entry)
             return;
         this.background.delete(messageId);
+        entry.run.endDelivery(true);
         entry.run.cancel();
         void entry.run.settled.then(() => { entry.run.dispose(); this.stowWhenIdle(entry.run.worker.id); });
         this.store.forget(messageId);
@@ -3478,6 +3593,7 @@ export default class TheOne extends Service {
         const context = this.store.contexts().find(context => context.id === route.decision.contextId);
         if (!context)
             throw new Error('Routed Context is missing');
+        this.bubbleActivity.starting(gateway, input, context.id);
         const worker = await this.worker(context, gateway.id, signal, reasoningEffort);
         if (worker.status !== 'idle' || worker.inbox.nextTurn.length || worker.inbox.nextStep.length) {
             throw new Error('Worker has unfinished input; inspect its DSH session before continuing');
@@ -3487,7 +3603,10 @@ export default class TheOne extends Service {
         this.syncPlanMode(gateway, worker);
         await this.readyToRun(worker.id);
         const folder = this.projectOf(worker.session.header.cwd)?.path ?? this.store.origin(context.id)?.cwd;
+        if (folder && !takeOver && this.projects.isBusy(projectKey(folder)))
+            this.bubbleActivity.starting(gateway, input, context.id, true);
         const release = folder && !takeOver ? await this.projects.acquire(projectKey(folder), signal) : () => { };
+        this.bubbleActivity.starting(gateway, input, context.id);
         try {
             signal?.throwIfAborted();
             if (worker.status !== 'idle' || worker.inbox.nextTurn.length || worker.inbox.nextStep.length)
@@ -3498,6 +3617,7 @@ export default class TheOne extends Service {
             const refreshed = this.store.contexts().find(item => item.id === context.id) ?? context;
             const run = new WorkerRun(this.ctx, worker, gateway, input.id, this.config.maxResponseChars, names => this.showWorkerTools(gateway, worker, names));
             run.request = messageText(input);
+            this.bubbleActivity.register(run, context.id, this.starting.has(input.id) ? 'background' : 'foreground');
             register(run);
             const resume = this.resumeFor(context.id, worker, input.id) + this.misrouteFor(context.id)
                 + returnNote(this.lastActive(context.id, worker, input.id));
@@ -3616,6 +3736,12 @@ export default class TheOne extends Service {
         }
         catch {
             // The other topic could not start (busy, or gone): put things back and answer here.
+            const prepared = this.runs.get(gateway.id);
+            if (prepared && prepared !== run) {
+                prepared.cancel();
+                prepared.dispose();
+            }
+            this.bubbleActivity.restore(run);
             this.handedFrom.delete(gateway.id);
             this.runs.set(gateway.id, run);
             this.store.moveRoute(run.inputId, this.config.gatewayKey, route.decision, false);
@@ -3625,6 +3751,7 @@ export default class TheOne extends Service {
             signal.throwIfAborted();
             return undefined;
         }
+        this.bubbleActivity.publish([{ type: 'route.moved', messageId: run.inputId, fromId: contextId, toId: moved.contextId, cause: 'handback', reexecute: true }], gateway.id);
         this.store.reassignLearning(run.inputId, moved.contextId);
         // The first topic stops after this result; its turn is kept out of its history and memory.
         this.store.markOnce(`misroute:${run.inputId}`);
@@ -4047,10 +4174,15 @@ export default class TheOne extends Service {
      * gains the message's distinctive terms and the wrong one loses them; `weight` is lower for
      * implicit signals. The model picks the terms in one small call; plain extraction is the fallback.
      */
-    applyCorrection(messageId, contextId, text, weight = 1, record = true) {
+    applyCorrection(messageId, contextId, text, weight = 1, record = true, cause = 'explicit') {
         const route = this.store.route(messageId);
         if (record)
             this.store.correctRoute(messageId, contextId);
+        if (!record)
+            this.bubbleActivity.publish([{ type: 'route.hint', messageId, suggestedId: contextId }], route?.gatewayId ?? null);
+        else if (route?.decision.contextId && route.decision.contextId !== contextId)
+            this.bubbleActivity.publish([{ type: 'route.moved', messageId,
+                    fromId: route.decision.contextId, toId: contextId, cause, reexecute: cause === 'spoken_correction' }], route.gatewayId);
         // The wrong topic's work on it no longer counts as its own.
         if (record && this.store.topicRun(messageId)?.contextId !== contextId)
             this.store.endTopicRun(messageId, 'moved');
@@ -4120,10 +4252,12 @@ export default class TheOne extends Service {
                 pending = shadow.openPending(this.config.gatewayKey, { topicId, kind, messageId: run?.inputId, basis: 'host-request' });
         });
         this.asking.set(worker.id, (this.asking.get(worker.id) ?? 0) + 1);
+        run?.waiting(1);
         try {
             return await ask();
         }
         finally {
+            run?.waiting(-1);
             this.bindings.closeReference(bindingId);
             if (pending)
                 this.observeShadow(shadow => shadow.closePending(this.config.gatewayKey, pending));
@@ -4454,6 +4588,7 @@ export default class TheOne extends Service {
             this.store.finish(run.inputId, 'failed');
         }
         const closing = run.settled.then(() => {
+            run.endDelivery(abandon);
             run.dispose();
             this.stowWhenIdle(run.worker.id);
             if (!abandon)
@@ -4461,7 +4596,7 @@ export default class TheOne extends Service {
             this.store.endTopicRun(run.inputId, abandon ? 'stopped' : !run.failure && run.outcome?.kind === 'completed' ? 'completed' : 'failed');
             const contextId = this.store.route(run.inputId)?.decision.contextId;
             if (contextId && !abandon && !run.failure && run.outcome?.kind === 'completed') {
-                this.store.learningJournal.settle(run.inputId, contextId);
+                this.store.settleLearning(run.inputId, contextId);
                 this.learnFromRoute(run.inputId, this.store.route(run.inputId).decision);
             }
             for (const messageId of run.forwarded.keys()) {
@@ -4484,6 +4619,7 @@ export default class TheOne extends Service {
                 this.queueCard(run.worker, contextId);
             this.active = false;
             this.closing.delete(gatewayId);
+            this.bubbleActivity.publish([], gatewayId);
         });
         this.closing.set(gatewayId, closing);
         return closing;

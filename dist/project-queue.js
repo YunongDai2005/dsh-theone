@@ -23,6 +23,7 @@ export function projectKey(folder) {
 export class ProjectQueue {
     tails = new Map();
     lifetime = new AbortController();
+    isBusy(key) { return this.tails.has(key); }
     async acquire(key, signal) {
         const bounded = signal ? AbortSignal.any([signal, this.lifetime.signal]) : this.lifetime.signal;
         bounded.throwIfAborted();

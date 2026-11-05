@@ -48,6 +48,10 @@ test('a topic that is handed a message not its own gives it back, and main chat 
     assert.match(decision?.reason ?? '', /^handback:/)
     assert.equal(store.current('test-gateway'), 'ctx_thesis')
     assert.equal(store.topicRun(result.input.id)?.contextId, 'ctx_thesis')
+    const observed = app.ctx.theone.bubbleView(app.gateway.id).workItems.filter(item => item.primaryMessageId === result.input.id)
+    assert.equal(new Set(observed.map(item => item.executionId)).size, 2)
+    assert.equal(observed[0].phase, 'superseded')
+    assert.equal(observed[1].delivery.phase, 'shown')
     // The GPU topic's turn stops counting as its own, and it is not told again (it gave the message back itself).
     const deadline = Date.now() + 5000
     while (!store.misroutes('ctx_qwen_9070xt').length && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 10))

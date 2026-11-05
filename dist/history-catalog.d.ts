@@ -27,6 +27,7 @@ export declare class HistoryCatalog {
     private timer?;
     private dirty;
     private activeRequest?;
+    onStatusChange?: () => void;
     private status;
     /** Sessions the last finished scan could not index; a scan in progress doesn't make the catalog incomplete. */
     private settledPending?;

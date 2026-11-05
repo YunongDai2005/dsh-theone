@@ -91,5 +91,9 @@ test('a message a topic took up before a restart cut it off gets a plain notice 
     assert.equal(workerCalls, before)
     assert.equal(store.current('test-gateway'), context.id)
     assert.equal(store.topicRun(message.id)?.outcome, 'interrupted')
+    const observation = app.ctx.theone.bubbleView(app.gateway.id).workItems.find(item => item.primaryMessageId === message.id)!
+    assert.equal(observation.phase, 'interrupted')
+    assert.equal(observation.executionId, null)
+    assert.equal(observation.delivery.phase, 'shown')
   } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
 })

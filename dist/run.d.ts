@@ -1,3 +1,4 @@
+import type { BubbleWorkItem, WorkPhase } from './bubble-types.ts';
 import type { Context } from '@deepseek-ai/cordis';
 import type { Agent } from '@deepseek-ai/dsh-agent';
 import type { StreamChunk, UserMessage } from '@deepseek-ai/dsh-llm';
@@ -16,6 +17,16 @@ export declare class WorkerRun {
     readonly inputId: string;
     private readonly maxChars;
     private readonly beforeToolCalls;
+    readonly executionId: `${string}-${string}-${string}-${string}-${string}`;
+    observe?: () => void;
+    readonly delivery: BubbleWorkItem['delivery'];
+    private started;
+    private waits;
+    get observedPhase(): WorkPhase;
+    select(): void;
+    waiting(delta: number): void;
+    commit(eventSeq: number): void;
+    endDelivery(abandon: boolean): void;
     private readonly steps;
     /** Main-chat steps opened for this run; step n shows Worker step n. */
     private shown;

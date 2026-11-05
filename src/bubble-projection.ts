@@ -15,6 +15,7 @@ export function doneCapability(work: readonly BubbleWorkItem[]): Capability {
 /** Synchronous, read-only and body-free. Never calls briefing, recovery, indexing, a Worker or a model. */
 export function projectBubbles(store: ContextStore, input: {
   scope: BubbleScope; workItems?: readonly BubbleWorkItem[]; gateway?: BubbleGateway | null; busy?: boolean
+  doneCapabilities?: ReadonlyMap<string, Capability>
   linkScope?: LinkScope; health?: BubbleView['health']; now?: number
 }): BubbleView {
   const now = input.now ?? Date.now(), scope = { ...input.scope }
@@ -41,7 +42,7 @@ export function projectBubbles(store: ContextStore, input: {
   const topics: BubbleTopic[] = contexts.filter(context => {
     const reason = hidden.get(context.id)
     if (reason === 'orphaned' || reason === 'excluded') return false
-    return reason !== 'archived' || context.id === current || !doneCapability(byTopic.get(context.id) ?? []).allowed
+    return reason !== 'archived' || context.id === current || !(input.doneCapabilities?.get(context.id) ?? doneCapability(byTopic.get(context.id) ?? [])).allowed
   }).map(context => {
     const ownWork = byTopic.get(context.id) ?? [], record = latest.get(context.id)
     const live = ownWork.find(item => item.executionId && item.primaryMessageId === record?.messageId)
@@ -57,7 +58,7 @@ export function projectBubbles(store: ContextStore, input: {
       usage: { completedCalls: used?.completedCalls ?? 0, recentCalls: used?.recentCalls ?? 0, lastUsedAt: used?.lastUsedAt ?? null },
       lastActivityAt: Math.max(lastAt.get(context.id) ?? 0, record?.startedAt ?? 0, ...ownWork.map(item => item.updatedAt)) || null,
       workItemIds: ownWork.map(item => item.id), capabilities: { mount: idle, mergeNow: idle, delete: idle,
-        declareDone: doneCapability(ownWork), queueMerge: { allowed: false, reason: 'unsupported' } } }
+        declareDone: input.doneCapabilities?.get(context.id) ?? doneCapability(ownWork), queueMerge: { allowed: false, reason: 'unsupported' } } }
   })
   const visible = new Set(topics.map(topic => topic.id))
   for (const item of workItems) {

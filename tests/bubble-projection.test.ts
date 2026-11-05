@@ -114,3 +114,12 @@ test('projection is read only, including links, and returned objects cannot muta
     assert.deepEqual(db.prepare('SELECT total_changes() AS n').get(), before)
   } finally { store.close() }
 })
+
+test('archived work stays visible when another gateway owns the pending delivery', () => {
+  const store = setup()
+  try {
+    store.replaceHidden([{ id: 'b', reason: 'archived' }])
+    const view = projectBubbles(store, { scope, doneCapabilities: new Map([['b', { allowed: false, reason: 'pending_delivery' }]]), now: 30 })
+    assert.equal(view.topics.some(t => t.id === 'b'), true)
+  } finally { store.close() }
+})

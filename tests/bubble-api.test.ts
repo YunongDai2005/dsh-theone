@@ -85,3 +85,22 @@ test('mount learning emits only a hint and explicit correction and undo retain t
     assert.ok(undo.events.some(e => e.type === 'route.moved' && e.cause === 'undo' && e.fromId === 'ctx_thesis' && e.toId === 'ctx_qwen_9070xt'))
   } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
 })
+
+test('committed merge and unmerge events retain the removed source id without exposing excluded topics', { timeout: 15000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'theone-bubble-merge-')), app = await harness(root)
+  try {
+    const store = app.ctx.theone.store
+    store.rememberGateway('test-gateway', app.gateway.id)
+    const initial = app.ctx.theone.bubbles.read({ gatewayId: app.gateway.id }); if (initial.kind !== 'update') throw new Error('missing head')
+    const cursor = initial.snapshot.cursor
+    store.mergeTopics('ctx_thesis', 'ctx_qwen_9070xt')
+    const merged = app.ctx.theone.bubbles.read({ gatewayId: app.gateway.id, epoch: cursor.epoch, since: cursor.version, after: cursor.seq })
+    assert.equal(merged.kind, 'update'); if (merged.kind !== 'update') return
+    assert.ok(merged.events.some(e => e.type === 'topic.merged' && e.sourceId === 'ctx_thesis' && e.targetId === 'ctx_qwen_9070xt'))
+    assert.equal(merged.snapshot.topics.some(topic => topic.id === 'ctx_thesis'), false)
+    store.unmergeTopic('ctx_thesis')
+    const undone = app.ctx.theone.bubbles.read({ gatewayId: app.gateway.id, epoch: merged.snapshot.cursor.epoch, since: merged.snapshot.cursor.version, after: merged.snapshot.cursor.seq })
+    assert.equal(undone.kind, 'update'); if (undone.kind !== 'update') return
+    assert.ok(undone.events.some(e => e.type === 'topic.unmerged' && e.sourceId === 'ctx_thesis' && e.targetId === 'ctx_qwen_9070xt'))
+  } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
+})

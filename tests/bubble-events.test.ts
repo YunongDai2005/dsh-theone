@@ -41,3 +41,36 @@ test('restoring visibility keeps the existing topic identity instead of creating
     assert.equal(result.events.some(e => e.type === 'topic.changed' && e.change === 'created'), false)
   } finally { aggregator.close() }
 })
+
+
+test('removal events remain usable while later exclusions remove their identifiers from the same committed cut', () => {
+  let current = view(), hidden = new Set<string>()
+  current.topics = [{ id: 'a', title: 'A' } as BubbleView['topics'][number]]
+  const aggregator = new BubbleAggregator('test', () => current, () => ['main'], { unavailableIds: () => hidden })
+  try {
+    const initial = aggregator.read({ gatewayId: 'main' }); if (initial.kind !== 'update') throw new Error('missing initial')
+    const query = { gatewayId: 'main', epoch: initial.snapshot.cursor.epoch, since: initial.snapshot.cursor.version, after: initial.snapshot.cursor.seq }
+    current = { ...current, topics: [] }; aggregator.publish()
+    const removed = aggregator.read(query); if (removed.kind !== 'update') throw new Error('missing removal')
+    assert.ok(removed.events.some(e => e.type === 'topic.changed' && e.contextId === 'a' && e.change === 'removed'))
+    hidden = new Set(['a']); aggregator.publish()
+    const excluded = aggregator.read(query); if (excluded.kind !== 'update') throw new Error('missing exclusion')
+    assert.equal(excluded.events.some(e => 'contextId' in e && e.contextId === 'a'), false)
+    assert.ok(excluded.snapshot.cursor.version > removed.snapshot.cursor.version)
+    hidden.clear() // Reads must keep the published cut until another publication.
+    assert.deepEqual(aggregator.read(query).kind === 'update' && (aggregator.read(query) as typeof excluded).events, excluded.events)
+  } finally { aggregator.close() }
+})
+
+test('a topic hidden at startup is restored with its existing identity', () => {
+  let current = view()
+  const aggregator = new BubbleAggregator('test', () => current, () => ['main'], { topicIds: () => ['a'] })
+  try {
+    const initial = aggregator.read({ gatewayId: 'main' }); if (initial.kind !== 'update') throw new Error('missing initial')
+    current = { ...current, topics: [{ id: 'a', title: 'A' } as BubbleView['topics'][number]] }; aggregator.publish()
+    const result = aggregator.read({ gatewayId: 'main', epoch: initial.snapshot.cursor.epoch, since: initial.snapshot.cursor.version, after: initial.snapshot.cursor.seq })
+    if (result.kind !== 'update') throw new Error('missing restoration')
+    assert.ok(result.events.some(e => e.type === 'topic.changed' && e.change === 'restored'))
+    assert.equal(result.events.some(e => e.type === 'topic.changed' && e.change === 'created'), false)
+  } finally { aggregator.close() }
+})

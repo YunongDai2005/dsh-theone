@@ -6,8 +6,9 @@ import { join } from 'node:path'
 import UserApproval from '@deepseek-ai/dsh-user-approval'
 import UserQuestions from '@deepseek-ai/dsh-user-questions'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
+import { HostConnectionService } from '@deepseek-ai/dsh-client-connection'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { harness, ask, textResponse } from './harness.ts'
+import { harness, ask, textResponse, peered } from './harness.ts'
 
 test('a Worker tool approval is asked on the main-chat card for that call and its answer reaches the Worker', { timeout: 30000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'theone-approval-'))
@@ -15,6 +16,8 @@ test('a Worker tool approval is asked on the main-chat card for that call and it
   const asked: { agent: string; toolName: string; callId?: string; display?: string }[] = []
   let outcome: string | undefined
   try {
+    const handler = peered(new HostConnectionService(app.ctx, [], undefined as never))
+    await new Promise<void>(resolve => setImmediate(resolve))
     await app.ctx.plugin(UserApproval, { policy: 'ask' })
     // Stands in for the browser answerer, which only answers for the session it shows.
     app.ctx.on('approval/request', async (request, next) => {
@@ -22,6 +25,12 @@ test('a Worker tool approval is asked on the main-chat card for that call and it
       assert.ok(app.ctx.theone.shadow!.snapshot('test-gateway').pending.some(owner => owner.kind === 'approval' && owner.topicId === 'ctx_qwen_9070xt'))
       assert.ok(app.ctx.theone.bindings.references(new Set(['ctx_qwen_9070xt'])).some(ref =>
         ref.kind === 'approval' && ref.request?.callId === 'guarded-call'))
+      const bubbles = app.ctx.theone.bubbleView(app.gateway.id)
+      assert.ok(bubbles.workItems.some(item => item.phase === 'waiting_user'))
+      assert.equal(bubbles.topics.find(topic => topic.id === 'ctx_qwen_9070xt')!.lifecycle, 'waiting')
+      const done = await handler.fetch(new Request('http://dsh.internal/api/theone/topics', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'status', id: 'ctx_qwen_9070xt', done: true }) }))
+      assert.equal(done.status, 409)
+      assert.deepEqual(await done.json(), { error: 'TOPIC_BUSY' })
       asked.push({ agent: request.agent.id, toolName: request.toolName, callId: request.callId, display: request.displayReason?.zh })
       return 'allowed-once'
     })
@@ -67,6 +76,7 @@ test('a question the Worker asks the user is answered in the main chat', { timeo
       assert.ok(app.ctx.theone.shadow!.snapshot('test-gateway').pending.some(owner => owner.kind === 'question' && owner.topicId === 'ctx_qwen_9070xt'))
       assert.ok(app.ctx.theone.bindings.references(new Set(['ctx_qwen_9070xt'])).some(ref =>
         ref.kind === 'question' && ref.request?.questionIds?.includes('size')))
+      assert.ok(app.ctx.theone.bubbleView(app.gateway.id).workItems.some(item => item.phase === 'waiting_user'))
       askedFor.push(request.questions[0].question)
       return { answers: [{ id: request.questions[0].id, selected: ['14B'] }] }
     })

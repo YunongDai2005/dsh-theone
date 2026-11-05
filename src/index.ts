@@ -62,8 +62,8 @@ import type { WorkJob, WorkNotice } from './work-store.ts'
 import type { WorkScope, WorkOutcome } from './work-scheduler.ts'
 import { BubbleAggregator, parseBubbleQuery } from './bubble-aggregator.ts'
 import { BubbleActivity } from './bubble-activity.ts'
-import { projectBubbles } from './bubble-projection.ts'
-import type { BubbleView, BubbleWorkItem } from './bubble-types.ts'
+import { doneCapability, projectBubbles } from './bubble-projection.ts'
+import type { BubbleView, BubbleWorkItem, Capability } from './bubble-types.ts'
 import { ProjectQueue, projectKey } from './project-queue.ts'
 
 function redactDescriptor(text: string): string {
@@ -504,7 +504,7 @@ export default class TheOne extends Service {
     this.telegram = new TelegramApp(ctx, host('telegram'))
     this.imessage = new IMessageApp(ctx, host('imessage'))
     for (const app of [this.weixin, this.telegram, this.imessage]) app.apply()
-    this.bubbles = new BubbleAggregator(config.gatewayKey, id => this.bubbleView(id), () => { const latest = this.store.latestGateway(config.gatewayKey); return [...this.store.gatewayIds(config.gatewayKey).filter(id => id !== latest), ...(latest ? [latest] : [])] })
+    this.bubbles = new BubbleAggregator(config.gatewayKey, id => this.bubbleView(id), () => { const latest = this.store.latestGateway(config.gatewayKey); return [...this.store.gatewayIds(config.gatewayKey).filter(id => id !== latest), ...(latest ? [latest] : [])] }, { unavailableIds: () => this.store.unreachable(), topicIds: () => this.store.contexts().map(topic => topic.id) })
     if (this.catalog) this.catalog.onStatusChange = () => this.bubbles.publish()
     ctx.effect(() => this.bubbleActivity.subscribe((events, id) => this.bubbles.publish(events, id)))
     ctx.effect(() => this.store.subscribe(change => {
@@ -526,8 +526,11 @@ export default class TheOne extends Service {
     ctx.on('session/event', (session, event) => {
       this.observeShadow(shadow => this.recordShadowEvent(shadow, session, event))
       this.recordBindingEvent(session, event)
-      if (event.type === 'assistant/message') this.runs.get(session.id)?.commit(event.seq)
-      if (event.type === 'turn/end' && this.store.isGateway(session.id)) this.bubbleActivity.releaseClaim(session.id)
+      if (event.type === 'assistant/message') {
+        const run = this.runs.get(session.id)
+        if (run) run.commit(event.seq); else this.bubbleActivity.commitStandalone(session.id, event.seq)
+      }
+      if (event.type === 'turn/end' && this.store.isGateway(session.id)) this.bubbleActivity.endTurn(session.id, event.data.reason.kind === 'completed')
       if (event.type === 'permission/preset' || event.type === 'sandbox/mode' || event.type === 'approval/policy') {
         // The user can tighten access while a model or reviewer is still running.
         // Apply the new policy before the next tool, including set-aside topics.
@@ -999,12 +1002,28 @@ export default class TheOne extends Service {
   /** Reads in-memory observations and store facts without loading sessions or starting work. */
   bubbleView(gatewayId: string | null | undefined = this.store.latestGateway(this.config.gatewayKey)): BubbleView {
     const agent = gatewayId ? this.ctx.agents.get(SessionId(gatewayId)) : undefined
+    const workItems = this.bubbleActivity.snapshot(), latestRuns = this.store.latestTopicRuns()
+    const doneCapabilities = new Map(this.store.contexts().map(topic => [topic.id, this.topicDoneCapability(topic.id, workItems, latestRuns)]))
     return projectBubbles(this.store, { scope: { gatewayKey: this.config.gatewayKey, gatewayId: gatewayId ?? null },
-      workItems: this.bubbleActivity.snapshot(), busy: this.busy, linkScope: this.config.linkScope,
+      workItems, doneCapabilities, busy: this.busy, linkScope: this.config.linkScope,
       gateway: agent ? this.bubbleActivity.gateway(agent, this.store.current(this.config.gatewayKey) ?? null) : null,
       health: { catalog: !this.catalog ? 'unavailable' : this.catalog.snapshot().status.consent !== 'granted' ? 'consent_required'
         : this.catalog.snapshot().status.running ? 'indexing' : this.catalog.snapshot().status.searchUnavailable ? 'unavailable' : 'ready',
         router: this.router ? 'unknown' : 'rules' } })
+  }
+
+  private topicDoneCapability(contextId: string, items = this.bubbleActivity.snapshot(), latestRuns = this.store.latestTopicRuns()): Capability {
+    const observed = doneCapability(items.filter(item => item.contextId === contextId))
+    if (!observed.allowed) return observed
+    const record = latestRuns.get(contextId)
+    if (record && !items.some(item => item.contextId === contextId && item.messageIds.includes(record.messageId))) {
+      if (record.outcome === 'running') return { allowed: false, reason: 'topic_busy' }
+      if (this.store.route(record.messageId)?.status === 'running') return { allowed: false, reason: 'pending_delivery' }
+    }
+    const worker = this.workers.get(contextId)?.agent
+    if ([...this.starting.values()].includes(contextId) || worker && (this.asking.has(worker.id) || worker.status !== 'idle' || worker.inbox.nextTurn.length || worker.inbox.nextStep.length))
+      return { allowed: false, reason: 'topic_busy' }
+    return { allowed: true }
   }
 
   private bubbleTemporary(decision: Decision, receipt: RouterReceipt): BubbleWorkItem['temporary'] {
@@ -1230,7 +1249,7 @@ export default class TheOne extends Service {
         try { return Response.json(await this.editTopics(row), { headers: { 'cache-control': 'no-store' } }) }
         catch (error) {
           const code = error instanceof Error && /^[A-Z_]+$/.test(error.message) ? error.message : 'INVALID_INPUT'
-          return Response.json({ error: code }, { status: code === 'GATEWAY_BUSY' ? 409 : 400 })
+          return Response.json({ error: code }, { status: code === 'GATEWAY_BUSY' || code === 'TOPIC_BUSY' ? 409 : 400 })
         }
       } }))
       // Is a newer TheOne out, and install it with DSH's plugin manager (it loads after a restart).
@@ -1366,6 +1385,7 @@ export default class TheOne extends Service {
         // The user says the matter is done, or takes it up again; a new message to it also reopens it.
         const id = known(row.id)
         if (typeof row.done !== 'boolean') throw new Error('INVALID_INPUT')
+        if (row.done && !this.topicDoneCapability(id).allowed) throw new Error('TOPIC_BUSY')
         this.store.declareTopic(id, row.done ? 'done' : undefined)
         return { id }
       }
@@ -2681,7 +2701,9 @@ export default class TheOne extends Service {
     else if (route.status === 'running') {
       // Started in the background, yet nothing here follows it: a restart cut it off. What the topic
       // session holds decides: finished work is shown, unfinished work is described, never redone.
+      this.bubbleActivity.standalone(gateway, input, 'recovering')
       yield* this.realign(input, route.decision.contextId)
+      this.bubbleActivity.standalone(gateway, input, this.store.topicRun(input.id)?.outcome === 'completed' ? 'succeeded' : 'interrupted')
       return
     }
     else this.store.claim(input.id)
@@ -2698,6 +2720,7 @@ export default class TheOne extends Service {
         return
       }
       if (route.decision.action === 'CLARIFY') {
+        this.bubbleActivity.standalone(gateway, input, 'failed')
         const text = clarifyText(route.decision, messageText(input))
         yield { type: 'block-start', index: 0, blockType: 'text' }
         yield { type: 'text-delta', index: 0, text }
@@ -2722,7 +2745,7 @@ export default class TheOne extends Service {
       throw error
     } finally {
       // A started run stays active until the main chat's turn ends with it (see finishRun).
-      if (!run) { this.active = false; this.reservedGateway = undefined }
+      if (!run) { this.active = false; this.reservedGateway = undefined; this.bubbleActivity.publish([], gateway.id) }
     }
   }
 
@@ -3334,6 +3357,9 @@ export default class TheOne extends Service {
       }, signal, gateway.options.reasoningEffort, true, run.settled)
     } catch {
       // The other topic could not start (busy, or gone): put things back and answer here.
+      const prepared = this.runs.get(gateway.id)
+      if (prepared && prepared !== run) { prepared.cancel(); prepared.dispose() }
+      this.bubbleActivity.restore(run)
       this.handedFrom.delete(gateway.id)
       this.runs.set(gateway.id, run)
       this.store.moveRoute(run.inputId, this.config.gatewayKey, route.decision, false)

@@ -48,7 +48,18 @@ export interface TopicRun {
     startedAt: number;
     endedAt?: number;
 }
+export interface StoreChange {
+    kind: string;
+    args: readonly unknown[];
+    result: unknown;
+}
 export declare class ContextStore {
+    private mutationDepth;
+    private readonly changeListeners;
+    subscribe(listener: (change: StoreChange) => void): () => void;
+    observeMutation<T>(kind: string, args: readonly unknown[], operation: () => T): T;
+    /** Scope membership is checked without loading a session. */
+    gatewayIds(gatewayKey: string): string[];
     private readonly db;
     readonly learningJournal: LearningJournal;
     constructor(path: string);
@@ -453,6 +464,7 @@ export declare class ContextStore {
     private restoreLearning;
     private canShareLearning;
     /** Positive user target confirmation releases verified facts, without waiting for another turn. */
+    settleLearning(messageId: string, contextId: string): void;
     confirmLearning(messageId: string, contextId: string): void;
     private mergeLearning;
     factLearningSources(factId: string, version: number): LearningSource[];

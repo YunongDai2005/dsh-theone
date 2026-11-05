@@ -161,7 +161,11 @@ export class WorkerRun {
     while (!this.done && !this.unshown) await new Promise<void>(resolve => this.waiters.push(resolve))
   }
 
-  cancel(): void { this.cancelled = true; if (this.worker.status !== 'idle') this.worker.cancel({ kind: 'parent' }) }
+  cancel(): void {
+    this.cancelled = true
+    if (!this.started) { this.done = true; this.observe?.(); this.wake() }
+    if (this.worker.status !== 'idle') this.worker.cancel({ kind: 'parent' })
+  }
   dispose(): void { for (const dispose of this.disposers.splice(0)) dispose() }
 
   /** Whether one of this Worker's steps made tool call `callId` (main chat may ask after a hand-back moved on). */

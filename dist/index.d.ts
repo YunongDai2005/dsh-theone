@@ -19,6 +19,9 @@ import { WeixinBridge } from './weixin.ts';
 import { TelegramApp } from './telegram.ts';
 import { IMessageApp } from './imessage.ts';
 import { PersistentWork } from './persistent-work.ts';
+import { BubbleAggregator } from './bubble-aggregator.ts';
+import { BubbleActivity } from './bubble-activity.ts';
+import type { BubbleView } from './bubble-types.ts';
 export interface Config {
     databasePath?: string;
     contextsPath?: string;
@@ -106,6 +109,8 @@ export default class TheOne extends Service {
     readonly bindings: RoutingBindings;
     readonly shadow?: RoutingShadow;
     shadowError?: string;
+    readonly bubbles: BubbleAggregator;
+    readonly bubbleActivity: BubbleActivity;
     readonly store: ContextStore;
     readonly work: PersistentWork;
     private readonly projects;
@@ -157,6 +162,10 @@ export default class TheOne extends Service {
     /** Sessions whose current step answers through TheOne; only these refuse to run tools themselves. */
     private readonly throughTheOne;
     constructor(ctx: Context, config: Config);
+    /** Reads in-memory observations and store facts without loading sessions or starting work. */
+    bubbleView(gatewayId?: string | null | undefined): BubbleView;
+    private topicDoneCapability;
+    private bubbleTemporary;
     private workTasks;
     private deliverWorkNotice;
     /** DSH Connection protects plugin routes inside its authenticated /api fence. */

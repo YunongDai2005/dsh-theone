@@ -144,3 +144,48 @@ test('same-project work reports waiting before the Worker actually starts', { ti
     await observed(app, v => v.workItems.some(w => w.primaryMessageId === input.id && w.delivery.phase === 'shown'))
   } finally { gate.resolve(); await app.close(); await rm(root, { recursive: true, force: true }) }
 })
+
+test('withdrawing one steering input keeps the original execution and delivery alive', { timeout: 15000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'theone-bubble-withdraw-')), app = await harness(root)
+  const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>()
+  try {
+    app.model.behavior = async function* () { entered.resolve(); await release.promise; yield* textResponse('answer') }
+    const first = say('Qwen hardware'); app.gateway.followup(first); await entered.promise
+    const steering = say('Qwen extra details'); app.gateway.steer(steering)
+    const before = app.ctx.theone.bubbles.read({ gatewayId: app.gateway.id })
+    assert.equal(before.kind, 'update'); if (before.kind !== 'update') return
+    assert.equal(before.snapshot.workItems.filter(w => w.messageIds.includes(steering.id)).length, 1)
+    app.gateway.inbox.remove(steering.id)
+    const after = app.ctx.theone.bubbleView(app.gateway.id).workItems.find(w => w.primaryMessageId === first.id)!
+    assert.equal(after.delivery.phase, 'showing')
+    assert.deepEqual(after.messageIds, [first.id])
+    release.resolve(); await app.gateway.whenIdle()
+  } finally { release.resolve(); await app.close(); await rm(root, { recursive: true, force: true }) }
+})
+
+test('a cancelled preparation is terminal and a failed handoff restores the original observation', { timeout: 15000 }, async () => {
+  const { WorkerRun } = await import('../src/run.ts')
+  const { SessionId } = await import('@deepseek-ai/dsh-session')
+  const { randomUUID } = await import('node:crypto')
+  const root = await mkdtemp(join(tmpdir(), 'theone-bubble-handoff-')), app = await harness(root)
+  const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>()
+  let next: InstanceType<typeof WorkerRun> | undefined
+  try {
+    app.model.behavior = async function* () { entered.resolve(); await release.promise; yield* textResponse('answer') }
+    const input = say('Qwen hardware'); app.gateway.followup(input); await entered.promise
+    const original = (app.ctx.theone as unknown as { runs: Map<string, InstanceType<typeof WorkerRun>> }).runs.get(app.gateway.id)!
+    const worker = (await app.ctx.agents.create({ sessionId: SessionId(randomUUID()), agentOptions: { provider: 'fixture', model: 'fixture' } })).agent
+    next = new WorkerRun(app.ctx, worker, app.gateway, input.id, 1000, () => {})
+    app.ctx.theone.bubbleActivity.register(next, 'ctx_thesis', 'foreground')
+    next.cancel()
+    assert.equal(next.done, true)
+    app.ctx.theone.bubbleActivity.restore(original)
+    const view = app.ctx.theone.bubbleView(app.gateway.id)
+    const old = view.workItems.find(item => item.executionId === original.executionId)!
+    assert.equal(old.phase, 'running'); assert.equal(old.delivery.phase, 'showing')
+    const replacement = view.workItems.find(item => item.executionId === next!.executionId)!
+    assert.equal(replacement.phase, 'stopped'); assert.equal(replacement.delivery.phase, 'discarded')
+    assert.equal(app.model.requests.length, 1)
+    release.resolve(); await app.gateway.whenIdle()
+  } finally { next?.dispose(); release.resolve(); await app.close(); await rm(root, { recursive: true, force: true }) }
+})

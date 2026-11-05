@@ -1,0 +1,160 @@
+{
+  "kind": "update",
+  "reset": false,
+  "snapshot": {
+    "scope": {
+      "gatewayKey": "test-gateway",
+      "gatewayId": "d5b1773b-5ccf-4920-a8c5-d12c92c19530"
+    },
+    "topics": [
+      {
+        "id": "0c87e21b-7b9b-45df-b241-0b3d5227cb78",
+        "title": "Local backend topic",
+        "topicRevision": null,
+        "current": false,
+        "lifecycle": "active",
+        "declaredDoneAt": null,
+        "effectiveDone": false,
+        "archived": false,
+        "private": false,
+        "groupId": null,
+        "project": null,
+        "usage": {
+          "completedCalls": 0,
+          "recentCalls": 0,
+          "lastUsedAt": null
+        },
+        "lastActivityAt": null,
+        "workItemIds": [],
+        "capabilities": {
+          "mount": {
+            "allowed": true
+          },
+          "mergeNow": {
+            "allowed": true
+          },
+          "delete": {
+            "allowed": true
+          },
+          "declareDone": {
+            "allowed": true
+          },
+          "queueMerge": {
+            "allowed": false,
+            "reason": "unsupported"
+          }
+        }
+      },
+      {
+        "id": "ctx_qwen_9070xt",
+        "title": "Qwen / RX 9070 XT",
+        "topicRevision": null,
+        "current": false,
+        "lifecycle": "active",
+        "declaredDoneAt": null,
+        "effectiveDone": false,
+        "archived": false,
+        "private": false,
+        "groupId": null,
+        "project": null,
+        "usage": {
+          "completedCalls": 0,
+          "recentCalls": 0,
+          "lastUsedAt": null
+        },
+        "lastActivityAt": null,
+        "workItemIds": [],
+        "capabilities": {
+          "mount": {
+            "allowed": true
+          },
+          "mergeNow": {
+            "allowed": true
+          },
+          "delete": {
+            "allowed": true
+          },
+          "declareDone": {
+            "allowed": true
+          },
+          "queueMerge": {
+            "allowed": false,
+            "reason": "unsupported"
+          }
+        }
+      },
+      {
+        "id": "ctx_thesis",
+        "title": "Video Attention Thesis",
+        "topicRevision": null,
+        "current": false,
+        "lifecycle": "active",
+        "declaredDoneAt": null,
+        "effectiveDone": false,
+        "archived": false,
+        "private": false,
+        "groupId": null,
+        "project": null,
+        "usage": {
+          "completedCalls": 0,
+          "recentCalls": 0,
+          "lastUsedAt": null
+        },
+        "lastActivityAt": null,
+        "workItemIds": [],
+        "capabilities": {
+          "mount": {
+            "allowed": true
+          },
+          "mergeNow": {
+            "allowed": true
+          },
+          "delete": {
+            "allowed": true
+          },
+          "declareDone": {
+            "allowed": true
+          },
+          "queueMerge": {
+            "allowed": false,
+            "reason": "unsupported"
+          }
+        }
+      }
+    ],
+    "workItems": [],
+    "gateway": {
+      "id": "d5b1773b-5ccf-4920-a8c5-d12c92c19530",
+      "currentId": null,
+      "showingExecutionId": null,
+      "nextTurn": [],
+      "nextStep": [],
+      "claimed": []
+    },
+    "edges": [],
+    "merges": [],
+    "health": {
+      "catalog": "unavailable",
+      "router": "rules"
+    },
+    "schemaVersion": 1,
+    "cursor": {
+      "epoch": "1e8e5a81-0987-4c6b-a865-bccd77a81cf1:c0af2442d65e21e6",
+      "version": 1,
+      "seq": 1
+    },
+    "eventFloor": 0,
+    "serverTime": 1793866902105
+  },
+  "events": [
+    {
+      "type": "topic.changed",
+      "contextId": "0c87e21b-7b9b-45df-b241-0b3d5227cb78",
+      "change": "created",
+      "version": 1,
+      "seq": 1,
+      "at": 1793866902105,
+      "gatewayId": "d5b1773b-5ccf-4920-a8c5-d12c92c19530"
+    }
+  ]
+}

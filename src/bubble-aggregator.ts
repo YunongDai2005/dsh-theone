@@ -1,7 +1,15 @@
 import { setMaxListeners } from 'node:events'
 import { createHash, randomUUID } from 'node:crypto'
 import type { BubbleCursor, BubbleEvent, BubbleEventData, BubbleReadQuery, BubbleReadResponse, BubbleView } from './bubble-types.ts'
-interface Head { view: BubbleView; encoded: string; cursor: BubbleCursor; events: BubbleEvent[]; floor: number; knownTopics: Set<string> }
+interface Head {
+  view: BubbleView; encoded: string; cursor: BubbleCursor; events: BubbleEvent[]; floor: number
+  knownTopics: Set<string>; removedTopics: Set<string>; unavailable: Set<string>
+}
+interface BubbleAggregatorOptions {
+  capacity?: number; maxWaiters?: number
+  unavailableIds?: () => ReadonlySet<string>
+  topicIds?: () => readonly string[]
+}
 
 /** Single synchronous publisher: snapshot and event watermark always describe the same committed cut. */
 export class BubbleAggregator {
@@ -15,7 +23,7 @@ export class BubbleAggregator {
   private readonly maxWaiters: number
   get pendingRequests(): number { return this.waiters.size }
   constructor(private readonly gatewayKey: string, private readonly project: (id: string | null) => BubbleView,
-    private readonly gatewayIds: () => string[], options: { capacity?: number; maxWaiters?: number } = {}) {
+    private readonly gatewayIds: () => string[], private readonly options: BubbleAggregatorOptions = {}) {
     this.maxWaiters = Math.max(1, options.maxWaiters ?? 128)
     setMaxListeners(this.maxWaiters + 1, this.lifetime.signal)
     this.capacity = Math.max(1, options.capacity ?? 512)
@@ -25,23 +33,29 @@ export class BubbleAggregator {
   publish(events: BubbleEventData[] = [], gatewayId: string | null = null): void {
     if (this.closed) return
     let changed = false
+    const unavailable = new Set(this.options.unavailableIds?.() ?? []), topicIds = this.options.topicIds?.() ?? []
     for (const id of [null, ...this.gatewayIds()]) {
-      const view = this.project(id), encoded = JSON.stringify(view)
+      const view = this.project(id), encoded = JSON.stringify([view, [...unavailable].sort()])
       let head = this.heads.get(id)
       if (!head) {
         const suffix = createHash('sha256').update(JSON.stringify([this.gatewayKey, id])).digest('hex').slice(0, 16)
-        this.heads.set(id, head = { view, encoded, cursor: { epoch: this.epoch + ':' + suffix, version: 0, seq: 0 }, events: [], floor: 0, knownTopics: new Set(view.topics.map(topic => topic.id)) })
+        this.heads.set(id, head = { view, encoded, cursor: { epoch: this.epoch + ':' + suffix, version: 0, seq: 0 }, events: [], floor: 0, knownTopics: new Set([...topicIds, ...view.topics.map(topic => topic.id)]), removedTopics: new Set(), unavailable })
         changed = true
         continue
       }
-      const batch = [...this.topicEvents(head.view, view, head.knownTopics), ...(gatewayId === null || gatewayId === id ? events : [])]
+      const topicEvents = this.topicEvents(head.view, view, head.knownTopics)
+      for (const event of topicEvents) if (event.type === 'topic.changed' && event.change === 'removed' && !unavailable.has(event.contextId)) head.removedTopics.add(event.contextId)
+      for (const hiddenId of unavailable) head.removedTopics.delete(hiddenId)
+      for (const topic of view.topics) head.removedTopics.delete(topic.id)
+      for (const topicId of topicIds) head.knownTopics.add(topicId)
+      const batch = [...topicEvents, ...(gatewayId === null || gatewayId === id ? events : [])]
       if (head.encoded === encoded && !batch.length) continue
       if (head.cursor.version >= Number.MAX_SAFE_INTEGER - 1 || head.cursor.seq >= Number.MAX_SAFE_INTEGER - batch.length - 1) {
         this.epoch = randomUUID(); this.heads.clear(); this.publish(); return
       }
       const cursor = { ...head.cursor, version: head.cursor.version + 1 }
       const appended: BubbleEvent[] = batch.map(event => ({ ...structuredClone(event), version: cursor.version, seq: ++cursor.seq, at: Date.now(), gatewayId: id }))
-      head.view = view; head.encoded = encoded; head.cursor = cursor
+      head.view = view; head.encoded = encoded; head.cursor = cursor; head.unavailable = unavailable
       head.events.push(...appended)
       if (head.events.length > this.capacity) {
         const removed = head.events.splice(0, head.events.length - this.capacity)
@@ -65,9 +79,15 @@ export class BubbleAggregator {
     if (!resetReason && query.since === head.cursor.version && query.after === head.cursor.seq)
       return { kind: 'unchanged', scope: { ...head.view.scope }, cursor: { ...head.cursor }, serverTime: Date.now() }
     const visible = new Set(head.view.topics.map(topic => topic.id))
+    const visibleOrRemoved = (contextId: string) => !head.unavailable.has(contextId) && (visible.has(contextId) || head.removedTopics.has(contextId))
     const events = resetReason ? [] : head.events.filter(event => event.seq > query.after!).flatMap<BubbleEvent>(event => {
-      if ('contextId' in event && !visible.has(event.contextId) || 'fromId' in event && (!visible.has(event.fromId) || !visible.has(event.toId)) ||
-        'suggestedId' in event && !visible.has(event.suggestedId) || 'sourceId' in event && (!visible.has(event.sourceId) || !visible.has(event.targetId))) return []
+      // A committed merge/removal references the old identity after it leaves the snapshot.
+      // Exclusions still remove that identity from buffered events in the same published cut.
+      const removed = event.type === 'topic.changed' && event.change === 'removed'
+      if ('contextId' in event && !(removed ? visibleOrRemoved(event.contextId) : visible.has(event.contextId)) ||
+        'fromId' in event && (!visible.has(event.fromId) || !visible.has(event.toId)) ||
+        'suggestedId' in event && !visible.has(event.suggestedId) ||
+        'sourceId' in event && (!(event.type === 'topic.merged' ? visibleOrRemoved(event.sourceId) : visible.has(event.sourceId)) || !visible.has(event.targetId))) return []
       if (event.type === 'route.assigned') return [{ ...event, relatedProposedIds: event.relatedProposedIds.filter(id => visible.has(id)), alternateIds: event.alternateIds.filter(id => visible.has(id)),
         ...(event.temporary ? { temporary: { ...event.temporary, returnContextId: event.temporary.returnContextId && visible.has(event.temporary.returnContextId) ? event.temporary.returnContextId : null } } : {}) }]
       if (event.type === 'route.blocked') return [{ ...event, candidateIds: event.candidateIds.filter(id => visible.has(id)) }]

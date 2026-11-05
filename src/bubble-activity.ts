@@ -85,7 +85,7 @@ export class BubbleActivity {
     let item = this.find(run.gateway.id, run.inputId)
     if (item?.executionId && item.executionId !== run.executionId) {
       item.phase = 'superseded'; item.outcome = 'moved'; item.delivery.phase = 'discarded'; this.changed(item)
-      item = { ...structuredClone(item), id: randomUUID(), executionId: null,
+      item = { ...structuredClone(item), id: randomUUID(), executionId: null, phase: 'starting', outcome: undefined,
         delivery: { phase: 'waiting', shownSteps: 0, committedSteps: 0, commit: null } }
       this.items.set(item.id, item)
     }
@@ -93,6 +93,15 @@ export class BubbleActivity {
     item.contextId = contextId; item.executionId = run.executionId; item.lane = lane
     run.observe = () => this.observe(run)
     this.observe(run)
+  }
+  restore(run: WorkerRun): void {
+    const original = [...this.items.values()].find(item => item.executionId === run.executionId)
+    if (!original) return
+    for (const item of this.items.values()) if (item !== original && item.gatewayId === run.gateway.id && item.primaryMessageId === run.inputId && item.phase !== 'superseded') {
+      item.phase = 'stopped'; item.outcome = 'stopped'; item.delivery.phase = 'discarded'; this.changed(item)
+    }
+    // The old run itself was never superseded; only the tentative handoff observation was.
+    original.phase = 'unknown'; delete original.outcome; this.observe(run)
   }
   observe(run: WorkerRun): void {
     const item = [...this.items.values()].find(item => item.executionId === run.executionId)
@@ -113,12 +122,36 @@ export class BubbleActivity {
   forward(run: WorkerRun, message: UserMessage): void {
     const separate = this.find(run.gateway.id, message.id)
     if (separate && separate.executionId !== run.executionId) this.items.delete(separate.id)
-    this.releaseClaim(run.gateway.id, [message.id]); this.observe(run)
+    this.releaseClaim(run.gateway.id, [message.id]); this.observe(run); this.publish([], run.gateway.id)
   }
   discard(gatewayId: string, messageId: string): void {
     const item = this.find(gatewayId, messageId)
-    if (item) { item.delivery.phase = 'discarded'; if (!item.executionId) item.phase = 'stopped'; this.changed(item) }
+    if (item) {
+      if (item.executionId && item.primaryMessageId !== messageId) item.messageIds = item.messageIds.filter(id => id !== messageId)
+      else { item.delivery.phase = 'discarded'; if (!item.executionId) item.phase = 'stopped' }
+      this.changed(item)
+    }
     this.releaseClaim(gatewayId, [messageId])
+  }
+  standalone(agent: Agent, message: UserMessage, phase: BubbleWorkItem['phase']): void {
+    const item = this.input(agent, message)
+    item.phase = phase; item.delivery.phase = 'showing'; item.delivery.shownSteps = 1
+    this.changed(item)
+  }
+  commitStandalone(gatewayId: string, eventSeq: number): void {
+    const item = [...this.items.values()].findLast(item => item.gatewayId === gatewayId && !item.executionId && item.delivery.phase === 'showing')
+    if (!item || item.delivery.commit?.eventSeq === eventSeq) return
+    item.delivery.committedSteps++; item.delivery.commit = { sessionId: gatewayId, eventSeq }; this.changed(item)
+  }
+  endTurn(gatewayId: string, completed: boolean): void {
+    const claimed = this.claimed.get(gatewayId)?.messageIds ?? []
+    for (const item of this.items.values()) if (item.gatewayId === gatewayId && !item.executionId &&
+      (item.delivery.phase === 'showing' || item.messageIds.some(id => claimed.includes(id)))) {
+      item.delivery.phase = completed && item.delivery.committedSteps > 0 ? 'shown' : 'discarded'
+      if (item.phase === 'routing') item.phase = 'failed'
+      this.changed(item)
+    }
+    this.releaseClaim(gatewayId); this.publish([], gatewayId)
   }
   failed(agent: Agent, message: UserMessage): void {
     const item = this.input(agent, message); item.phase = 'failed'; item.outcome = 'failed'; this.changed(item)
