@@ -8,6 +8,7 @@ import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path'
 import { LlmAdapter, createUserMessage, isAgentLoopRequest, resolveRetryPolicy } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, LlmModelInfo, LlmResolvedModelInfo, ReasoningEffortId, StreamChunk, UserMessage } from '@deepseek-ai/dsh-llm'
+import type { HostConnectionService, ConnectionFetchRoute } from '@deepseek-ai/dsh-client-connection'
 import type { Agent, AgentHandle, ModelSelection, ModelSelectionRef } from '@deepseek-ai/dsh-agent'
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
 import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -1041,16 +1042,15 @@ export default class TheOne extends Service {
   /** DSH Connection protects plugin routes inside its authenticated /api fence. */
   private registerCatalogChannel(): void {
     this.ctx.inject(['connection'], child => {
-      const connection = child.get('connection') as { fetch?: { register: (route: {
-        path: string; methods: string[]; requestBody?: string; fetch: (request: Request) => Promise<Response>
-      }) => () => void } } | undefined
+      // Preserve the existing PUT settings route; the host's route disposer is asynchronous.
+      const connection = child.get('connection') as { fetch?: { register(route: Omit<ConnectionFetchRoute, 'methods' | 'requestBody'> & { methods: string[]; requestBody?: 'buffered' | 'streaming' }): ReturnType<HostConnectionService['fetch']['register']> } } | undefined
       if (!connection?.fetch?.register) return
-      child.effect(() => connection.fetch!.register({ path: '/api/theone/bubbles', methods: ['GET'], fetch: async request => {
+      child.effect(() => connection.fetch!.register({ path: '/api/theone/bubbles', methods: ['GET'], requestBody: 'buffered', fetch: async request => {
         const headers = { 'cache-control': 'no-store' }
-        try { return Response.json(this.bubbles.read(parseBubbleQuery(new URL(request.url))), { headers }) }
+        try { return Response.json(await this.bubbles.poll(parseBubbleQuery(new URL(request.url)), request.signal), { headers }) }
         catch (error) {
           const code = error instanceof Error ? error.message : 'INVALID_CURSOR'
-          return Response.json({ error: code }, { status: code === 'UNKNOWN_GATEWAY' ? 404 : 400, headers })
+          return Response.json({ error: code }, { status: code === 'BUBBLES_CLOSED' ? 503 : code === 'TOO_MANY_WAITERS' ? 429 : code === 'REQUEST_ABORTED' ? 499 : code === 'UNKNOWN_GATEWAY' ? 404 : 400, headers })
         }
       } }))
       child.effect(() => connection.fetch!.register({ path: '/api/theone/messages', methods: ['POST'], requestBody: 'buffered', fetch: async request => {

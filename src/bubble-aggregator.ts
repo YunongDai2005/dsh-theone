@@ -1,3 +1,4 @@
+import { setMaxListeners } from 'node:events'
 import { createHash, randomUUID } from 'node:crypto'
 import type { BubbleCursor, BubbleEvent, BubbleEventData, BubbleReadQuery, BubbleReadResponse, BubbleView } from './bubble-types.ts'
 interface Head { view: BubbleView; encoded: string; cursor: BubbleCursor; events: BubbleEvent[]; floor: number; knownTopics: Set<string> }
@@ -9,8 +10,14 @@ export class BubbleAggregator {
   private readonly listeners = new Set<() => void>()
   private readonly capacity: number
   private closed = false
+  private readonly lifetime = new AbortController()
+  private readonly waiters = new Set<() => void>()
+  private readonly maxWaiters: number
+  get pendingRequests(): number { return this.waiters.size }
   constructor(private readonly gatewayKey: string, private readonly project: (id: string | null) => BubbleView,
-    private readonly gatewayIds: () => string[], options: { capacity?: number } = {}) {
+    private readonly gatewayIds: () => string[], options: { capacity?: number; maxWaiters?: number } = {}) {
+    this.maxWaiters = Math.max(1, options.maxWaiters ?? 128)
+    setMaxListeners(this.maxWaiters + 1, this.lifetime.signal)
     this.capacity = Math.max(1, options.capacity ?? 512)
     this.publish()
   }
@@ -45,6 +52,7 @@ export class BubbleAggregator {
     if (changed) for (const listener of this.listeners) listener()
   }
   read(query: BubbleReadQuery = {}): BubbleReadResponse {
+    if (this.closed) throw new Error('BUBBLES_CLOSED')
     const id = query.gatewayId ?? this.gatewayIds().at(-1) ?? null
     const head = this.heads.get(id)
     if (!head) throw new Error('UNKNOWN_GATEWAY')
@@ -68,7 +76,47 @@ export class BubbleAggregator {
     return structuredClone({ kind: 'update', reset: !!resetReason, ...(resetReason ? { resetReason } : {}),
       snapshot: { ...head.view, schemaVersion: 1, cursor: head.cursor, eventFloor: head.floor, serverTime: Date.now() }, events })
   }
-  close(): void { this.closed = true; this.listeners.clear() }
+  async poll(query: BubbleReadQuery = {}, signal?: AbortSignal): Promise<BubbleReadResponse> {
+    if (signal?.aborted) throw new Error('REQUEST_ABORTED')
+    const first = this.read(query)
+    if (first.kind === 'update' || !query.waitMs) return first
+    if (this.pendingRequests >= this.maxWaiters) throw new Error('TOO_MANY_WAITERS')
+    // Freeze the scope of this request even if another gateway becomes the default while it waits.
+    const fixed = { ...query, ...(first.scope.gatewayId ? { gatewayId: first.scope.gatewayId } : {}) }
+    return new Promise<BubbleReadResponse>((resolve, reject) => {
+      let settled = false, timer: ReturnType<typeof setTimeout> | undefined, off = () => {}
+      const finish = (result?: BubbleReadResponse, error?: Error) => {
+        if (settled) return
+        settled = true; clearTimeout(timer); off(); this.waiters.delete(closed)
+        signal?.removeEventListener('abort', aborted); this.lifetime.signal.removeEventListener('abort', closed)
+        if (error) reject(error); else resolve(result!)
+      }
+      const check = () => {
+        try { const latest = this.read(fixed); if (latest.kind === 'update') finish(latest) }
+        catch (error) { finish(undefined, error as Error) }
+      }
+      const aborted = () => finish(undefined, new Error('REQUEST_ABORTED'))
+      const closed = () => finish(undefined, new Error('BUBBLES_CLOSED'))
+      this.waiters.add(closed)
+      off = this.subscribe(check)
+      // subscribe may synchronously publish; detach the returned listener even in that case.
+      if (settled) { off(); return }
+      signal?.addEventListener('abort', aborted, { once: true })
+      this.lifetime.signal.addEventListener('abort', closed, { once: true })
+      timer = setTimeout(() => {
+        try { finish(this.read(fixed)) } catch (error) { finish(undefined, error as Error) }
+      }, Math.min(query.waitMs!, 25000))
+      if (signal?.aborted) aborted()
+      else if (this.closed) closed()
+      else check()
+    })
+  }
+  close(): void {
+    if (this.closed) return
+    this.closed = true; this.lifetime.abort()
+    for (const finish of this.waiters) finish()
+    this.listeners.clear()
+  }
   private topicEvents(before: BubbleView, after: BubbleView, known: Set<string>): BubbleEventData[] {
     const old = new Map(before.topics.map(topic => [topic.id, topic])), next = new Map(after.topics.map(topic => [topic.id, topic]))
     const events: BubbleEventData[] = []
