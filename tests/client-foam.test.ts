@@ -7,7 +7,7 @@ import type { BubbleEvent, BubbleSnapshot, BubbleTopic, BubbleWorkItem } from '.
 
 const NOW = 1_800_000_000_000, DAY = 86400000
 const allowed = { allowed: true }
-const topic = (id: string, extra: Partial<BubbleTopic> = {}): BubbleTopic => ({ id, title: id, topicRevision: null, current: false, lifecycle: 'active', declaredDoneAt: null, effectiveDone: false,
+const topic = (id: string, extra: Partial<BubbleTopic> = {}): BubbleTopic => ({ id, title: id, label: null, topicRevision: null, current: false, lifecycle: 'active', declaredDoneAt: null, effectiveDone: false,
   archived: false, private: false, groupId: null, project: null, usage: { completedCalls: 0, recentCalls: 0, lastUsedAt: null }, lastActivityAt: null, workItemIds: [],
   capabilities: { mount: allowed, declareDone: allowed, mergeNow: allowed, queueMerge: allowed, delete: allowed }, ...extra })
 const work = (id: string, contextId: string, phase: BubbleWorkItem['phase'], extra: Partial<BubbleWorkItem> = {}): BubbleWorkItem => ({ id, gatewayId: 'g', primaryMessageId: 'm-' + id,

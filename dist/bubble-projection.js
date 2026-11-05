@@ -1,4 +1,18 @@
 import { activityLabel, learnDormancy, topicStatus } from "./topic-memory.js";
+/** Use existing names only, without truncating them or inventing a title abbreviation. */
+function bubbleLabel(topic) {
+    const title = topic.title.normalize('NFKC').toLowerCase();
+    const candidates = [...topic.entities, ...topic.keywords].map((term, order) => {
+        const label = term.normalize('NFKC').trim().replace(/ +/g, ' ');
+        const size = [...label].length, han = [...label.matchAll(/\p{Script=Han}/gu)].length;
+        const valid = /^[\p{Script=Han}\p{Script=Latin}0-9 .+#_-]+$/u.test(label) &&
+            (han === size ? han >= 2 && han <= 6 : /\p{Script=Latin}/u.test(label) && han <= 6 && size + han <= 14);
+        const at = title.indexOf(label.toLowerCase());
+        return { label, valid, rank: at < 0 ? Infinity : at, order };
+    }).filter(item => item.valid);
+    candidates.sort((a, b) => a.rank - b.rank || a.order - b.order);
+    return candidates[0]?.label ?? null;
+}
 /** One shared predicate for the displayed capability and the server's done guard. */
 export function doneCapability(work) {
     if (work.some(item => ['routing', 'queued', 'starting', 'running', 'waiting_user', 'recovering', 'unknown'].includes(item.phase)))
@@ -50,7 +64,7 @@ export function projectBubbles(store, input) {
         const queueMerge = input.merges?.some(op => op.sourceId === context.id || op.targetId === context.id)
             ? { allowed: false, reason: 'topic_busy' } : { allowed: true };
         const idle = input.busy ? { allowed: false, reason: 'gateway_busy' } : { allowed: true };
-        return { id: context.id, title: context.title, topicRevision: null, current: context.id === current, lifecycle,
+        return { id: context.id, title: context.title, label: bubbleLabel(context), topicRevision: null, current: context.id === current, lifecycle,
             declaredDoneAt: declared.get(context.id)?.at ?? null, effectiveDone: lifecycle === 'done', archived: hidden.get(context.id) === 'archived',
             private: privateIds.has(context.id), groupId: groups.get(context.id) ?? null, project: null,
             usage: { completedCalls: used?.completedCalls ?? 0, recentCalls: used?.recentCalls ?? 0, lastUsedAt: used?.lastUsedAt ?? null },

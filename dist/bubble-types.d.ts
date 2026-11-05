@@ -19,6 +19,7 @@ export interface Capability {
 export interface BubbleTopic {
     id: string;
     title: string;
+    label: string | null;
     /** Reserved for structural preconditions; not implemented in phase one. */
     topicRevision: number | null;
     current: boolean;

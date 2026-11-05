@@ -123,3 +123,25 @@ test('archived work stays visible when another gateway owns the pending delivery
     assert.equal(view.topics.some(t => t.id === 'b'), true)
   } finally { store.close() }
 })
+
+for (const row of [
+  { title: '想去日本旅游，帮我看看行程', entities: ['东京', '日本'], keywords: ['旅游', '行程'], label: '日本' },
+  { title: 'Planning a TypeScript migration', entities: ['JavaScript', 'TypeScript'], keywords: ['migration'], label: 'TypeScript' },
+  { title: '优化 Qwen 显存，记录 CUDA 参数', entities: ['CUDA', 'Qwen'], keywords: ['显存'], label: 'Qwen' },
+  { title: '学习 AI绘画工作流', entities: ['AI绘画'], keywords: [], label: 'AI绘画' },
+  { title: '一个没有关键词的话题', entities: [], keywords: [], label: null },
+  { title: '没有短词', entities: ['甲', '这是特别长的话题名称', 'Internationalization'], keywords: ['12345', '🙂'], label: null },
+  { title: '通用计划', entities: ['日本'], keywords: ['行程'], label: '日本' },
+  { title: 'Qwen settings', entities: [' Qwen ', 'qwen'], keywords: ['Qwen'], label: 'Qwen' },
+]) test('bubble label uses bounded existing terms: ' + row.title, () => {
+  const store = new ContextStore(':memory:')
+  try {
+    store.seed([{ id: 'topic', summary: '', lastState: '', title: row.title, entities: row.entities, keywords: row.keywords }])
+    const db = (store as any).db
+    const before = db.prepare('SELECT total_changes() AS n').get()
+    const label = () => projectBubbles(store, { scope }).topics[0].label
+    assert.equal(label(), row.label)
+    assert.equal(label(), row.label)
+    assert.deepEqual(db.prepare('SELECT total_changes() AS n').get(), before)
+  } finally { store.close() }
+})
