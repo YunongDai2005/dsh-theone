@@ -227,7 +227,7 @@ function createFoam(options) {
   let menu = null, tipOwner = null, raf = 0, last = now(), t = 0;
   const pending = [];
   const sizeOf = (c) => c.kind === "more" ? 16 : c.oneOff ? 21 : c.state === "running" || c.state === "done" || c.state === "wait" || c.state === "fail" || c.cur ? 29 : c.state === "queued" ? 24 : 16 + 9 * c.w;
-  const named = (c) => c.kind === "more" || c.cur || c.state !== "idle" || c.ask || c.mode === "bud";
+  const named = (c) => c.kind === "more" || c.cur || c.state !== "idle" || c.ask || !!c.offer || c.mode === "bud";
   const busy = (c) => c.state === "running" || c.state === "queued" || c.state === "wait" || c.state === "done";
   const topics = () => cells.filter((c) => c.kind === "topic" && c.mode !== "leave");
   const byId = (id) => cells.find((c) => c.kind === "topic" && c.id === id && c.mode !== "leave");
@@ -407,8 +407,9 @@ function createFoam(options) {
       for (const o of (event2.alternates ?? []).map(byId)) if (o && o !== c && !o.hidden) {
         o.flash = Math.max(o.flash, 0.3);
         o.g.classList.add("ask");
-        window.setTimeout(() => {
-          if (!o.ask) o.g.classList.remove("ask");
+        if (event2.messageId) o.offer = { messageId: event2.messageId, until: now() + 1e4 };
+        else window.setTimeout(() => {
+          if (!o.ask && !o.offer) o.g.classList.remove("ask");
         }, 1400);
       }
     } else if (event2.kind === "supplement") {
@@ -560,6 +561,7 @@ function createFoam(options) {
     const who = c.full ? "" : c.title + " \xB7 ";
     const b = bonds.find((x) => x[0] === c || x[1] === c);
     if (b) return who + text("bond", { name: (b[0] === c ? b[1] : b[0]).title });
+    if (c.offer) return who + text("offer");
     if (c.ask) return who + text("asking");
     if (c.state === "wait") return who + text("waiting");
     if (c.state === "fail") return who + text("failed");
@@ -682,6 +684,21 @@ function createFoam(options) {
     drag = null;
     hideTip();
     setTarget(null);
+    const moved = trail.length > 1 && Math.hypot(trail[trail.length - 1].x - trail[0].x, trail[trail.length - 1].y - trail[0].y) > 5;
+    if (!moved && c.offer) {
+      const { messageId } = c.offer, x = e.clientX, y = e.clientY;
+      for (const o of cells) if (o.offer?.messageId === messageId) {
+        o.offer = void 0;
+        if (!o.ask) o.g.classList.remove("ask");
+      }
+      void actions.reroute(messageId, c.id).then((status) => {
+        if (status === 409) {
+          placeTip(x, y - 32, text("rerouteBusy"));
+          window.setTimeout(hideTip, 1600);
+        } else if (status < 300) light(c);
+      });
+      return;
+    }
     if (hit?.kind === "main") {
       if (!c.cur) actions.mount(c.id);
       return;
@@ -762,6 +779,10 @@ function createFoam(options) {
       more.kick = 0.8;
     }
     for (const b of [...bonds]) if (b.some((c) => c.mode !== "live")) bonds.splice(bonds.indexOf(b), 1);
+    for (const c of all) if (c.offer && T > c.offer.until) {
+      c.offer = void 0;
+      if (!c.ask) c.g.classList.remove("ask");
+    }
     const live = cells.filter((c) => c.mode === "live" && !c.hidden);
     let top = Infinity, bottom = -Infinity, x0 = Infinity, x1 = -Infinity;
     for (const c of live) if (drag?.cell !== c) {
@@ -1164,7 +1185,7 @@ function foamEventsFrom(events, snapshot) {
     if (event.type === "route.assigned") {
       if (event.created) out.push({ kind: "create", to: event.contextId });
       else if (items.get(event.workItemId)?.source === "steering") out.push({ kind: "supplement", to: event.contextId });
-      else out.push({ kind: "route", to: event.contextId, alternates: event.alternateIds });
+      else out.push({ kind: "route", to: event.contextId, alternates: event.alternateIds, messageId: event.messageIds[0] });
     } else if (event.type === "route.blocked" && event.candidateIds.length > 1) out.push({ kind: "clarify", candidates: event.candidateIds });
     else if (event.type === "route.moved") out.push({ kind: "correct", from: event.fromId, to: event.toId });
     else if (event.type === "topic.merged") out.push({ kind: "merged", id: event.sourceId, into: event.targetId });
@@ -1248,6 +1269,15 @@ function mountFoamHost(options) {
     cancelQueued: (id) => stopWork(id, true),
     remove: () => options.openWorkspace(),
     showAnswer: () => options.openMainChat(),
+    reroute: async (messageId, contextId) => {
+      try {
+        const response = await fetch("/api/theone/routes", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ messageId, contextId }), signal, cache: "no-store" });
+        refresh();
+        return response.status;
+      } catch {
+        return 0;
+      }
+    },
     answer: () => options.openMainChat(),
     openWorkspace: options.openWorkspace,
     text: options.text
@@ -1838,6 +1868,8 @@ var zh = {
   "foam.waiting": "\u5728\u7B49\u4F60\u56DE\u7B54",
   "foam.failed": "\u8FD9\u6B21\u6CA1\u6709\u5B8C\u6210",
   "foam.menuAnswer": "\u53BB\u56DE\u7B54",
+  "foam.offer": "\u53EF\u80FD\u662F\u8FD9\u4E2A\u8BDD\u9898 \xB7 \u70B9\u4E00\u4E0B\u6362\u8FC7\u53BB",
+  "foam.rerouteBusy": "\u6B63\u5728\u56DE\u7B54\uFF0C\u7B54\u5B8C\u540E\u518D\u70B9",
   "foam.asking": "\u4E3B\u804A\u5929\u5728\u95EE\u4F60\u662F\u4E0D\u662F\u8FD9\u4E2A\u8BDD\u9898",
   "foam.bond": "\u7B54\u5B8C\u540E\u548C\u300C{name}\u300D\u5408\u5E76",
   "foam.dropMain": "\u4E3B\u804A\u5929\u63A5\u7740\u804A\u300C{name}\u300D",
@@ -2289,6 +2321,8 @@ var en = {
   "foam.waiting": "Waiting for your answer",
   "foam.failed": "Did not finish this time",
   "foam.menuAnswer": "Answer it",
+  "foam.offer": "Maybe this topic \xB7 click to move it here",
+  "foam.rerouteBusy": "Still answering; click again once it is done",
   "foam.asking": "Main chat is asking whether you mean this one",
   "foam.bond": 'Merges into "{name}" once answered',
   "foam.dropMain": 'Carry on with "{name}" in main chat',

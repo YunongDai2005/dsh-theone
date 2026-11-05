@@ -48,6 +48,7 @@ export type FoamEvent =
     to: string;
     related?: string[];
     alternates?: string[];
+    messageId?: string;
 }
 /** More input for a topic that is already answering (steering). */
  | {
@@ -73,7 +74,7 @@ export type FoamEvent =
     id: string;
     into: string;
 };
-export type FoamTextKey = 'more' | 'running' | 'queued' | 'answered' | 'asking' | 'bond' | 'waiting' | 'failed' | 'menuAnswer' | 'dropMain' | 'dropMerge' | 'dropMergeLater' | 'dropSession' | 'busyFling' | 'currentFling' | 'menuContinue' | 'menuOpen' | 'menuAside' | 'menuDelete' | 'menuStop' | 'menuCancel' | 'menuShowNow' | 'menuWorkspace';
+export type FoamTextKey = 'more' | 'running' | 'queued' | 'answered' | 'asking' | 'bond' | 'waiting' | 'failed' | 'menuAnswer' | 'offer' | 'rerouteBusy' | 'dropMain' | 'dropMerge' | 'dropMergeLater' | 'dropSession' | 'busyFling' | 'currentFling' | 'menuContinue' | 'menuOpen' | 'menuAside' | 'menuDelete' | 'menuStop' | 'menuCancel' | 'menuShowNow' | 'menuWorkspace';
 export interface FoamActions {
     mount(id: string): void;
     merge(id: string, into: string, whenIdle: boolean): void;
@@ -84,6 +85,8 @@ export interface FoamActions {
     cancelQueued(id: string): void;
     remove(id: string): void;
     showAnswer(id: string): void;
+    /** Move a message routing hesitated over into the topic the user picked; resolves to the HTTP status. */
+    reroute(messageId: string, to: string): Promise<number>;
     /** Go to where the topic waits on the user (its question or approval in main chat). */
     answer(id: string): void;
     openWorkspace(): void;

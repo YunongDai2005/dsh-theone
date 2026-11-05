@@ -24,7 +24,7 @@ const foam = createFoam({
     attach: (id, s) => say(`attach ${s} → ${id}`),
     putAside: id => { const t = topics.find(t => t.id === id)!; t.aside = true; say('aside ' + id); window.setTimeout(() => foam.update(model()), 1500) },
     open: id => say('open ' + id), stop: id => say('stop ' + id), cancelQueued: id => say('cancel ' + id), remove: id => say('remove ' + id),
-    showAnswer: id => say('show ' + id), answer: id => say('answer ' + id), openWorkspace: () => say('open workspace'),
+    showAnswer: id => say('show ' + id), reroute: async (m, to) => { say(`reroute ${m} → ${to}`); return 200 }, answer: id => say('answer ' + id), openWorkspace: () => say('open workspace'),
     text: (key, vars) => key + (vars ? ' ' + JSON.stringify(vars) : ''),
   },
 })
@@ -33,7 +33,7 @@ foam.update(model())
 let n = 0
 const set = (i: number, phase: FoamPhase) => { topics[i].phase = phase; if (phase === 'running') topics[i].startedAt = Date.now(); foam.update(model()) }
 const on = (id: string, f: () => void) => document.getElementById(id)!.addEventListener('click', f)
-on('route', () => { const i = 3 + (n++ % 6); foam.event({ kind: 'route', to: topics[i].id, alternates: [topics[i + 1].id] }); window.setTimeout(() => set(i, 'running'), 700) })
+on('route', () => { const i = 3 + (n++ % 6); foam.event({ kind: 'route', to: topics[i].id, alternates: [topics[i + 1].id], messageId: 'msg' + n }); window.setTimeout(() => set(i, 'running'), 700) })
 on('create', () => { const t: FoamTopic = { id: 'n' + n, title: ['周末露营', '面试准备', '牙医预约'][n++ % 3], weight: 1, phase: 'running', startedAt: Date.now() }; topics.push(t); foam.update(model()); foam.event({ kind: 'create', to: t.id }) })
 on('finish', () => { const i = topics.findIndex(t => t.phase === 'running'); if (i >= 0) set(i, 'answered') })
 on('show', () => { const i = topics.findIndex(t => t.phase === 'answered'); if (i >= 0) { topics.forEach(t => t.current = false); topics[i].current = true; set(i, 'idle') } })

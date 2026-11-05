@@ -51,7 +51,7 @@ export function foamEventsFrom(events: BubbleEvent[], snapshot: BubbleSnapshot):
     if (event.type === 'route.assigned') {
       if (event.created) out.push({ kind: 'create', to: event.contextId })
       else if (items.get(event.workItemId)?.source === 'steering') out.push({ kind: 'supplement', to: event.contextId })
-      else out.push({ kind: 'route', to: event.contextId, alternates: event.alternateIds })
+      else out.push({ kind: 'route', to: event.contextId, alternates: event.alternateIds, messageId: event.messageIds[0] })
     } else if (event.type === 'route.blocked' && event.candidateIds.length > 1) out.push({ kind: 'clarify', candidates: event.candidateIds })
     else if (event.type === 'route.moved') out.push({ kind: 'correct', from: event.fromId, to: event.toId })
     else if (event.type === 'topic.merged') out.push({ kind: 'merged', id: event.sourceId, into: event.targetId })
@@ -138,6 +138,13 @@ export function mountFoamHost(options: FoamHostOptions): FoamHost {
     cancelQueued: id => stopWork(id, true),
     remove: () => options.openWorkspace(),
     showAnswer: () => options.openMainChat(),
+    reroute: async (messageId, contextId) => {
+      try {
+        const response = await fetch('/api/theone/routes', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ messageId, contextId }), signal, cache: 'no-store' })
+        refresh()
+        return response.status
+      } catch { return 0 }
+    },
     answer: () => options.openMainChat(),
     openWorkspace: options.openWorkspace,
     text: options.text,

@@ -70,7 +70,7 @@ test('routing events become cluster events; hints and bookkeeping play nothing',
     { ...meta, seq: 8, type: 'topic.merged', sourceId: 'c', targetId: 'a' },
   ]
   assert.deepEqual(foamEventsFrom(events, snap), [
-    { kind: 'route', to: 'a', alternates: ['c'] },
+    { kind: 'route', to: 'a', alternates: ['c'], messageId: 'm1' },
     { kind: 'supplement', to: 'b' },
     { kind: 'create', to: 'c' },
     { kind: 'clarify', candidates: ['a', 'b'] },

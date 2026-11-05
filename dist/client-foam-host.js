@@ -55,7 +55,7 @@ export function foamEventsFrom(events, snapshot) {
             else if (items.get(event.workItemId)?.source === 'steering')
                 out.push({ kind: 'supplement', to: event.contextId });
             else
-                out.push({ kind: 'route', to: event.contextId, alternates: event.alternateIds });
+                out.push({ kind: 'route', to: event.contextId, alternates: event.alternateIds, messageId: event.messageIds[0] });
         }
         else if (event.type === 'route.blocked' && event.candidateIds.length > 1)
             out.push({ kind: 'clarify', candidates: event.candidateIds });
@@ -138,6 +138,16 @@ export function mountFoamHost(options) {
         cancelQueued: id => stopWork(id, true),
         remove: () => options.openWorkspace(),
         showAnswer: () => options.openMainChat(),
+        reroute: async (messageId, contextId) => {
+            try {
+                const response = await fetch('/api/theone/routes', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ messageId, contextId }), signal, cache: 'no-store' });
+                refresh();
+                return response.status;
+            }
+            catch {
+                return 0;
+            }
+        },
         answer: () => options.openMainChat(),
         openWorkspace: options.openWorkspace,
         text: options.text,

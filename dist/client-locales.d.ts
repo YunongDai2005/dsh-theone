@@ -202,6 +202,8 @@ export declare const zh: {
     readonly 'foam.waiting': "在等你回答";
     readonly 'foam.failed': "这次没有完成";
     readonly 'foam.menuAnswer': "去回答";
+    readonly 'foam.offer': "可能是这个话题 · 点一下换过去";
+    readonly 'foam.rerouteBusy': "正在回答，答完后再点";
     readonly 'foam.asking': "主聊天在问你是不是这个话题";
     readonly 'foam.bond': "答完后和「{name}」合并";
     readonly 'foam.dropMain': "主聊天接着聊「{name}」";

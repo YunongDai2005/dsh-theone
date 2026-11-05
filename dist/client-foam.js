@@ -112,7 +112,7 @@ export function createFoam(options) {
     const pending = [];
     const sizeOf = (c) => c.kind === 'more' ? 16 : c.oneOff ? 21 : c.state === 'running' || c.state === 'done' || c.state === 'wait' || c.state === 'fail' || c.cur ? 29 : c.state === 'queued' ? 24 : 16 + 9 * c.w;
     /** At rest only the topics doing something carry a name; the rest are plain cells until the pointer comes near. */
-    const named = (c) => c.kind === 'more' || c.cur || c.state !== 'idle' || c.ask || c.mode === 'bud';
+    const named = (c) => c.kind === 'more' || c.cur || c.state !== 'idle' || c.ask || !!c.offer || c.mode === 'bud';
     const busy = (c) => c.state === 'running' || c.state === 'queued' || c.state === 'wait' || c.state === 'done';
     const topics = () => cells.filter(c => c.kind === 'topic' && c.mode !== 'leave');
     const byId = (id) => cells.find(c => c.kind === 'topic' && c.id === id && c.mode !== 'leave');
@@ -236,13 +236,16 @@ export function createFoam(options) {
                 return true;
             }
             routeTo(c, (event.related ?? []).map(byId).filter((o) => !!o && o !== c));
-            // The other close candidates flicker once: routing was not sure, and the user can still move it.
+            // The other close candidates light up for a while: routing was not sure, and one click on one of them moves the message there.
             for (const o of (event.alternates ?? []).map(byId))
                 if (o && o !== c && !o.hidden) {
                     o.flash = Math.max(o.flash, .3);
                     o.g.classList.add('ask');
-                    window.setTimeout(() => { if (!o.ask)
-                        o.g.classList.remove('ask'); }, 1400);
+                    if (event.messageId)
+                        o.offer = { messageId: event.messageId, until: now() + 10000 };
+                    else
+                        window.setTimeout(() => { if (!o.ask && !o.offer)
+                            o.g.classList.remove('ask'); }, 1400);
                 }
         }
         else if (event.kind === 'supplement') {
@@ -414,6 +417,8 @@ export function createFoam(options) {
         const b = bonds.find(x => x[0] === c || x[1] === c);
         if (b)
             return who + text('bond', { name: (b[0] === c ? b[1] : b[0]).title });
+        if (c.offer)
+            return who + text('offer');
         if (c.ask)
             return who + text('asking');
         if (c.state === 'wait')
@@ -546,6 +551,26 @@ export function createFoam(options) {
         drag = null;
         hideTip();
         setTarget(null);
+        // A click (no real movement) on a candidate routing hesitated over moves the message there.
+        const moved = trail.length > 1 && Math.hypot(trail[trail.length - 1].x - trail[0].x, trail[trail.length - 1].y - trail[0].y) > 5;
+        if (!moved && c.offer) {
+            const { messageId } = c.offer, x = e.clientX, y = e.clientY;
+            for (const o of cells)
+                if (o.offer?.messageId === messageId) {
+                    o.offer = undefined;
+                    if (!o.ask)
+                        o.g.classList.remove('ask');
+                }
+            void actions.reroute(messageId, c.id).then(status => {
+                if (status === 409) {
+                    placeTip(x, y - 32, text('rerouteBusy'));
+                    window.setTimeout(hideTip, 1600);
+                }
+                else if (status < 300)
+                    light(c);
+            });
+            return;
+        }
         if (hit?.kind === 'main') {
             if (!c.cur)
                 actions.mount(c.id);
@@ -632,6 +657,12 @@ export function createFoam(options) {
         for (const b of [...bonds])
             if (b.some(c => c.mode !== 'live'))
                 bonds.splice(bonds.indexOf(b), 1);
+        for (const c of all)
+            if (c.offer && T > c.offer.until) {
+                c.offer = undefined;
+                if (!c.ask)
+                    c.g.classList.remove('ask');
+            }
         const live = cells.filter(c => c.mode === 'live' && !c.hidden);
         let top = Infinity, bottom = -Infinity, x0 = Infinity, x1 = -Infinity;
         for (const c of live)

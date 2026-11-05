@@ -40,7 +40,7 @@ export interface FoamModel {
 
 export type FoamEvent =
   /** A message settled on a topic; `alternates` were the other close candidates, they only flicker. */
-  | { kind: 'route'; to: string; related?: string[]; alternates?: string[] }
+  | { kind: 'route'; to: string; related?: string[]; alternates?: string[]; messageId?: string }
   /** More input for a topic that is already answering (steering). */
   | { kind: 'supplement'; to: string }
   | { kind: 'create'; to: string }
@@ -51,7 +51,7 @@ export type FoamEvent =
   | { kind: 'merged'; id: string; into: string }
 
 export type FoamTextKey =
-  | 'more' | 'running' | 'queued' | 'answered' | 'asking' | 'bond' | 'waiting' | 'failed' | 'menuAnswer'
+  | 'more' | 'running' | 'queued' | 'answered' | 'asking' | 'bond' | 'waiting' | 'failed' | 'menuAnswer' | 'offer' | 'rerouteBusy'
   | 'dropMain' | 'dropMerge' | 'dropMergeLater' | 'dropSession' | 'busyFling' | 'currentFling'
   | 'menuContinue' | 'menuOpen' | 'menuAside' | 'menuDelete' | 'menuStop' | 'menuCancel' | 'menuShowNow' | 'menuWorkspace'
 
@@ -65,6 +65,8 @@ export interface FoamActions {
   cancelQueued(id: string): void
   remove(id: string): void
   showAnswer(id: string): void
+  /** Move a message routing hesitated over into the topic the user picked; resolves to the HTTP status. */
+  reroute(messageId: string, to: string): Promise<number>
   /** Go to where the topic waits on the user (its question or approval in main chat). */
   answer(id: string): void
   openWorkspace(): void
@@ -181,6 +183,7 @@ interface Cell {
   mode: 'bud' | 'live' | 'leave' | 'fling'; age: number; hidden: boolean; away: boolean; rebud: boolean; onBorn?: () => void; into?: Cell
   x: number; y: number; vx: number; vy: number; svx: number; svy: number; tx: number; ty: number; R: number; scale: number; alpha: number
   heat: number; solid: number; kick: number; flash: number; reveal: number; want: number; nx: number; ny: number; cx: number; cy: number
+  offer?: { messageId: string; until: number }
   phase: number; shownKey: string; full: boolean; lay: { lines: string[]; font: number; lh: number }; showing: boolean
 }
 interface Vesicle { el: SVGGElement; from: () => Pt; to: () => Pt; arrive: () => void; t: number; dur: number; hold: number | (() => boolean); toMark: boolean }
@@ -211,7 +214,7 @@ export function createFoam(options: FoamOptions): Foam {
 
   const sizeOf = (c: Cell) => c.kind === 'more' ? 16 : c.oneOff ? 21 : c.state === 'running' || c.state === 'done' || c.state === 'wait' || c.state === 'fail' || c.cur ? 29 : c.state === 'queued' ? 24 : 16 + 9 * c.w
   /** At rest only the topics doing something carry a name; the rest are plain cells until the pointer comes near. */
-  const named = (c: Cell) => c.kind === 'more' || c.cur || c.state !== 'idle' || c.ask || c.mode === 'bud'
+  const named = (c: Cell) => c.kind === 'more' || c.cur || c.state !== 'idle' || c.ask || !!c.offer || c.mode === 'bud'
   const busy = (c: Cell) => c.state === 'running' || c.state === 'queued' || c.state === 'wait' || c.state === 'done'
   const topics = () => cells.filter(c => c.kind === 'topic' && c.mode !== 'leave')
   const byId = (id: string) => cells.find(c => c.kind === 'topic' && c.id === id && c.mode !== 'leave')
@@ -300,8 +303,12 @@ export function createFoam(options: FoamOptions): Foam {
       // A blocked message that has now settled: the waiting vesicle goes to where it landed.
       if (clarifying) { apply({ kind: 'resolve', to: event.to }); return true }
       routeTo(c, (event.related ?? []).map(byId).filter((o): o is Cell => !!o && o !== c))
-      // The other close candidates flicker once: routing was not sure, and the user can still move it.
-      for (const o of (event.alternates ?? []).map(byId)) if (o && o !== c && !o.hidden) { o.flash = Math.max(o.flash, .3); o.g.classList.add('ask'); window.setTimeout(() => { if (!o.ask) o.g.classList.remove('ask') }, 1400) }
+      // The other close candidates light up for a while: routing was not sure, and one click on one of them moves the message there.
+      for (const o of (event.alternates ?? []).map(byId)) if (o && o !== c && !o.hidden) {
+        o.flash = Math.max(o.flash, .3); o.g.classList.add('ask')
+        if (event.messageId) o.offer = { messageId: event.messageId, until: now() + 10000 }
+        else window.setTimeout(() => { if (!o.ask && !o.offer) o.g.classList.remove('ask') }, 1400)
+      }
     } else if (event.kind === 'supplement') {
       const c = byId(event.to); if (!c) return false
       if (!c.hidden) { const v = vesicle(markPos, () => pos(c), () => { c.kick = Math.max(c.kick, .5) }, .55); v.el.setAttribute('data-small', 'true') }
@@ -402,6 +409,7 @@ export function createFoam(options: FoamOptions): Foam {
     const who = c.full ? '' : c.title + ' · '
     const b = bonds.find(x => x[0] === c || x[1] === c)
     if (b) return who + text('bond', { name: (b[0] === c ? b[1] : b[0]).title })
+    if (c.offer) return who + text('offer')
     if (c.ask) return who + text('asking')
     if (c.state === 'wait') return who + text('waiting')
     if (c.state === 'fail') return who + text('failed')
@@ -493,6 +501,17 @@ export function createFoam(options: FoamOptions): Foam {
     if (!drag) return
     const c = drag.cell, hit = target, trail = drag.trail
     c.g.classList.remove('drag'); drag = null; hideTip(); setTarget(null)
+    // A click (no real movement) on a candidate routing hesitated over moves the message there.
+    const moved = trail.length > 1 && Math.hypot(trail[trail.length - 1].x - trail[0].x, trail[trail.length - 1].y - trail[0].y) > 5
+    if (!moved && c.offer) {
+      const { messageId } = c.offer, x = e.clientX, y = e.clientY
+      for (const o of cells) if (o.offer?.messageId === messageId) { o.offer = undefined; if (!o.ask) o.g.classList.remove('ask') }
+      void actions.reroute(messageId, c.id).then(status => {
+        if (status === 409) { placeTip(x, y - 32, text('rerouteBusy')); window.setTimeout(hideTip, 1600) }
+        else if (status < 300) light(c)
+      })
+      return
+    }
     if (hit?.kind === 'main') { if (!c.cur) actions.mount(c.id); return }
     if (hit?.kind === 'cell') {
       // The two are joined by a neck until TheOne confirms; only then they fuse (a `merged` event), otherwise the neck lets go.
@@ -554,6 +573,7 @@ export function createFoam(options: FoamOptions): Foam {
     if (more.title !== moreName) { more.title = moreName; more.kick = .8 }
 
     for (const b of [...bonds]) if (b.some(c => c.mode !== 'live')) bonds.splice(bonds.indexOf(b), 1)
+    for (const c of all) if (c.offer && T > c.offer.until) { c.offer = undefined; if (!c.ask) c.g.classList.remove('ask') }
 
     const live = cells.filter(c => c.mode === 'live' && !c.hidden)
     let top = Infinity, bottom = -Infinity, x0 = Infinity, x1 = -Infinity
