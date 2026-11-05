@@ -15,6 +15,7 @@ export function doneCapability(work: readonly BubbleWorkItem[]): Capability {
 /** Synchronous, read-only and body-free. Never calls briefing, recovery, indexing, a Worker or a model. */
 export function projectBubbles(store: ContextStore, input: {
   scope: BubbleScope; workItems?: readonly BubbleWorkItem[]; gateway?: BubbleGateway | null; busy?: boolean
+  merges?: BubbleView['merges']
   doneCapabilities?: ReadonlyMap<string, Capability>
   linkScope?: LinkScope; health?: BubbleView['health']; now?: number
 }): BubbleView {
@@ -51,14 +52,16 @@ export function projectBubbles(store: ContextStore, input: {
       dormant: activityLabel(lastAt.get(context.id), dormancy.perTopic.get(context.id) ?? dormancy.global, now).dormant,
       asking: ownWork.some(item => item.phase === 'waiting_user') })
     const used = usage.get(context.id)
+    const queueMerge: Capability = input.merges?.some(op => op.sourceId === context.id || op.targetId === context.id)
+      ? { allowed: false, reason: 'topic_busy' } : { allowed: true }
     const idle: Capability = input.busy ? { allowed: false, reason: 'gateway_busy' } : { allowed: true }
     return { id: context.id, title: context.title, topicRevision: null, current: context.id === current, lifecycle,
       declaredDoneAt: declared.get(context.id)?.at ?? null, effectiveDone: lifecycle === 'done', archived: hidden.get(context.id) === 'archived',
       private: privateIds.has(context.id), groupId: groups.get(context.id) ?? null, project: null,
       usage: { completedCalls: used?.completedCalls ?? 0, recentCalls: used?.recentCalls ?? 0, lastUsedAt: used?.lastUsedAt ?? null },
       lastActivityAt: Math.max(lastAt.get(context.id) ?? 0, record?.startedAt ?? 0, ...ownWork.map(item => item.updatedAt)) || null,
-      workItemIds: ownWork.map(item => item.id), capabilities: { mount: idle, mergeNow: idle, delete: idle,
-        declareDone: input.doneCapabilities?.get(context.id) ?? doneCapability(ownWork), queueMerge: { allowed: false, reason: 'unsupported' } } }
+      workItemIds: ownWork.map(item => item.id), capabilities: { mount: idle, mergeNow: queueMerge.allowed ? idle : queueMerge, delete: idle,
+        declareDone: input.doneCapabilities?.get(context.id) ?? doneCapability(ownWork), queueMerge } }
   })
   const visible = new Set(topics.map(topic => topic.id))
   for (const item of workItems) {
@@ -96,6 +99,6 @@ export function projectBubbles(store: ContextStore, input: {
   const selected = new Set<BubbleEdge>()
   for (const topic of topics) for (const edge of edges.filter(edge => edge.a === topic.id || edge.b === topic.id)
     .sort((a, b) => b.strength - a.strength || a.a.localeCompare(b.a) || a.b.localeCompare(b.b)).slice(0, 4)) selected.add(edge)
-  return { scope, topics, workItems, gateway, edges: edges.filter(edge => selected.has(edge)).slice(0, 256), merges: [],
+  return { scope, topics, workItems, gateway, edges: edges.filter(edge => selected.has(edge)).slice(0, 256), merges: structuredClone((input.merges ?? []).filter(op => visible.has(op.sourceId) && visible.has(op.targetId))),
     health: input.health ?? { catalog: 'unknown', router: 'unknown' } }
 }

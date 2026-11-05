@@ -41,16 +41,21 @@ export interface BubbleEdge {
   a: string; b: string; relation: 'related' | 'kept_apart'; strength: number; manual: -1 | 0 | 1
   reasons: ('manual' | 'workspace' | 'project' | 'entities' | 'learned')[]
 }
+export interface BubbleMerge {
+  operationId: string; requestId: string; sourceId: string; targetId: string; whenIdle: boolean
+  state: 'queued' | 'executing' | 'succeeded' | 'cancelled' | 'expired' | 'failed'
+  createdAt: number; updatedAt: number; expiresAt: number; error?: string
+}
 export interface BubbleView {
   scope: BubbleScope; topics: BubbleTopic[]; workItems: BubbleWorkItem[]; gateway: BubbleGateway | null; edges: BubbleEdge[]
-  /** Merge queuing is not implemented in phase one. */
-  merges: never[]
+  merges: BubbleMerge[]
   health: { catalog: 'ready' | 'indexing' | 'unavailable' | 'consent_required' | 'unknown'; router: 'ready' | 'rules' | 'unavailable' | 'unknown' }
 }
 export interface BubbleSnapshot extends BubbleView {
   schemaVersion: 1; cursor: BubbleCursor; eventFloor: number; serverTime: number
 }
 export type BubbleEventData =
+  | ({ type: 'merge.changed' } & BubbleMerge)
   | { type: 'route.assigned'; workItemId: string; messageIds: string[]; contextId: string; action: 'KEEP' | 'MOUNT' | 'SWAP' | 'CREATE'; created: boolean; relatedProposedIds: string[]; alternateIds: string[]; temporary?: BubbleWorkItem['temporary'] }
   | { type: 'route.blocked'; workItemId: string; reason: 'model_missing' | 'correction_unclear' | 'unknown'; candidateIds: string[] }
   | { type: 'work.changed'; workItemId: string; executionId: string | null; phase: WorkPhase; queueReason?: QueueReason }

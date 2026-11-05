@@ -22,6 +22,7 @@ import { PersistentWork } from './persistent-work.ts';
 import { BubbleAggregator } from './bubble-aggregator.ts';
 import { BubbleActivity } from './bubble-activity.ts';
 import type { BubbleView } from './bubble-types.ts';
+import { TopicMergeQueue } from './topic-merge-queue.ts';
 export interface Config {
     databasePath?: string;
     contextsPath?: string;
@@ -113,6 +114,8 @@ export default class TheOne extends Service {
     readonly bubbleActivity: BubbleActivity;
     readonly store: ContextStore;
     readonly work: PersistentWork;
+    private readonly maintenance;
+    readonly mergeQueue: TopicMergeQueue;
     private readonly projects;
     readonly catalog?: HistoryCatalog;
     private readonly workers;
@@ -172,7 +175,8 @@ export default class TheOne extends Service {
     private registerCatalogChannel;
     /** One topic-directory edit. Changes that remove a topic wait until no reply is running. */
     private editTopics;
-    /** Both Topic workspaces and merge suggestions stop the removed Worker and respect active work. */
+    private validateMerge;
+    /** The same lease gates Worker preparation and the whole structural edit, including disposal. */
     private mergeTopics;
     private catalogSessions;
     /** Existing DSH sessions a topic can take as history: not main chats and not topics' own Workers. */

@@ -9,6 +9,7 @@ export declare function projectBubbles(store: ContextStore, input: {
     workItems?: readonly BubbleWorkItem[];
     gateway?: BubbleGateway | null;
     busy?: boolean;
+    merges?: BubbleView['merges'];
     doneCapabilities?: ReadonlyMap<string, Capability>;
     linkScope?: LinkScope;
     health?: BubbleView['health'];

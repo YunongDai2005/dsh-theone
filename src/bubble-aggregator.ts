@@ -87,7 +87,7 @@ export class BubbleAggregator {
       if ('contextId' in event && !(removed ? visibleOrRemoved(event.contextId) : visible.has(event.contextId)) ||
         'fromId' in event && (!visible.has(event.fromId) || !visible.has(event.toId)) ||
         'suggestedId' in event && !visible.has(event.suggestedId) ||
-        'sourceId' in event && (!(event.type === 'topic.merged' ? visibleOrRemoved(event.sourceId) : visible.has(event.sourceId)) || !visible.has(event.targetId))) return []
+        'sourceId' in event && (!(event.type === 'topic.merged' || event.type === 'merge.changed' ? visibleOrRemoved(event.sourceId) : visible.has(event.sourceId)) || !visible.has(event.targetId))) return []
       if (event.type === 'route.assigned') return [{ ...event, relatedProposedIds: event.relatedProposedIds.filter(id => visible.has(id)), alternateIds: event.alternateIds.filter(id => visible.has(id)),
         ...(event.temporary ? { temporary: { ...event.temporary, returnContextId: event.temporary.returnContextId && visible.has(event.temporary.returnContextId) ? event.temporary.returnContextId : null } } : {}) }]
       if (event.type === 'route.blocked') return [{ ...event, candidateIds: event.candidateIds.filter(id => visible.has(id)) }]
