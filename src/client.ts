@@ -34,6 +34,8 @@ import type { UpdateStatus } from './update.ts'
 import type { Notice } from './notices.ts'
 import { EDITABLE_SETTINGS_KEYS, type EditableSettings, type SettingsSnapshot } from './settings-types.ts'
 import { GatewayNavigation } from './client-navigation.ts'
+import { mountFoamHost } from './client-foam-host.ts'
+import { foamCss } from './client-foam.ts'
 import { halloween } from './client-season.ts'
 import { openSetup, setupCss } from './client-setup.ts'
 import { zh, en, type TheOneLocaleKey } from './client-locales.ts'
@@ -599,6 +601,27 @@ export function apply(ctx: Context) {
         button.style.removeProperty('--one-pointer-y')
       }
     }, [active, size])
+    // The topic cluster hangs under the card; while it holds topics it stands in for the Topic workspaces row.
+    const foam = useRef<ReturnType<typeof mountFoamHost>>(undefined)
+    useEffect(() => {
+      const button = marker.current?.closest('button')
+      if (!button) return
+      const host = foam.current = mountFoamHost({
+        button, signal: lifetime.signal,
+        text: (key, vars) => t(`foam.${key}` as TheOneLocaleKey, vars),
+        async mount(contextId) {
+          const response = await fetch('/api/theone/context/mount', { method: 'POST', headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ contextId }), signal: lifetime.signal })
+          if (response.ok) await navigation.open()
+        },
+        openSession: id => ctx.uiWorkspace.openSession(id as SessionId),
+        openWorkspace: () => ctx.layout.selectPanel(catalogPanelId),
+        openMainChat: () => { void navigation.open() },
+        onTopics: count => { document.documentElement.toggleAttribute('data-theone-foam', count > 0) },
+      })
+      return () => { host.destroy(); foam.current = undefined; document.documentElement.removeAttribute('data-theone-foam') }
+    }, [])
+    useEffect(() => { foam.current?.setRail(size !== 16) }, [size])
     return h('span',{ref:marker,className:'theone-nav',translate:'no','data-wide':size === 16,'data-active':active},
       h('span',{className:'theone-symbol-wrap'},symbol(active ? 'active' : 'idle', spooky),size !== 16 && pending ? h('span',{className:'theone-update-dot','aria-hidden':true}) : null),
       size === 16 && h('span',{className:'theone-entry-copy'},
@@ -1750,7 +1773,7 @@ export function apply(ctx: Context) {
   ctx.effect(() => {
     const style = document.createElement('style')
     style.dataset.plugin = 'dsh-theone'
-    style.textContent = sidebarCss + catalogCss + settingsCss + composerCss + setupCss
+    style.textContent = sidebarCss + foamCss + catalogCss + settingsCss + composerCss + setupCss
     document.head.append(style)
     return () => { lifetime.abort(); style.remove() }
   })
@@ -1881,7 +1904,7 @@ export function apply(ctx: Context) {
     ctx.slots.register({name:'sidebar.panellist',id:panelId,order:-1000,label:()=>t('gateway.title')},SidebarEntry),
     ctx.slots.register({name:'sidebar.panellist',id:catalogPanelId,order:-999,label:()=>t('catalog.title')}, ({size}: PropsRuntime<'sidebar.panellist'>) => {
       const t = useText()
-      return h('span',{className:'theone-catalog-entry',translate:'no'},icon('grid',16),size === 16 ? h('span',null,t('catalog.title')) : null)
+      return h('span',{className:'theone-catalog-entry theone-workspace-entry',translate:'no'},icon('grid',16),size === 16 ? h('span',null,t('catalog.title')) : null)
     }),
   ])
 }

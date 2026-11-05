@@ -5,7 +5,8 @@
  * feeds a model and routing events and receives the user's gestures as actions.
  */
 
-export type FoamPhase = 'idle' | 'running' | 'queued' | 'answered'
+/** idle, answering, waiting for a free slot, answered and not yet shown in main chat, waiting on the user (a question or approval), or failed/interrupted. */
+export type FoamPhase = 'idle' | 'running' | 'queued' | 'answered' | 'waiting' | 'failed'
 
 export interface FoamTopic {
   id: string
@@ -36,15 +37,19 @@ export interface FoamModel {
 }
 
 export type FoamEvent =
-  | { kind: 'route'; to: string; related?: string[] }
+  /** A message settled on a topic; `alternates` were the other close candidates, they only flicker. */
+  | { kind: 'route'; to: string; related?: string[]; alternates?: string[] }
+  /** More input for a topic that is already answering (steering). */
+  | { kind: 'supplement'; to: string }
   | { kind: 'create'; to: string }
+  /** Routing is truly blocked and needs the user: the vesicle waits between the candidates. */
   | { kind: 'clarify'; candidates: string[] }
   | { kind: 'resolve'; to?: string }
   | { kind: 'correct'; from: string; to: string }
   | { kind: 'merged'; id: string; into: string }
 
 export type FoamTextKey =
-  | 'more' | 'running' | 'queued' | 'answered' | 'asking' | 'bond'
+  | 'more' | 'running' | 'queued' | 'answered' | 'asking' | 'bond' | 'waiting' | 'failed' | 'menuAnswer'
   | 'dropMain' | 'dropMerge' | 'dropMergeLater' | 'dropSession' | 'busyFling' | 'currentFling'
   | 'menuContinue' | 'menuOpen' | 'menuAside' | 'menuDelete' | 'menuStop' | 'menuCancel' | 'menuShowNow' | 'menuWorkspace'
 
@@ -58,6 +63,8 @@ export interface FoamActions {
   cancelQueued(id: string): void
   remove(id: string): void
   showAnswer(id: string): void
+  /** Go to where the topic waits on the user (its question or approval in main chat). */
+  answer(id: string): void
   openWorkspace(): void
   text(key: FoamTextKey, vars?: Record<string, string | number>): string
 }
@@ -72,6 +79,8 @@ export interface FoamOptions {
   actions: FoamActions
   /** The cluster's height changed; the host makes room for it. */
   onHeight(height: number): void
+  /** Called at the start of every frame, so the host can keep the box aligned under the card. */
+  place?(): void
   /** How much the mark should swell right now (0..1): a message left, or an answer arrived. */
   onPulse?(amount: number): void
 }
@@ -148,7 +157,7 @@ export function foamLabel(name: string, radius: number): { lines: string[]; font
   return { lines: [], font: big, lh: 0 }
 }
 
-type CellState = 'idle' | 'running' | 'queued' | 'done'
+type CellState = 'idle' | 'running' | 'queued' | 'done' | 'wait' | 'fail'
 interface Cell {
   id: string; kind: 'topic' | 'more'; title: string; state: CellState; cur: boolean; ask: boolean; aside: boolean; oneOff: boolean
   group?: string; w: number; startedAt?: number
@@ -182,10 +191,10 @@ export function createFoam(options: FoamOptions): Foam {
   let menu: HTMLDivElement | null = null, tipOwner: Cell | null = null, raf = 0, last = now(), t = 0
   const pending: FoamEvent[] = []
 
-  const sizeOf = (c: Cell) => c.kind === 'more' ? 16 : c.oneOff ? 21 : c.state === 'running' || c.state === 'done' || c.cur ? 29 : c.state === 'queued' ? 24 : 16 + 9 * c.w
+  const sizeOf = (c: Cell) => c.kind === 'more' ? 16 : c.oneOff ? 21 : c.state === 'running' || c.state === 'done' || c.state === 'wait' || c.state === 'fail' || c.cur ? 29 : c.state === 'queued' ? 24 : 16 + 9 * c.w
   /** At rest only the topics doing something carry a name; the rest are plain cells until the pointer comes near. */
   const named = (c: Cell) => c.kind === 'more' || c.cur || c.state !== 'idle' || c.ask || c.mode === 'bud'
-  const busy = (c: Cell) => c.state === 'running' || c.state === 'queued'
+  const busy = (c: Cell) => c.state === 'running' || c.state === 'queued' || c.state === 'wait' || c.state === 'done'
   const topics = () => cells.filter(c => c.kind === 'topic' && c.mode !== 'leave')
   const byId = (id: string) => cells.find(c => c.kind === 'topic' && c.id === id && c.mode !== 'leave')
   const linkW = (c: Cell, o: Cell) => (c.group && c.group === o.group ? .8 : 0) + (links.get(c.id + '|' + o.id) ?? 0)
@@ -271,6 +280,11 @@ export function createFoam(options: FoamOptions): Foam {
     if (event.kind === 'route') {
       const c = byId(event.to); if (!c) return false
       routeTo(c, (event.related ?? []).map(byId).filter((o): o is Cell => !!o && o !== c))
+      // The other close candidates flicker once: routing was not sure, and the user can still move it.
+      for (const o of (event.alternates ?? []).map(byId)) if (o && o !== c && !o.hidden) { o.flash = Math.max(o.flash, .3); o.g.classList.add('ask'); window.setTimeout(() => { if (!o.ask) o.g.classList.remove('ask') }, 1400) }
+    } else if (event.kind === 'supplement') {
+      const c = byId(event.to); if (!c) return false
+      if (!c.hidden) { const v = vesicle(markPos, () => pos(c), () => { c.kick = Math.max(c.kick, .5) }, .55); v.el.setAttribute('data-small', 'true') }
     } else if (event.kind === 'create') {
       const c = byId(event.to); if (!c) return false
       pulse = Math.max(pulse, .55)
@@ -316,7 +330,7 @@ export function createFoam(options: FoamOptions): Foam {
       c.title = topic.title; c.w = clamp(topic.weight); c.group = topic.group; c.aside = !!topic.aside; c.oneOff = !!topic.oneOff; c.startedAt = topic.startedAt
       c.ask = c.ask || !!topic.asking; c.g.classList.toggle('ask', c.ask)
       if (c.cur !== !!topic.current) { c.cur = !!topic.current; c.g.classList.toggle('cur', c.cur) }
-      const state: CellState = topic.phase === 'answered' ? 'done' : topic.phase
+      const state: CellState = topic.phase === 'answered' ? 'done' : topic.phase === 'waiting' ? 'wait' : topic.phase === 'failed' ? 'fail' : topic.phase
       // The answer went to main chat: it travels back to the mark.
       if (was === 'done' && state !== 'done' && !c.hidden) {
         c.showing = true
@@ -343,6 +357,8 @@ export function createFoam(options: FoamOptions): Foam {
     const b = bonds.find(x => x[0] === c || x[1] === c)
     if (b) return who + text('bond', { name: (b[0] === c ? b[1] : b[0]).title })
     if (c.ask) return who + text('asking')
+    if (c.state === 'wait') return who + text('waiting')
+    if (c.state === 'fail') return who + text('failed')
     if (c.state === 'queued') return who + text('queued')
     if (c.state === 'done') return who + text('answered')
     if (c.state === 'running') return who + text('running', { s: Math.max(0, Math.round((Date.now() - (c.startedAt ?? Date.now())) / 1000)) })
@@ -367,6 +383,7 @@ export function createFoam(options: FoamOptions): Foam {
       : c.state === 'running' ? [[text('menuOpen'), () => actions.open(c.id)], null, [text('menuStop'), () => actions.stop(c.id)]]
       : c.state === 'queued' ? [[text('menuOpen'), () => actions.open(c.id)], [text('menuCancel'), () => actions.cancelQueued(c.id)]]
       : c.state === 'done' ? [[text('menuShowNow'), () => actions.showAnswer(c.id)], [text('menuOpen'), () => actions.open(c.id)]]
+      : c.state === 'wait' ? [[text('menuAnswer'), () => actions.answer(c.id)], [text('menuOpen'), () => actions.open(c.id)]]
       : [[text('menuContinue'), () => actions.mount(c.id)], [text('menuOpen'), () => actions.open(c.id)], ...(c.cur ? [] : [[text('menuAside'), () => actions.putAside(c.id)] as [string, () => void]]),
         null, [text('menuDelete'), () => actions.remove(c.id)]]
     const el = menu = document.createElement('div')
@@ -471,6 +488,7 @@ export function createFoam(options: FoamOptions): Foam {
 
   function step(dt: number) {
     const T = now()
+    options.place?.()
     sz = ease(sz, rail ? MINI : 1, 4, dt)
     const words = clamp((sz - .72) / .28)
 
@@ -644,7 +662,7 @@ export function createFoam(options: FoamOptions): Foam {
       c.label.style.opacity = fx(vis)
       c.nx = ease(c.nx, running ? 1.4 * Math.sin(tt * .53 + c.phase) + .5 * Math.sin(tt * 1.1 + c.phase * 2) : 0, 3, dt)
       c.ny = ease(c.ny, running ? Math.sin(tt * .41 + c.phase * 1.7) : 0, 3, dt)
-      const nr = c.kind === 'more' ? 0 : c.state === 'done' ? 3.2 : c.cur ? 2.9 : running ? 2.6 + .15 * Math.sin(tt * .6 + c.phase) : c.state === 'queued' ? 2.4 : 1.8 + c.w * .8
+      const nr = c.kind === 'more' ? 0 : c.state === 'wait' ? 3.4 : c.state === 'done' ? 3.2 : c.cur ? 2.9 : running ? 2.6 + .15 * Math.sin(tt * .6 + c.phase) : c.state === 'queued' ? 2.4 : 1.8 + c.w * .8
       const lines = c.lay.lines.length, block = c.kind === 'more' ? 0 : lines ? 2 * nr + 4 + lines * c.lay.lh : 0, room = clamp(vis * 1.4)
       const top0 = gy - block / 2 * c.scale
       c.n.setAttribute('cx', fx(gx + c.nx * sz)); c.n.setAttribute('cy', fx(gy + ((lines ? top0 + nr * c.scale : gy) - gy) * room + c.ny * sz))
@@ -675,7 +693,7 @@ export function createFoam(options: FoamOptions): Foam {
       const holding = typeof v.hold === 'function' ? !v.hold() : v.t < 1 + v.hold / v.dur
       if (v.t >= 1 && v.hold && holding) { x += 2.2 * Math.sin(t * 2.1); y += 1.6 * Math.sin(t * 2.9) }
       const grow = v.hold ? clamp(k / .15) : clamp(k / .15) * clamp((1 - k) / .2 + .25)
-      v.el.setAttribute('transform', `translate(${fx(x)} ${fx(y)}) scale(${fx(grow * Math.max(.7, sz))})`)
+      v.el.setAttribute('transform', `translate(${fx(x)} ${fx(y)}) scale(${fx(grow * Math.max(.7, sz) * (v.el.hasAttribute('data-small') ? .7 : 1))})`)
       if (v.t >= 1 && !(v.hold && holding)) { v.el.remove(); ves.splice(ves.indexOf(v), 1); v.arrive() }
     }
 
@@ -706,8 +724,8 @@ export function createFoam(options: FoamOptions): Foam {
 
 /** Colours follow the main card: warm tint and accent in light, blue in dark; idle cells take the sidebar's own fill. */
 export const foamCss = `
-.theone-foam{position:absolute;left:2px;right:2px;height:8px;z-index:3;pointer-events:none;--foam-bg:var(--dsw-specific-sidebar-fill,#f7f7f5);--foam-tint:#fff5ec;--foam-accent:#a75b1e;--foam-heat:#ff7800;--foam-line:#c99267;--foam-done:#ffffff;--foam-idle-line:#d8d3ca;--foam-idle-dot:#cdb8a3;--foam-queue-line:#c4c1b8;--foam-queue-ink:#9a988f;--foam-text:var(--dsw-alias-label-primary,#2b2b2b);--foam-muted:var(--dsw-alias-label-secondary,#8a8a86)}
-[data-ds-dark-theme] .theone-foam{--foam-bg:var(--dsw-specific-sidebar-fill,#1f1f22);--foam-tint:#1d2a37;--foam-accent:#93c8f3;--foam-heat:#80caff;--foam-line:#5d87ab;--foam-done:#2b2b30;--foam-idle-line:#3a3f46;--foam-idle-dot:#506477;--foam-queue-line:#4d555e;--foam-queue-ink:#7f8a94}
+.theone-foam{position:fixed;left:0;top:0;width:0;height:8px;z-index:20;pointer-events:none;--foam-bg:var(--dsw-specific-sidebar-fill,#f7f7f5);--foam-tint:#fff5ec;--foam-accent:#a75b1e;--foam-heat:#ff7800;--foam-line:#c99267;--foam-done:#ffffff;--foam-idle-line:#d8d3ca;--foam-idle-dot:#cdb8a3;--foam-queue-line:#c4c1b8;--foam-queue-ink:#9a988f;--foam-fail:#b9785f;--foam-text:var(--dsw-alias-label-primary,#2b2b2b);--foam-muted:var(--dsw-alias-label-secondary,#8a8a86)}
+[data-ds-dark-theme] .theone-foam{--foam-bg:var(--dsw-specific-sidebar-fill,#1f1f22);--foam-tint:#1d2a37;--foam-accent:#93c8f3;--foam-heat:#80caff;--foam-line:#5d87ab;--foam-done:#2b2b30;--foam-idle-line:#3a3f46;--foam-idle-dot:#506477;--foam-queue-line:#4d555e;--foam-queue-ink:#7f8a94;--foam-fail:#c98a74}
 .theone-foam>svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
 .theone-cell{cursor:grab;pointer-events:auto}
 .theone-cell.drag{cursor:grabbing}
@@ -724,6 +742,13 @@ export const foamCss = `
 .theone-cell.queued [data-part=membrane]{stroke:var(--foam-queue-line)}
 .theone-cell.queued [data-part=nucleus]{fill:transparent;stroke:var(--foam-queue-ink);stroke-width:1}
 .theone-cell.queued text{fill:var(--foam-queue-ink)}
+.theone-cell.wait [data-part=body]{fill:var(--foam-tint)}
+.theone-cell.wait [data-part=membrane]{stroke:var(--foam-accent);stroke-width:1.4}
+.theone-cell.wait [data-part=nucleus]{fill:transparent;stroke:var(--foam-accent);stroke-width:1.4}
+.theone-cell.wait text{fill:var(--foam-text)}
+.theone-cell.fail [data-part=membrane]{stroke:var(--foam-fail);stroke-dasharray:1.5 2.5}
+.theone-cell.fail [data-part=nucleus]{fill:transparent;stroke:var(--foam-fail);stroke-width:1.2}
+.theone-cell.fail text{fill:var(--foam-fail)}
 .theone-cell.cur [data-part=body]{fill:var(--foam-tint)}
 .theone-cell.cur [data-part=membrane]{stroke:var(--foam-accent);stroke-width:1.4}
 .theone-cell.cur [data-part=nucleus]{fill:var(--foam-accent)}
@@ -736,6 +761,7 @@ export const foamCss = `
 .theone-neck [data-part=edge]{fill:none;stroke:var(--foam-line);stroke-width:1.3;stroke-linecap:round}
 .theone-vesicle [data-part=membrane]{fill:var(--foam-tint);stroke:var(--foam-accent);stroke-width:1.1}
 .theone-vesicle [data-part=nucleus]{fill:var(--foam-accent)}
+html[data-theone-foam] button:has(.theone-workspace-entry){display:none}
 [data-row-key][data-theone-drop=true]{background:color-mix(in srgb,#ff7800 10%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,#a75b1e 40%,transparent);border-radius:10px}
 .theone-foam-tip{position:fixed;z-index:1000;padding:4px 8px;border-radius:7px;background:var(--dsw-alias-label-primary,#2e2d2a);color:var(--dsw-alias-bg-base,#f4f3ef);font-size:11.5px;line-height:1.5;white-space:nowrap;pointer-events:none;opacity:0;transform:translate(-50%,3px);transition:opacity .12s,transform .12s}
 .theone-foam-tip.on{opacity:1;transform:translate(-50%,0)}
