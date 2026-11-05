@@ -451,10 +451,9 @@ export function createFoam(options: FoamOptions): Foam {
     c.g.classList.remove('drag'); drag = null; hideTip(); setTarget(null)
     if (hit?.kind === 'main') { if (!c.cur) actions.mount(c.id); return }
     if (hit?.kind === 'cell') {
-      const later = busy(c) || busy(hit.cell)
-      if (later) bonds = [...bonds.filter(b => b[0] !== c && b[1] !== c), [c, hit.cell]]
-      else fuse(c, hit.cell)
-      actions.merge(c.id, hit.cell.id, later)
+      // The two are joined by a neck until TheOne confirms; only then they fuse (a `merged` event), otherwise the neck lets go.
+      bonds = [...bonds.filter(b => b[0] !== c && b[1] !== c), [c, hit.cell]]
+      actions.merge(c.id, hit.cell.id, busy(c) || busy(hit.cell))
       return
     }
     if (hit?.kind === 'session') {
@@ -727,7 +726,7 @@ export function createFoam(options: FoamOptions): Foam {
 /** Colours follow the main card: warm tint and accent in light, blue in dark; idle cells take the sidebar's own fill. */
 export const foamCss = `
 .theone-foam{position:fixed;left:0;top:0;width:0;height:8px;z-index:20;pointer-events:none;--foam-bg:var(--dsw-specific-sidebar-fill,#f7f7f5);--foam-tint:#fff5ec;--foam-accent:#a75b1e;--foam-heat:#ff7800;--foam-line:#c99267;--foam-done:#ffffff;--foam-idle-line:#d8d3ca;--foam-idle-dot:#cdb8a3;--foam-queue-line:#c4c1b8;--foam-queue-ink:#9a988f;--foam-fail:#b9785f;--foam-text:var(--dsw-alias-label-primary,#2b2b2b);--foam-muted:var(--dsw-alias-label-secondary,#8a8a86)}
-[data-ds-dark-theme] .theone-foam{--foam-bg:var(--dsw-specific-sidebar-fill,#1f1f22);--foam-tint:#1d2a37;--foam-accent:#93c8f3;--foam-heat:#80caff;--foam-line:#5d87ab;--foam-done:#2b2b30;--foam-idle-line:#3a3f46;--foam-idle-dot:#506477;--foam-queue-line:#4d555e;--foam-queue-ink:#7f8a94;--foam-fail:#c98a74}
+[data-ds-dark-theme] .theone-foam{--foam-bg:var(--dsw-specific-sidebar-fill,#1f1f22);--foam-tint:#1d2a37;--foam-accent:#93c8f3;--foam-heat:#80caff;--foam-line:#5d87ab;--foam-done:#2b2b30;--foam-idle-line:#4a515a;--foam-idle-dot:#5a7086;--foam-queue-line:#4d555e;--foam-queue-ink:#7f8a94;--foam-fail:#c98a74}
 .theone-foam>svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
 .theone-cell{cursor:grab;pointer-events:auto}
 .theone-cell.drag{cursor:grabbing}

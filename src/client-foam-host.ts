@@ -108,7 +108,13 @@ export function mountFoamHost(options: FoamHostOptions): FoamHost {
   const act = (body: Record<string, unknown>) => { void post('/api/theone/topics', body, signal).then(ok => { if (!ok) failed(); else refresh() }).catch(failed) }
   const actions: FoamActions = {
     mount: id => { void options.mount(id).finally(refresh) },
-    merge: (id, into, whenIdle) => act({ action: 'merge', id, into, ...(whenIdle ? { whenIdle: true, requestId: `${id}>${into}` } : {}) }),
+    merge: (id, into, whenIdle) => {
+      // 200: merged now, so the cells fuse. 202: queued until TheOne is idle; the snapshot's pending merges keep the neck. Anything else: the neck lets go.
+      void fetch('/api/theone/topics', { method: 'POST', headers: { 'content-type': 'application/json' }, signal, cache: 'no-store',
+        body: JSON.stringify({ action: 'merge', id, into, ...(whenIdle ? { whenIdle: true, requestId: `${id}>${into}` } : {}) }) })
+        .then(response => { if (response.status === 200) foam.event({ kind: 'merged', id, into }); refresh() })
+        .catch(failed)
+    },
     attach: (id, sessionId) => act({ action: 'attach', id, sessionId }),
     putAside: id => act({ action: 'status', id, done: true }),
     open: id => {
