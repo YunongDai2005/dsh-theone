@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Foam engine harness</title>
+<style>
+  body { margin: 0; display: flex; gap: 0; font: 13px -apple-system, "Segoe UI", "Microsoft YaHei UI", sans-serif; background: #fff; color: #2b2b2b; --dsw-specific-sidebar-fill: #f7f7f5; }
+  aside { width: 260px; height: 100vh; padding: 6px 12px; box-sizing: border-box; background: #f7f7f5; transition: width .4s; }
+  body:not(.wide) aside { width: 64px; }
+  body:not(.wide) #card span { display: none; }
+  nav { display: flex; flex-direction: column; gap: 4px; padding-top: 60px; }
+  #card { display: flex; align-items: center; gap: 10px; min-height: 64px; margin: 4px 2px 18px; padding: 12px 10px; border: 1px solid #eed3bb; border-radius: 12px; background: #fff5ec; color: #a75b1e; font: inherit; text-align: left; }
+  #card svg { overflow: visible; transition: none; }
+  .row { height: 36px; display: flex; align-items: center; padding: 0 10px; border-radius: 10px; }
+  .row:hover { background: #0000000a; }
+  main { flex: 1; padding: 16px; }
+  main button { margin: 3px; }
+  pre { color: #666; font-size: 12px; }
+</style>
+</head>
+<body class="wide">
+<aside>
+  <nav>
+    <button id="card"><svg width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.4" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="10" cy="10" r="2.9" fill="currentColor"/></svg><span>TheOne 主聊天</span></button>
+    <div class="row">持续任务</div>
+  </nav>
+  <div class="row" data-row-key="session:s1">帮我看看配什么电脑</div>
+  <div class="row" data-row-key="session:s2">周报整理</div>
+</aside>
+<main>
+  <button id="route">路由到旧话题（带备选）</button><button id="create">新话题</button><button id="steer">补充消息</button><button id="finish">一个答完</button><button id="show">主聊天展示</button>
+  <button id="wait">等你回答</button><button id="fail">失败</button><button id="blocked">真正卡住</button><button id="resolve">卡住→选定</button><button id="rail">收起/展开</button>
+  <pre id="log"></pre>
+</main>
+<script src="harness.js"></script>
+</body>
+</html>
