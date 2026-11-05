@@ -279,6 +279,8 @@ export function createFoam(options: FoamOptions): Foam {
   function apply(event: FoamEvent): boolean {
     if (event.kind === 'route') {
       const c = byId(event.to); if (!c) return false
+      // A blocked message that has now settled: the waiting vesicle goes to where it landed.
+      if (clarifying) { apply({ kind: 'resolve', to: event.to }); return true }
       routeTo(c, (event.related ?? []).map(byId).filter((o): o is Cell => !!o && o !== c))
       // The other close candidates flicker once: routing was not sure, and the user can still move it.
       for (const o of (event.alternates ?? []).map(byId)) if (o && o !== c && !o.hidden) { o.flash = Math.max(o.flash, .3); o.g.classList.add('ask'); window.setTimeout(() => { if (!o.ask) o.g.classList.remove('ask') }, 1400) }
