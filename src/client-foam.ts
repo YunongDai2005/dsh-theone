@@ -749,10 +749,14 @@ export function createFoam(options: FoamOptions): Foam {
     void T
   }
 
+  // When frames come slowly (a busy machine, a throttled window), catch up in a few small steps so motion keeps its real pace.
   const frame = (n: number) => {
-    const dt = Math.min(1 / 30, (n - last) / 1000); last = n
-    if (!reduced) t += dt
-    step(dt)
+    let left = Math.min(4 / 30, Math.max(0, (n - last) / 1000)); last = n
+    do {
+      const dt = Math.min(1 / 30, left); left -= dt
+      if (!reduced) t += dt
+      step(dt)
+    } while (left > 1e-3)
     raf = requestAnimationFrame(frame)
   }
   raf = requestAnimationFrame(frame)
