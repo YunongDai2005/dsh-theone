@@ -51,21 +51,33 @@ function bridge(c1, r1, c2, r2, reach = r2 * 2.5, v = .5, hs = 2.4) {
     return { edge: `M${s(p1)}C${s(h1)} ${s(h3)} ${s(p3)}M${s(p4)}C${s(h4)} ${s(h2)} ${s(p2)}`,
         fill: `M${s(p1)}C${s(h1)} ${s(h3)} ${s(p3)}L${s(p4)}C${s(h4)} ${s(h2)} ${s(p2)}Z` };
 }
-/** How a name sits in a cell: one line if it fits, else two balanced lines, else no text (never a clipped name). */
+/**
+ * The name a cell can carry: the topic's own short label when it has one, else the title up to its first
+ * punctuation ("想去日本旅游，帮我看看行程" → "想去日本旅游"). Always a whole phrase, never cut mid-word.
+ */
+export function foamShortName(title, label) {
+    if (label?.trim())
+        return label.trim();
+    const head = title.split(/[，,。.？?！!：:；;、（）()【】[\]—\-|/]/).map(part => part.trim()).find(Boolean);
+    return head ?? title.trim();
+}
+/** How a name sits in a cell: one line if it fits, else two (big cells: three) balanced lines, else no text. Never a clipped name. */
 export function foamLabel(name, radius) {
     const chars = [...name], big = radius >= 25 ? 10.5 : 9.5, small = radius >= 25 ? 9.5 : 8.8;
     // A Latin letter takes about 0.6 of a CJK character's width.
     const width = (s) => s.reduce((w, ch) => w + (/[⺀-￿]/.test(ch) ? 1 : .6), 0);
-    const tries = [[1, big], [1, small], [2, big], [2, small]];
+    const tries = [[1, big], [1, small], [2, big], [2, small], [3, small]];
     for (const [lines, font] of tries) {
         if (lines === 1 && font === small && width(chars) > 3 && radius < 25)
             continue;
         if (lines === 2 && (chars.length < 4 || width(chars) > 8))
             continue;
-        const lh = font * 1.2, per = Math.ceil(chars.length / lines);
-        const parts = lines === 1 ? [chars] : [chars.slice(0, per), chars.slice(per)];
+        if (lines === 3 && (radius < 25 || chars.length < 7 || width(chars) > 9))
+            continue;
+        const lh = font * 1.18, per = Math.ceil(chars.length / lines);
+        const parts = Array.from({ length: lines }, (_, i) => chars.slice(i * per, (i + 1) * per)).filter(p => p.length);
         const widest = Math.max(...parts.map(width)) * font;
-        if (widest > 2 * radius * (lines === 1 ? .8 : .74) - 4 || 9 + lines * lh > 2 * radius * .82)
+        if (widest > 2 * radius * (lines === 1 ? .8 : lines === 2 ? .74 : .7) - 4 || (lines === 3 ? 6 : 9) + parts.length * lh > 2 * radius * .86)
             continue;
         return { lines: parts.map(p => p.join('')), font, lh };
     }
@@ -312,6 +324,7 @@ export function createFoam(options) {
                 c = makeCell(topic.id, topic.title, !first);
             const was = c.state;
             c.title = topic.title;
+            c.short = topic.label;
             c.w = clamp(topic.weight);
             c.group = topic.group;
             c.aside = !!topic.aside;
@@ -861,7 +874,10 @@ export function createFoam(options) {
             c.g.style.opacity = fx(c.alpha);
             // Nucleus and name as one centred block: nucleus on top, the name below on one or two lines.
             const rr = (c.mode === 'live' ? r0 : c.R) * c.scale;
-            const lay = c.kind === 'more' ? { lines: [c.title], font: 10, lh: 12 } : foamLabel(c.title, rr);
+            let lay = c.kind === 'more' ? { lines: [c.title], font: 10, lh: 12 } : foamLabel(c.title, rr);
+            // A title too long for the cell gives way to its short name; the full title stays in the hint and the keyboard list.
+            if (!lay.lines.length && c.kind === 'topic')
+                lay = foamLabel(foamShortName(c.title, c.short), rr);
             const key = lay.lines.join('\n') + '|' + lay.font;
             if (key !== c.shownKey) {
                 c.shownKey = key;

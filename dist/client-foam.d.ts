@@ -9,6 +9,8 @@ export type FoamPhase = 'idle' | 'running' | 'queued' | 'answered' | 'waiting' |
 export interface FoamTopic {
     id: string;
     title: string;
+    /** A short name for the cell when the title is too long (e.g. the topic's main keyword); the full title shows on hover. */
+    label?: string;
     /** 0..1, how recently and often the topic was used; bigger and higher up when recent. */
     weight: number;
     phase: FoamPhase;
@@ -108,7 +110,12 @@ export interface Foam {
     setRail(on: boolean): void;
     destroy(): void;
 }
-/** How a name sits in a cell: one line if it fits, else two balanced lines, else no text (never a clipped name). */
+/**
+ * The name a cell can carry: the topic's own short label when it has one, else the title up to its first
+ * punctuation ("想去日本旅游，帮我看看行程" → "想去日本旅游"). Always a whole phrase, never cut mid-word.
+ */
+export declare function foamShortName(title: string, label?: string): string;
+/** How a name sits in a cell: one line if it fits, else two (big cells: three) balanced lines, else no text. Never a clipped name. */
 export declare function foamLabel(name: string, radius: number): {
     lines: string[];
     font: number;

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { foamLabel } from '../src/client-foam.ts'
+import { foamLabel, foamShortName } from '../src/client-foam.ts'
 import { foamEventsFrom, modelFromBubbles, modelFromCatalog } from '../src/client-foam-host.ts'
 import type { CatalogSnapshot } from '../src/catalog-types.ts'
 import type { BubbleEvent, BubbleSnapshot, BubbleTopic, BubbleWorkItem } from '../src/bubble-types.ts'
@@ -76,6 +76,17 @@ test('a cell shows its whole name or none of it, never a clipped name', () => {
     assert.ok(!lines.join('').includes('…'))
     assert.ok(lines.length <= 2)
   }
+})
+
+test('a long title gives the cell a whole phrase from it, or the topic short label, never a clipped piece', () => {
+  assert.equal(foamShortName('想去日本旅游，帮我看看行程'), '想去日本旅游')
+  assert.equal(foamShortName('周报这周要写什么'), '周报这周要写什么')
+  assert.equal(foamShortName('周报这周要写什么', '周报'), '周报')
+  assert.equal(foamShortName('（草稿）年终总结'), '草稿')
+  // A full-size cell takes six or eight characters on two lines and nine on three.
+  assert.deepEqual(foamLabel('想去日本旅游', 29).lines, ['想去日', '本旅游'])
+  assert.deepEqual(foamLabel('周报这周要写什么', 29).lines, ['周报这周', '要写什么'])
+  assert.deepEqual(foamLabel('帮我看看这周的周报', 29).lines, ['帮我看', '看这周', '的周报'])
 })
 
 test('a full-size cell holds a four-character name on one line; a small one splits it in two', () => {
