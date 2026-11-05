@@ -1,0 +1,715 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>话题细胞团</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #e9e8e4; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif; -webkit-font-smoothing: antialiased; color: #3b3a36; }
+  .demo { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; justify-content: center; padding: 16px 16px 8px; font-size: 12px; max-width: 900px; margin: 0 auto; }
+  .demo b { font-weight: 500; color: #8a877f; margin-right: 4px; }
+  .demo button { font: inherit; padding: 6px 10px; border-radius: 7px; border: 1px solid #d3d0c8; background: #f6f5f1; color: #45433e; cursor: pointer; }
+  .demo button:hover { background: #fff; }
+  .demo .sep { width: 100%; height: 0; }
+  .hint { width: 100%; text-align: center; color: #8a877f; margin-top: 4px; line-height: 1.6; }
+  #meter { width: 100%; text-align: center; color: #6f6c64; font-variant-numeric: tabular-nums; }
+  .stage { display: flex; flex-wrap: wrap; gap: 20px; justify-content: center; padding: 6px 16px 40px; }
+  .app { display: flex; width: 640px; max-width: 100%; height: 600px; border-radius: 14px; overflow: hidden; box-shadow: 0 1px 2px #0000000d, 0 8px 28px #00000012; background: var(--main); }
+  .app.light { --sb:#f7f7f5; --main:#ffffff; --text:#2b2b2b; --muted:#8a8a86; --faint:#b5b4ae; --border:#e3e2dd; --hover:#0000000a;
+    --ac:#a75b1e; --tint:#fff5ec; --line:#eed3bb; --heat:#ff7800; --glow:0 0 22px 4px #ff6b0024,0 4px 32px 6px #ff76000d; --hot:0 0 26px 8px #ff6b0040,0 4px 36px 10px #ff760018;
+    --c-line:#c99267; --d-fill:#ffffff; --i-line:#d8d3ca; --i-dot:#cdb8a3; --q-line:#c4c1b8; --q-ink:#9a988f; --tip:#2e2d2a; --tip-ink:#f4f3ef; --menu:#ffffff; }
+  .app.dark { --sb:#1f1f22; --main:#252528; --text:#e6e6e8; --muted:#8d8d93; --faint:#5e5e64; --border:#ffffff17; --hover:#ffffff0d;
+    --ac:#93c8f3; --tint:#1d2a37; --line:#344d64; --heat:#80caff; --glow:0 0 22px 4px #80bae924; --hot:0 0 28px 8px #80bae94a;
+    --c-line:#5d87ab; --d-fill:#2b2b30; --i-line:#3a3f46; --i-dot:#506477; --q-line:#4d555e; --q-ink:#7f8a94; --tip:#e9e9ec; --tip-ink:#1f1f22; --menu:#2c2c30; }
+  .side { position: relative; flex: none; width: 260px; padding: 6px 12px; background: var(--sb); color: var(--text); font-size: 14px; user-select: none; display: flex; flex-direction: column; transition: width .5s cubic-bezier(.2,.7,.2,1); }
+  .tx { white-space: nowrap; transition: opacity .2s ease; }
+  .app.rail .side { width: 64px; }
+  .app.rail .tx, .app.rail .sect, .app.rail .sess { opacity: 0; pointer-events: none; }
+  .brand { height: 46px; display: flex; align-items: center; gap: 8px; padding-left: 8px; font-weight: 600; letter-spacing: .04em; }
+  .brand i { flex: none; width: 20px; height: 20px; border-radius: 6px; background: var(--border); }
+  .newsess { height: 38px; margin: 0 2px 12px; border: .5px solid var(--border); border-radius: 10px; display: flex; align-items: center; gap: 6px; padding-left: 12px; font-weight: 500; overflow: hidden; }
+  nav { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+  .entry { position: relative; z-index: 2; isolation: isolate; display: flex; align-items: center; gap: 10px; min-height: 64px; margin: 4px 2px 0; padding: 12px 8px; cursor: pointer; overflow: hidden;
+    border: 1px solid color-mix(in srgb, var(--ac) 40%, var(--line)); border-radius: 12px; background: var(--tint); box-shadow: var(--glow); color: var(--ac); transition: box-shadow .3s ease; }
+  .entry::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: -1; opacity: 0; transition: opacity .18s ease;
+    background: radial-gradient(85px circle at var(--px, 50%) var(--py, 50%), color-mix(in srgb, var(--heat) 17%, transparent), transparent 100%); }
+  .entry:hover::after, .entry.hot::after { opacity: 1; }
+  .entry.hot { box-shadow: var(--hot); }
+  .entry svg { flex: none; overflow: visible; }
+  .the { font-size: 12px; color: var(--muted); }
+  .one { position: relative; display: inline-block; font-family: ui-rounded, "SF Pro Rounded", "Avenir Next", sans-serif; font-size: 19px; font-weight: 500; letter-spacing: -1px; transform: rotate(-4deg); padding-right: 7px; margin-left: 1px; line-height: 1.15; }
+  .one::after { content: ""; position: absolute; right: 0; top: 2px; width: 4px; height: 4px; border-radius: 50%; background: currentColor; }
+  .lab { font-size: 12px; margin-left: 8px; }
+  .sub { font-size: 12px; color: var(--muted); line-height: 18px; }
+  .foam { position: relative; z-index: 3; height: 10px; margin: 0 2px; }
+  .foam svg { position: absolute; left: 0; top: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+
+  /* One cell per topic. Idle topics are quiet line drawings; the current, running and answered ones carry the brand tint. */
+  .cell { cursor: grab; pointer-events: auto; }
+  .cell.drag { cursor: grabbing; }
+  .cell .b { stroke: none; fill: var(--sb); transition: fill .8s ease; }
+  .cell .m { fill: none; stroke: var(--i-line); stroke-width: 1.2; stroke-linejoin: round; stroke-linecap: round; transition: stroke .8s ease, stroke-width .4s ease; }
+  .cell .n { fill: var(--i-dot); transition: fill .6s ease, stroke .6s ease; }
+  .cell text { fill: var(--muted); text-anchor: middle; dominant-baseline: middle; pointer-events: none; user-select: none; transition: fill .6s ease; letter-spacing: .02em; }
+  .cell.running .b, .cell.queued .b { fill: var(--tint); }
+  .cell.running .m { stroke: var(--c-line); stroke-width: 1.3; }
+  .cell.running .n, .cell.done .n { fill: var(--ac); }
+  .cell.running text, .cell.done text { fill: var(--text); }
+  .cell.done .b { fill: var(--d-fill); }
+  .cell.done .m { stroke: var(--c-line); stroke-width: 1.3; }
+  .cell.queued .m { stroke: var(--q-line); }
+  .cell.queued .n { fill: transparent; stroke: var(--q-ink); stroke-width: 1; }
+  .cell.queued text { fill: var(--q-ink); }
+  .cell.cur .b { fill: var(--tint); }
+  .cell.cur .m { stroke: var(--ac); stroke-width: 1.4; }
+  .cell.cur .n { fill: var(--ac); }
+  .cell.cur text { fill: var(--ac); }
+  .cell.lit .m { stroke: var(--ac); stroke-width: 1.6; transition-duration: .15s; }
+  .cell.ask .m { stroke: var(--ac); stroke-dasharray: 3 3; }
+  .cell.fuse .m { stroke: var(--ac); stroke-width: 1.6; }
+  .cell.more { cursor: pointer; }
+  .cell.more .m { stroke-dasharray: 1.2 3; }
+  .cell.more text { fill: var(--muted); }
+  .neck .e { fill: none; stroke: var(--c-line); stroke-width: 1.3; stroke-linecap: round; }
+  .ves .vm { fill: var(--tint); stroke: var(--ac); stroke-width: 1.1; }
+  .ves .vn { fill: var(--ac); }
+
+  .row { height: 36px; display: flex; align-items: center; gap: 8px; margin: 0 2px; padding: 0 9px; border-radius: 10px; overflow: hidden; }
+  .row:hover, .sess:hover { background: var(--hover); }
+  .row i, .sess i { flex: none; width: 14px; height: 14px; border: 1.3px solid var(--muted); border-radius: 4px; opacity: .6; }
+  .sect { margin: 12px 8px 6px; font-size: 12px; color: var(--muted); white-space: nowrap; transition: opacity .2s; }
+  .sess { height: 34px; display: flex; align-items: center; gap: 8px; padding: 0 10px; border-radius: 10px; opacity: .9; font-size: 13.5px; white-space: nowrap; overflow: hidden; transition: opacity .2s, background .15s, box-shadow .15s; }
+  .sess.drop { background: color-mix(in srgb, var(--heat) 10%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ac) 40%, transparent); }
+  .took { animation: took 1s ease; }
+  @keyframes took { 0% { background: color-mix(in srgb, var(--heat) 22%, transparent); } 100% { background: transparent; } }
+  .chat { flex: 1; min-width: 0; padding: 22px; display: flex; flex-direction: column; gap: 14px; font-size: 13.5px; line-height: 1.75; color: var(--text); overflow: hidden; }
+  .bubble { align-self: flex-end; max-width: 80%; padding: 7px 12px; border-radius: 12px; background: var(--hover); }
+  .composer { margin-top: auto; height: 44px; border: .5px solid var(--border); border-radius: 12px; display: flex; align-items: center; padding: 0 14px; color: var(--faint); font-size: 13px; }
+  .tip { position: fixed; z-index: 50; padding: 4px 8px; border-radius: 7px; background: var(--tip); color: var(--tip-ink); font-size: 11.5px; line-height: 1.5; white-space: nowrap; pointer-events: none; opacity: 0; transform: translate(-50%, 3px); transition: opacity .12s, transform .12s; }
+  .tip.on { opacity: 1; transform: translate(-50%, 0); }
+  .menu { position: fixed; z-index: 60; min-width: 150px; padding: 5px; border: 1px solid var(--border); border-radius: 12px; background: var(--menu); color: var(--text); box-shadow: 0 8px 30px #0000002a; font-size: 13px; }
+  .menu div { padding: 6px 10px; border-radius: 7px; cursor: pointer; }
+  .menu div:hover { background: var(--hover); }
+  .menu hr { border: 0; border-top: 1px solid var(--border); margin: 4px 2px; }
+</style>
+</head>
+<body>
+<div class="demo">
+  <b>路由</b>
+  <button id="old">落到旧话题</button>
+  <button id="new">开新话题</button>
+  <button id="aside">问个小问题</button>
+  <button id="clarify">拿不准</button>
+  <button id="correct">纠正上一句</button>
+  <button id="burst">连发三句</button>
+  <span class="sep"></span>
+  <b>状态</b>
+  <button id="finish">一个话题答完</button>
+  <button id="more">多加 6 个话题</button>
+  <button id="rail">收起侧栏</button>
+  <button id="reset">重置</button>
+  <div class="hint">话题之间按关联吸在一起 · 拖到别的话题上合并 · 拖到会话上关联 · 拖回主卡片接着聊 · 用力甩出侧栏 = 先放一边</div>
+  <div id="meter"></div>
+</div>
+<div class="stage" id="stage"></div>
+<script>
+(() => {
+  'use strict';
+  const NS = 'http://www.w3.org/2000/svg';
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const MAX_RUNNING = 3, VISIBLE = 14, N = 48, GAP = 2, SOFT = 2.2, MINI = .32, MARK_R = 7.4;
+  // name, recency weight, topic workspace
+  const TOPICS = [['显卡选购', .95, '装机'], ['旅游', .9, '出行'], ['周末书单', .8, '读书'], ['晚餐灵感', .7], ['周报整理', .62, '工作'], ['论文润色', .55, '工作'], ['搬家清单', .48, '家'],
+    ['基金定投', .42, '理财'], ['健身计划', .36], ['换季衣物', .3, '家'], ['租房合同', .26, '家'], ['日语', .22, '出行'], ['生日礼物', .18], ['咖啡豆', .14], ['猫粮', .1, '家'], ['读书笔记', .07, '读书']];
+  // relatedness TheOne learned from use (linkage.ts), on top of shared workspaces
+  const LEARNED = [['显卡选购', '基金定投', .5], ['旅游', '换季衣物', .35], ['周末书单', '咖啡豆', .25]];
+  const SPARE = ['周末露营', '面试准备', '牙医预约', '新年计划', '装修预算', '播客选题', '跑鞋', '学吉他', '报税', '相机镜头', '家庭聚餐', '滑雪', '盆栽', '车险', '桌游', '旧书转卖', '婚礼', '体检', '摄影', '宠物医院'];
+  const ASIDES = ['汇率换算', '几点日落', '单位换算', '查个快递'];
+  const fx = v => v.toFixed(2);
+  const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
+  const ease = (v, target, rate, dt) => v + (target - v) * Math.min(1, dt * rate);
+  const now = () => performance.now();
+  const apps = [];
+  let uid = 0, spareAt = 0, asideAt = 0;
+
+  function curve(p) { const n = p.length; let d = `M${fx(p[0][0])} ${fx(p[0][1])}`; p.forEach((p1, i) => { const p0 = p[(i + n - 1) % n], p2 = p[(i + 1) % n], p3 = p[(i + 2) % n]; d += `C${fx(p1[0] + (p2[0] - p0[0]) / 6)} ${fx(p1[1] + (p2[1] - p0[1]) / 6)} ${fx(p2[0] - (p3[0] - p1[0]) / 6)} ${fx(p2[1] - (p3[1] - p1[1]) / 6)} ${fx(p2[0])} ${fx(p2[1])}`; }); return d + 'Z'; }
+  const smin = (a, b, k) => { const h = Math.max(k - Math.abs(a - b), 0) / k; return Math.min(a, b) - h * h * k / 4; };
+  function polygonArea(p) { let s = 0; for (let i = 0; i < p.length; i++) { const [x1, y1] = p[i], [x2, y2] = p[(i + 1) % p.length]; s += x1 * y2 - x2 * y1; } return Math.abs(s) / 2; }
+
+  // A membrane neck between two round bodies: budding off the One mark, two topics fusing, or a pending merge.
+  function bridge(c1, r1, c2, r2, reach = r2 * 2.5, v = .5, hs = 2.4) {
+    const d = Math.hypot(c2.x - c1.x, c2.y - c1.y), maxD = r1 + reach;
+    if (r1 <= 0 || r2 <= 0 || d > maxD || d <= Math.abs(r1 - r2)) return null;
+    let u1 = 0, u2 = 0;
+    if (d < r1 + r2) { u1 = Math.acos(clamp((r1 * r1 + d * d - r2 * r2) / (2 * r1 * d), -1, 1)); u2 = Math.acos(clamp((r2 * r2 + d * d - r1 * r1) / (2 * r2 * d), -1, 1)); }
+    const ab = Math.atan2(c2.y - c1.y, c2.x - c1.x), spread = Math.acos(clamp((r1 - r2) / d, -1, 1));
+    const a1 = ab + u1 + (spread - u1) * v, a2 = ab - u1 - (spread - u1) * v;
+    const a3 = ab + Math.PI - u2 - (Math.PI - u2 - spread) * v, a4 = ab - Math.PI + u2 + (Math.PI - u2 - spread) * v;
+    const P = (c, a, r) => [c.x + r * Math.cos(a), c.y + r * Math.sin(a)];
+    const p1 = P(c1, a1, r1), p2 = P(c1, a2, r1), p3 = P(c2, a3, r2), p4 = P(c2, a4, r2);
+    const tot = r1 + r2, k = Math.min(v * hs, Math.hypot(p1[0] - p3[0], p1[1] - p3[1]) / tot) * Math.min(1, d * 2 / tot);
+    const H = (p, a, r) => [p[0] + r * Math.cos(a), p[1] + r * Math.sin(a)];
+    const h1 = H(p1, a1 - Math.PI / 2, r1 * k), h2 = H(p2, a2 + Math.PI / 2, r1 * k), h3 = H(p3, a3 + Math.PI / 2, r2 * k), h4 = H(p4, a4 - Math.PI / 2, r2 * k);
+    const s = p => fx(p[0]) + ' ' + fx(p[1]);
+    return { edge: `M${s(p1)}C${s(h1)} ${s(h3)} ${s(p3)}M${s(p4)}C${s(h4)} ${s(h2)} ${s(p2)}`,
+      fill: `M${s(p1)}C${s(h1)} ${s(h3)} ${s(p3)}L${s(p4)}C${s(h4)} ${s(h2)} ${s(p2)}Z` };
+  }
+
+  // How a name sits in a cell: one line if it fits, else two balanced lines, else no text at all (never a clipped name with an ellipsis).
+  function layout(name, rr) {
+    const big = rr >= 25 ? 10.5 : 9.5, small = rr >= 25 ? 9.5 : 8.8;
+    const tries = [[1, big], [1, small], [2, big], [2, small]];
+    for (const [lines, font] of tries) {
+      if (lines === 1 && name.length > 3 && font === small && rr < 25) continue;
+      const lh = font * 1.2, per = Math.ceil(name.length / lines);
+      if (lines === 2 && (name.length < 4 || name.length > 8)) continue;
+      const block = 5 + 4 + lines * lh; // nucleus, gap, text
+      if (per * font > 2 * rr * (lines === 1 ? .8 : .74) - 4 || block > 2 * rr * .82) continue;
+      return { lines: lines === 1 ? [name] : [name.slice(0, per), name.slice(per)], font, lh };
+    }
+    return { lines: [], font: big, lh: 0 };
+  }
+
+  function build(theme) {
+    const app = document.createElement('div');
+    app.className = 'app ' + theme;
+    app.innerHTML = `
+      <aside class="side">
+        <div class="brand"><i></i><span class="tx">DSH</span></div>
+        <div class="newsess">＋<span class="tx">新会话</span></div>
+        <nav>
+          <div class="entry"><svg class="mark" width="20" height="20" viewBox="0 0 20 20"><path class="bm" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><circle class="bn" fill="currentColor"/></svg>
+            <div class="tx"><div><span class="the">The</span><span class="one">One</span><span class="lab">主聊天</span></div><div class="sub">从这里继续聊</div></div></div>
+          <div class="foam"><svg><defs></defs><g class="cells"></g><g class="necks"></g><g class="vesicles"></g></svg></div>
+          <div class="row"><i></i><span class="tx">持续任务</span></div>
+        </nav>
+        <div class="sect">今天</div><div class="sess" data-drop="session"><i></i>帮我看看配什么电脑</div><div class="sess" data-drop="session"><i></i>周报整理</div>
+        <div class="sect">更早</div><div class="sess" data-drop="session"><i></i>一些零散的好点子</div>
+      </aside>
+      <section class="chat">
+        <div class="bubble">5000 块配什么电脑比较好</div>
+        <div>看你主要拿来做什么。偏游戏的话，显卡占预算的大头，处理器选中端就够了。</div>
+        <div class="bubble">另外我想去哪旅游比较好</div>
+        <div class="composer">继续聊…</div>
+      </section>`;
+    document.getElementById('stage').appendChild(app);
+    const q = s => app.querySelector(s);
+    const a = { app, theme, side: q('.side'), foam: q('.foam'), defs: q('defs'), layer: q('.cells'), necks: q('.necks'), vlayer: q('.vesicles'), entry: q('.entry'), mark: q('.mark'), bm: q('.bm'), bn: q('.bn'),
+      cells: [], bonds: [], ves: [], links: new Map(), pulse: 0, drag: null, ptr: null, target: null, rail: false, sz: 1, h: 10, L: { x: 0, y: 0 }, look: { x: 0, y: 0 }, showUntil: 0, more: null, folded: 0, last: null };
+    a.entry.addEventListener('pointermove', e => { if (a.drag) return; const r = a.entry.getBoundingClientRect(); a.entry.style.setProperty('--px', e.clientX - r.left + 'px'); a.entry.style.setProperty('--py', e.clientY - r.top + 'px'); });
+    a.onMove = e => {
+      const p = local(a, e), r = a.foam.getBoundingClientRect();
+      a.ptr = e.clientX > r.left - 24 && e.clientX < r.right + 24 && e.clientY > r.top - 10 && e.clientY < r.bottom + 24 ? p : null;
+      if (!a.drag) return;
+      const c = a.drag.cell; c.tx = p.x - a.drag.dx; c.ty = p.y - a.drag.dy;
+      a.drag.trail.push({ x: e.clientX, y: e.clientY, t: now() }); if (a.drag.trail.length > 8) a.drag.trail.shift();
+      const hit = dropTarget(a, e, c);
+      setTarget(a, hit);
+      if (hit?.kind === 'main') { a.entry.style.setProperty('--px', a.L.x + 'px'); a.entry.style.setProperty('--py', '50%'); }
+      const text = hit && dropText(c, hit);
+      if (text) tip.at(e.clientX, e.clientY - 32, text, a); else tip.hide();
+    };
+    a.onUp = e => {
+      if (!a.drag) return;
+      const c = a.drag.cell, hit = a.target, trail = a.drag.trail; c.g.classList.remove('drag'); a.drag = null; tip.hide(); setTarget(a, null);
+      if (hit?.kind === 'main') return mount(a, c);
+      if (hit?.kind === 'cell') return busyState(c) || busyState(hit.cell) ? bond(a, c, hit.cell) : merge(a, c, hit.cell);
+      if (hit?.kind === 'session') { hit.el.classList.remove('took'); void hit.el.offsetWidth; hit.el.classList.add('took'); vesicle(a, () => center(a, hit.el.querySelector('i')), () => cellPos(c), () => light(a, c, { run: false })); return; }
+      // A throw: fast enough, or let go outside the sidebar.
+      const first = trail.find(s => now() - s.t < 90) || trail[0], lastS = trail[trail.length - 1];
+      if (!first || !lastS) return;
+      const dt = Math.max(16, lastS.t - first.t) / 1000, vx = (lastS.x - first.x) / dt, vy = (lastS.y - first.y) / dt, sr = a.side.getBoundingClientRect();
+      const out = e.clientX > sr.right + 6 || e.clientX < sr.left - 6;
+      if (Math.hypot(vx, vy) > 1100 || out) fling(a, c, out && Math.hypot(vx, vy) < 400 ? { x: (e.clientX > sr.right ? 900 : -900), y: 0 } : { x: vx, y: vy }, e);
+    };
+    a.more = cell(a, '+0', 'idle', false, .2);
+    a.more.kind = 'more'; a.more.g.classList.add('more');
+    apps.push(a);
+    return a;
+  }
+  const local = (a, e) => { const r = a.foam.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+  const center = (a, el) => { const r = el.getBoundingClientRect(), f = a.foam.getBoundingClientRect(); return { x: r.left + r.width / 2 - f.left, y: r.top + r.height / 2 - f.top }; };
+  const cellPos = c => ({ x: c.cx, y: c.cy, r: c.R * c.scale });
+  const busyState = c => c.state === 'running' || c.state === 'queued';
+  const topics = a => a.cells.filter(c => c.kind !== 'more' && c.mode !== 'leave');
+  const shown = c => c.mode !== 'leave' && !c.hidden;
+  window.addEventListener('pointermove', e => apps.forEach(a => a.onMove(e)));
+  window.addEventListener('pointerup', e => apps.forEach(a => a.onUp(e)));
+
+  function dropTarget(a, e, c) {
+    for (const el of document.elementsFromPoint(e.clientX, e.clientY)) {
+      if (c.g.contains(el) || !a.app.contains(el)) continue;
+      if (el.closest('.entry')) return { kind: 'main' };
+      const g = el.closest('.cell'), o = g && a.cells.find(x => x.g === g && x.mode === 'live' && x.kind !== 'more');
+      if (o && o !== c) return { kind: 'cell', cell: o };
+      const d = el.closest('[data-drop]'); if (d) return { kind: d.dataset.drop, el: d, name: d.textContent.trim() };
+    }
+    return null;
+  }
+  function setTarget(a, hit) {
+    const was = a.target;
+    if (was?.kind === hit?.kind && was?.el === hit?.el && was?.cell === hit?.cell) return;
+    was?.el?.classList.remove('drop'); was?.cell?.g.classList.remove('fuse');
+    hit?.el?.classList.add('drop'); hit?.cell?.g.classList.add('fuse');
+    a.entry.classList.toggle('hot', hit?.kind === 'main');
+    a.target = hit;
+  }
+  const dropText = (c, hit) => {
+    if (hit.kind === 'main') return c.cur ? '' : `主聊天接着聊「${c.name}」`;
+    if (hit.kind === 'cell') return busyState(c) || busyState(hit.cell) ? `答完后并进「${hit.cell.name}」` : `并进「${hit.cell.name}」`;
+    if (hit.kind === 'session') return `把这个会话关联进「${c.name}」`;
+    return '';
+  };
+
+  function cell(a, name, state, spawn, w = .05, group) {
+    const id = 'h' + uid++;
+    const gr = document.createElementNS(NS, 'radialGradient');
+    gr.id = id; gr.setAttribute('r', '62%');
+    gr.innerHTML = '<stop offset="0%" stop-color="var(--heat)"/><stop offset="100%" stop-color="var(--heat)" stop-opacity="0"/>';
+    a.defs.appendChild(gr);
+    const g = document.createElementNS(NS, 'g');
+    g.setAttribute('class', 'cell ' + state);
+    g.innerHTML = `<path class="b"/><path class="h" fill="url(#${id})"/><path class="m"/><circle class="n"/><text></text>`;
+    a.layer.appendChild(g);
+    const neck = document.createElementNS(NS, 'g');
+    neck.setAttribute('class', 'neck'); neck.innerHTML = '<path class="f"/><path class="e"/>';
+    a.necks.appendChild(neck);
+    const fw = a.foam.clientWidth;
+    const c = { id, g, gr, neck, b: g.querySelector('.b'), h: g.querySelector('.h'), m: g.querySelector('.m'), n: g.querySelector('.n'), label: g.querySelector('text'), stop: gr.firstChild,
+      nf: neck.querySelector('.f'), ne: neck.querySelector('.e'), kind: 'topic', name, group, state, cur: false, w, aside: false, oneOff: false, phase: Math.random() * 6, shown: '', full: false,
+      mode: spawn ? 'bud' : 'live', age: 0, hidden: false, away: false, x: spawn ? a.L.x : fw / 2 + (Math.random() - .5) * 90, y: spawn ? a.L.y : 40 + Math.random() * 120,
+      vx: 0, vy: 0, svx: 0, svy: 0, R: 20, scale: spawn ? .12 : 1, alpha: 1, heat: state === 'running' ? 1 : 0, solid: state === 'queued' ? 0 : 1, kick: 0, flash: 0, ask: 0, hov: false,
+      started: now() - (spawn ? 0 : 20000 + Math.random() * 30000), finishAt: 0, doneAt: 0, tx: null, ty: null, nx: 0, ny: 0, cx: 0, cy: 0, dest: null };
+    c.R = sizeOf(c) * a.sz;
+    if (state === 'running') c.finishAt = now() + 4000 + Math.random() * 4000;
+    let hoverTimer = 0;
+    g.addEventListener('pointerdown', e => {
+      if (e.button || c.mode !== 'live' || c.kind === 'more') return;
+      e.preventDefault(); clearTimeout(hoverTimer);
+      const p = local(a, e); a.drag = { cell: c, dx: p.x - c.x, dy: p.y - c.y, trail: [{ x: e.clientX, y: e.clientY, t: now() }] }; c.tx = c.x; c.ty = c.y;
+      g.classList.add('drag'); tip.hide();
+    });
+    g.addEventListener('click', () => { if (c.kind === 'more') tip.show(g, c, a, true); });
+    // Hover tells only what the cell itself cannot show: a name that did not fit, or what a busy topic is doing.
+    g.addEventListener('pointerenter', () => { c.hov = true; if (a.drag) return; clearTimeout(hoverTimer); hoverTimer = setTimeout(() => { if (c.hov && !a.drag) tip.show(g, c, a); }, 420); });
+    g.addEventListener('pointerleave', () => { c.hov = false; clearTimeout(hoverTimer); if (!a.drag) tip.hide(); });
+    g.addEventListener('contextmenu', e => { e.preventDefault(); clearTimeout(hoverTimer); tip.hide(); menu.open(e.clientX, e.clientY, a, c); });
+    a.cells.push(c);
+    if (spawn) a.pulse = Math.max(a.pulse, .7);
+    return c;
+  }
+  // Recently used topics are bigger; even the smallest cell has room for its name on two lines.
+  const sizeOf = c => c.kind === 'more' ? 16 : c.oneOff ? 21 : c.state === 'running' || c.state === 'done' || c.cur ? 29 : c.state === 'queued' ? 24 : 16 + 9 * c.w;
+  // At rest only the topics that are doing something carry a name; the rest are plain cells until the pointer comes near.
+  const named = c => c.kind === 'more' || c.cur || c.state !== 'idle' || c.ask || c.mode === 'bud';
+  function setState(c, state) {
+    c.g.classList.remove(c.state); c.state = state; c.g.classList.add(state);
+    if (state === 'running') { c.started = now(); c.finishAt = now() + (c.oneOff ? 1600 : 3500 + Math.random() * 4000); }
+    if (state === 'done') c.doneAt = now();
+  }
+  const runningCount = a => topics(a).filter(c => c.state === 'running').length;
+  function promote(a) { while (runningCount(a) < MAX_RUNNING) { const q = topics(a).find(c => c.state === 'queued'); if (!q) break; setState(q, 'running'); q.kick = 1; } }
+  function setCurrent(a, c) { for (const o of a.cells) { o.cur = o === c; o.g.classList.toggle('cur', o.cur); } }
+  function touch(a, c) { for (const o of topics(a)) if (o !== c) o.w *= .92; c.w = 1; c.aside = false; }
+  const linkW = (a, c, o) => (c.group && c.group === o.group ? .8 : 0) + (a.links.get(c.name + '|' + o.name) || 0);
+  // The routed topic lights up: it grows, warms, and starts answering (or waits for a free slot).
+  function light(a, c, { run = true, related = [] } = {}) {
+    c.flash = 1; c.kick = 1; touch(a, c);
+    c.g.classList.add('lit'); setTimeout(() => c.g.classList.remove('lit'), 900);
+    for (const o of related) { o.flash = Math.max(o.flash, .45); o.kick = Math.max(o.kick, .5); }
+    if (run && !busyState(c)) setState(c, runningCount(a) < MAX_RUNNING ? 'running' : 'queued');
+    a.last = c;
+  }
+  // EXISTING: a vesicle carries the message into the topic; a folded or set-aside topic first buds back out of the One mark.
+  function routeTo(a, c, related = []) {
+    a.pulse = Math.max(a.pulse, .55);
+    if (c.hidden) { touch(a, c); c.rebud = () => light(a, c, { related }); return; }
+    vesicle(a, () => ({ x: a.L.x, y: a.L.y }), () => cellPos(c), () => light(a, c, { related }));
+  }
+  // CREATE: a new cell buds off; a one-off aside is small, answers, then folds away by itself.
+  function create(a, name, oneOff = false) {
+    a.pulse = Math.max(a.pulse, .55);
+    const c = cell(a, name, 'idle', true, 1);
+    c.oneOff = oneOff;
+    c.onBorn = () => light(a, c);
+  }
+  // CLARIFY: the vesicle waits between the candidate topics until the user's answer picks one.
+  function clarify(a, cands) {
+    a.pulse = Math.max(a.pulse, .55);
+    const mid = () => ({ x: (cands[0].cx + cands[1].cx) / 2, y: (cands[0].cy + cands[1].cy) / 2 - 4 });
+    for (const c of cands) c.ask = 1, c.g.classList.add('ask');
+    vesicle(a, () => ({ x: a.L.x, y: a.L.y }), mid, () => {
+      const pick = cands[Math.random() < .5 ? 0 : 1];
+      for (const c of cands) c.ask = 0, c.g.classList.remove('ask');
+      vesicle(a, mid, () => cellPos(pick), () => light(a, pick), .45);
+    }, .7, 2.6);
+  }
+  // A correction: the message leaves the wrong topic and goes into the right one.
+  function correct(a) {
+    const wrong = a.last; if (!wrong || wrong.mode !== 'live' || wrong.hidden) return;
+    const right = pickOld(a, wrong); if (!right) return;
+    if (busyState(wrong)) { setState(wrong, 'idle'); promote(a); }
+    wrong.flash = 0; wrong.kick = .6;
+    vesicle(a, () => cellPos(wrong), () => cellPos(right), () => light(a, right), .6);
+  }
+  function pickOld(a, not) {
+    const pool = topics(a).filter(c => c.mode === 'live' && !c.hidden && !busyState(c) && c !== not && !c.ask);
+    let sum = pool.reduce((s, c) => s + c.w + .15, 0) * Math.random();
+    return pool.find(c => (sum -= c.w + .15) <= 0) || pool[0];
+  }
+  function mount(a, c) { if (c.cur) return; setCurrent(a, c); c.flash = .6; touch(a, c); a.pulse = Math.max(a.pulse, .6); }
+  function merge(a, c, o) {
+    if (c.mode !== 'live') return;
+    c.mode = 'leave'; c.dest = { cell: o }; c.g.style.pointerEvents = 'none';
+    a.bonds = a.bonds.filter(b => b[0] !== c && b[1] !== c);
+  }
+  function bond(a, c, o) { a.bonds = a.bonds.filter(b => b[0] !== c && b[1] !== c); a.bonds.push([c, o]); c.kick = .6; o.kick = .6; }
+  function remove(a, c) { if (c.mode !== 'live') return; c.mode = 'leave'; c.dest = { die: true }; c.g.style.pointerEvents = 'none'; a.bonds = a.bonds.filter(b => b[0] !== c && b[1] !== c); }
+  // Throwing a topic out of the sidebar sets it aside (TheOne's "done"); a busy or current topic springs back.
+  function fling(a, c, v, e) {
+    if (busyState(c) || c.cur) {
+      c.vx = -v.x * .15; c.vy = -v.y * .15; c.kick = 1;
+      tip.at(e.clientX, e.clientY - 32, c.cur ? '主聊天正在这个话题里' : '正在回答，答完才能放一边', a); setTimeout(() => tip.hide(), 1300);
+      return;
+    }
+    const s = Math.hypot(v.x, v.y), k = Math.min(1, 2600 / s);
+    c.mode = 'fling'; c.age = 0; c.vx = v.x * k; c.vy = v.y * k; c.g.style.pointerEvents = 'none';
+    a.bonds = a.bonds.filter(b => b[0] !== c && b[1] !== c);
+  }
+
+  // A message travels as a small vesicle, budding off one body and fusing into another; `hold` keeps it waiting at the end.
+  function vesicle(a, from, to, arrive, dur = .7, hold = 0) {
+    const el = document.createElementNS(NS, 'g');
+    el.setAttribute('class', 'ves'); el.innerHTML = '<circle class="vm" r="3.4"/><circle class="vn" r="1.3"/>';
+    a.vlayer.appendChild(el);
+    a.ves.push({ el, from, to, arrive, t: 0, dur, hold, x: -99, y: -99 });
+  }
+
+  const tip = (() => {
+    const el = document.createElement('div'); el.className = 'tip'; document.body.appendChild(el);
+    let owner = null, ownerApp = null, g0 = null;
+    const text = (c, a) => {
+      if (c.kind === 'more') return `还有 ${a.folded} 个话题 · 点开话题工作区`;
+      const who = c.full ? '' : c.name + ' · ';
+      const b = a.bonds.find(x => x[0] === c || x[1] === c);
+      if (b) return `${who}答完后和「${(b[0] === c ? b[1] : b[0]).name}」合并`;
+      if (c.ask) return `${who}主聊天在问你是不是这个话题`;
+      if (c.state === 'queued') return `${who}排队中`;
+      if (c.state === 'done') return `${who}答好了，等主聊天展示`;
+      if (c.state === 'running') return `${who}正在回答 ${Math.round((now() - c.started) / 1000)} 秒`;
+      return c.full ? '' : c.name;
+    };
+    const place = () => { const r = g0.getBoundingClientRect(); el.style.left = r.left + r.width / 2 + 'px'; el.style.top = r.top - 28 + 'px'; };
+    setInterval(() => { if (!owner) return; const s = text(owner, ownerApp); if (!s) { el.classList.remove('on'); return; } el.textContent = s; place(); el.classList.add('on'); }, 250);
+    const theme = a => { const cs = getComputedStyle(a.app); el.style.setProperty('--tip', cs.getPropertyValue('--tip')); el.style.setProperty('--tip-ink', cs.getPropertyValue('--tip-ink')); };
+    return {
+      show(g, c, a) { const s = text(c, a); owner = c; ownerApp = a; g0 = g; if (!s) return; theme(a); el.textContent = s; place(); el.classList.add('on'); },
+      at(x, y, s, a) { owner = null; if (!s) return el.classList.remove('on'); theme(a); el.textContent = s; el.style.left = x + 'px'; el.style.top = y + 'px'; el.classList.add('on'); },
+      hide() { owner = null; el.classList.remove('on'); }
+    };
+  })();
+  const menu = (() => {
+    let el = null;
+    const close = () => { el?.remove(); el = null; };
+    document.addEventListener('pointerdown', e => { if (el && !el.contains(e.target)) close(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
+    return { open(x, y, a, c) {
+      close(); el = document.createElement('div'); el.className = 'menu';
+      const cs = getComputedStyle(a.app); el.style.cssText = ['--menu', '--text', '--border', '--hover'].map(v => `${v}:${cs.getPropertyValue(v)}`).join(';');
+      const items = c.kind === 'more' ? [['打开话题工作区']]
+        : c.state === 'running' ? [['打开话题'], null, ['停止', () => { setState(c, 'idle'); promote(a); }]]
+        : c.state === 'queued' ? [['打开话题'], ['取消排队', () => setState(c, 'idle')]]
+        : c.state === 'done' ? [['现在在主聊天里看', () => display(a, c)], ['打开话题']]
+        : [['在主聊天里接着聊', () => mount(a, c)], ['打开话题'], ...(c.cur ? [] : [['先放一边', () => { c.aside = true; }]]), null, ['删除话题', () => remove(a, c)]];
+      for (const it of items) { if (!it) { el.appendChild(document.createElement('hr')); continue; } const row = document.createElement('div'); row.textContent = it[0]; row.onclick = () => { close(); it[1]?.(); }; el.appendChild(row); }
+      document.body.appendChild(el); const b = el.getBoundingClientRect(); el.style.left = Math.min(x, innerWidth - b.width - 8) + 'px'; el.style.top = Math.min(y, innerHeight - b.height - 8) + 'px';
+    } };
+  })();
+  // Main chat shows one answer at a time: the answer travels back to the One mark, and that topic becomes the current one.
+  function display(a, c) {
+    a.showUntil = now() + 1600; c.showing = true;
+    vesicle(a, () => cellPos(c), () => ({ x: a.L.x, y: a.L.y, r: MARK_R }), () => {
+      a.pulse = 1; c.showing = false; if (c.state === 'done') setState(c, 'idle');
+      if (c.oneOff) setTimeout(() => { c.aside = true; }, 1400); else setCurrent(a, c);
+      promote(a);
+    }, .6);
+  }
+
+  function reset() {
+    document.getElementById('stage').innerHTML = ''; apps.length = 0; spareAt = 0; asideAt = 0;
+    document.getElementById('rail').textContent = '收起侧栏';
+    for (const theme of ['light', 'dark']) {
+      const a = build(theme);
+      for (const [x, y, wgt] of LEARNED) { a.links.set(x + '|' + y, wgt); a.links.set(y + '|' + x, wgt); }
+      for (const [n, w, group] of TOPICS) cell(a, n, n === '旅游' ? 'running' : n === '周末书单' ? 'done' : 'idle', false, w, group);
+      setCurrent(a, a.cells.find(c => c.name === '显卡选购'));
+      a.showUntil = now() + 2500;
+    }
+  }
+  const each = f => apps.forEach(f);
+  const pickBoth = () => { const picks = apps.map(a => pickOld(a)); return picks[0]?.name; };
+  const byName = (a, n) => topics(a).find(c => c.name === n);
+  const related = (a, c) => topics(a).filter(o => o !== c && o.mode === 'live' && !o.hidden && linkW(a, c, o) > .3).slice(0, 2);
+  document.getElementById('old').onclick = () => { const n = pickBoth(); each(a => { const c = byName(a, n) || pickOld(a); if (c) routeTo(a, c, Math.random() < .6 ? related(a, c) : []); }); };
+  document.getElementById('new').onclick = () => { const n = SPARE[spareAt++ % SPARE.length]; each(a => create(a, n)); };
+  document.getElementById('aside').onclick = () => { const n = ASIDES[asideAt++ % ASIDES.length]; each(a => create(a, n, true)); };
+  document.getElementById('clarify').onclick = () => {
+    const a0 = apps[0], c0 = pickOld(a0), c1 = c0 && (related(a0, c0).find(o => !busyState(o)) || pickOld(a0, c0));
+    if (!c0 || !c1) return;
+    each(a => { const x = byName(a, c0.name), y = byName(a, c1.name); if (x && y && !x.hidden && !y.hidden) clarify(a, [x, y]); });
+  };
+  document.getElementById('correct').onclick = () => each(a => correct(a));
+  document.getElementById('burst').onclick = () => {
+    const folded = topics(apps[0]).find(c => c.hidden && c.mode === 'live');
+    [() => document.getElementById('old').click(), () => document.getElementById('new').click(),
+      () => { if (folded) each(a => { const c = byName(a, folded.name); if (c) routeTo(a, c); }); else document.getElementById('old').click(); }]
+      .forEach((f, i) => setTimeout(f, i * 450));
+  };
+  document.getElementById('finish').onclick = () => each(a => { const c = topics(a).find(c => c.state === 'running'); if (c) c.finishAt = 0; });
+  document.getElementById('more').onclick = () => { for (let i = 0; i < 6; i++) setTimeout(() => { const n = SPARE[spareAt++ % SPARE.length]; each(a => cell(a, n, 'idle', true, .03)); }, i * 160); };
+  document.getElementById('rail').onclick = e => { const on = !apps[0]?.rail; each(a => { a.rail = on; a.app.classList.toggle('rail', on); }); e.target.textContent = on ? '展开侧栏' : '收起侧栏'; };
+  document.getElementById('reset').onclick = reset;
+  reset();
+  setInterval(() => {
+    const a = apps[0]; if (!a) return;
+    const all = topics(a), vis = all.filter(c => !c.hidden), named = vis.filter(c => c.full).length, two = vis.filter(c => c.shown.includes('\n')).length;
+    document.getElementById('meter').textContent = `浅色侧栏：${all.length} 个话题，显示 ${vis.length} 个（${named} 个名字完整，其中 ${two} 个两行）${a.folded ? `，${a.folded} 个在 +${a.folded} 里` : ''} · 区域高 ${Math.round(a.h)}px`;
+  }, 300);
+
+  function step(a, t, dt) {
+    const T = now();
+    a.sz = ease(a.sz, a.rail ? MINI : 1, 4, dt);
+    const words = clamp((a.sz - .72) / .28);
+
+    // Which topics show: past the limit the least recently used fold into "+N"; set-aside topics always fold; the collapsed rail shows only the active ones.
+    const all = topics(a).filter(c => c.mode !== 'fling');
+    const prio = c => (c.cur || c.state !== 'idle' || c.mode === 'bud' ? 10 : 0) + c.w;
+    const order = all.filter(c => !c.aside || busyState(c)).sort((x, y) => prio(y) - prio(x));
+    const keep = new Set(order.length > VISIBLE ? order.slice(0, VISIBLE - 1) : order);
+    a.folded = all.filter(c => !keep.has(c)).length;
+    for (const c of all) {
+      const folded = !keep.has(c), hide = c.mode === 'live' && (folded || (a.rail && !c.cur && c.state === 'idle'));
+      // Coming back from the fold (a routed message reached it): it buds out of the One mark again.
+      if (c.hidden && !hide && c.away && c.mode === 'live' && c.rebud) { c.mode = 'bud'; c.age = 0; c.x = a.L.x; c.y = a.L.y; c.scale = .12; c.onBorn = c.rebud || null; c.rebud = null; a.pulse = Math.max(a.pulse, .7); }
+      if (c.mode === 'live') { c.hidden = hide; if (hide) c.away = folded; else c.away = false; }
+    }
+    a.more.hidden = !a.folded || a.rail;
+    if (a.more.name !== '+' + a.folded) { a.more.name = '+' + a.folded; a.more.kick = .8; }
+
+    // Answers wait their turn for main chat; running topics finish on their own in this demo.
+    for (const c of all) if (c.state === 'running' && c.finishAt && T > c.finishAt) { setState(c, 'done'); c.kick = 1; promote(a); }
+    if (T > a.showUntil && !a.ves.some(v => v.toMark)) { const next = all.filter(c => c.state === 'done' && !c.showing && c.mode === 'live').sort((x, y) => x.doneAt - y.doneAt)[0]; if (next) display(a, next); }
+    for (const b of [...a.bonds]) {
+      if (b.some(c => c.mode !== 'live')) { a.bonds.splice(a.bonds.indexOf(b), 1); continue; }
+      if (!busyState(b[0]) && !busyState(b[1]) && !b[0].showing && !b[1].showing) { a.bonds.splice(a.bonds.indexOf(b), 1); merge(a, b[0], b[1]); }
+    }
+
+    const live = a.cells.filter(c => c.mode === 'live' && !c.hidden);
+    let top = Infinity, bottom = -Infinity, x0 = Infinity, x1 = -Infinity;
+    for (const c of live) if (a.drag?.cell !== c) { top = Math.min(top, c.y - c.R); bottom = Math.max(bottom, c.y + c.R); x0 = Math.min(x0, c.x - c.R); x1 = Math.max(x1, c.x + c.R); }
+    a.h = ease(a.h, bottom > top ? Math.min(320, bottom - top + 14 * a.sz + 4) : 8, 3, dt);
+    a.foam.style.height = fx(a.h) + 'px';
+    const fr = a.foam.getBoundingClientRect(), mr = a.mark.getBoundingClientRect();
+    const w = fr.width, h = fr.height, cx = w / 2, cy = Math.max(14, h / 2);
+    a.L = { x: mr.left + mr.width / 2 - fr.left, y: mr.top + mr.height / 2 - fr.top };
+    const L = a.L, markR = MARK_R + a.pulse * a.pulse * .8;
+    // The whole cluster drifts back to the middle as one body, without squeezing the cells inside it.
+    const shiftX = x1 > x0 ? (cx - (x0 + x1) / 2) * 3 : 0, shiftY = bottom > top ? (cy - (top + bottom) / 2) * 2 : 0;
+
+    // Forces: pull to the middle, recent topics rise toward the main card, related topics stick together, pressure where cells touch, slow wander.
+    for (const c of a.cells) {
+      let fx2 = 0, fy2 = 0, damp = .06;
+      c.age += dt;
+      if (c.mode === 'bud') {
+        const dx = cx - L.x, dy = cy - L.y, d = Math.hypot(dx, dy) || 1;
+        const reach = markR + sizeOf(c) * a.sz * c.scale * .95 + c.age * 9 * a.sz;
+        fx2 = (L.x + dx / d * reach - c.x) * 90; fy2 = (L.y + dy / d * reach - c.y) * 90; damp = .002;
+        if (c.age > .8) { c.mode = 'live'; c.hidden = false; c.vx += dx / d * 120; c.vy += dy / d * 120; c.onBorn?.(); c.onBorn = null; }
+      } else if (c.mode === 'leave') {
+        const o = c.dest.cell;
+        if (o && a.cells.includes(o)) { fx2 = (o.cx - c.x) * 40; fy2 = (o.cy - c.y) * 40; damp = .003; }
+      } else if (c.mode === 'fling') {
+        damp = .35;
+      } else if (c.hidden) {
+        fx2 = (cx - c.x) * 4; fy2 = (cy - c.y) * 4;
+      } else {
+        const act = c.cur || c.state !== 'idle' ? 1 : c.w;
+        // An oval pull: the sidebar is wide and short on room, so the cluster spreads sideways rather than growing tall.
+        const ox = cx - c.x, oy = (cy - c.y) * 1.8, od = Math.hypot(ox, oy) || 1, pull = Math.min(od, 30 * a.sz) * 1.6;
+        fx2 += ox / od * pull + shiftX; fy2 += oy / od * pull + shiftY - 28 * (act - .45) * a.sz;
+        const wob = (c.state === 'running' ? 14 : c.state === 'idle' ? 3 + 4 * c.w : 5) * a.sz;
+        fx2 += wob * Math.sin(t * .31 + c.phase) + wob * .5 * Math.sin(t * .83 + c.phase * 2);
+        fy2 += wob * Math.cos(t * .27 + c.phase * 1.4);
+        for (const o of live) {
+          if (o === c) continue;
+          const dx = o.x - c.x, dy = o.y - c.y, d = Math.hypot(dx, dy) || .01, rest = (c.R + o.R) * .93, lw = linkW(a, c, o);
+          const f = d < rest ? -(rest - d) * 40 : d < rest * 1.5 ? (d - rest) * (11 + 12 * lw) : lw && d < rest * 3.2 ? (d - rest) * 6 * lw : 0;
+          fx2 += dx / d * f; fy2 += dy / d * f;
+        }
+        if (a.ptr && !a.drag) {
+          const dx = a.ptr.x - c.x, dy = a.ptr.y - c.y, d = Math.hypot(dx, dy) || 1, reach = 80 * a.sz;
+          if (d < reach) { const f = (c.state === 'running' ? 16 : 6) * (1 - d / reach); fx2 += dx / d * f; fy2 += dy / d * f; }
+        }
+        if (a.drag?.cell !== c) {
+          const pad = c.R * .8;
+          if (c.x < pad) fx2 += (pad - c.x) * 30; if (c.x > w - pad) fx2 -= (c.x - (w - pad)) * 30;
+          if (c.y < pad * .7) fy2 += (pad * .7 - c.y) * 30; if (c.y > h - pad * .7) fy2 -= (c.y - (h - pad * .7)) * 30;
+        }
+      }
+      if (a.drag?.cell === c) { fx2 += (c.tx - c.x) * 70; fy2 += (c.ty - c.y) * 70; }
+      c.vx = (c.vx + fx2 * dt) * Math.pow(damp, dt); c.vy = (c.vy + fy2 * dt) * Math.pow(damp, dt);
+      c.x += c.vx * dt; c.y += c.vy * dt;
+    }
+    for (const [c, o] of a.bonds) {
+      const dx = o.x - c.x, dy = o.y - c.y, d = Math.hypot(dx, dy) || 1, f = (d - (c.R + o.R) * .9) * 10 * dt;
+      c.vx += dx / d * f; c.vy += dy / d * f; o.vx -= dx / d * f; o.vy -= dy / d * f;
+    }
+
+    let bud = null;
+    for (const c of [...a.cells]) {
+      if (c.mode === 'leave') {
+        const o = c.dest.cell, alive = o && a.cells.includes(o);
+        if (alive) {
+          const d = Math.hypot(c.x - o.cx, c.y - o.cy);
+          c.scale = ease(c.scale, clamp((d - o.R * .3) / 50, .08, 1), 6, dt);
+          if (d < o.R * .45 || c.age > 3) c.alpha = ease(c.alpha, 0, 14, dt);
+        } else { c.scale = ease(c.scale, 0, 5, dt); c.alpha = ease(c.alpha, 0, 4, dt); }
+        if (c.alpha < .04 || c.scale < .03) {
+          c.g.remove(); c.neck.remove(); c.gr.remove(); a.cells.splice(a.cells.indexOf(c), 1);
+          if (alive) { o.kick = 1; o.flash = .7; o.w = Math.max(o.w, c.w); if (c.cur) setCurrent(a, o); }
+          continue;
+        }
+      } else if (c.mode === 'fling') {
+        // Out past the sidebar it fades; then it is set aside and joins the fold.
+        const sr = a.side.getBoundingClientRect(), gx0 = fr.left + c.x, gy0 = fr.top + c.y;
+        const outBy = Math.max(gx0 - sr.right, sr.left - gx0, gy0 - sr.bottom, sr.top - gy0, 0);
+        c.alpha = clamp(1 - outBy / 90);
+        if (c.alpha < .03 || c.age > 1.4) { c.mode = 'live'; c.aside = true; c.hidden = true; c.away = true; c.alpha = 1; c.scale = 0; c.vx = c.vy = 0; c.x = cx; c.y = cy; c.g.style.pointerEvents = ''; a.more.kick = 1; continue; }
+      } else if (c.mode === 'bud') c.scale = ease(c.scale, .2 + c.age * .45, 5, dt);
+      else c.scale = ease(c.scale, c.hidden ? 0 : 1, c.hidden ? 5 : 2.5, dt);
+      c.g.style.display = c.scale < .02 ? 'none' : '';
+      if (c.scale < .02) { c.nf.setAttribute('d', ''); c.ne.setAttribute('d', ''); continue; }
+      c.heat = ease(c.heat, c.state === 'running' ? 1 : 0, 1.3, dt);
+      c.solid = ease(c.solid, c.state === 'queued' ? 0 : 1, 2.2, dt);
+      c.kick = Math.max(0, c.kick - dt / .9);
+      c.flash = Math.max(0, c.flash - dt / 1.4);
+      if (c.ask) c.flash = Math.max(c.flash, .25 + .15 * Math.sin(t * 3));
+
+      const running = c.state === 'running', tt = running ? t : 0;
+      // Reading with the pointer: cells near it swell a little, like a magnifier, and their names surface.
+      let near = 0;
+      if (c.mode === 'live' && c.kind !== 'more' && a.sz > .7) {
+        if (a.drag) near = a.drag.cell === c || a.target?.cell === c ? 1 : 0;
+        else if (a.ptr) { const d = Math.hypot(a.ptr.x - c.cx, a.ptr.y - c.cy) - c.R * .4; near = clamp(1 - d / 52); near = near * near * (3 - 2 * near); }
+      }
+      c.reveal = ease(c.reveal || 0, near, near > (c.reveal || 0) ? 9 : 4, dt);
+      const r0 = sizeOf(c) * a.sz * (1 + (named(c) ? .04 : .2) * c.reveal);
+      c.svx = ease(c.svx, c.vx, 8, dt); c.svy = ease(c.svy, c.vy, 8, dt);
+      const speed = Math.hypot(c.svx, c.svy), st = Math.min(c.mode === 'fling' ? .2 : .12, speed / 1100), vx = c.svx / (speed || 1), vy = c.svy / (speed || 1);
+      const sigh = 1 + .1 * Math.sin(Math.PI * (1 - c.kick)) * (c.kick > 0);
+      const pts = [];
+      for (let i = 0; i < N; i++) {
+        const th = i / N * Math.PI * 2, ux = Math.cos(th), uy = Math.sin(th), along = ux * vx + uy * vy;
+        let r = (c.R + (running ? (.35 * Math.sin(2 * th + tt * .5 + c.phase) + .25 * Math.sin(3 * th - tt * .37 + c.phase)) * a.sz : 0)) * c.scale * sigh;
+        r *= 1 + st * (2 * along * along - 1);
+        if (c.mode === 'live') for (const o of live) {
+          if (o === c) continue;
+          const ox = o.x - c.x, oy = o.y - c.y, D = Math.hypot(ox, oy); if (D < .01 || D > c.R + o.R + 4) continue;
+          const dot = (ux * ox + uy * oy) / D; if (dot <= .05) continue;
+          const plane = D / 2 + (c.R * c.R - o.R * o.R) / (2 * D) - GAP / 2;
+          r = smin(r, plane / dot, SOFT * a.sz);
+        }
+        r = Math.max(r, c.R * c.scale * .35);
+        pts.push([c.x + r * ux, c.y + r * uy]);
+      }
+      if (c.mode === 'live' && !c.hidden && a.drag?.cell !== c) { const area = polygonArea(pts) / Math.max(.01, (c.scale * sigh) ** 2); c.R = ease(c.R, r0 * Math.sqrt(Math.PI * r0 * r0 / Math.max(area, 1)), 2, dt); c.R = Math.min(c.R, r0 * 1.2); }
+      else c.R = ease(c.R, r0, 4, dt);
+      let gx = 0, gy = 0; for (const p of pts) { gx += p[0]; gy += p[1]; } gx /= N; gy /= N; c.cx = gx; c.cy = gy;
+      const d = curve(pts);
+      c.b.setAttribute('d', d); c.h.setAttribute('d', d); c.m.setAttribute('d', d);
+      c.b.style.fillOpacity = fx(c.solid); c.h.style.opacity = fx(Math.min(1, c.heat + c.flash));
+      c.stop.setAttribute('stop-opacity', fx((a.theme === 'dark' ? .22 : .15) * (1 + 1.4 * c.flash)));
+      if (c.solid < .985) c.m.setAttribute('stroke-dasharray', `2.5 ${fx(3.5 * (1 - c.solid))}`); else if (c.kind !== 'more' && !c.ask) c.m.removeAttribute('stroke-dasharray');
+      if (c.heat + c.flash > .01) { c.gr.setAttribute('cx', fx(50 + 16 * Math.sin(t * .23 + c.phase)) + '%'); c.gr.setAttribute('cy', fx(46 + 13 * Math.sin(t * .19 + c.phase * 1.3)) + '%'); }
+      c.g.style.opacity = fx(c.alpha);
+
+      // Label and nucleus sit together as one centred block: nucleus on top, the name below on one or two lines.
+      const rr = (c.mode === 'live' ? r0 : c.R) * c.scale;
+      const lay = c.kind === 'more' ? { lines: [c.name], font: 10, lh: 12 } : layout(c.name, rr);
+      const key = lay.lines.join('\n') + '|' + lay.font;
+      if (key !== c.shownKey) {
+        c.shownKey = key; c.shown = lay.lines.join('\n');
+        c.label.innerHTML = lay.lines.map(s => `<tspan x="0">${s}</tspan>`).join('');
+        c.label.setAttribute('font-size', lay.font); c.lay = lay;
+      }
+      c.want = ease(c.want ?? (named(c) ? 1 : 0), named(c) ? 1 : 0, 2.5, dt);
+      const vis = words * clamp((c.scale - .6) / .4) * (lay.lines.length ? 1 : 0) * Math.max(c.want, c.reveal);
+      c.full = c.kind === 'more' || (vis > .5 && lay.lines.join('') === c.name);
+      c.label.style.opacity = fx(vis);
+      c.nx = ease(c.nx, running ? 1.4 * Math.sin(tt * .53 + c.phase) + .5 * Math.sin(tt * 1.1 + c.phase * 2) : 0, 3, dt);
+      c.ny = ease(c.ny, running ? Math.sin(tt * .41 + c.phase * 1.7) : 0, 3, dt);
+      const nr = c.kind === 'more' ? 0 : c.state === 'done' ? 3.2 : c.cur ? 2.9 : running ? 2.6 + .15 * Math.sin(tt * .6 + c.phase) : c.state === 'queued' ? 2.4 : 1.8 + c.w * .8;
+      // The nucleus slides up to make room only as far as the name has surfaced.
+      const lines = c.lay.lines.length, block = c.kind === 'more' ? 0 : lines ? 2 * nr + 4 + lines * c.lay.lh : 0, room = clamp(vis * 1.4);
+      const top0 = gy - block / 2 * c.scale;
+      c.n.setAttribute('cx', fx(gx + c.nx * a.sz)); c.n.setAttribute('cy', fx(gy + ((lines ? top0 + nr * c.scale : gy) - gy) * room + c.ny * a.sz));
+      c.n.setAttribute('r', fx(nr * c.scale * Math.max(.62, a.sz)));
+      const ty = c.kind === 'more' ? gy : top0 + (2 * nr + 4 + c.lay.lh / 2) * c.scale;
+      c.label.setAttribute('transform', `translate(${fx(gx)} ${fx(ty)}) scale(${fx(Math.max(.01, c.scale))})`);
+      [...c.label.children].forEach((s, i) => s.setAttribute('y', fx(i * c.lay.lh)));
+
+      // Necks: budding off the One mark, fusing into another topic, a pending merge, or the preview while dragging onto a topic.
+      let neck = null, other = null;
+      if (c.mode === 'bud') neck = bridge(L, markR, { x: gx, y: gy }, rr);
+      else if (c.mode !== 'fling') {
+        other = c.mode === 'leave' ? c.dest.cell : a.bonds.find(b => b[0] === c)?.[1] || (a.drag?.cell === c && a.target?.kind === 'cell' ? a.target.cell : null);
+        if (other && a.cells.includes(other)) neck = bridge({ x: other.cx, y: other.cy }, other.R * other.scale, { x: gx, y: gy }, rr, c.mode === 'leave' ? rr * 1.6 : rr + 6 * a.sz);
+      }
+      c.nf.setAttribute('d', neck ? neck.fill : ''); c.ne.setAttribute('d', neck ? neck.edge : '');
+      if (neck) { const tgt = other || { state: 'running' }; c.nf.style.fill = tgt.state === 'done' ? 'var(--d-fill)' : tgt.state === 'idle' && !tgt.cur ? 'var(--sb)' : 'var(--tint)'; }
+      c.neck.style.opacity = fx(c.alpha);
+      const dL = Math.hypot(c.x - L.x, c.y - L.y);
+      if (c.mode === 'bud' && (!bud || dL < bud.d)) bud = { d: dL, a: Math.atan2(c.y - L.y, c.x - L.x) };
+    }
+
+    // Vesicles: each message buds off one body, arcs over, and fuses into the other.
+    for (const v of [...a.ves]) {
+      v.t += dt / v.dur;
+      const p0 = v.from(), p2 = v.to(), k = v.t >= 1 ? 1 : v.t < .5 ? 2 * v.t * v.t : 1 - (-2 * v.t + 2) ** 2 / 2;
+      v.toMark = Math.hypot(p2.x - L.x, p2.y - L.y) < 1;
+      const mx = (p0.x + p2.x) / 2, my = (p0.y + p2.y) / 2, dx = p2.x - p0.x, dy = p2.y - p0.y;
+      const c1 = { x: mx - dy * .22, y: my + dx * .22 };
+      let x = (1 - k) ** 2 * p0.x + 2 * (1 - k) * k * c1.x + k * k * p2.x, y = (1 - k) ** 2 * p0.y + 2 * (1 - k) * k * c1.y + k * k * p2.y;
+      if (v.t >= 1 && v.hold) { x += 2.2 * Math.sin(t * 2.1); y += 1.6 * Math.sin(t * 2.9); }
+      const grow = v.hold ? clamp(k / .15) : clamp(k / .15) * clamp((1 - k) / .2 + .25);
+      v.el.setAttribute('transform', `translate(${fx(x)} ${fx(y)}) scale(${fx(grow * Math.max(.7, a.sz))})`);
+      v.x = x; v.y = y;
+      const dm = Math.hypot(x - L.x, y - L.y);
+      if (dm < 26 && (!bud || dm < bud.d)) bud = { d: dm, a: Math.atan2(y - L.y, x - L.x) };
+      if (v.t >= 1 + v.hold / v.dur) { v.el.remove(); a.ves.splice(a.ves.indexOf(v), 1); v.arrive(); }
+    }
+
+    // The One mark: breathes, swells when messages leave or answers come back, bulges toward a bud, and its nucleus glances at its cells.
+    a.pulse = Math.max(0, a.pulse - dt * 1.4);
+    const k = a.pulse * a.pulse, pts = [], bump = bud ? 1.9 * (1 - Math.min(1, bud.d / 60)) : 0;
+    for (let i = 0; i < 44; i++) { const g = i / 44 * 2 * Math.PI; let r = MARK_R + .12 * Math.sin(.25 * t) + .22 * Math.sin(2 * g + .18 * t) + .07 * Math.sin(3 * g - .11 * t) + .8 * k; if (bump) r += bump * Math.max(0, Math.cos(g - bud.a)) ** 3; pts.push([10 + r * Math.cos(g), 10 + r * Math.sin(g)]); }
+    a.bm.setAttribute('d', curve(pts));
+    const vfocus = a.ves[0], busy = live.filter(c => c.state !== 'idle');
+    const focus = a.drag?.cell || vfocus || (busy.length ? { x: busy.reduce((s, c) => s + c.x, 0) / busy.length, y: busy.reduce((s, c) => s + c.y, 0) / busy.length } : null);
+    let lx = 0, ly = 0;
+    if (focus) { const dx = focus.x - L.x, dy = focus.y - L.y, dd = Math.hypot(dx, dy) || 1, amt = a.drag || vfocus ? 1.3 : .7; lx = dx / dd * amt; ly = dy / dd * amt; }
+    a.look.x = ease(a.look.x, lx, 3, dt); a.look.y = ease(a.look.y, ly, 3, dt);
+    a.bn.setAttribute('cx', fx(10 + .6 * Math.sin(.13 * t) + a.look.x)); a.bn.setAttribute('cy', fx(10 + .55 * Math.sin(.17 * t) + a.look.y)); a.bn.setAttribute('r', fx(2.9 + .12 * Math.sin(.4 * t) + .4 * k));
+  }
+  let t = 0, last = performance.now();
+  function frame(n) {
+    const dt = Math.min(1 / 30, (n - last) / 1000); last = n; if (!reduced) t += dt;
+    for (const a of apps) step(a, t, dt);
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
