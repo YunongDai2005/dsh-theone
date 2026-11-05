@@ -87,7 +87,33 @@ const runOf = (row: Record<string, unknown>): TopicRun => ({ messageId: String(r
   sessionId: String(row.session_id), outcome: String(row.outcome) as TopicRun['outcome'], startedAt: Number(row.started_at),
   ...(row.ended_at == null ? {} : { endedAt: Number(row.ended_at) }) })
 
+export interface StoreChange { kind: string; args: readonly unknown[]; result: unknown }
+/** Public mutation boundaries include nested writes, and only notify after their transaction succeeds. */
+function publishes<Args extends unknown[], Result>(method: (this: ContextStore, ...args: Args) => Result, context: ClassMethodDecoratorContext<ContextStore>) {
+  return function(this: ContextStore, ...args: Args): Result { return this.observeMutation(String(context.name), args, () => method.apply(this, args)) }
+}
+
 export class ContextStore {
+  private mutationDepth = 0
+  private readonly changeListeners = new Set<(change: StoreChange) => void>()
+  subscribe(listener: (change: StoreChange) => void): () => void {
+    this.changeListeners.add(listener); return () => { this.changeListeners.delete(listener) }
+  }
+  observeMutation<T>(kind: string, args: readonly unknown[], operation: () => T): T {
+    this.mutationDepth++
+    let result: T, succeeded = false
+    try { result = operation(); succeeded = true; return result }
+    finally {
+      this.mutationDepth--
+      if (succeeded && !this.mutationDepth && !this.db.isTransaction) for (const listener of this.changeListeners) {
+        try { listener({ kind, args, result: result! }) } catch { /* A read-side observer cannot fail a committed write. */ }
+      }
+    }
+  }
+  /** Scope membership is checked without loading a session. */
+  gatewayIds(gatewayKey: string): string[] {
+    return this.db.prepare('SELECT gateway_id FROM gateway_sessions WHERE gateway_key = ? ORDER BY rowid').all(gatewayKey).map(row => String(row.gateway_id))
+  }
   private readonly db: DatabaseSync
   readonly learningJournal: LearningJournal
 
@@ -261,6 +287,7 @@ export class ContextStore {
     return { values, revision: row.revision }
   }
 
+  @publishes
   saveSettings(gatewayKey: string, values: unknown, revision: number): boolean {
     const result = this.db.prepare(`INSERT INTO plugin_settings(gateway_key, settings, revision)
       SELECT ?, ?, 1 WHERE ? = 0 OR EXISTS(SELECT 1 FROM plugin_settings WHERE gateway_key = ? AND revision = ?)
@@ -270,6 +297,7 @@ export class ContextStore {
   }
 
   /** Only model identity is persisted. API credentials remain owned by DSH. */
+  @publishes
   rememberModel(gatewayKey: string, selection: ModelSelection): void {
     if (!selection.provider || !selection.model || selection.provider === 'theone') throw new Error('Invalid backing model')
     const value = { provider: selection.provider, model: selection.model,
@@ -282,6 +310,7 @@ export class ContextStore {
     return row ? JSON.parse(String(row.selection)) as ModelSelection : undefined
   }
 
+  @publishes
   seed(contexts: ContextDescriptor[]): void {
     for (const context of contexts) {
       this.db.prepare('INSERT OR IGNORE INTO contexts VALUES (?, ?, ?)')
@@ -338,6 +367,7 @@ export class ContextStore {
    * placeholder summary, not a compaction summary (written from the whole session); either way
    * routing reads the current settled values and open items beside it (see routingSummary).
    */
+  @publishes
   applyCard(contextId: string, card: TopicCard, now = Date.now()): boolean {
     return this.learningJournal.record(`topic:${contextId}`, 'applyCard', [contextId, card, now], () => this.applyCardValue(contextId, card, now), false)
   }
@@ -381,6 +411,7 @@ export class ContextStore {
   }
 
   /** A dismissed reservation also prevents two background cards (or a restart) asking the same pair. */
+  @publishes
   recordMergePrompt(a: string, b: string, answer: MergePromptAnswer, now = Date.now()): void {
     if (a === b) return
     const known = this.db.prepare('SELECT 1 FROM contexts WHERE id = ? UNION ALL SELECT 1 FROM topic_merges WHERE source_id = ? LIMIT 1')
@@ -423,6 +454,7 @@ export class ContextStore {
   }
 
   /** Record the fixed "TheOne · Main chat" entry; other sessions may also use TheOne and switch away. */
+  @publishes
   rememberGateway(gatewayKey: string, sessionId: string): void {
     this.db.prepare('INSERT OR IGNORE INTO gateway_sessions VALUES (?, ?)').run(gatewayKey, sessionId)
     this.db.prepare('INSERT OR IGNORE INTO pinned_gateways VALUES (?)').run(sessionId)
@@ -440,6 +472,7 @@ export class ContextStore {
   stowedSessionIds(): string[] {
     return this.db.prepare('SELECT session_id FROM stowed_sessions').all().map(row => String(row.session_id))
   }
+  @publishes
   markStowed(sessionId: string, stowed: boolean, now = Date.now()): void {
     if (stowed) this.db.prepare('INSERT OR REPLACE INTO stowed_sessions VALUES (?, ?)').run(sessionId, now)
     else this.db.prepare('DELETE FROM stowed_sessions WHERE session_id = ?').run(sessionId)
@@ -458,6 +491,7 @@ export class ContextStore {
     return this.db.prepare('SELECT consent FROM catalog_consent WHERE id = 1').get()?.consent as 'granted' | 'declined' | undefined
   }
 
+  @publishes
   setCatalogConsent(value: 'granted' | 'declined'): void {
     this.db.prepare('INSERT OR REPLACE INTO catalog_consent VALUES (1, ?, ?)').run(value, Date.now())
   }
@@ -468,6 +502,7 @@ export class ContextStore {
       folders: rows.filter(row => row.kind === 'folder').map(row => String(row.value)) }
   }
 
+  @publishes
   setCatalogExcluded(kind: 'session' | 'folder', value: string, excluded: boolean): void {
     if (excluded) this.db.prepare('INSERT OR REPLACE INTO catalog_exclusions VALUES (?, ?, ?)').run(kind, value, Date.now())
     else this.db.prepare('DELETE FROM catalog_exclusions WHERE kind = ? AND value = ?').run(kind, value)
@@ -484,6 +519,7 @@ export class ContextStore {
     return row ? { throughSeq: Number(row.through_seq), status: String(row.status) } : undefined
   }
 
+  @publishes
   markIndex(sessionId: string, throughSeq: number, status: 'ready' | 'failed' | 'skipped' | 'excluded', errorCode?: string): void {
     this.db.prepare('INSERT OR REPLACE INTO history_index VALUES (?, ?, ?, ?)').run(sessionId, throughSeq, status, errorCode ?? null)
   }
@@ -500,6 +536,7 @@ export class ContextStore {
   }
 
   /** One validated batch commits descriptors, groups and exact source ranges atomically. */
+  @publishes
   importTopics(sessionId: string, cwd: string | undefined, parts: HistoryPart[], topics: ExtractedTopic[]): void {
     this.db.exec('SAVEPOINT store_write')
     try {
@@ -545,6 +582,7 @@ export class ContextStore {
     }, undefined)
   }
 
+  @publishes
   mount(gatewayKey: string, contextId: string): void {
     if (!this.contexts().some(context => context.id === contextId)) throw new Error('Unknown Context')
     this.db.prepare('INSERT INTO gateway_state VALUES (?, ?) ON CONFLICT(gateway_key) DO UPDATE SET context_id = excluded.context_id').run(gatewayKey, contextId)
@@ -559,6 +597,7 @@ export class ContextStore {
    * Model-maintained progress is bounded and auditable; stable project identity remains unchanged.
    * Given in three parts, it is kept as such and `lastState` is written from it; a free note replaces both.
    */
+  @publishes
   updateState(contextId: string, state: string | Progress, sessionId: string, throughSeq: number): void {
     return this.learningJournal.record(`topic:${contextId}`, 'updateState', [contextId, state, sessionId, throughSeq], () => this.updateStateValue(contextId, state, sessionId, throughSeq), undefined)
   }
@@ -589,6 +628,7 @@ export class ContextStore {
   }
 
   /** Reuse a completed DSH compaction checkpoint once, without another model call. */
+  @publishes
   updateSummary(contextId: string, summary: string, sessionId: string, summarySeq: number, endSeq: number): void {
     return this.learningJournal.record(`topic:${contextId}`, 'updateSummary', [contextId, summary, sessionId, summarySeq, endSeq], () => this.updateSummaryValue(contextId, summary, sessionId, summarySeq, endSeq), undefined)
   }
@@ -626,6 +666,7 @@ export class ContextStore {
   }
 
   /** Add learned evidence; a pair the user unlinked never learns back. */
+  @publishes
   learnLink(a: string, b: string, delta: number, now = Date.now()): void {
     return this.learningJournal.record(`link:${JSON.stringify(this.pair(a, b))}`, 'learnLink', [a, b, delta, now], () => this.learnLinkValue(a, b, delta, now), undefined)
   }
@@ -641,6 +682,7 @@ export class ContextStore {
   }
 
   /** 1 links a pair permanently, -1 keeps it apart, 0 returns it to learning. */
+  @publishes
   setManualLink(a: string, b: string, manual: TopicLink['manual'], now = Date.now()): void {
     return this.learningJournal.record(`link:${JSON.stringify(this.pair(a, b))}`, 'setManualLink', [a, b, manual, now], () => this.setManualLinkValue(a, b, manual, now), undefined)
   }
@@ -653,10 +695,12 @@ export class ContextStore {
   }
 
   /** Forget learned relatedness; the user's own links and separations stay. */
+  @publishes
   clearLearnedLinks(): void {
     this.db.exec("DELETE FROM topic_links WHERE manual = 0; UPDATE topic_links SET weight = 0; DELETE FROM learning_events WHERE stream LIKE 'link:%'; DELETE FROM learning_bases WHERE stream LIKE 'link:%'")
   }
 
+  @publishes
   setPrivate(contextId: string, value: boolean): void {
     this.db.prepare(`INSERT INTO topic_flags(context_id, private) VALUES (?, ?)
       ON CONFLICT(context_id) DO UPDATE SET private = excluded.private`).run(contextId, value ? 1 : 0)
@@ -676,6 +720,7 @@ export class ContextStore {
   }
 
   /** Standing rules for a topic, kept apart from summaries so compaction cannot drop them. */
+  @publishes
   setConstraints(contextId: string, text: string | null, now = Date.now()): void {
     return this.learningJournal.record(`topic:${contextId}`, 'setConstraints', [contextId, text, now], () => this.setConstraintsValue(contextId, text, now), undefined)
   }
@@ -693,6 +738,7 @@ export class ContextStore {
   }
 
   /** The latest full compaction summary of a topic's Worker and how far it covers. */
+  @publishes
   saveDigest(contextId: string, summary: string, throughSeq: number, now = Date.now()): void {
     return this.learningJournal.record(`topic:${contextId}`, 'saveDigest', [contextId, summary, throughSeq, now], () => this.saveDigestValue(contextId, summary, throughSeq, now), undefined)
   }
@@ -714,6 +760,7 @@ export class ContextStore {
     return row ? Number(row.seen_at) : undefined
   }
 
+  @publishes
   markSeen(reader: string, source: string, at: number): void {
     return this.learningJournal.record(`seen:${JSON.stringify([reader, source])}`, 'markSeen', [reader, source, at], () => this.markSeenValue(reader, source, at), undefined)
   }
@@ -752,6 +799,7 @@ export class ContextStore {
    * Idempotent planning reserves a worker ID before any DSH creation. A message planned while another
    * reply runs (`mount` false) leaves the topic in use as it is until main chat gets to it.
    */
+  @publishes
   plan(messageId: string, gatewayId: string, gatewayKey: string, proposed: Decision, mount = true): RouteRecord {
     this.db.exec('SAVEPOINT store_write')
     try {
@@ -817,6 +865,7 @@ export class ContextStore {
    * Give a message being answered to another topic (its first topic handed it back), and make that
    * topic the one in use. Returns the decision it now has, or undefined when the message has no route.
    */
+  @publishes
   moveRoute(messageId: string, gatewayKey: string, proposed: Decision, commitLearning = true): Decision | undefined {
     this.db.exec('SAVEPOINT store_write')
     try {
@@ -835,16 +884,19 @@ export class ContextStore {
   }
 
   /** Only a planned route may execute. Ambiguous interrupted work is never replayed automatically. */
+  @publishes
   claim(messageId: string): void {
     const result = this.db.prepare("UPDATE routing_events SET status = 'running' WHERE message_id = ? AND status = 'planned'").run(messageId)
     if (result.changes !== 1) throw new Error('This input has already started. Inspect its DSH session before resubmitting; automatic replay is disabled.')
   }
 
   /** Drop the route of a message main chat never got to (the user deleted it from the queue). */
+  @publishes
   forget(messageId: string): void {
     this.db.prepare("DELETE FROM routing_events WHERE message_id = ? AND status IN ('planned', 'running')").run(messageId)
   }
 
+  @publishes
   finish(messageId: string, status: 'completed' | 'failed'): void {
     this.db.prepare('UPDATE routing_events SET status = ? WHERE message_id = ?').run(status, messageId)
     const contextId = this.route(messageId)?.decision.contextId
@@ -852,6 +904,7 @@ export class ContextStore {
   }
 
   /** Whole-session access is allowed only for this Context's dedicated worker. */
+  @publishes
   addSource(contextId: string, sessionId: string, range?: { startSeq: number; endSeq: number }): void {
     const context = this.contexts().find(item => item.id === contextId)
     if (!context) throw new Error('Unknown Context')
@@ -889,6 +942,7 @@ export class ContextStore {
   }
 
   /** What a route was decided from: a short redacted excerpt and the classifier's receipt. */
+  @publishes
   recordRouteDetail(messageId: string, excerpt: string, receipt: unknown): void {
     this.db.prepare('INSERT OR IGNORE INTO route_details(message_id, excerpt, receipt) VALUES (?, ?, ?)').run(messageId, excerpt, JSON.stringify(receipt))
   }
@@ -922,6 +976,7 @@ export class ContextStore {
   }
 
   /** Record that a message belonged to another topic; later routing learns from it. */
+  @publishes
   correctRoute(messageId: string, contextId: string, now = Date.now()): void {
     if (!this.route(messageId)) throw new Error('Unknown route')
     if (!this.contexts().some(context => context.id === contextId)) throw new Error('Unknown Context')
@@ -936,6 +991,7 @@ export class ContextStore {
    * Terms a correction showed belong to a topic (positive delta) or not (negative). Weights fade
    * over time, stay within 0–5, and a term that falls to nothing is forgotten.
    */
+  @publishes
   learnTerms(contextId: string, terms: string[], delta: number, now = Date.now()): void {
     return this.learningJournal.record(`topic:${contextId}`, 'learnTerms', [contextId, terms, delta, now], () => this.learnTermsValue(contextId, terms, delta, now), undefined)
   }
@@ -997,6 +1053,7 @@ export class ContextStore {
   }
 
   /** Terms a correction showed belong to this topic, newest kept first. */
+  @publishes
   addKeywords(contextId: string, terms: string[]): void {
     return this.learningJournal.record(`topic:${contextId}`, 'addKeywords', [contextId, terms], () => this.addKeywordsValue(contextId, terms), undefined)
   }
@@ -1013,6 +1070,7 @@ export class ContextStore {
   }
 
   /** The user's own wording for a topic outranks what the catalog extracted. */
+  @publishes
   editTopic(contextId: string, change: { title?: string; summary?: string; lastState?: string }): void {
     return this.learningJournal.record(`topic:${contextId}`, 'editTopic', [contextId, change], () => this.editTopicValue(contextId, change), undefined)
   }
@@ -1029,6 +1087,7 @@ export class ContextStore {
     if (summary) this.db.prepare("INSERT OR REPLACE INTO context_summary_updates(context_id, session_id, summary_seq, end_seq, summary) VALUES (?, 'user', 0, 0, ?)").run(contextId, summary)
   }
 
+  @publishes
   createTopic(title: string, summary?: string): string {
     const name = title.trim()
     if (!name || name.length > 80 || this.contexts().some(context => context.title.toLowerCase() === name.toLowerCase())) throw new Error('Invalid topic title')
@@ -1041,6 +1100,7 @@ export class ContextStore {
    * A branch of a topic: a new topic with the same descriptor, constraints, privacy, workspace and
    * folder, whose work continues in `workingSessionId` (a fork of the topic's session).
    */
+  @publishes
   branchTopic(sourceId: string, title: string, workingSessionId: string, cwd?: string): string {
     const source = this.context(sourceId)
     const id = randomUUID()
@@ -1062,6 +1122,7 @@ export class ContextStore {
   }
 
   /** Put a topic in another topic workspace, or a new one named `title`; null leaves it unassigned. */
+  @publishes
   moveTopic(contextId: string, target: { groupId: string } | { title: string } | null): void {
     this.context(contextId)
     if (target === null) { this.assignGroup(contextId, null); this.markOnce(`merge-moved:${contextId}`); return }
@@ -1088,6 +1149,7 @@ export class ContextStore {
   }
 
   /** Attach a whole existing session to a topic as reviewed history its Worker may search. */
+  @publishes
   attachSession(contextId: string, sessionId: string): void {
     this.addSource(contextId, sessionId, WHOLE_SESSION)
   }
@@ -1097,6 +1159,7 @@ export class ContextStore {
    * own Worker session becomes searchable history of the target. The source topic leaves the
    * directory, but everything the merge did is written down so `unmergeTopic` can take it apart.
    */
+  @publishes
   mergeTopics(sourceId: string, targetId: string, now = Date.now()): void {
     const sources = this.learningJournal.dependencies(`topic:${sourceId}`)
     const projection = this.learningSnapshot(`topic:${sourceId}`)
@@ -1190,6 +1253,7 @@ export class ContextStore {
    * Take a merge apart: the source topic comes back with what it had, and what came from it leaves
    * the target. What either topic did since stays where it happened.
    */
+  @publishes
   unmergeTopic(sourceId: string): string {
     const row = this.db.prepare('SELECT * FROM topic_merges WHERE source_id = ?').get(sourceId)
     if (!row) throw new Error('Not a merged topic')
@@ -1254,6 +1318,7 @@ export class ContextStore {
   }
 
   /** Remove a topic and everything TheOne kept about it. DSH keeps the conversations themselves. */
+  @publishes
   deleteTopic(contextId: string): void {
     const context = this.context(contextId)
     this.db.exec('SAVEPOINT store_write')
@@ -1364,6 +1429,7 @@ export class ContextStore {
    * within the topic; names are never matched loosely. The write is refused when it is stale, when its
    * evidence is older than the current version's, or when a proposal would replace a confirmed value.
    */
+  @publishes
   recordFact(contextId: string, write: FactWrite, now = Date.now()): FactResult {
     this.context(contextId)
     if (!this.learningJournal.valid(this.factSources(write.evidence))) return { outcome: 'rejected', reason: 'excluded-route' }
@@ -1401,6 +1467,7 @@ export class ContextStore {
   }
 
   /** The user said a fact no longer holds (or is not decided yet): a new version without a value. */
+  @publishes
   retractFact(contextId: string, factId: string, evidence: FactEvidence, origin: FactView['origin'], expectedVersion?: number, now = Date.now()): FactResult {
     if (!this.learningJournal.valid(this.factSources(evidence))) return { outcome: 'rejected', reason: 'excluded-route' }
     return this.inTransaction(() => {
@@ -1416,6 +1483,7 @@ export class ContextStore {
   }
 
   /** A fact reached a topic (by routing, a lookup or a change notice): log it and note the version seen. */
+  @publishes
   recordDelivery(contextId: string, fact: Pick<FactView, 'id' | 'version'>, via: 'route' | 'lookup' | 'notice', inputId?: string, now = Date.now()): void {
     this.db.prepare('INSERT INTO fact_deliveries (context_id, fact_id, version, input_id, via, at) VALUES (?, ?, ?, ?, ?, ?)').run(contextId, fact.id, fact.version, inputId ?? null, via, now)
     this.db.prepare(`INSERT INTO fact_dependencies VALUES (?, ?, ?, ?, ?)
@@ -1429,6 +1497,7 @@ export class ContextStore {
       .map(row => ({ factId: String(row.fact_id), versionSeen: Number(row.version_seen) }))
   }
 
+  @publishes
   forgetDependency(contextId: string, factId: string): void {
     this.db.prepare('DELETE FROM fact_dependencies WHERE context_id = ? AND fact_id = ?').run(contextId, factId)
   }
@@ -1479,6 +1548,7 @@ export class ContextStore {
   }
 
   /** A topic took up a message (one per message); a topic keeps its latest RUNS_KEPT records. */
+  @publishes
   startTopicRun(messageId: string, contextId: string, sessionId: string, now = Date.now()): void {
     this.db.prepare("INSERT OR REPLACE INTO topic_runs VALUES (?, ?, ?, 'running', ?, NULL)").run(messageId, contextId, sessionId, now)
     this.db.prepare(`DELETE FROM topic_runs WHERE context_id = ? AND message_id NOT IN
@@ -1486,22 +1556,26 @@ export class ContextStore {
   }
 
   /** How the topic's work on a message ended. A record already settled keeps its outcome, except a move. */
+  @publishes
   endTopicRun(messageId: string, outcome: Exclude<TopicRun['outcome'], 'running'>, now = Date.now()): void {
     this.db.prepare(`UPDATE topic_runs SET outcome = ?, ended_at = ? WHERE message_id = ? AND (outcome = 'running' OR ? = 'moved')`)
       .run(outcome, now, messageId, outcome)
   }
 
   /** A run marked interrupted at startup turned out to have finished before the restart. */
+  @publishes
   recoverTopicRun(messageId: string, now = Date.now()): void {
     this.db.prepare("UPDATE topic_runs SET outcome = 'completed', ended_at = ? WHERE message_id = ? AND outcome = 'interrupted'").run(now, messageId)
   }
 
   /** Work never shown (the message was deleted from main chat's queue) leaves no record. */
+  @publishes
   dropTopicRun(messageId: string): void {
     this.db.prepare('DELETE FROM topic_runs WHERE message_id = ?').run(messageId)
   }
 
   /** Work that was running when TheOne stopped (a restart) did not finish: it is interrupted. */
+  @publishes
   interruptTopicRuns(now = Date.now()): string[] {
     const rows = this.db.prepare("SELECT message_id FROM topic_runs WHERE outcome = 'running'").all().map(row => String(row.message_id))
     this.db.prepare("UPDATE topic_runs SET outcome = 'interrupted', ended_at = ? WHERE outcome = 'running'").run(now)
@@ -1526,6 +1600,7 @@ export class ContextStore {
   }
 
   /** The user said the topic's matter is done (`undefined` reopens it). */
+  @publishes
   declareTopic(contextId: string, declared: 'done' | undefined, now = Date.now()): void {
     this.context(contextId)
     if (declared) this.db.prepare('INSERT OR REPLACE INTO topic_status VALUES (?, ?, ?)').run(contextId, declared, now)
@@ -1537,6 +1612,7 @@ export class ContextStore {
   }
 
   /** A changed-files card in main chat (`gatewayId`, `seq`) reads the topic's record (`sessionId`, `seq`). */
+  @publishes
   linkChange(gatewayId: string, seq: number, source: { sessionId: string; seq: number; turn: number }): void {
     this.db.prepare('INSERT OR REPLACE INTO change_links VALUES (?, ?, ?, ?, ?)').run(gatewayId, seq, source.sessionId, source.seq, source.turn)
   }
@@ -1547,11 +1623,13 @@ export class ContextStore {
   }
 
   /** Notices the user closed; they are not shown again on any browser. */
+  @publishes
   dismissNotice(id: string, now = Date.now()): void {
     this.db.prepare('INSERT OR IGNORE INTO dismissed_notices VALUES (?, ?)').run(id, now)
   }
 
   /** True the first time `name` is marked, false ever after: for one-time repairs. */
+  @publishes
   markOnce(name: string, now = Date.now()): boolean {
     return this.db.prepare('INSERT OR IGNORE INTO plugin_flags VALUES (?, ?)').run(name, now).changes === 1
   }
@@ -1562,12 +1640,14 @@ export class ContextStore {
     return row ? JSON.parse(String(row.state)) as T : undefined
   }
 
+  @publishes
   saveRemoteLink(channel: string, state: unknown): void {
     if (state === undefined) this.db.prepare('DELETE FROM remote_links WHERE channel = ?').run(channel)
     else this.db.prepare('INSERT INTO remote_links VALUES (?, ?) ON CONFLICT(channel) DO UPDATE SET state = excluded.state').run(channel, JSON.stringify(state))
   }
 
   /** What a correction of `messageId` taught, so undoing it can take exactly that back. */
+  @publishes
   recordCorrectionTerms(messageId: string, contextId: string, terms: string[], delta: number): void {
     for (const term of terms) this.db.prepare('INSERT INTO correction_terms VALUES (?, ?, ?, ?)').run(messageId, contextId, term, delta)
   }
@@ -1577,6 +1657,7 @@ export class ContextStore {
    * taught are taken back, and the first topic's turn counts as its own again. Returns the topic the
    * message was moved to, or undefined when it was not moved.
    */
+  @publishes
   uncorrectRoute(messageId: string, now = Date.now()): string | undefined {
     const row = this.db.prepare('SELECT corrected_to FROM route_details WHERE message_id = ?').get(messageId)
     if (!row?.corrected_to) return undefined
@@ -1601,6 +1682,7 @@ export class ContextStore {
   }
 
   /** A topic's turn for a message that was not its own: later reads of its history leave it out. */
+  @publishes
   recordMisroute(turn: { messageId: string; contextId: string; sessionId: string; startSeq: number; endSeq: number; movedTo: string; request: string; changes?: string[] }, now = Date.now()): void {
     this.db.prepare('INSERT OR REPLACE INTO misrouted_turns VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
       .run(turn.messageId, turn.contextId, turn.sessionId, turn.startSeq, turn.endSeq, turn.movedTo, turn.request.slice(0, 600), now)
@@ -1649,6 +1731,7 @@ export class ContextStore {
   }
 
   /** Replace the hidden set in one write, so a scan never leaves a stale entry behind. */
+  @publishes
   replaceHidden(entries: readonly { id: string; reason: string }[], now = Date.now()): void {
     this.db.exec('SAVEPOINT store_write')
     try {
@@ -1661,8 +1744,10 @@ export class ContextStore {
 
   close(): void { this.db.close() }
   /** Bind every model-derived write to the input(s) that supplied its evidence. Synchronous only. */
+  @publishes
   withLearning<T>(sources: readonly LearningSource[], work: () => T): T { return this.learningJournal.using(sources, work) }
 
+  @publishes
   reassignLearning(messageId: string, contextId: string): void {
     this.inTransaction(() => {
       this.learningJournal.move(messageId, contextId)
@@ -1743,6 +1828,10 @@ export class ContextStore {
   }
 
   /** Positive user target confirmation releases verified facts, without waiting for another turn. */
+  @publishes
+  settleLearning(messageId: string, contextId: string): void { this.learningJournal.settle(messageId, contextId) }
+
+  @publishes
   confirmLearning(messageId: string, contextId: string): void {
     this.learningJournal.settle(messageId, contextId, true)
     for (const fact of this.facts(contextId)) {

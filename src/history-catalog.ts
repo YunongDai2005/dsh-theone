@@ -100,6 +100,7 @@ export class HistoryCatalog {
   private timer?: ReturnType<typeof setTimeout>
   private dirty = false
   private activeRequest?: { id: string; cwd?: string; abort: AbortController }
+  onStatusChange?: () => void
   private status: CatalogStatus = { running: false, scanned: 0, indexed: 0, skipped: 0, failed: 0, pending: 0 }
   /** Sessions the last finished scan could not index; a scan in progress doesn't make the catalog incomplete. */
   private settledPending?: number
@@ -136,13 +137,14 @@ export class HistoryCatalog {
     if (this.abort.signal.aborted) return Promise.resolve()
     if (!this.run) {
       this.dirty = false; clearTimeout(this.timer)
-      this.run = this.scan().finally(() => { this.run = undefined; this.status.running = false; this.schedule(this.dirty ? 1000 : this.intervalMs) })
+      this.run = this.scan().finally(() => { this.run = undefined; this.status.running = false; this.onStatusChange?.(); this.schedule(this.dirty ? 1000 : this.intervalMs) })
     }
     return this.run
   }
 
   private async scan(): Promise<void> {
     this.status = { ...this.status, running: true, scanned: 0, indexed: 0, skipped: 0, failed: 0, pending: 0, waiting: 0, excluded: 0 }
+    this.onStatusChange?.()
     const signal = this.abort.signal
     let records
     try { records = await this.ctx.sessionQuery.listSessions(signal) }

@@ -99,6 +99,7 @@ export class BubbleActivity {
     if (!item || item.phase === 'superseded') return
     const before = JSON.stringify([item.phase, item.delivery, item.messageIds])
     const deliveryBefore = item.delivery.phase
+    if (['selected', 'showing', 'shown'].includes(run.delivery.phase)) item.lane = 'foreground'
     item.phase = run.observedPhase; item.delivery = structuredClone(run.delivery)
     item.messageIds = [...new Set([...item.messageIds, ...run.forwarded.keys()])]
     if (item.phase !== 'starting') delete item.queueReason

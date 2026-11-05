@@ -59,6 +59,7 @@ import type { AppHost } from './remote-app.ts'
 import { PersistentWork, type ResearchTask } from './persistent-work.ts'
 import type { WorkJob, WorkNotice } from './work-store.ts'
 import type { WorkScope, WorkOutcome } from './work-scheduler.ts'
+import { BubbleAggregator, parseBubbleQuery } from './bubble-aggregator.ts'
 import { BubbleActivity } from './bubble-activity.ts'
 import { projectBubbles } from './bubble-projection.ts'
 import type { BubbleView, BubbleWorkItem } from './bubble-types.ts'
@@ -353,6 +354,7 @@ export default class TheOne extends Service {
   readonly bindings: RoutingBindings
   readonly shadow?: RoutingShadow
   shadowError?: string
+  readonly bubbles: BubbleAggregator
   readonly bubbleActivity = new BubbleActivity()
   readonly store: ContextStore
   readonly work: PersistentWork
@@ -453,6 +455,7 @@ export default class TheOne extends Service {
     this.noticeBoard = new NoticeBoard(this.updater.current, config.noticeUrl || NOTICE_URL)
     ctx.effect(() => async () => {
       this.stopping = true
+      this.bubbles?.close()
       if (!this.reloadingSelf && !this.selectedInProfile(profileDir()))
         await this.releaseDefaultModel().catch(error => console.warn('TheOne could not switch DSH\'s default model back.', error))
       for (const timer of this.stowTimers.values()) clearTimeout(timer)
@@ -500,6 +503,22 @@ export default class TheOne extends Service {
     this.telegram = new TelegramApp(ctx, host('telegram'))
     this.imessage = new IMessageApp(ctx, host('imessage'))
     for (const app of [this.weixin, this.telegram, this.imessage]) app.apply()
+    this.bubbles = new BubbleAggregator(config.gatewayKey, id => this.bubbleView(id), () => { const latest = this.store.latestGateway(config.gatewayKey); return [...this.store.gatewayIds(config.gatewayKey).filter(id => id !== latest), ...(latest ? [latest] : [])] })
+    if (this.catalog) this.catalog.onStatusChange = () => this.bubbles.publish()
+    ctx.effect(() => this.bubbleActivity.subscribe((events, id) => this.bubbles.publish(events, id)))
+    ctx.effect(() => this.store.subscribe(change => {
+      const events: import('./bubble-types.ts').BubbleEventData[] = []
+      if (change.kind === 'uncorrectRoute' && change.result) {
+        const original = this.store.route(String(change.args[0]))?.decision.contextId
+        if (original) events.push({ type: 'route.moved', messageId: String(change.args[0]), fromId: String(change.result), toId: original, cause: 'undo', reexecute: false })
+      }
+      if (change.kind === 'mergeTopics') events.push({ type: 'topic.merged', sourceId: String(change.args[0]), targetId: String(change.args[1]) })
+      if (change.kind === 'unmergeTopic') events.push({ type: 'topic.unmerged', sourceId: String(change.args[0]), targetId: String(change.result) })
+      this.bubbles.publish(events)
+    }))
+    const bubbleTimer = setInterval(() => this.bubbles.publish(), 60000)
+    bubbleTimer.unref()
+    ctx.effect(() => () => clearInterval(bubbleTimer))
     this.registerCatalogChannel()
     this.work.start()
     this.adapter = ctx.llm.registerAdapter(['theone'], new GatewayAdapter(this))
@@ -951,7 +970,7 @@ export default class TheOne extends Service {
       receipt.trace.final = { ...route.decision }
       this.store.recordRouteDetail(input.id, redactRoutingText(text).replace(/\s+/g, ' ').trim().slice(0, 160) || attachmentLabel,
         Object.fromEntries(Object.entries(receipt).filter(([, value]) => value !== undefined)))
-      if (route.decision.correctionOf && route.decision.contextId) this.applyCorrection(route.decision.correctionOf, route.decision.contextId, previous?.text)
+      if (route.decision.correctionOf && route.decision.contextId) this.applyCorrection(route.decision.correctionOf, route.decision.contextId, previous?.text, 1, true, 'spoken_correction')
       // A routing proposal alone does not teach relatedness.
       const titleOf = (id?: string) => this.store.contexts().find(context => context.id === id)?.title
       const references = (route.decision.relatedIds ?? []).flatMap(id => titleOf(id) ?? [])
@@ -977,11 +996,14 @@ export default class TheOne extends Service {
   }
 
   /** Reads in-memory observations and store facts without loading sessions or starting work. */
-  bubbleView(gatewayId = this.store.latestGateway(this.config.gatewayKey)): BubbleView {
+  bubbleView(gatewayId: string | null | undefined = this.store.latestGateway(this.config.gatewayKey)): BubbleView {
     const agent = gatewayId ? this.ctx.agents.get(SessionId(gatewayId)) : undefined
     return projectBubbles(this.store, { scope: { gatewayKey: this.config.gatewayKey, gatewayId: gatewayId ?? null },
       workItems: this.bubbleActivity.snapshot(), busy: this.busy, linkScope: this.config.linkScope,
-      gateway: agent ? this.bubbleActivity.gateway(agent, this.store.current(this.config.gatewayKey) ?? null) : null })
+      gateway: agent ? this.bubbleActivity.gateway(agent, this.store.current(this.config.gatewayKey) ?? null) : null,
+      health: { catalog: !this.catalog ? 'unavailable' : this.catalog.snapshot().status.consent !== 'granted' ? 'consent_required'
+        : this.catalog.snapshot().status.running ? 'indexing' : this.catalog.snapshot().status.searchUnavailable ? 'unavailable' : 'ready',
+        router: this.router ? 'unknown' : 'rules' } })
   }
 
   private bubbleTemporary(decision: Decision, receipt: RouterReceipt): BubbleWorkItem['temporary'] {
@@ -1023,6 +1045,14 @@ export default class TheOne extends Service {
         path: string; methods: string[]; requestBody?: string; fetch: (request: Request) => Promise<Response>
       }) => () => void } } | undefined
       if (!connection?.fetch?.register) return
+      child.effect(() => connection.fetch!.register({ path: '/api/theone/bubbles', methods: ['GET'], fetch: async request => {
+        const headers = { 'cache-control': 'no-store' }
+        try { return Response.json(this.bubbles.read(parseBubbleQuery(new URL(request.url))), { headers }) }
+        catch (error) {
+          const code = error instanceof Error ? error.message : 'INVALID_CURSOR'
+          return Response.json({ error: code }, { status: code === 'UNKNOWN_GATEWAY' ? 404 : 400, headers })
+        }
+      } }))
       child.effect(() => connection.fetch!.register({ path: '/api/theone/messages', methods: ['POST'], requestBody: 'buffered', fetch: async request => {
         try {
           const body = await request.json() as { sessionId?: unknown; text?: unknown; binding?: unknown; mode?: unknown }
@@ -3312,6 +3342,7 @@ export default class TheOne extends Service {
       signal.throwIfAborted()
       return undefined
     }
+    this.bubbleActivity.publish([{ type: 'route.moved', messageId: run.inputId, fromId: contextId, toId: moved.contextId, cause: 'handback', reexecute: true }], gateway.id)
     this.store.reassignLearning(run.inputId, moved.contextId)
     // The first topic stops after this result; its turn is kept out of its history and memory.
     this.store.markOnce(`misroute:${run.inputId}`)
@@ -3682,9 +3713,12 @@ export default class TheOne extends Service {
    * gains the message's distinctive terms and the wrong one loses them; `weight` is lower for
    * implicit signals. The model picks the terms in one small call; plain extraction is the fallback.
    */
-  private applyCorrection(messageId: string, contextId: string, text?: string, weight = 1, record = true): void {
+  private applyCorrection(messageId: string, contextId: string, text?: string, weight = 1, record = true, cause: 'explicit' | 'spoken_correction' = 'explicit'): void {
     const route = this.store.route(messageId)
     if (record) this.store.correctRoute(messageId, contextId)
+    if (!record) this.bubbleActivity.publish([{ type: 'route.hint', messageId, suggestedId: contextId }], route?.gatewayId ?? null)
+    else if (route?.decision.contextId && route.decision.contextId !== contextId) this.bubbleActivity.publish([{ type: 'route.moved', messageId,
+      fromId: route.decision.contextId, toId: contextId, cause, reexecute: cause === 'spoken_correction' }], route.gatewayId)
     // The wrong topic's work on it no longer counts as its own.
     if (record && this.store.topicRun(messageId)?.contextId !== contextId) this.store.endTopicRun(messageId, 'moved')
     const wrongId = route?.decision.contextId !== contextId ? route?.decision.contextId : undefined
@@ -4063,7 +4097,7 @@ export default class TheOne extends Service {
       this.store.endTopicRun(run.inputId, abandon ? 'stopped' : !run.failure && run.outcome?.kind === 'completed' ? 'completed' : 'failed')
       const contextId = this.store.route(run.inputId)?.decision.contextId
       if (contextId && !abandon && !run.failure && run.outcome?.kind === 'completed') {
-        this.store.learningJournal.settle(run.inputId, contextId)
+        this.store.settleLearning(run.inputId, contextId)
         this.learnFromRoute(run.inputId, this.store.route(run.inputId)!.decision)
       }
       for (const messageId of run.forwarded.keys()) {
