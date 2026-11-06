@@ -28,6 +28,26 @@ test('open product replay creates a real topic, rechecks and restores it for the
   assert.ok(rows[0].card_usage.length > 0, 'actual product card work is counted separately')
 })
 
+for (const variant of ['none', 'compact']) for (const label of ['Pottery', 'Pottery, course']) {
+  test(`${variant} CREATE labels preserve the product replay call count: ${label}`, async () => {
+    let calls = 0
+    const client = { model: 'fixture', complete: async () => {
+      calls++
+      return { value: JSON.stringify({ action: 'CREATE', title: 'Pottery course', label, reason: 'new', historyIndependent: true }),
+        calls: 1, latency_ms: 1, usage: { input: 10, output: 5, cached: 0 }, usage_by_call: [{ input: 10, output: 5, cache_hit: 0 }] }
+    } }
+    const rows = await routeSession({ session_id: 'topic-label', threads: [], turns: [
+      { i: 0, text: 'Plan a pottery course' }, { i: 1, text: 'ok' },
+    ] }, { mode: 'open', variant, client })
+    assert.equal(rows[0].action, 'CREATE')
+    assert.equal(rows[0].decision.label, label === 'Pottery' ? 'Pottery' : undefined)
+    assert.equal(rows[1].pred, rows[0].pred)
+    assert.deepEqual(rows.map(row => row.calls), [2, 0])
+    assert.equal(calls, 2)
+    assert.ok(rows.every(row => !row.error))
+  })
+}
+
 test('every transport attempt retains its own layer, tokens and duration', async () => {
   const client = { model: 'fixture', complete: async () => ({ value: JSON.stringify({ action: 'EXISTING', contextId: 'a', reason: 'named' }),
     calls: 2, latency_ms: 10, latency_by_call: [4, 6], usage: { input: 30, cached: 12, output: 3 },

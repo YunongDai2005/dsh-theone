@@ -6,6 +6,7 @@ import type { ModelSelection } from '@deepseek-ai/dsh-agent'
 import type { BindingResolution, ContinuationResolution, TemporaryReturn, RoutingAttention } from './routing-bindings.ts'
 import type { LearningSource } from './learning-journal.ts'
 import type { ContextDescriptor, Decision } from './types.ts'
+import { normalizeTopicLabel } from './topic-label.ts'
 import { newIndependentTopic, referencesHistory, redactRoutingText } from './routing-policy.ts'
 import { FACT_LIMITS, type FactCandidate } from './facts.ts'
 import { EVIDENCE_LIMITS, RECHECK_PROMPT, type Recheck } from './routing-evidence.ts'
@@ -111,7 +112,8 @@ states 中的 activity（可能没有）是该话题最近一次活跃的时间�
 contexts 中的 project（可能没有）是该话题工作所在的项目文件夹名。消息明确提到某个项目或其中的文件时，优先选同一项目的话题；不同项目里名字相近的话题不是同一件事。states 中的 status 为 done 表示用户说过这件事已经做完：新消息明显是它的后续时照常选它（话题会重新打开），只是泛泛相似时不要选它。states 中的 status 为 waiting 表示该话题正等用户回应（授权、提问，或中断后等用户说继续）。
 CLARIFY 仅限：用户明确引用缺失旧聊天（如“继续上次那个”“用之前的链接”）；或者用户只指一个话题，但有两个以上确实相关的旧话题都可能是它，选错会改变后续处理且近期消息无法判断。第二种必须在 candidateIds 列出至少两个相关目录 ID。弱相关候选不构成澄清理由。多件独立任务可在一个新会话交给 Worker 处理，不因任务多而追问。
 只判断语义选择：EXISTING 选择一个已有话题；CREATE 创建新话题；CLARIFY 请求澄清。已有话题的KEEP、MOUNT、SWAP由程序根据挂载状态计算，你不要输出这三个机械动作。currentId为null表示尚未挂载话题，近期对话不代表已经挂载。
-输出 JSON：{"action":"EXISTING|CREATE|CLARIFY","contextId":"已有目录ID或null","relatedIds":"EXISTING或CREATE时本轮同时用到的其他目录ID数组，否则空数组","imports":"本轮使用的symbols ID数组，没有symbols时为空数组","title":"CREATE时的新话题标题，否则null","historyIndependent":"CREATE时为boolean，其他为null","aside":"CREATE时可选boolean，其他省略或null","projectId":"CREATE时选择的projects ID，否则或没有projects时为null","candidateIds":"CLARIFY时真正难以选择的多个目录ID数组，否则空数组","question":"CLARIFY时的简短澄清问题，否则null","reason":"不超过40字的判断依据"}。
+CREATE 时顺带给出 label，作为气泡上的独立短名：中文 2–4 个汉字，英文 1–2 个词且总长不超过 24 个字符（含空格），不带标点、符号或换行，能独立表意，不机械截断 title。用本轮 text 的语言书写，例如“规划日本旅行路线”的短名可用“日本游”，“Planning a pottery course”可用“Pottery”。其他动作省略 label；短名不影响话题选择。
+输出 JSON：{"action":"EXISTING|CREATE|CLARIFY","contextId":"已有目录ID或null","relatedIds":"EXISTING或CREATE时本轮同时用到的其他目录ID数组，否则空数组","imports":"本轮使用的symbols ID数组，没有symbols时为空数组","title":"CREATE时的新话题标题，否则null","label":"CREATE时的独立短名，其他省略","historyIndependent":"CREATE时为boolean，其他为null","aside":"CREATE时可选boolean，其他省略或null","projectId":"CREATE时选择的projects ID，否则或没有projects时为null","candidateIds":"CLARIFY时真正难以选择的多个目录ID数组，否则空数组","question":"CLARIFY时的简短澄清问题，否则null","reason":"不超过40字的判断依据"}。
 不得编造目录ID。CREATE和CLARIFY的contextId必须为null。title、question、reason 用本轮 text 的语言书写。`
 
 /** Fixed instructions; absent optional data never asks the router to do extra work. */
@@ -266,7 +268,8 @@ export function validateRoutingDecision(value: unknown, input: RoutingInput): De
     if (matches.length === 1) return existing(matches[0].id)
     // A project folder only from the offered list; anything else is ignored rather than failing the route.
     const project = typeof row.projectId === 'string' && (input.projects ?? []).some(item => item.id === row.projectId) ? { projectId: row.projectId } : {}
-    return { action: 'CREATE', title, reason, ...related(), ...imports, ...project, ...(row.aside === true ? { aside: true } : {}),
+    const label = normalizeTopicLabel(row.label)
+    return { action: 'CREATE', title, ...(label ? { label } : {}), reason, ...related(), ...imports, ...project, ...(row.aside === true ? { aside: true } : {}),
       ...(!referencesHistory(input.text) ? { historyIndependent: true } : typeof row.historyIndependent === 'boolean' ? { historyIndependent: row.historyIndependent } : {}) }
   }
   if (typeof row.question !== 'string' || !row.question.trim()) return fail('missing-question')

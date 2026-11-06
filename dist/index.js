@@ -4042,7 +4042,8 @@ export default class TheOne extends Service {
         if (decision.action === 'CREATE' && byRules && hint && decision.reason !== 'explicit-new-topic')
             return unclear;
         if (decision.action === 'CREATE' && !hint)
-            decision = { ...newIndependentTopic(previous.text, this.store.contexts(), 'correction'), title: decision.title ?? undefined };
+            decision = { ...newIndependentTopic(previous.text, this.store.contexts(), 'correction'),
+                title: decision.title ?? undefined, ...(decision.label ? { label: decision.label } : {}) };
         const { relatedIds: _, imports: _imports, ...chosen } = decision;
         return { ...chosen, action: decision.action === 'CREATE' ? 'CREATE' : 'MOUNT', reason: 'correction', correctionOf: previous.id };
     }

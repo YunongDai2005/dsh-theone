@@ -3,9 +3,12 @@ import type { ContextDescriptor } from './types.ts'
 import type { BubbleEdge, BubbleGateway, BubbleScope, BubbleTopic, BubbleView, BubbleWorkItem, Capability } from './bubble-types.ts'
 import type { LinkScope } from './linkage.ts'
 import { activityLabel, learnDormancy, topicStatus } from './topic-memory.ts'
+import { normalizeTopicLabel } from './topic-label.ts'
 
-/** Use existing names only, without truncating them or inventing a title abbreviation. */
+/** Prefer the classifier's short name; otherwise use existing terms without truncation. */
 function bubbleLabel(topic: ContextDescriptor): string | null {
+  const stored = normalizeTopicLabel(topic.label)
+  if (stored) return stored
   const title = topic.title.normalize('NFKC').toLowerCase()
   const candidates = [...topic.entities, ...topic.keywords].map((term, order) => {
     const label = term.normalize('NFKC').trim().replace(/ +/g, ' ')

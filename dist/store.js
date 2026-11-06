@@ -36,6 +36,7 @@ import { openDatabase } from "./sqlite.js";
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
+import { normalizeTopicLabel } from "./topic-label.js";
 import { FACT_KINDS, FACT_LIMITS, factKey, safe } from "./facts.js";
 import { LearningJournal, uniqueSources } from "./learning-journal.js";
 import { mergeSettled } from "./topic-memory.js";
@@ -768,6 +769,7 @@ let ContextStore = (() => {
                     const stated = existing && this.db.prepare('SELECT 1 FROM context_state_updates WHERE context_id = ? LIMIT 1').get(id);
                     const summarized = existing && this.db.prepare('SELECT 1 FROM context_summary_updates WHERE context_id = ? LIMIT 1').get(id);
                     const descriptor = { id, title: existing?.title ?? topic.title,
+                        ...(existing?.label ? { label: existing.label } : {}),
                         summary: summarized ? existing.summary : topic.summary, entities: topic.entities, keywords: topic.keywords,
                         lastState: stated ? existing.lastState : topic.lastState, ...(stated && existing.progress ? { progress: existing.progress } : {}) };
                     if (existing)
@@ -1031,11 +1033,13 @@ let ContextStore = (() => {
         topicFor(proposed, messageId) {
             if (proposed.action !== 'CREATE')
                 return { ...proposed };
+            const label = normalizeTopicLabel(proposed.label);
             const context = {
                 id: randomUUID(), title: proposed.title, summary: '新话题，尚无历史摘要。',
+                ...(label ? { label } : {}),
                 entities: [], keywords: [proposed.title], lastState: '等待首次执行',
             };
-            this.seed([{ ...context, title: '待整理话题', keywords: [] }]);
+            this.seed([{ ...context, title: '待整理话题', label: undefined, keywords: [] }]);
             this.withLearning([this.learningJournal.source(messageId, context.id)], () => this.catalogDescriptor(context.id, context));
             // A new topic about one of the user's projects works in that project's folder.
             if (proposed.folder) {
@@ -1279,7 +1283,7 @@ let ContextStore = (() => {
             const summary = change.summary?.trim();
             if (summary !== undefined && (!summary || summary.length > 2000))
                 throw new Error('Invalid topic summary');
-            this.writeDescriptor({ ...context, ...(title ? { title } : {}), ...(summary ? { summary } : {}) });
+            this.writeDescriptor({ ...context, ...(title ? { title, ...(title !== context.title ? { label: undefined } : {}) } : {}), ...(summary ? { summary } : {}) });
             // A hand-written summary is kept like a compaction summary: re-indexing will not overwrite it.
             if (summary)
                 this.db.prepare("INSERT OR REPLACE INTO context_summary_updates(context_id, session_id, summary_seq, end_seq, summary) VALUES (?, 'user', 0, 0, ?)").run(contextId, summary);
@@ -1307,7 +1311,7 @@ let ContextStore = (() => {
             const inherited = this.learningJournal.dependencies(`topic:${sourceId}`);
             this.withLearning(inherited, () => {
                 const { workingSessionId: _, ...descriptor } = source;
-                this.catalogDescriptor(id, { ...descriptor, id, title });
+                this.catalogDescriptor(id, { ...descriptor, id, title, label: undefined });
                 const constraints = this.constraints(sourceId);
                 if (constraints)
                     this.setConstraints(id, constraints.text);

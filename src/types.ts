@@ -4,6 +4,8 @@ export interface Progress { goal: string; done: string; next: string }
 export interface ContextDescriptor {
   id: string
   title: string
+  /** Short display name from the existing CREATE classifier; absent on older/rules topics. */
+  label?: string
   summary: string
   entities: string[]
   keywords: string[]
@@ -35,6 +37,8 @@ export interface Decision {
   action: Action
   contextId?: string
   title?: string
+  /** CREATE only: an optional, validated short display name. */
+  label?: string
   reason: string
   question?: string
   /** CREATE can proceed during indexing only when the request needs no missing history. */

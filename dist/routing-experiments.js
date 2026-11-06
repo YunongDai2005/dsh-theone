@@ -136,7 +136,7 @@ export function expandDecision(value, aliases) {
     return { ...row, reason: row.reason === undefined ? 'match' : row.reason };
 }
 const SNAPSHOT_PROMPT = '\n输入使用 snapshot-v1：snapshot 是 epoch 开始时的完整输入，overlay 按从左到右依次覆盖，同一 id 或字段以最后一次为准；contexts.remove 删除、upsert 新增或整条替换（合并表现为删除旧 id 并更新目标），order 是完整有效候选顺序，recent.drop 删除开头消息后 append 追加，unset 删除字段，set 整个替换字段。只对物化后的最新有效输入作判断（包括 text、recent、currentId、attention、recheck 和纠正），不得使用已删除的候选或被覆盖的旧值。';
-const COMPACT_PROMPT = '\n使用 compact-v1 稀疏 JSON：已有话题通常只输出 {"action":"EXISTING","contextId":"该候选的routeId"}。CREATE 必须给 title，historyIndependent 仍按上述规则判断；aside 只在 CREATE 且为 true 时输出，一次性小问题用法同上；CLARIFY 必须给 question，需要多候选时给 candidateIds；relatedIds、imports、projectId 只在有实际值时输出，省略所有空数组和 null。contextId、relatedIds、candidateIds 只能用本次有效 contexts 中的 routeId，imports/projectId 仍用原 id；理由可省略（本地补 match）或用几个字，复核也使用本协议。';
+const COMPACT_PROMPT = '\n使用 compact-v1 稀疏 JSON：已有话题通常只输出 {"action":"EXISTING","contextId":"该候选的routeId"}。CREATE 必须给 title 和上述规则的 label，historyIndependent 仍按上述规则判断；aside 只在 CREATE 且为 true 时输出，一次性小问题用法同上；CLARIFY 必须给 question，需要多候选时给 candidateIds；relatedIds、imports、projectId 只在有实际值时输出，省略所有空数组和 null。contextId、relatedIds、candidateIds 只能用本次有效 contexts 中的 routeId，imports/projectId 仍用原 id；理由可省略（本地补 match）或用几个字，复核也使用本协议。';
 export class RoutingExperiments {
     snapshots = new SnapshotCache();
     prepare(payload, variant = 'none', session) {
