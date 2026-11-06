@@ -103,7 +103,7 @@ export function createFoam(options) {
     const keys = new Map();
     const cells = [], ves = [];
     let links = new Map(), bonds = [];
-    let rail = !!options.rail, sz = rail ? MINI : 1, height = 8, pulse = 0, folded = 0, uid = 0, first = true;
+    let rail = !!options.rail, sz = rail ? MINI : 1, height = 8, heightTarget = -1, heightV = 0, pulse = 0, folded = 0, uid = 0, first = true;
     let L = { x: 0, y: 0 }, ptr = null;
     let drag = null;
     let target = null;
@@ -673,8 +673,20 @@ export function createFoam(options) {
                 x1 = Math.max(x1, c.x + c.R);
             }
         const want = bottom > top ? Math.min(320, bottom - top + 14 * sz + 4) : 4;
-        const nextHeight = ease(height, want, 3, dt);
-        if (Math.abs(nextHeight - height) > .2) {
+        // The box follows the cluster on a soft spring with a little give; small wobbles of the cells do not move the sidebar.
+        if (heightTarget < 0) {
+            height = heightTarget = want;
+            host.style.height = fx(height) + 'px';
+            options.onHeight(height);
+        }
+        if (want > heightTarget + 2 || want < heightTarget - 6)
+            heightTarget = want;
+        const hk = 70, hc = 2 * (reduced ? 1 : .72) * Math.sqrt(hk);
+        heightV += (hk * (heightTarget - height) - hc * heightV) * dt;
+        if (Math.abs(heightTarget - height) < .05 && Math.abs(heightV) < .05)
+            heightV = 0;
+        const nextHeight = heightV ? height + heightV * dt : heightTarget;
+        if (Math.abs(nextHeight - height) > .01) {
             height = nextHeight;
             host.style.height = fx(height) + 'px';
             options.onHeight(height);

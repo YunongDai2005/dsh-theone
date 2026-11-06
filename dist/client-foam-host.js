@@ -92,11 +92,133 @@ export function modelFromCatalog(snapshot) {
                 links.push({ a: id, b: other.id, weight: other.reasons.includes('manual') ? 1 : other.reasons.includes('learned') ? .5 : .3 });
     return { topics, links };
 }
+/**
+ * Makes room under the card and lets the rows below follow like a wave: the layout moves at once, and each
+ * row is drawn back to where the row above it is, on its own spring, so a change ripples down the sidebar
+ * instead of shifting it in one block. Rows: the card's siblings in DSH's list, then the next block (the
+ * workspace region); the footer stays put. Transforms are cleared once everything has settled.
+ */
+function createWave(button, reduced) {
+    const K = 210, C = 2 * .6 * Math.sqrt(K), SLACK = 8;
+    let base = 0, started = false, frame = 0, last = 0;
+    const state = new Map();
+    const rows = () => {
+        const list = [];
+        for (let row = button.nextElementSibling; row; row = row.nextElementSibling)
+            if (row instanceof HTMLElement && row.offsetHeight)
+                list.push(row);
+        const next = button.parentElement?.nextElementSibling;
+        if (next instanceof HTMLElement && next.offsetHeight && next.nextElementSibling)
+            list.push(next);
+        return list;
+    };
+    const clear = (el) => { el.style.removeProperty('transform'); el.style.removeProperty('will-change'); };
+    function step(now) {
+        frame = 0;
+        let dt = Math.min(.1, (now - last) / 1000 || 1 / 60);
+        last = now;
+        const list = rows();
+        for (const el of [...state.keys()])
+            if (!list.includes(el)) {
+                clear(el);
+                state.delete(el);
+            }
+        while (dt > 0) {
+            const h = Math.min(dt, 1 / 120);
+            dt -= h;
+            let above = base;
+            for (const el of list) {
+                const s = state.get(el) ?? { y: base, v: 0 };
+                state.set(el, s);
+                s.v += (K * (above - s.y) - C * s.v) * h;
+                s.y += s.v * h;
+                above = s.y;
+            }
+            hold(list);
+        }
+        if (draw(list))
+            frame = requestAnimationFrame(step);
+    }
+    /**
+     * Rows may stretch apart freely but bunch up only a little: a row that lags too far behind the one above
+     * is pushed along, so text never runs into the row above it or into the cluster.
+     */
+    function hold(list) {
+        let above = base, speed = 0;
+        for (const el of list) {
+            const s = state.get(el);
+            if (!s)
+                continue;
+            if (s.y < above - SLACK) {
+                s.y = above - SLACK;
+                s.v = Math.max(s.v, speed);
+            }
+            above = s.y;
+            speed = s.v;
+        }
+    }
+    /** Each row drawn at its own spring's height while the layout already has it at `base`; true while any row still moves. */
+    function draw(list) {
+        let moving = false;
+        for (const el of list) {
+            const s = state.get(el);
+            if (!s)
+                continue;
+            if (Math.abs(s.y - base) < .1 && Math.abs(s.v) < .5) {
+                s.y = base;
+                s.v = 0;
+                clear(el);
+                continue;
+            }
+            moving = true;
+            el.style.willChange = 'transform';
+            el.style.transform = `translateY(${(s.y - base).toFixed(2)}px)`;
+        }
+        return moving;
+    }
+    return {
+        set(height) {
+            const next = Math.round(height * 2) / 2 + 10;
+            if (next === base)
+                return;
+            button.style.marginBottom = `${next}px`;
+            // The first placement and reduced motion: the rows simply sit where the layout puts them.
+            if (!started || reduced) {
+                base = next;
+                started = true;
+                for (const s of state.values())
+                    s.y = base;
+                return;
+            }
+            const before = base;
+            base = next;
+            // Rows keep their place on screen in this same frame, then spring after the layout.
+            const list = rows();
+            for (const el of list)
+                if (!state.has(el))
+                    state.set(el, { y: before, v: 0 });
+            hold(list);
+            draw(list);
+            if (!frame) {
+                last = performance.now();
+                frame = requestAnimationFrame(step);
+            }
+        },
+        destroy() {
+            cancelAnimationFrame(frame);
+            for (const el of state.keys())
+                clear(el);
+            state.clear();
+            button.style.marginBottom = '';
+        },
+    };
+}
 export function mountFoamHost(options) {
     const { button, signal } = options;
     const host = document.createElement('div');
     host.setAttribute('translate', 'no');
     document.body.appendChild(host);
+    const wave = createWave(button, matchMedia('(prefers-reduced-motion: reduce)').matches);
     const sessionOf = new Map();
     let latest;
     /** The work item a stop gesture means: the topic's running (or waiting) execution, or its queued input. */
@@ -167,7 +289,7 @@ export function mountFoamHost(options) {
             host.style.top = `${r.bottom}px`;
             host.style.width = `${r.width}px`;
         },
-        onHeight: height => { button.style.marginBottom = `${Math.round(height) + 10}px`; },
+        onHeight: height => wave.set(height),
         onPulse: amount => {
             const mark = button.querySelector('.theone-symbol');
             if (mark)
@@ -266,7 +388,7 @@ export function mountFoamHost(options) {
             document.removeEventListener('visibilitychange', focus);
             foam.destroy();
             host.remove();
-            button.style.marginBottom = '';
+            wave.destroy();
             button.querySelector('.theone-symbol')?.style.removeProperty('transform');
         },
     };

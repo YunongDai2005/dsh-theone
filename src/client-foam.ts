@@ -204,7 +204,7 @@ export function createFoam(options: FoamOptions): Foam {
 
   const cells: Cell[] = [], ves: Vesicle[] = []
   let links = new Map<string, number>(), bonds: [Cell, Cell][] = []
-  let rail = !!options.rail, sz = rail ? MINI : 1, height = 8, pulse = 0, folded = 0, uid = 0, first = true
+  let rail = !!options.rail, sz = rail ? MINI : 1, height = 8, heightTarget = -1, heightV = 0, pulse = 0, folded = 0, uid = 0, first = true
   let L: Pt = { x: 0, y: 0 }, ptr: Pt | null = null
   let drag: { cell: Cell; dx: number; dy: number; trail: { x: number; y: number; t: number }[] } | null = null
   let target: { kind: 'main' } | { kind: 'cell'; cell: Cell } | { kind: 'session'; el: Element; id: string } | null = null
@@ -579,8 +579,14 @@ export function createFoam(options: FoamOptions): Foam {
     let top = Infinity, bottom = -Infinity, x0 = Infinity, x1 = -Infinity
     for (const c of live) if (drag?.cell !== c) { top = Math.min(top, c.y - c.R); bottom = Math.max(bottom, c.y + c.R); x0 = Math.min(x0, c.x - c.R); x1 = Math.max(x1, c.x + c.R) }
     const want = bottom > top ? Math.min(320, bottom - top + 14 * sz + 4) : 4
-    const nextHeight = ease(height, want, 3, dt)
-    if (Math.abs(nextHeight - height) > .2) { height = nextHeight; host.style.height = fx(height) + 'px'; options.onHeight(height) }
+    // The box follows the cluster on a soft spring with a little give; small wobbles of the cells do not move the sidebar.
+    if (heightTarget < 0) { height = heightTarget = want; host.style.height = fx(height) + 'px'; options.onHeight(height) }
+    if (want > heightTarget + 2 || want < heightTarget - 6) heightTarget = want
+    const hk = 70, hc = 2 * (reduced ? 1 : .72) * Math.sqrt(hk)
+    heightV += (hk * (heightTarget - height) - hc * heightV) * dt
+    if (Math.abs(heightTarget - height) < .05 && Math.abs(heightV) < .05) heightV = 0
+    const nextHeight = heightV ? height + heightV * dt : heightTarget
+    if (Math.abs(nextHeight - height) > .01) { height = nextHeight; host.style.height = fx(height) + 'px'; options.onHeight(height) }
     const fr = host.getBoundingClientRect(), mark = options.mark(), mr = mark?.getBoundingClientRect()
     const w = fr.width, h = Math.max(height, 8), cx = w / 2, cy = Math.max(14, h / 2)
     if (mr) L = { x: mr.left + mr.width / 2 - fr.left, y: mr.top + mr.height / 2 - fr.top }

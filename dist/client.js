@@ -219,7 +219,7 @@ function createFoam(options) {
   const keys = /* @__PURE__ */ new Map();
   const cells = [], ves = [];
   let links = /* @__PURE__ */ new Map(), bonds = [];
-  let rail = !!options.rail, sz = rail ? MINI : 1, height = 8, pulse = 0, folded = 0, uid = 0, first = true;
+  let rail = !!options.rail, sz = rail ? MINI : 1, height = 8, heightTarget = -1, heightV = 0, pulse = 0, folded = 0, uid = 0, first = true;
   let L = { x: 0, y: 0 }, ptr = null;
   let drag = null;
   let target = null;
@@ -792,8 +792,17 @@ function createFoam(options) {
       x1 = Math.max(x1, c.x + c.R);
     }
     const want = bottom > top ? Math.min(320, bottom - top + 14 * sz + 4) : 4;
-    const nextHeight = ease(height, want, 3, dt);
-    if (Math.abs(nextHeight - height) > 0.2) {
+    if (heightTarget < 0) {
+      height = heightTarget = want;
+      host.style.height = fx(height) + "px";
+      options.onHeight(height);
+    }
+    if (want > heightTarget + 2 || want < heightTarget - 6) heightTarget = want;
+    const hk = 70, hc = 2 * (reduced ? 1 : 0.72) * Math.sqrt(hk);
+    heightV += (hk * (heightTarget - height) - hc * heightV) * dt;
+    if (Math.abs(heightTarget - height) < 0.05 && Math.abs(heightV) < 0.05) heightV = 0;
+    const nextHeight = heightV ? height + heightV * dt : heightTarget;
+    if (Math.abs(nextHeight - height) > 0.01) {
       height = nextHeight;
       host.style.height = fx(height) + "px";
       options.onHeight(height);
@@ -1217,11 +1226,111 @@ function modelFromCatalog(snapshot) {
     for (const other of entry.related) if (id < other.id) links.push({ a: id, b: other.id, weight: other.reasons.includes("manual") ? 1 : other.reasons.includes("learned") ? 0.5 : 0.3 });
   return { topics, links };
 }
+function createWave(button, reduced) {
+  const K = 210, C = 2 * 0.6 * Math.sqrt(K), SLACK = 8;
+  let base = 0, started = false, frame = 0, last = 0;
+  const state = /* @__PURE__ */ new Map();
+  const rows = () => {
+    const list = [];
+    for (let row = button.nextElementSibling; row; row = row.nextElementSibling) if (row instanceof HTMLElement && row.offsetHeight) list.push(row);
+    const next = button.parentElement?.nextElementSibling;
+    if (next instanceof HTMLElement && next.offsetHeight && next.nextElementSibling) list.push(next);
+    return list;
+  };
+  const clear = (el) => {
+    el.style.removeProperty("transform");
+    el.style.removeProperty("will-change");
+  };
+  function step(now2) {
+    frame = 0;
+    let dt = Math.min(0.1, (now2 - last) / 1e3 || 1 / 60);
+    last = now2;
+    const list = rows();
+    for (const el of [...state.keys()]) if (!list.includes(el)) {
+      clear(el);
+      state.delete(el);
+    }
+    while (dt > 0) {
+      const h3 = Math.min(dt, 1 / 120);
+      dt -= h3;
+      let above = base;
+      for (const el of list) {
+        const s = state.get(el) ?? { y: base, v: 0 };
+        state.set(el, s);
+        s.v += (K * (above - s.y) - C * s.v) * h3;
+        s.y += s.v * h3;
+        above = s.y;
+      }
+      hold(list);
+    }
+    if (draw(list)) frame = requestAnimationFrame(step);
+  }
+  function hold(list) {
+    let above = base, speed = 0;
+    for (const el of list) {
+      const s = state.get(el);
+      if (!s) continue;
+      if (s.y < above - SLACK) {
+        s.y = above - SLACK;
+        s.v = Math.max(s.v, speed);
+      }
+      above = s.y;
+      speed = s.v;
+    }
+  }
+  function draw(list) {
+    let moving = false;
+    for (const el of list) {
+      const s = state.get(el);
+      if (!s) continue;
+      if (Math.abs(s.y - base) < 0.1 && Math.abs(s.v) < 0.5) {
+        s.y = base;
+        s.v = 0;
+        clear(el);
+        continue;
+      }
+      moving = true;
+      el.style.willChange = "transform";
+      el.style.transform = `translateY(${(s.y - base).toFixed(2)}px)`;
+    }
+    return moving;
+  }
+  return {
+    set(height) {
+      const next = Math.round(height * 2) / 2 + 10;
+      if (next === base) return;
+      button.style.marginBottom = `${next}px`;
+      if (!started || reduced) {
+        base = next;
+        started = true;
+        for (const s of state.values()) s.y = base;
+        return;
+      }
+      const before = base;
+      base = next;
+      const list = rows();
+      for (const el of list) if (!state.has(el)) state.set(el, { y: before, v: 0 });
+      hold(list);
+      draw(list);
+      if (!frame) {
+        last = performance.now();
+        frame = requestAnimationFrame(step);
+      }
+    },
+    destroy() {
+      cancelAnimationFrame(frame);
+      for (const el of state.keys()) clear(el);
+      state.clear();
+      button.style.marginBottom = "";
+    }
+  };
+}
 function mountFoamHost(options) {
   const { button, signal } = options;
   const host = document.createElement("div");
   host.setAttribute("translate", "no");
   document.body.appendChild(host);
+  const wave = createWave(button, matchMedia("(prefers-reduced-motion: reduce)").matches);
   const sessionOf = /* @__PURE__ */ new Map();
   let latest;
   const workOf = (id, queued) => latest?.workItems.find((item) => item.contextId === id && item.stop.allowed && (queued ? item.phase === "queued" : LIVE.has(item.phase) || item.phase === "waiting_user"));
@@ -1299,9 +1408,7 @@ function mountFoamHost(options) {
       host.style.top = `${r.bottom}px`;
       host.style.width = `${r.width}px`;
     },
-    onHeight: (height) => {
-      button.style.marginBottom = `${Math.round(height) + 10}px`;
-    },
+    onHeight: (height) => wave.set(height),
     onPulse: (amount) => {
       const mark = button.querySelector(".theone-symbol");
       if (mark) mark.style.transform = amount > 2e-3 ? `scale(${(1 + 0.12 * amount).toFixed(3)})` : "";
@@ -1390,7 +1497,7 @@ function mountFoamHost(options) {
       document.removeEventListener("visibilitychange", focus);
       foam.destroy();
       host.remove();
-      button.style.marginBottom = "";
+      wave.destroy();
       button.querySelector(".theone-symbol")?.style.removeProperty("transform");
     }
   };
