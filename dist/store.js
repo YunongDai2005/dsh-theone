@@ -38,8 +38,9 @@ import { dirname } from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
 import { FACT_KINDS, FACT_LIMITS, factKey, safe } from "./facts.js";
 import { LearningJournal, uniqueSources } from "./learning-journal.js";
-import { mergeSettled } from "./topic-memory.js";
+import { mergeSettled, routingSummary } from "./topic-memory.js";
 import { mergeSimilarity } from "./routing-policy.js";
+import { MERGE_VET_LIMITS, mergeVetTopic } from "./merge-vetting.js";
 /** Terms learned from corrections fade by half every 30 days unless they are confirmed again. */
 export const TERM_HALF_LIFE_MS = 30 * 86400000;
 /** A whole session attached by hand counts as reviewed from its first event to its last. */
@@ -389,6 +390,10 @@ let ContextStore = (() => {
         id TEXT PRIMARY KEY, a TEXT NOT NULL, b TEXT NOT NULL, origin_id TEXT NOT NULL,
         structure TEXT NOT NULL, record TEXT NOT NULL, UNIQUE(a, b), CHECK(a < b)
       );
+      CREATE TABLE IF NOT EXISTS merge_vetting (
+        a TEXT NOT NULL, b TEXT NOT NULL, record TEXT NOT NULL, PRIMARY KEY(a, b), CHECK(a < b)
+      );
+      CREATE TABLE IF NOT EXISTS merge_suggestion_vets (suggestion_id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS topic_merges (
         source_id TEXT PRIMARY KEY, target_id TEXT NOT NULL, at INTEGER NOT NULL, journal TEXT NOT NULL
       );
@@ -605,6 +610,34 @@ let ContextStore = (() => {
         mergeSuggestionSeen(a, b) {
             return !!this.mergePrompt(a, b) || !!this.db.prepare('SELECT 1 FROM merge_suggestions WHERE a = ? AND b = ?').get(...[a, b].sort());
         }
+        /** Internal model decisions never enter bubble snapshots, merge_prompts or the learning journal. */
+        mergeVets() {
+            return this.db.prepare('SELECT record FROM merge_vetting ORDER BY rowid').all().map(row => JSON.parse(String(row.record)));
+        }
+        mergeVet(a, b) {
+            const row = this.db.prepare('SELECT record FROM merge_vetting WHERE a = ? AND b = ?').get(...[a, b].sort());
+            return row ? JSON.parse(String(row.record)) : undefined;
+        }
+        saveMergeVet(record) {
+            this.db.prepare('INSERT INTO merge_vetting VALUES (?, ?, ?) ON CONFLICT(a, b) DO UPDATE SET record = excluded.record')
+                .run(...record.pair, JSON.stringify(record));
+        }
+        mergeVetTopics(pair) {
+            const topics = this.contexts(), names = this.names();
+            return [...pair].sort().flatMap(id => {
+                const topic = topics.find(item => item.id === id);
+                return topic ? [mergeVetTopic({ id, title: topic.title, summary: routingSummary(topic.summary, this.settled(id), this.openItems(id)),
+                        entities: [...topic.entities, ...names.get(id) ?? []] })] : [];
+            });
+        }
+        mergeVetFingerprint(pair) {
+            const sorted = [...pair].sort(), topics = this.mergeVetTopics(sorted);
+            if (topics.length !== 2 || sorted.some(id => this.unreachable().has(id)))
+                return;
+            // Version the bounded model input. Activity, lastState, usage and timestamps do not invalidate it.
+            return createHash('sha256').update(JSON.stringify(['merge-vet-v1', topics.map(topic => ({ ...topic,
+                    title: topic.title.toLowerCase(), summary: topic.summary.toLowerCase() })), this.mergeSuggestionStructure(sorted)])).digest('hex');
+        }
         /** A private precondition fingerprint; not a general topicRevision or a content/learning snapshot. */
         mergeSuggestionStructure(pair) {
             const topics = this.contexts(), groups = this.groups();
@@ -624,21 +657,41 @@ let ContextStore = (() => {
             if (!pair[0] || !pair[1] || suggestion.pair.some(id => unavailable.has(id)))
                 return false;
             const describe = (topic) => ({ ...topic, names: names.get(topic.id), cwd: this.origin(topic.id)?.cwd });
+            const vet = this.db.prepare('SELECT fingerprint FROM merge_suggestion_vets WHERE suggestion_id = ?').get(suggestionId);
             return !suggestion.reason && this.mergeSuggestionGateway(String(row.origin_id)) === suggestion.scope.gatewayId &&
                 this.gatewayIds(suggestion.scope.gatewayKey).includes(suggestion.scope.gatewayId) &&
                 !this.mergePrompt(...suggestion.pair) && row.structure === this.mergeSuggestionStructure(suggestion.pair) &&
-                !!mergeSimilarity(describe(pair[0]), describe(pair[1]));
+                (vet ? vet.fingerprint === this.mergeVetFingerprint(suggestion.pair) : !!mergeSimilarity(describe(pair[0]), describe(pair[1])));
         }
         /** The unique normalized pair reserves concurrency without recording any user decision. */
-        createMergeSuggestion(originId, otherId, scope, evidence, expiresAt, now = Date.now()) {
+        createMergeSuggestion(originId, otherId, scope, evidence, expiresAt, now = Date.now(), vetted) {
             if (originId === otherId || this.mergeSuggestionSeen(originId, otherId))
                 return undefined;
             const pair = [originId, otherId].sort();
+            if (vetted) {
+                const record = this.mergeVet(...pair);
+                if (vetted.fingerprint !== this.mergeVetFingerprint(pair) || record?.fingerprint !== vetted.fingerprint ||
+                    record.state !== 'decided' || !record.verdict?.sameMatter || record.verdict.confidence < MERGE_VET_LIMITS.confidence ||
+                    record.verdict.keepId !== vetted.keepId || !pair.includes(vetted.keepId))
+                    return;
+            }
             const suggestion = { suggestionId: randomUUID(), scope, pair,
                 directions: [{ sourceId: originId, targetId: otherId }, { sourceId: otherId, targetId: originId }],
                 evidence, createdAt: now, updatedAt: now, expiresAt, state: 'pending' };
-            this.db.prepare('INSERT INTO merge_suggestions VALUES (?, ?, ?, ?, ?, ?)')
-                .run(suggestion.suggestionId, ...pair, originId, this.mergeSuggestionStructure(pair), JSON.stringify(suggestion));
+            if (vetted?.keepId === originId)
+                suggestion.directions.reverse();
+            this.db.exec('SAVEPOINT store_write');
+            try {
+                this.db.prepare('INSERT INTO merge_suggestions VALUES (?, ?, ?, ?, ?, ?)')
+                    .run(suggestion.suggestionId, ...pair, originId, this.mergeSuggestionStructure(pair), JSON.stringify(suggestion));
+                if (vetted)
+                    this.db.prepare('INSERT INTO merge_suggestion_vets VALUES (?, ?)').run(suggestion.suggestionId, vetted.fingerprint);
+                this.db.exec('RELEASE store_write');
+            }
+            catch (error) {
+                this.rollbackWrite();
+                throw error;
+            }
             return suggestion;
         }
         finishMergeSuggestion(suggestionId, state, detail = {}, now = Date.now()) {
@@ -1557,6 +1610,7 @@ let ContextStore = (() => {
             }
         }
         purge(contextId) {
+            this.db.prepare('DELETE FROM merge_vetting WHERE a = ? OR b = ?').run(contextId, contextId);
             for (const table of PURGED_TABLES)
                 this.db.prepare(`DELETE FROM ${table} WHERE context_id = ?`).run(contextId);
             this.db.prepare('DELETE FROM topic_links WHERE a = ? OR b = ?').run(contextId, contextId);

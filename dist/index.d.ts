@@ -150,6 +150,7 @@ export default class TheOne extends Service {
     /** Gateway id → cleanup of a run whose main-chat turn has closed while its Worker winds down. */
     private readonly closing;
     private syncingMergeSuggestions;
+    private readonly mergeVetter;
     /** A model the user picked in main chat's own model selector; it answers through the Workers. */
     private pickedModel?;
     private adapter?;
@@ -448,7 +449,10 @@ export default class TheOne extends Service {
     private learningEvents;
     private queueMemory;
     private runMemory;
-    /** Check exactly the first successful card of a route-created topic, with no classifier call. */
+    private mergeVettingModel;
+    /** Include pending routing and live inboxes; a new message cancels an already-running check. */
+    private mergeVettingIdle;
+    /** Candidate creation is synchronous and call-free. Only the idle timer sends model requests. */
     private queueMergeSuggestion;
     /** Called synchronously after the queue persists its reservation, before it yields or executes. */
     private mergeOperationChanged;

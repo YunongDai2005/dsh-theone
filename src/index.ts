@@ -34,7 +34,8 @@ import { RoutingShadow, temporaryArithmetic, type MessageOrigin } from './routin
 import { resolveContext } from './router.ts'
 import { DshRouter, RouterFailure, newRoutingTrace } from './llm-router.ts'
 import type { RoutingVariant } from './routing-experiments.ts'
-import { continuesCurrent, resumesWork, mergeSimilarity, newIndependentTopic, redactRoutingText, settleUnclear, similarity, spokenCorrection, textFeatures, topicTerms } from './routing-policy.ts'
+import { continuesCurrent, resumesWork, mergeSimilarity, mergeCandidateSimilarity, newIndependentTopic, redactRoutingText, settleUnclear, similarity, spokenCorrection, textFeatures, topicTerms } from './routing-policy.ts'
+import { MergeVetter, MERGE_VET_LIMITS } from './merge-vetting.ts'
 import { modelJson } from './model-json.ts'
 import type { RecentMessage, RouterCall, RouterReceipt, RouterUsage, RoutingInput, RoutingRouter } from './llm-router.ts'
 import type { ContextDescriptor, Decision, RouteView, StoredContext, SourceRange } from './types.ts'
@@ -397,6 +398,7 @@ export default class TheOne extends Service {
   /** Gateway id → cleanup of a run whose main-chat turn has closed while its Worker winds down. */
   private readonly closing = new Map<string, Promise<void>>()
   private syncingMergeSuggestions = false
+  private readonly mergeVetter: MergeVetter
   /** A model the user picked in main chat's own model selector; it answers through the Workers. */
   private pickedModel?: ModelSelection
   private adapter?: { replace(providers: string[]): void }
@@ -460,6 +462,7 @@ export default class TheOne extends Service {
     this.noticeBoard = new NoticeBoard(this.updater.current, config.noticeUrl || NOTICE_URL)
     ctx.effect(() => async () => {
       this.stopping = true
+      await this.mergeVetter?.close()
       this.bubbles?.close()
       this.bubbleSessionsAbort.abort()
       this.maintenance.close()
@@ -493,6 +496,9 @@ export default class TheOne extends Service {
       })
     })
     this.router = this.routerFor(config.routerMode)
+    this.mergeVetter = new MergeVetter(this.store, ctx.llm, {
+      idle: () => this.mergeVettingIdle(), selection: () => this.mergeVettingModel(), queue: id => this.queueMergeSuggestion(id),
+    })
     if (!this.store.catalogConsent() && this.store.hasIndexedHistory()) this.store.setCatalogConsent('granted')
     if (config.historyCatalog ?? true) {
       this.catalog = new HistoryCatalog(ctx, this.store, () => this.backingModel(), config.catalogIntervalMs, 64, true)
@@ -535,6 +541,10 @@ export default class TheOne extends Service {
     ctx.effect(() => this.bubbleActivity.subscribe((events, id) => this.bubbles.publish(events, id)))
     ctx.effect(() => this.store.subscribe(change => {
       this.syncMergeSuggestions()
+      if (['applyCard', 'editTopic', 'updateSummary', 'seed', 'moveTopic', 'mergeTopics', 'unmergeTopic', 'deleteTopic', 'replaceHidden'].includes(change.kind)) {
+        this.mergeVetter.refresh()
+        if (change.kind === 'applyCard' && this.mergeVettingModel()) this.queueMergeSuggestion(String(change.args[0]))
+      }
       const events: import('./bubble-types.ts').BubbleEventData[] = []
       if ((change.kind === 'createMergeSuggestion' || change.kind === 'finishMergeSuggestion') && change.result) {
         const suggestion = change.result as BubbleMergeSuggestion
@@ -553,7 +563,10 @@ export default class TheOne extends Service {
     const bubbleTimer = setInterval(() => this.bubbles.publish(), 60000)
     bubbleTimer.unref()
     ctx.effect(() => () => clearInterval(bubbleTimer))
-    const suggestionTimer = setInterval(() => this.syncMergeSuggestions(), 1000)
+    const suggestionTimer = setInterval(() => {
+      this.syncMergeSuggestions()
+      void this.mergeVetter.tick().catch(() => { /* Background suggestions never fail a user turn. */ })
+    }, 1000)
     suggestionTimer.unref()
     ctx.effect(() => () => clearInterval(suggestionTimer))
     ctx.on('agent/disposed', ({ agent }) => { if (!this.stopping) this.closeMergeSuggestions(agent.id) })
@@ -563,6 +576,7 @@ export default class TheOne extends Service {
     this.work.start()
     this.adapter = ctx.llm.registerAdapter(['theone'], new GatewayAdapter(this))
     ctx.on('session/event', (session, event) => {
+      if (event.type === 'user/message' && event.data.source.kind === 'user') this.mergeVetter.interrupt()
       this.observeShadow(shadow => this.recordShadowEvent(shadow, session, event))
       this.recordBindingEvent(session, event)
       if (event.type === 'assistant/message') {
@@ -2908,7 +2922,7 @@ export default class TheOne extends Service {
     } catch (error) {
       if (!attempts.length) {
         const failure = error instanceof RouterFailure ? error : undefined
-        const sent = !failure?.meta?.attempts && !['ROUTER_MODEL_MISSING', 'ROUTER_CIRCUIT_OPEN', 'ROUTER_INPUT_INVALID', 'ROUTER_RECURSION_BLOCKED'].includes(failure?.code ?? '')
+        const sent = !failure?.meta?.attempts && !['ROUTER_MODEL_MISSING', 'ROUTER_CIRCUIT_OPEN', 'ROUTER_RATE_LIMITED', 'ROUTER_INPUT_INVALID', 'ROUTER_RECURSION_BLOCKED'].includes(failure?.code ?? '')
         record({ attempt: 1, sent, elapsedMs: failure?.meta?.elapsedMs ?? Math.round(performance.now() - started),
           ...(failure ? { errorCode: failure.code, ...(failure.detail ? { errorDetail: failure.detail } : {}) } : {}), ...legacy(failure?.meta?.usage) })
       }
@@ -3748,25 +3762,53 @@ export default class TheOne extends Service {
       (other.payload as { sessionId?: string; throughSeq?: number }).sessionId === sessionId &&
       ((other.payload as { throughSeq: number }).throughSeq > throughSeq))) return { result: { skipped: 'SUPERSEDED' } }
     const card = parseCard(candidate, text => redactDescriptor(redactRoutingText(text)))
-    if (card && this.store.withLearning(sources, () => this.store.applyCard(contextId, card))) this.queueMergeSuggestion(contextId)
+    if (card) {
+      const first = this.store.withLearning(sources, () => this.store.applyCard(contextId, card))
+      if (first || this.mergeVettingModel()) this.queueMergeSuggestion(contextId)
+    }
     return { result: { merged: !!card } }
   }
 
-  /** Check exactly the first successful card of a route-created topic, with no classifier call. */
+  private mergeVettingModel(): ModelSelection | undefined {
+    if (!this.router) return
+    try {
+      const selection = this.backingModel()
+      return selection.provider && selection.model && selection.provider !== 'theone' ? selection : undefined
+    } catch { return undefined }
+  }
+
+  /** Include pending routing and live inboxes; a new message cancels an already-running check. */
+  private mergeVettingIdle(): boolean {
+    if (this.stopping || this.busy || this.maintenance.isBusy() || this.sorting.size || this.closing.size || this.mergeQueue.active().length) return false
+    const ids = new Set([...this.store.gatewayIds(this.config.gatewayKey), ...this.store.contexts().map(topic => topic.workingSessionId)])
+    for (const id of ids) {
+      const agent = this.ctx.agents.get(SessionId(id))
+      if (agent && (agent.status !== 'idle' || agent.inbox.nextTurn.length || agent.inbox.nextStep.length)) return false
+    }
+    return true
+  }
+
+  /** Candidate creation is synchronous and call-free. Only the idle timer sends model requests. */
   private queueMergeSuggestion(contextId: string): void {
     const gatewayId = this.store.mergeSuggestionGateway(contextId)
     if (!gatewayId || this.stopping) return
     const contexts = this.store.contexts(), topic = contexts.find(item => item.id === contextId)!
     const unavailable = this.store.unreachable(), names = this.store.names()
+    const vetted = !!this.mergeVettingModel()
     const activity = new Map(this.store.contextUsage(this.config.gatewayKey).map(item => [item.contextId, item.lastUsedAt]))
     for (const [id, run] of this.store.latestTopicRuns()) activity.set(id, Math.max(activity.get(id) ?? 0, run.endedAt ?? run.startedAt))
     const describe = (item: StoredContext) => ({ ...item, names: names.get(item.id), cwd: this.store.origin(item.id)?.cwd })
     const candidates = contexts.flatMap(other => {
       if (other.id === contextId || unavailable.has(other.id) || this.store.mergeSuggestionSeen(contextId, other.id)) return []
-      const match = mergeSimilarity(describe(topic), describe(other))
+      const match = (vetted ? mergeCandidateSimilarity : mergeSimilarity)(describe(topic), describe(other))
       const last = this.ctx.agents.get(SessionId(other.workingSessionId))?.session.snapshotEvents().at(-1)?.time ?? 0
       return match ? [{ id: other.id, evidence: match, at: Math.max(activity.get(other.id) ?? 0, last) }] : []
     }).sort((a, b) => b.evidence.sharedNames - a.evidence.sharedNames || b.at - a.at || a.id.localeCompare(b.id))
+    if (vetted) {
+      for (const candidate of candidates.slice(0, MERGE_VET_LIMITS.candidates)) this.mergeVetter.enqueue(contextId, candidate.id,
+        { gatewayKey: this.config.gatewayKey, gatewayId }, candidate.evidence)
+      return
+    }
     const candidate = candidates[0]
     if (candidate) this.store.createMergeSuggestion(contextId, candidate.id, { gatewayKey: this.config.gatewayKey, gatewayId },
       candidate.evidence, Date.now() + MERGE_PROMPT_TIMEOUT_MS)
@@ -3810,6 +3852,7 @@ export default class TheOne extends Service {
   }
 
   private closeMergeSuggestions(gatewayId: string): void {
+    this.mergeVetter.closeGateway(gatewayId)
     for (const suggestion of this.store.mergeSuggestions()) {
       if (suggestion.scope.gatewayId !== gatewayId) continue
       if (suggestion.state === 'pending' || suggestion.state === 'accepted' && suggestion.operationId &&

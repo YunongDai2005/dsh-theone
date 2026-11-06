@@ -7,4 +7,5 @@ export declare function modelJson(llm: Pick<LlmRuntime, 'prepareCall'>, selectio
     maxTokens?: number;
     timeoutMs?: number;
     reasoningEffort?: ModelSelection['reasoningEffort'];
+    beforeSend?: () => void;
 }): Promise<unknown>;

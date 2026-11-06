@@ -36,12 +36,18 @@ export declare const MERGE_NAME_MIN_LENGTH = 2;
 export declare const MERGE_ENGLISH_NAME_MIN_LETTERS = 3;
 export interface MergeTopic {
     title: string;
+    summary?: string;
     names?: readonly string[];
     entities?: readonly string[];
     cwd?: string;
 }
-/** Only whole names count; a shared generic word inside a longer name is not another entity. */
+/** The original rule remains the fallback when no classifier is configured. */
 export declare function mergeSimilarity(a: MergeTopic, b: MergeTopic): {
+    sharedNames: number;
+    titleSimilarity: number;
+} | undefined;
+/** Recall-oriented candidates only: a model must approve these before the user sees them. */
+export declare function mergeCandidateSimilarity(a: MergeTopic, b: MergeTopic): {
     sharedNames: number;
     titleSimilarity: number;
 } | undefined;

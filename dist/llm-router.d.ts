@@ -196,9 +196,7 @@ export declare class DshRouter implements RoutingRouter {
     private readonly now;
     private readonly variant;
     private experiments;
-    private failures;
-    private lastFailureAt;
-    private blockedUntil;
+    private readonly budget;
     constructor(llm: Pick<LlmRuntime, 'prepareCall' | 'resolveModelInfo'>, selection: () => ModelSelection, timeoutMs?: number, now?: () => number, variant?: RoutingVariant);
     /** With `think`, the model's own default reasoning is kept, for a decision asked again. */
     decide(input: RoutingInput, signal?: AbortSignal, sessionId?: SessionId, options?: RoutingOptions): Promise<RoutingResult>;

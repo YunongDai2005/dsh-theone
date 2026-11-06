@@ -3,21 +3,29 @@ import type { ModelSelection } from '@deepseek-ai/dsh-agent'
 import { randomUUID } from 'node:crypto'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { RouterFailure, answerJson } from './llm-router.ts'
+import { analysisBudget } from './analysis-budget.ts'
 
 /** Small, tool-free analysis through the host runtime, with no session history replay. */
 export async function modelJson(llm: Pick<LlmRuntime, 'prepareCall'>, selection: ModelSelection,
   system: string, payload: unknown, signal?: AbortSignal,
-  options: { sessionId?: SessionId; maxTokens?: number; timeoutMs?: number; reasoningEffort?: ModelSelection['reasoningEffort'] } = {}): Promise<unknown> {
+  options: { sessionId?: SessionId; maxTokens?: number; timeoutMs?: number; reasoningEffort?: ModelSelection['reasoningEffort']; beforeSend?: () => void } = {}): Promise<unknown> {
   signal?.throwIfAborted()
   if (!selection.provider || !selection.model || selection.provider === 'theone') throw new RouterFailure('CATALOG_MODEL_UNAVAILABLE')
   const text = JSON.stringify(payload)
   if (text.length > 42000) throw new RouterFailure('CATALOG_INPUT_TOO_LARGE')
   const timeout = AbortSignal.timeout(options.timeoutMs ?? 90000)
   const bounded = signal ? AbortSignal.any([signal, timeout]) : timeout
+  const budget = analysisBudget(llm), delay = budget.delay()
+  if (delay) throw new RouterFailure(delay.code, { elapsedMs: 0, retryAfterMs: delay.retryAfterMs })
+  let sent = false
   try {
     const call = await llm.prepareCall({ ...selection, maxTokens: options.maxTokens ?? 16384,
       ...(options.reasoningEffort ? { reasoningEffort: options.reasoningEffort } : {}) }, bounded)
     bounded.throwIfAborted()
+    options.beforeSend?.()
+    const limited = budget.take()
+    if (limited) throw new RouterFailure(limited.code, { elapsedMs: 0, retryAfterMs: limited.retryAfterMs })
+    sent = true
     let output = '', finished = false
     for await (const chunk of call.stream({ ...call.config, system, sessionId: options.sessionId ?? SessionId(randomUUID()),
       messages: [{ role: 'user', content: [{ type: 'text', text }] }], signal: bounded })) {
@@ -35,9 +43,13 @@ export async function modelJson(llm: Pick<LlmRuntime, 'prepareCall'>, selection:
     }
     if (!finished) throw new RouterFailure('CATALOG_OUTPUT_INCOMPLETE')
     const json = answerJson(output)
-    try { return JSON.parse(json) } catch { throw new RouterFailure('CATALOG_OUTPUT_INVALID') }
+    let value: unknown
+    try { value = JSON.parse(json) } catch { throw new RouterFailure('CATALOG_OUTPUT_INVALID') }
+    budget.succeeded()
+    return value
   } catch (error) {
     signal?.throwIfAborted()
+    if (sent) budget.failed(error instanceof RouterFailure ? error.meta?.httpStatus : undefined)
     if (error instanceof RouterFailure) throw error
     throw new RouterFailure(bounded.aborted ? 'CATALOG_REQUEST_TIMEOUT' : 'CATALOG_REQUEST_FAILED')
   }

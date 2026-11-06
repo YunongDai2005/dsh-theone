@@ -9,6 +9,7 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 import UserQuestions from '@deepseek-ai/dsh-user-questions'
 import { CARD_PROMPT } from '../src/topic-memory.ts'
 import { ROUTING_PROMPT } from '../src/llm-router.ts'
+import { MERGE_VET_PROMPT } from '../src/merge-vetting.ts'
 import { harness, ask, FixtureModel, peered, textResponse } from './harness.ts'
 
 const OLD = 'ctx_thesis'
@@ -32,6 +33,12 @@ async function fixture(root?: string) {
         : { action: 'CREATE', title: 'Chapter three', historyIndependent: true, reason: 'fixture' })); return
     }
     if (request.system === CARD_PROMPT) { yield* textResponse(JSON.stringify(card)); return }
+    if (request.system === MERGE_VET_PROMPT) {
+      const payload = JSON.parse((request.messages[0].content as readonly { text: string }[])[0].text)
+      yield* textResponse(JSON.stringify({ decisions: payload.pairs.map((pair: any) => ({ pairId: pair.pairId,
+        sameMatter: true, confidence: 0.96, keepId: pair.topics.find((topic: any) => topic.id !== created)?.id ?? pair.topics[1].id,
+        reason: '同一章论文' })) })); return
+    }
     await workerGate?.(); yield* textResponse('Only the requested answer')
   }
   const post = async (body: unknown, path = 'topics') => {
@@ -45,6 +52,7 @@ async function fixture(root?: string) {
     const reply = await ask(gateway, 'Write the thesis chapter')
     created = store.route(reply.input.id)!.decision.contextId
     await app.ctx.theone.extracting
+    await (app.ctx.theone as any).mergeVetter.tick()
     const suggestions = snapshot().mergeSuggestions
     assert.equal(suggestions?.length, 1, 'first card must publish one sidebar suggestion')
     return suggestions[0] as any
@@ -294,6 +302,7 @@ test('acceptance rechecks similarity when later cards replace the original share
     const card = { summary: 'summary', aliases: [], entities: ['CommonAlpha', 'CommonBeta'], settled: [], open: [] }
     app.store.applyCard(other, card); app.store.applyCard(origin, card)
     ;(app.ctx.theone as any).queueMergeSuggestion(origin)
+    await (app.ctx.theone as any).mergeVetter.tick()
     const suggestion = app.snapshot().mergeSuggestions[0]
     assert.ok(suggestion)
     app.store.applyCard(other, { ...card, entities: Array.from({ length: 48 }, (_, i) => 'UnrelatedEntity' + i) })

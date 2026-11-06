@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { ROUTING_PROMPT } from '../src/llm-router.ts'
+import { MERGE_VET_PROMPT } from '../src/merge-vetting.ts'
 import { CARD_PROMPT, type TopicCard } from '../src/topic-memory.ts'
 import { ContextStore } from '../src/store.ts'
 import * as policy from '../src/routing-policy.ts'
@@ -28,6 +29,11 @@ async function fixture(options: { route?: 'manual' | 'imported'; beforeCard?: ()
         : { action: 'CREATE', title: TITLE, historyIndependent: true, reason: 'fixture' })); return
     }
     if (request.system === CARD_PROMPT) { await options.beforeCard?.(); yield* textResponse(JSON.stringify(currentCard)); return }
+    if (request.system === MERGE_VET_PROMPT) {
+      const payload = JSON.parse((request.messages[0].content as readonly { text: string }[])[0].text)
+      yield* textResponse(JSON.stringify({ decisions: payload.pairs.map((pair: any) => ({ pairId: pair.pairId,
+        sameMatter: true, confidence: 0.96, keepId: pair.topics.find((topic: any) => topic.id !== newId()).id, reason: '同一论文' })) })); return
+    }
     yield* textResponse('正文回答')
   }
   const newId = () => existing ?? store.contexts().find(topic => topic.title === TITLE)!.id
@@ -38,12 +44,14 @@ async function fixture(options: { route?: 'manual' | 'imported'; beforeCard?: ()
       const result = await ask(app.gateway, '帮我写第三章')
       existing = store.route(result.input.id)!.decision.contextId
       await app.ctx.theone.extracting
+      await (app.ctx.theone as any).mergeVetter.tick()
     },
     rewrite: async () => {
       const id = newId(), topic = store.contexts().find(topic => topic.id === id)!
       await ask(app.gateway, '请完善第三章内容')
       ;(app.ctx.theone as any).queueCard(app.ctx.agents.get(SessionId(topic.workingSessionId)), id)
       await app.ctx.theone.extracting
+      await (app.ctx.theone as any).mergeVetter.tick()
     },
     close: async () => { await app.close(); await rm(root, { recursive: true, force: true }) },
   }
@@ -68,12 +76,12 @@ for (const action of ['move', 'delete', 'merge'] as const) test(`a routed topic 
   } finally { release.resolve(); await app.close() }
 })
 
-test('a first card with no duplicate consumes the check even if a later card becomes similar', async () => {
+test('a later materially changed card can discover a previously unmatched pair in llm mode', async () => {
   const app = await fixture()
   try {
     app.setCard({ summary: '完全独立的事', aliases: [], entities: [], settled: [], open: [] })
     await app.start(); assert.deepEqual(app.suggestions(), [])
-    app.setCard(card); await app.rewrite(); assert.deepEqual(app.suggestions(), [])
+    app.setCard(card); await app.rewrite(); assert.equal(app.suggestions().length, 1)
   } finally { await app.close() }
 })
 
