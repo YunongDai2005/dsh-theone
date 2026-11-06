@@ -5,6 +5,7 @@ import { normalizeTopicLabel } from "./topic-label.js";
 import { newIndependentTopic, referencesHistory, redactRoutingText } from "./routing-policy.js";
 import { FACT_LIMITS } from "./facts.js";
 import { EVIDENCE_LIMITS, RECHECK_PROMPT } from "./routing-evidence.js";
+import { analysisBudget } from "./analysis-budget.js";
 export { redactRoutingText } from "./routing-policy.js";
 export function newRoutingTrace() {
     return { candidateIds: [], recheck: { attempted: false }, review: { attempted: false, pages: [] }, autoSettled: false };
@@ -234,23 +235,27 @@ export class DshRouter {
     now;
     variant;
     experiments = new RoutingExperiments();
-    failures = 0;
-    lastFailureAt = -Infinity;
-    blockedUntil = 0;
+    budget;
     constructor(llm, selection, timeoutMs = 30000, now = Date.now, variant = 'none') {
         this.llm = llm;
         this.selection = selection;
         this.timeoutMs = timeoutMs;
         this.now = now;
         this.variant = variant;
+        this.budget = analysisBudget(llm, now);
     }
     /** With `think`, the model's own default reasoning is kept, for a decision asked again. */
     async decide(input, signal, sessionId, options = {}) {
         signal?.throwIfAborted();
         const payload = routingPayload(input);
-        const retryAfterMs = this.blockedUntil - this.now();
-        if (retryAfterMs > 0)
-            throw new RouterFailure('ROUTER_CIRCUIT_OPEN', { elapsedMs: 0, retryAfterMs });
+        const selection = this.selection();
+        if (!selection.provider || !selection.model)
+            throw new RouterFailure('ROUTER_MODEL_MISSING');
+        if (selection.provider === 'theone')
+            throw new RouterFailure('ROUTER_RECURSION_BLOCKED');
+        const delay = this.budget.delay();
+        if (delay)
+            throw new RouterFailure(delay.code, { elapsedMs: 0, retryAfterMs: delay.retryAfterMs });
         const start = performance.now();
         const bounded = signal ? AbortSignal.any([signal, AbortSignal.timeout(this.timeoutMs)]) : AbortSignal.timeout(this.timeoutMs);
         let usage;
@@ -258,11 +263,6 @@ export class DshRouter {
         try {
             // Prepare once: snapshot overlays, transport identity and all prompt bytes stay identical on retry.
             const request = this.experiments.prepare(payload, this.variant, sessionId);
-            const selection = this.selection();
-            if (!selection.provider || !selection.model)
-                throw new RouterFailure('ROUTER_MODEL_MISSING');
-            if (selection.provider === 'theone')
-                throw new RouterFailure('ROUTER_RECURSION_BLOCKED');
             const messages = [{ role: 'user', content: [{ type: 'text', text: request.user }] }];
             const transportSession = sessionId ?? SessionId(randomUUID());
             for (let number = 1;; number++) {
@@ -278,6 +278,9 @@ export class DshRouter {
                     const call = await this.llm.prepareCall({ ...selection, maxTokens: options.think ? 8192 : 2048,
                         ...(offEffort && !options.think ? { reasoningEffort: offEffort } : {}) }, bounded);
                     bounded.throwIfAborted();
+                    const limited = this.budget.take();
+                    if (limited)
+                        throw new RouterFailure(limited.code, { elapsedMs: 0, retryAfterMs: limited.retryAfterMs });
                     attempt.model = call.config.model;
                     attempt.sent = true;
                     options.onAttempt?.(attempt);
@@ -317,8 +320,7 @@ export class DshRouter {
                         throw new RouterFailure('ROUTER_INVALID_JSON', undefined, 'json-parse');
                     }
                     decision = validateRoutingDecision(request.decode(value), { ...input, currentId: payload.currentId ?? undefined });
-                    this.failures = 0;
-                    this.blockedUntil = 0;
+                    this.budget.succeeded();
                 }
                 catch (error) {
                     const failure = routingFailure(error);
@@ -345,18 +347,11 @@ export class DshRouter {
         catch (error) {
             signal?.throwIfAborted();
             const failure = routingFailure(error);
-            // Calls made together (catalog review pages) that fail together count as one failure.
-            const now = this.now();
-            if (now - this.lastFailureAt > 2000)
-                this.failures++;
-            this.lastFailureAt = now;
-            // A key the provider refuses waits a minute; a rate limit or repeated failures only briefly.
-            const status = failure.meta?.httpStatus ?? 0;
-            const wait = [401, 403].includes(status) ? 60000 : status === 429 ? 15000 : this.failures >= 3 ? 30000 : 0;
-            if (wait)
-                this.blockedUntil = Math.max(this.blockedUntil, now + wait);
+            if (!['ROUTER_RATE_LIMITED', 'ROUTER_CIRCUIT_OPEN'].includes(failure.code))
+                this.budget.failed(failure.meta?.httpStatus);
+            const delay = this.budget.delay();
             throw new RouterFailure(failure.code, { ...failure.meta, elapsedMs: Math.round(performance.now() - start), usage, attempts,
-                ...(this.blockedUntil > this.now() ? { retryAfterMs: this.blockedUntil - this.now() } : {}) }, failure.detail);
+                ...(delay ? { retryAfterMs: delay.retryAfterMs } : {}) }, failure.detail);
         }
     }
 }

@@ -4,6 +4,7 @@ import type { ContextDescriptor, ContextUsage, Decision, Progress, RouteRecord, 
 import { type FactEvidence, type FactKind, type FactView } from './facts.ts';
 import { LearningJournal, type LearningSource } from './learning-journal.ts';
 import { type Settled, type TopicCard } from './topic-memory.ts';
+import { type MergeVetRecord, type MergeVetTopic } from './merge-vetting.ts';
 import type { BubbleMergeSuggestion, BubbleScope } from './bubble-types.ts';
 /** A write to a topic's facts, after its evidence was checked against the session. */
 export interface FactWrite {
@@ -103,11 +104,20 @@ export declare class ContextStore {
     mergeSuggestions(): BubbleMergeSuggestion[];
     mergeSuggestion(suggestionId: string): BubbleMergeSuggestion | undefined;
     mergeSuggestionSeen(a: string, b: string): boolean;
+    /** Internal model decisions never enter bubble snapshots, merge_prompts or the learning journal. */
+    mergeVets(): MergeVetRecord[];
+    mergeVet(a: string, b: string): MergeVetRecord | undefined;
+    saveMergeVet(record: MergeVetRecord): void;
+    mergeVetTopics(pair: readonly string[]): MergeVetTopic[];
+    mergeVetFingerprint(pair: readonly string[]): string | undefined;
     /** A private precondition fingerprint; not a general topicRevision or a content/learning snapshot. */
     private mergeSuggestionStructure;
     mergeSuggestionValid(suggestionId: string): boolean;
     /** The unique normalized pair reserves concurrency without recording any user decision. */
-    createMergeSuggestion(originId: string, otherId: string, scope: BubbleScope, evidence: BubbleMergeSuggestion['evidence'], expiresAt: number, now?: number): BubbleMergeSuggestion | undefined;
+    createMergeSuggestion(originId: string, otherId: string, scope: BubbleScope, evidence: BubbleMergeSuggestion['evidence'], expiresAt: number, now?: number, vetted?: {
+        fingerprint: string;
+        keepId: string;
+    }): BubbleMergeSuggestion | undefined;
     finishMergeSuggestion(suggestionId: string, state: Exclude<BubbleMergeSuggestion['state'], 'pending'>, detail?: Pick<BubbleMergeSuggestion, 'operationId' | 'sourceId' | 'targetId' | 'requestId' | 'reason'>, now?: number): BubbleMergeSuggestion | undefined;
     /** Other names cards gave a topic (or every topic), most recently confirmed first. */
     names(contextId?: string): Map<string, string[]>;

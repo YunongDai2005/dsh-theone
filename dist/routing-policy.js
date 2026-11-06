@@ -111,7 +111,7 @@ export const MERGE_TITLE_SIMILARITY = 0.6;
 export const MERGE_NAME_MIN_LENGTH = 2;
 export const MERGE_ENGLISH_NAME_MIN_LETTERS = 3;
 /** Only whole names count; a shared generic word inside a longer name is not another entity. */
-export function mergeSimilarity(a, b) {
+function mergeEvidence(a, b) {
     const folder = (cwd) => {
         if (!cwd)
             return '';
@@ -128,5 +128,19 @@ export function mergeSimilarity(a, b) {
     const left = names(a), right = names(b);
     const sharedNames = [...left].filter(name => right.has(name)).length;
     const titleSimilarity = similarity(textFeatures(a.title), textFeatures(b.title));
-    return sharedNames >= MERGE_SHARED_NAMES || titleSimilarity >= MERGE_TITLE_SIMILARITY ? { sharedNames, titleSimilarity } : undefined;
+    return { sharedNames, titleSimilarity };
+}
+/** The original rule remains the fallback when no classifier is configured. */
+export function mergeSimilarity(a, b) {
+    const evidence = mergeEvidence(a, b);
+    return evidence && (evidence.sharedNames >= MERGE_SHARED_NAMES || evidence.titleSimilarity >= MERGE_TITLE_SIMILARITY) ? evidence : undefined;
+}
+/** Recall-oriented candidates only: a model must approve these before the user sees them. */
+export function mergeCandidateSimilarity(a, b) {
+    const evidence = mergeEvidence(a, b);
+    if (!evidence)
+        return;
+    const left = textFeatures(a.summary ?? ''), right = textFeatures(b.summary ?? '');
+    const shared = [...left].filter(term => right.has(term)).length;
+    return evidence.sharedNames >= 1 || evidence.titleSimilarity >= 0.35 || shared >= 2 && similarity(left, right) >= 0.25 ? evidence : undefined;
 }
