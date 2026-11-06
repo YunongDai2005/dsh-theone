@@ -190,7 +190,8 @@ interface Vesicle { el: SVGGElement; from: () => Pt; to: () => Pt; arrive: () =>
 
 export function createFoam(options: FoamOptions): Foam {
   const { host, actions } = options
-  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches
+  // Read live, so switching reduced motion on takes effect without a reload.
+  const motion = matchMedia('(prefers-reduced-motion: reduce)'), reduced = () => motion.matches
   host.classList.add('theone-foam')
   const svg = document.createElementNS(NS, 'svg')
   svg.setAttribute('aria-hidden', 'true')
@@ -582,10 +583,10 @@ export function createFoam(options: FoamOptions): Foam {
     // The box follows the cluster on a soft spring with a little give; small wobbles of the cells do not move the sidebar.
     if (heightTarget < 0) { height = heightTarget = want; host.style.height = fx(height) + 'px'; options.onHeight(height) }
     if (want > heightTarget + 2 || want < heightTarget - 6) heightTarget = want
-    const hk = 70, hc = 2 * (reduced ? 1 : .72) * Math.sqrt(hk)
+    const hk = 70, hc = 2 * .72 * Math.sqrt(hk)
     heightV += (hk * (heightTarget - height) - hc * heightV) * dt
     if (Math.abs(heightTarget - height) < .05 && Math.abs(heightV) < .05) heightV = 0
-    const nextHeight = heightV ? height + heightV * dt : heightTarget
+    const nextHeight = reduced() ? heightTarget : heightV ? height + heightV * dt : heightTarget
     if (Math.abs(nextHeight - height) > .01) { height = nextHeight; host.style.height = fx(height) + 'px'; options.onHeight(height) }
     const fr = host.getBoundingClientRect(), mark = options.mark(), mr = mark?.getBoundingClientRect()
     const w = fr.width, h = Math.max(height, 8), cx = w / 2, cy = Math.max(14, h / 2)
@@ -781,7 +782,7 @@ export function createFoam(options: FoamOptions): Foam {
     let left = Math.min(4 / 30, Math.max(0, (n - last) / 1000)); last = n
     do {
       const dt = Math.min(1 / 30, left); left -= dt
-      if (!reduced) t += dt
+      if (!reduced()) t += dt
       step(dt)
     } while (left > 1e-3)
     raf = requestAnimationFrame(frame)

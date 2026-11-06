@@ -85,7 +85,8 @@ export function foamLabel(name, radius) {
 }
 export function createFoam(options) {
     const { host, actions } = options;
-    const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    // Read live, so switching reduced motion on takes effect without a reload.
+    const motion = matchMedia('(prefers-reduced-motion: reduce)'), reduced = () => motion.matches;
     host.classList.add('theone-foam');
     const svg = document.createElementNS(NS, 'svg');
     svg.setAttribute('aria-hidden', 'true');
@@ -681,11 +682,11 @@ export function createFoam(options) {
         }
         if (want > heightTarget + 2 || want < heightTarget - 6)
             heightTarget = want;
-        const hk = 70, hc = 2 * (reduced ? 1 : .72) * Math.sqrt(hk);
+        const hk = 70, hc = 2 * .72 * Math.sqrt(hk);
         heightV += (hk * (heightTarget - height) - hc * heightV) * dt;
         if (Math.abs(heightTarget - height) < .05 && Math.abs(heightV) < .05)
             heightV = 0;
-        const nextHeight = heightV ? height + heightV * dt : heightTarget;
+        const nextHeight = reduced() ? heightTarget : heightV ? height + heightV * dt : heightTarget;
         if (Math.abs(nextHeight - height) > .01) {
             height = nextHeight;
             host.style.height = fx(height) + 'px';
@@ -996,7 +997,7 @@ export function createFoam(options) {
         do {
             const dt = Math.min(1 / 30, left);
             left -= dt;
-            if (!reduced)
+            if (!reduced())
                 t += dt;
             step(dt);
         } while (left > 1e-3);

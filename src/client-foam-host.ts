@@ -106,12 +106,19 @@ export function modelFromCatalog(snapshot: CatalogSnapshot): FoamModel {
  * Makes room under the card and lets the rows below follow like a wave: the layout moves at once, and each
  * row is drawn back to where the row above it is, on its own spring, so a change ripples down the sidebar
  * instead of shifting it in one block. Rows: the card's siblings in DSH's list, then the next block (the
- * workspace region); the footer stays put. Transforms are cleared once everything has settled.
+ * workspace region); the footer stays put.
+ *
+ * Rows are things people click, so they hold still while someone is using them: with the pointer over
+ * them, a button pressed on them or focus inside them, a change waits and is applied when they leave
+ * (a large growth moves them at once, in one block, so the cluster never covers them). With reduced
+ * motion the rows simply sit where the layout puts them. A row's own inline transform is put back after.
  */
-function createWave(button: HTMLElement, reduced: boolean) {
-  const K = 210, C = 2 * .6 * Math.sqrt(K), SLACK = 8
-  let base = 0, started = false, frame = 0, last = 0
-  const state = new Map<HTMLElement, { y: number; v: number }>()
+function createWave(button: HTMLElement) {
+  const K = 210, C = 2 * .6 * Math.sqrt(K), SLACK = 8, URGENT = 24
+  const motion = matchMedia('(prefers-reduced-motion: reduce)')
+  let base = 0, wanted = 0, started = false, frame = 0, last = 0, pressed = false
+  let pointer: { x: number; y: number } | undefined
+  const state = new Map<HTMLElement, { y: number; v: number; transform: string; willChange: string }>()
   const rows = () => {
     const list: HTMLElement[] = []
     for (let row = button.nextElementSibling; row; row = row.nextElementSibling) if (row instanceof HTMLElement && row.offsetHeight) list.push(row)
@@ -119,20 +126,39 @@ function createWave(button: HTMLElement, reduced: boolean) {
     if (next instanceof HTMLElement && next.offsetHeight && next.nextElementSibling) list.push(next)
     return list
   }
-  const clear = (el: HTMLElement) => { el.style.removeProperty('transform'); el.style.removeProperty('will-change') }
+  const track = (el: HTMLElement, y: number) => {
+    let s = state.get(el)
+    if (!s) state.set(el, s = { y, v: 0, transform: el.style.transform, willChange: el.style.willChange })
+    return s
+  }
+  const release = (el: HTMLElement) => {
+    const s = state.get(el)
+    if (!s) return
+    el.style.transform = s.transform; el.style.willChange = s.willChange
+    state.delete(el)
+  }
+  /** Someone is using the rows: the pointer is over them, pressing on them, or focus is inside them. */
+  const busy = (list = rows()) => {
+    if (pressed) return true
+    const active = document.activeElement
+    if (active && active !== document.body && list.some(el => el.contains(active))) return true
+    if (!pointer) return false
+    return list.some(el => { const r = el.getBoundingClientRect(); return pointer!.x >= r.left && pointer!.x <= r.right && pointer!.y >= r.top && pointer!.y <= r.bottom })
+  }
   function step(now: number) {
     frame = 0
     let dt = Math.min(.1, (now - last) / 1000 || 1 / 60)
     last = now
     const list = rows()
-    for (const el of [...state.keys()]) if (!list.includes(el)) { clear(el); state.delete(el) }
+    for (const el of [...state.keys()]) if (!list.includes(el)) release(el)
+    if (busy(list)) return
+    if (wanted !== base) { apply(wanted, list); return }
     while (dt > 0) {
       const h = Math.min(dt, 1 / 120)
       dt -= h
       let above = base
       for (const el of list) {
-        const s = state.get(el) ?? { y: base, v: 0 }
-        state.set(el, s)
+        const s = track(el, base)
         s.v += (K * (above - s.y) - C * s.v) * h
         s.y += s.v * h
         above = s.y
@@ -160,34 +186,70 @@ function createWave(button: HTMLElement, reduced: boolean) {
     for (const el of list) {
       const s = state.get(el)
       if (!s) continue
-      if (Math.abs(s.y - base) < .1 && Math.abs(s.v) < .5) { s.y = base; s.v = 0; clear(el); continue }
+      if (Math.abs(s.y - base) < .1 && Math.abs(s.v) < .5) { release(el); continue }
       moving = true
       el.style.willChange = 'transform'
       el.style.transform = `translateY(${(s.y - base).toFixed(2)}px)`
     }
     return moving
   }
+  /** Moves the layout to `next`; the rows keep their place on screen in this same frame and spring after it. */
+  function apply(next: number, list = rows(), still = false) {
+    const before = base
+    base = next
+    button.style.marginBottom = `${next}px`
+    if (still) { for (const el of list) release(el); return }
+    for (const el of list) track(el, before)
+    hold(list)
+    if (draw(list) && !frame) { last = performance.now(); frame = requestAnimationFrame(step) }
+  }
+  const wake = () => { if (!frame && (wanted !== base || state.size)) { last = performance.now(); frame = requestAnimationFrame(step) } }
+  const move = (event: PointerEvent) => { pointer = { x: event.clientX, y: event.clientY }; wake() }
+  const leave = () => { pointer = undefined; wake() }
+  const down = (event: PointerEvent) => { if (rows().some(el => el.contains(event.target as Node))) pressed = true }
+  const up = () => { if (pressed) { pressed = false; wake() } }
+  const settle = () => {
+    // Reduced motion switched on while rows were moving: they go straight to their place.
+    if (!motion.matches) return
+    for (const el of [...state.keys()]) release(el)
+    if (wanted !== base) apply(wanted, rows(), true)
+  }
+  document.addEventListener('pointermove', move, { passive: true })
+  document.addEventListener('pointerdown', down, true)
+  document.addEventListener('pointerup', up, true)
+  document.addEventListener('pointercancel', up, true)
+  document.documentElement.addEventListener('pointerleave', leave)
+  document.addEventListener('focusout', wake)
+  window.addEventListener('blur', up)
+  motion.addEventListener('change', settle)
   return {
     set(height: number) {
       const next = Math.round(height * 2) / 2 + 10
+      wanted = next
       if (next === base) return
-      button.style.marginBottom = `${next}px`
       // The first placement and reduced motion: the rows simply sit where the layout puts them.
-      if (!started || reduced) { base = next; started = true; for (const s of state.values()) s.y = base; return }
-      const before = base
-      base = next
-      // Rows keep their place on screen in this same frame, then spring after the layout.
+      if (!started || motion.matches) { started = true; apply(next, rows(), true); return }
       const list = rows()
-      for (const el of list) if (!state.has(el)) state.set(el, { y: before, v: 0 })
-      hold(list)
-      draw(list)
-      if (!frame) { last = performance.now(); frame = requestAnimationFrame(step) }
+      if (busy(list)) {
+        // Waits while the rows are in use, unless the cluster has grown enough to reach them: then one plain move.
+        if (next - base > URGENT) apply(next, list, true)
+        else wake()
+        return
+      }
+      apply(next, list)
     },
     destroy() {
       cancelAnimationFrame(frame)
-      for (const el of state.keys()) clear(el)
-      state.clear()
+      for (const el of [...state.keys()]) release(el)
       button.style.marginBottom = ''
+      document.removeEventListener('pointermove', move)
+      document.removeEventListener('pointerdown', down, true)
+      document.removeEventListener('pointerup', up, true)
+      document.removeEventListener('pointercancel', up, true)
+      document.documentElement.removeEventListener('pointerleave', leave)
+      document.removeEventListener('focusout', wake)
+      window.removeEventListener('blur', up)
+      motion.removeEventListener('change', settle)
     },
   }
 }
@@ -197,7 +259,7 @@ export function mountFoamHost(options: FoamHostOptions): FoamHost {
   const host = document.createElement('div')
   host.setAttribute('translate', 'no')
   document.body.appendChild(host)
-  const wave = createWave(button, matchMedia('(prefers-reduced-motion: reduce)').matches)
+  const wave = createWave(button)
   const sessionOf = new Map<string, string>()
   let latest: BubbleSnapshot | undefined
   /** The work item a stop gesture means: the topic's running (or waiting) execution, or its queued input. */

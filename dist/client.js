@@ -202,7 +202,7 @@ function foamLabel(name, radius) {
 }
 function createFoam(options) {
   const { host, actions } = options;
-  const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const motion = matchMedia("(prefers-reduced-motion: reduce)"), reduced = () => motion.matches;
   host.classList.add("theone-foam");
   const svg = document.createElementNS(NS, "svg");
   svg.setAttribute("aria-hidden", "true");
@@ -798,10 +798,10 @@ function createFoam(options) {
       options.onHeight(height);
     }
     if (want > heightTarget + 2 || want < heightTarget - 6) heightTarget = want;
-    const hk = 70, hc = 2 * (reduced ? 1 : 0.72) * Math.sqrt(hk);
+    const hk = 70, hc = 2 * 0.72 * Math.sqrt(hk);
     heightV += (hk * (heightTarget - height) - hc * heightV) * dt;
     if (Math.abs(heightTarget - height) < 0.05 && Math.abs(heightV) < 0.05) heightV = 0;
-    const nextHeight = heightV ? height + heightV * dt : heightTarget;
+    const nextHeight = reduced() ? heightTarget : heightV ? height + heightV * dt : heightTarget;
     if (Math.abs(nextHeight - height) > 0.01) {
       height = nextHeight;
       host.style.height = fx(height) + "px";
@@ -1071,7 +1071,7 @@ function createFoam(options) {
     do {
       const dt = Math.min(1 / 30, left);
       left -= dt;
-      if (!reduced) t += dt;
+      if (!reduced()) t += dt;
       step(dt);
     } while (left > 1e-3);
     raf = requestAnimationFrame(frame);
@@ -1226,9 +1226,11 @@ function modelFromCatalog(snapshot) {
     for (const other of entry.related) if (id < other.id) links.push({ a: id, b: other.id, weight: other.reasons.includes("manual") ? 1 : other.reasons.includes("learned") ? 0.5 : 0.3 });
   return { topics, links };
 }
-function createWave(button, reduced) {
-  const K = 210, C = 2 * 0.6 * Math.sqrt(K), SLACK = 8;
-  let base = 0, started = false, frame = 0, last = 0;
+function createWave(button) {
+  const K = 210, C = 2 * 0.6 * Math.sqrt(K), SLACK = 8, URGENT = 24;
+  const motion = matchMedia("(prefers-reduced-motion: reduce)");
+  let base = 0, wanted = 0, started = false, frame = 0, last = 0, pressed = false;
+  let pointer;
   const state = /* @__PURE__ */ new Map();
   const rows = () => {
     const list = [];
@@ -1237,26 +1239,45 @@ function createWave(button, reduced) {
     if (next instanceof HTMLElement && next.offsetHeight && next.nextElementSibling) list.push(next);
     return list;
   };
-  const clear = (el) => {
-    el.style.removeProperty("transform");
-    el.style.removeProperty("will-change");
+  const track = (el, y) => {
+    let s = state.get(el);
+    if (!s) state.set(el, s = { y, v: 0, transform: el.style.transform, willChange: el.style.willChange });
+    return s;
+  };
+  const release = (el) => {
+    const s = state.get(el);
+    if (!s) return;
+    el.style.transform = s.transform;
+    el.style.willChange = s.willChange;
+    state.delete(el);
+  };
+  const busy = (list = rows()) => {
+    if (pressed) return true;
+    const active = document.activeElement;
+    if (active && active !== document.body && list.some((el) => el.contains(active))) return true;
+    if (!pointer) return false;
+    return list.some((el) => {
+      const r = el.getBoundingClientRect();
+      return pointer.x >= r.left && pointer.x <= r.right && pointer.y >= r.top && pointer.y <= r.bottom;
+    });
   };
   function step(now2) {
     frame = 0;
     let dt = Math.min(0.1, (now2 - last) / 1e3 || 1 / 60);
     last = now2;
     const list = rows();
-    for (const el of [...state.keys()]) if (!list.includes(el)) {
-      clear(el);
-      state.delete(el);
+    for (const el of [...state.keys()]) if (!list.includes(el)) release(el);
+    if (busy(list)) return;
+    if (wanted !== base) {
+      apply2(wanted, list);
+      return;
     }
     while (dt > 0) {
       const h3 = Math.min(dt, 1 / 120);
       dt -= h3;
       let above = base;
       for (const el of list) {
-        const s = state.get(el) ?? { y: base, v: 0 };
-        state.set(el, s);
+        const s = track(el, base);
         s.v += (K * (above - s.y) - C * s.v) * h3;
         s.y += s.v * h3;
         above = s.y;
@@ -1284,9 +1305,7 @@ function createWave(button, reduced) {
       const s = state.get(el);
       if (!s) continue;
       if (Math.abs(s.y - base) < 0.1 && Math.abs(s.v) < 0.5) {
-        s.y = base;
-        s.v = 0;
-        clear(el);
+        release(el);
         continue;
       }
       moving = true;
@@ -1295,33 +1314,87 @@ function createWave(button, reduced) {
     }
     return moving;
   }
+  function apply2(next, list = rows(), still = false) {
+    const before = base;
+    base = next;
+    button.style.marginBottom = `${next}px`;
+    if (still) {
+      for (const el of list) release(el);
+      return;
+    }
+    for (const el of list) track(el, before);
+    hold(list);
+    if (draw(list) && !frame) {
+      last = performance.now();
+      frame = requestAnimationFrame(step);
+    }
+  }
+  const wake = () => {
+    if (!frame && (wanted !== base || state.size)) {
+      last = performance.now();
+      frame = requestAnimationFrame(step);
+    }
+  };
+  const move = (event) => {
+    pointer = { x: event.clientX, y: event.clientY };
+    wake();
+  };
+  const leave = () => {
+    pointer = void 0;
+    wake();
+  };
+  const down = (event) => {
+    if (rows().some((el) => el.contains(event.target))) pressed = true;
+  };
+  const up = () => {
+    if (pressed) {
+      pressed = false;
+      wake();
+    }
+  };
+  const settle = () => {
+    if (!motion.matches) return;
+    for (const el of [...state.keys()]) release(el);
+    if (wanted !== base) apply2(wanted, rows(), true);
+  };
+  document.addEventListener("pointermove", move, { passive: true });
+  document.addEventListener("pointerdown", down, true);
+  document.addEventListener("pointerup", up, true);
+  document.addEventListener("pointercancel", up, true);
+  document.documentElement.addEventListener("pointerleave", leave);
+  document.addEventListener("focusout", wake);
+  window.addEventListener("blur", up);
+  motion.addEventListener("change", settle);
   return {
     set(height) {
       const next = Math.round(height * 2) / 2 + 10;
+      wanted = next;
       if (next === base) return;
-      button.style.marginBottom = `${next}px`;
-      if (!started || reduced) {
-        base = next;
+      if (!started || motion.matches) {
         started = true;
-        for (const s of state.values()) s.y = base;
+        apply2(next, rows(), true);
         return;
       }
-      const before = base;
-      base = next;
       const list = rows();
-      for (const el of list) if (!state.has(el)) state.set(el, { y: before, v: 0 });
-      hold(list);
-      draw(list);
-      if (!frame) {
-        last = performance.now();
-        frame = requestAnimationFrame(step);
+      if (busy(list)) {
+        if (next - base > URGENT) apply2(next, list, true);
+        else wake();
+        return;
       }
+      apply2(next, list);
     },
     destroy() {
       cancelAnimationFrame(frame);
-      for (const el of state.keys()) clear(el);
-      state.clear();
+      for (const el of [...state.keys()]) release(el);
       button.style.marginBottom = "";
+      document.removeEventListener("pointermove", move);
+      document.removeEventListener("pointerdown", down, true);
+      document.removeEventListener("pointerup", up, true);
+      document.removeEventListener("pointercancel", up, true);
+      document.documentElement.removeEventListener("pointerleave", leave);
+      document.removeEventListener("focusout", wake);
+      window.removeEventListener("blur", up);
+      motion.removeEventListener("change", settle);
     }
   };
 }
@@ -1330,7 +1403,7 @@ function mountFoamHost(options) {
   const host = document.createElement("div");
   host.setAttribute("translate", "no");
   document.body.appendChild(host);
-  const wave = createWave(button, matchMedia("(prefers-reduced-motion: reduce)").matches);
+  const wave = createWave(button);
   const sessionOf = /* @__PURE__ */ new Map();
   let latest;
   const workOf = (id, queued) => latest?.workItems.find((item) => item.contextId === id && item.stop.allowed && (queued ? item.phase === "queued" : LIVE.has(item.phase) || item.phase === "waiting_user"));
