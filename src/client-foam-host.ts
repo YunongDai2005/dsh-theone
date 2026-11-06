@@ -3,7 +3,7 @@
  * for it, turns the user's gestures into TheOne's existing topic operations, and feeds it TheOne's state.
  * The box lives on document.body (DSH owns the sidebar's DOM), positioned under the card every frame.
  */
-import { createFoam, type Foam, type FoamActions, type FoamEvent, type FoamModel, type FoamPhase, type FoamTextKey } from './client-foam.ts'
+import { createFoam, type Foam, type FoamActions, type FoamEvent, type FoamModel, type FoamPhase, type FoamTextKey, type FoamTopic } from './client-foam.ts'
 import type { CatalogSnapshot } from './catalog-types.ts'
 import type { BubbleCursor, BubbleEvent, BubbleReadResponse, BubbleSnapshot, BubbleWorkItem } from './bubble-types.ts'
 
@@ -17,6 +17,26 @@ function phaseOf(items: BubbleWorkItem[]): FoamPhase {
   if (items.some(item => item.phase === 'queued')) return 'queued'
   if (items.some(item => (item.phase === 'failed' || item.phase === 'interrupted') && item.delivery.phase !== 'shown')) return 'failed'
   return 'idle'
+}
+
+/**
+ * The finer status behind a phase, for the topic's details: which of routing/starting/answering/recovering, whether it waits
+ * on a question or an approval, and why it is queued. Only what the work items say; nothing is guessed.
+ */
+export function statusOf(items: BubbleWorkItem[], phase: FoamPhase): Pick<FoamTopic, 'status' | 'queueReason'> {
+  if (phase === 'waiting') {
+    const kinds = items.flatMap(item => item.waits ?? []).map(wait => wait.kind)
+    return { status: kinds.includes('question') ? 'question' : kinds.includes('approval') ? 'approval' : 'waiting' }
+  }
+  if (phase === 'running') {
+    const live = items.filter(item => LIVE.has(item.phase)).map(item => item.phase)
+    return { status: live.includes('running') ? 'running' : live.includes('recovering') ? 'recovering' : live.includes('starting') ? 'starting' : 'routing' }
+  }
+  if (phase === 'queued') {
+    const reason = items.find(item => item.phase === 'queued')?.queueReason
+    return reason ? { status: 'queued', queueReason: reason } : { status: 'queued' }
+  }
+  return { status: phase }
 }
 
 /** The cluster's model from TheOne's bubble snapshot. Weight: recency (half-life about three days) and the last 30 days' use. */
@@ -35,7 +55,8 @@ export function modelFromBubbles(snapshot: BubbleSnapshot): FoamModel {
     return { id: topic.id, title: topic.title, label: topic.label ?? undefined, phase, weight, current: topic.current, group: topic.groupId ?? undefined,
       aside: !busy && !topic.current && (topic.effectiveDone || topic.archived),
       oneOff: items.length > 0 && items.every(item => item.temporary?.kind === 'model_aside'),
-      startedAt: live ? live.updatedAt : undefined }
+      startedAt: live ? live.updatedAt : undefined, ...statusOf(items, phase),
+      lastActive: Math.max(topic.lastActivityAt ?? 0, topic.usage.lastUsedAt ?? 0) || undefined }
   })
   const links = snapshot.edges.map(edge => ({ a: edge.a, b: edge.b, weight: edge.relation === 'kept_apart' ? -.3 : Math.max(0, Math.min(1, edge.strength)) }))
   // Merges waiting for TheOne to go quiet hold the two cells together by a neck.
