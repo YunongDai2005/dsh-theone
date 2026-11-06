@@ -3,9 +3,14 @@
  * for it, turns the user's gestures into TheOne's existing topic operations, and feeds it TheOne's state.
  * The box lives on document.body (DSH owns the sidebar's DOM), positioned under the card every frame.
  */
-import { type FoamEvent, type FoamModel, type FoamTextKey } from './client-foam.ts';
+import { type FoamEvent, type FoamModel, type FoamPhase, type FoamTextKey, type FoamTopic } from './client-foam.ts';
 import type { CatalogSnapshot } from './catalog-types.ts';
-import type { BubbleEvent, BubbleSnapshot } from './bubble-types.ts';
+import type { BubbleEvent, BubbleSnapshot, BubbleWorkItem } from './bubble-types.ts';
+/**
+ * The finer status behind a phase, for the topic's details: which of routing/starting/answering/recovering, whether it waits
+ * on a question or an approval, and why it is queued. Only what the work items say; nothing is guessed.
+ */
+export declare function statusOf(items: BubbleWorkItem[], phase: FoamPhase): Pick<FoamTopic, 'status' | 'queueReason'>;
 /** The cluster's model from TheOne's bubble snapshot. Weight: recency (half-life about three days) and the last 30 days' use. */
 export declare function modelFromBubbles(snapshot: BubbleSnapshot): FoamModel;
 /** What each routing event looks like on the cluster. Hints and bookkeeping events play nothing. */

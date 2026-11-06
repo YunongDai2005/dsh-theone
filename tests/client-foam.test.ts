@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { foamHitRadii, foamLabel, foamNearest, foamPlace, foamShortName } from '../src/client-foam.ts'
+import { foamFilter, foamHitRadii, foamLabel, foamNearest, foamOrder, foamPlace, foamShortName, foamStatusText, type FoamTopic } from '../src/client-foam.ts'
 import { foamEventsFrom, modelFromBubbles, modelFromCatalog } from '../src/client-foam-host.ts'
 import type { CatalogSnapshot } from '../src/catalog-types.ts'
 import type { BubbleEvent, BubbleSnapshot, BubbleTopic, BubbleWorkItem } from '../src/bubble-types.ts'
@@ -198,4 +198,67 @@ test('a menu opens at the pointer, flips left and up near the edges, and never l
   assert.deepEqual(foamPlace({ w: 170, h: 120 }, at(350, 250), view, opts), { left: 180, top: 128, side: 'above' })
   // Taller than the viewport (CSS caps it and scrolls): starts at the top margin.
   assert.equal(foamPlace({ w: 170, h: 400 }, at(50, 50), view, opts).top, 8)
+})
+
+const say = (key: string) => key
+const foam = (id: string, extra: Partial<FoamTopic> = {}): FoamTopic => ({ id, title: id, weight: .5, phase: 'idle', ...extra })
+
+test('details say only what the work items support: which kind of running, question or approval, and why it is queued', () => {
+  const model = modelFromBubbles(snapshot([topic('a'), topic('b'), topic('c'), topic('d'), topic('e'), topic('f'), topic('g'), topic('h')], [
+    work('1', 'a', 'routing'),
+    work('2', 'b', 'starting'), work('3', 'b', 'recovering'),
+    work('4', 'c', 'waiting_user', { waits: [{ kind: 'approval', referenceId: 'r', ownerSessionId: 's' }] }),
+    work('5', 'd', 'waiting_user', { waits: [{ kind: 'approval', referenceId: 'r', ownerSessionId: 's' }, { kind: 'question', referenceId: 'q', ownerSessionId: 's' }] }),
+    work('6', 'e', 'waiting_user'),
+    work('7', 'f', 'queued', { queueReason: 'project_busy' }),
+    work('8', 'g', 'queued'),
+    work('9', 'h', 'running'), work('10', 'h', 'starting'),
+  ]))
+  assert.deepEqual(model.topics.map(t => [t.phase, t.status, t.queueReason]), [
+    ['running', 'routing', undefined], ['running', 'recovering', undefined], ['waiting', 'approval', undefined], ['waiting', 'question', undefined],
+    ['waiting', 'waiting', undefined], ['queued', 'queued', 'project_busy'], ['queued', 'queued', undefined], ['running', 'running', undefined],
+  ])
+  assert.equal(foamStatusText(model.topics[0], say), 'statusRouting')
+  assert.equal(foamStatusText(model.topics[2], say), 'statusApproval')
+  assert.equal(foamStatusText(model.topics[5], say), 'queueProject')
+  assert.equal(foamStatusText(model.topics[6], say), 'statusQueued')
+})
+
+test('the status line: current is its own part, a plain idle topic says nothing, set aside shows only when idle', () => {
+  assert.equal(foamStatusText(foam('a'), say), '')
+  assert.equal(foamStatusText(foam('a', { current: true }), say), 'statusCurrent')
+  assert.equal(foamStatusText(foam('a', { current: true, phase: 'running' }), say), 'statusCurrent · statusRunning')
+  assert.equal(foamStatusText(foam('a', { aside: true }), say), 'statusAside')
+  // Without a finer status the phase stands in (the catalog feed), and an answer is "not yet shown", never "shown next".
+  assert.equal(foamStatusText(foam('a', { phase: 'answered' }), say), 'statusAnswered')
+  assert.equal(foamStatusText(foam('a', { phase: 'waiting' }), say), 'statusWaiting')
+  assert.equal(foamStatusText(foam('a', { phase: 'failed' }), say), 'statusFailed')
+  assert.equal(foamStatusText(foam('a', { phase: 'queued', queueReason: 'capacity' }), say), 'queueCapacity')
+  assert.equal(foamStatusText(foam('a', { phase: 'queued', queueReason: 'host_queue' }), say), 'statusQueued')
+})
+
+test('the all-topics list: current first, then busy ones, then the rest, set-aside last, recent first, ties by name', () => {
+  const list = [
+    foam('old', { lastActive: 100 }), foam('aside', { aside: true, lastActive: 900 }), foam('fresh', { lastActive: 800 }),
+    foam('busyOld', { phase: 'running', lastActive: 50 }), foam('cur', { current: true, lastActive: 10 }), foam('wait', { phase: 'waiting', lastActive: 700 }),
+    foam('b', { title: '乙' }), foam('a', { title: '甲' }), foam('aside2', { aside: true, lastActive: 1 }),
+  ]
+  const order = foamOrder(list).map(t => t.id)
+  assert.equal(order[0], 'cur')
+  assert.deepEqual(order.slice(1, 3), ['wait', 'busyOld'])
+  assert.deepEqual(order.slice(3, 5), ['fresh', 'old'])
+  assert.deepEqual(order.slice(-2), ['aside', 'aside2'])
+  assert.deepEqual(foamOrder([...list].reverse()).map(t => t.id), order)
+  assert.deepEqual(list.map(t => t.id)[0], 'old', 'the input is left as it was')
+})
+
+test('type-to-filter is a plain case-insensitive substring of the title or the short label', () => {
+  const list = [foam('1', { title: '想去日本旅游，帮我看看行程', label: '日本' }), foam('2', { title: 'Kubernetes upgrade' }), foam('3', { title: '周报', label: 'Weekly' })]
+  assert.deepEqual(foamFilter(list, '').map(t => t.id), ['1', '2', '3'])
+  assert.deepEqual(foamFilter(list, '  ').map(t => t.id), ['1', '2', '3'])
+  assert.deepEqual(foamFilter(list, '行程').map(t => t.id), ['1'])
+  assert.deepEqual(foamFilter(list, 'KUBER').map(t => t.id), ['2'])
+  assert.deepEqual(foamFilter(list, 'week').map(t => t.id), ['3'])
+  assert.deepEqual(foamFilter(list, 'k').map(t => t.id), ['2', '3'])
+  assert.deepEqual(foamFilter(list, '日本 旅游').map(t => t.id), [])
 })

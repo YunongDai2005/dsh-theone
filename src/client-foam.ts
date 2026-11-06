@@ -7,6 +7,13 @@
 
 /** idle, answering, waiting for a free slot, answered and not yet shown in main chat, waiting on the user (a question or approval), or failed/interrupted. */
 export type FoamPhase = 'idle' | 'running' | 'queued' | 'answered' | 'waiting' | 'failed'
+/**
+ * What a topic is doing, as precisely as TheOne's state says, for its details and the all-topics list (the cell draws
+ * only the phase): routing, starting, answering or recovering are all "running"; a question and an approval are both "waiting".
+ */
+export type FoamStatus = FoamPhase | 'routing' | 'starting' | 'recovering' | 'question' | 'approval'
+/** Why a queued topic waits, when TheOne says. */
+export type FoamQueueReason = 'host_queue' | 'capacity' | 'topic_busy' | 'project_busy' | 'handoff'
 
 export interface FoamTopic {
   id: string
@@ -28,6 +35,11 @@ export interface FoamTopic {
   group?: string
   /** When the current run started (ms since epoch), for the running hint. */
   startedAt?: number
+  /** The finer status for the topic's details; without it the phase stands in. */
+  status?: FoamStatus
+  queueReason?: FoamQueueReason
+  /** Last activity (ms since epoch), for the order of the all-topics list. */
+  lastActive?: number
 }
 
 export interface FoamModel {
@@ -55,7 +67,10 @@ export type FoamEvent =
 export type FoamTextKey =
   | 'more' | 'running' | 'queued' | 'answered' | 'asking' | 'bond' | 'waiting' | 'failed' | 'menuAnswer' | 'offer' | 'rerouteBusy' | 'rerouteFailed' | 'actionFailed' | 'mergeFailed' | 'mergeHold' | 'undo' | 'menuCancelMerge' | 'menuUnmerge'
   | 'dropMain' | 'dropMerge' | 'dropMergeLater' | 'dropSession' | 'busyFling' | 'currentFling'
-  | 'menuContinue' | 'menuOpen' | 'menuAside' | 'menuDelete' | 'menuStop' | 'menuCancel' | 'menuShowNow' | 'menuWorkspace'
+  | 'menuContinue' | 'menuOpen' | 'menuAside' | 'menuDelete' | 'menuStop' | 'menuCancel' | 'menuShowNow' | 'menuWorkspace' | 'menuReroute'
+  | 'allTopics' | 'allWaiting' | 'filter' | 'noMatch'
+  | 'statusCurrent' | 'statusAside' | 'statusRouting' | 'statusStarting' | 'statusRunning' | 'statusRecovering' | 'statusQueued' | 'queueCapacity' | 'queueTopic' | 'queueProject'
+  | 'statusAnswered' | 'statusQuestion' | 'statusApproval' | 'statusWaiting' | 'statusFailed'
 
 export interface FoamActions {
   mount(id: string): void
@@ -107,7 +122,7 @@ export interface Foam {
 }
 
 const NS = 'http://www.w3.org/2000/svg'
-const MAX_VISIBLE = 14, N = 48, GAP = 2, SOFT = 2.2, MINI = .32, MARK_R = 7.4
+const MAX_VISIBLE = 14, N = 48, GAP = 2, SOFT = 2.2, MINI = .32, MARK_R = 7.4, STRIP = 18
 const fx = (v: number) => v.toFixed(2)
 const clamp = (v: number, a = 0, b = 1) => Math.max(a, Math.min(b, v))
 const ease = (v: number, target: number, rate: number, dt: number) => v + (target - v) * Math.min(1, dt * rate)
@@ -270,6 +285,34 @@ export function foamMenuKeys(el: HTMLElement, close: () => void, items = '[role=
   return () => el.removeEventListener('keydown', onKey)
 }
 
+/** A topic's short status in words for its details and the all-topics list; empty for a plain idle topic. Says only what TheOne's state supports. */
+export function foamStatusText(topic: Pick<FoamTopic, 'phase' | 'status' | 'queueReason' | 'current' | 'aside'>, text: (key: FoamTextKey) => string): string {
+  const status = topic.status ?? topic.phase
+  const key: FoamTextKey | null = status === 'routing' ? 'statusRouting' : status === 'starting' ? 'statusStarting' : status === 'running' ? 'statusRunning'
+    : status === 'recovering' ? 'statusRecovering' : status === 'answered' ? 'statusAnswered' : status === 'question' ? 'statusQuestion'
+    : status === 'approval' ? 'statusApproval' : status === 'waiting' ? 'statusWaiting' : status === 'failed' ? 'statusFailed'
+    : status === 'queued' ? (topic.queueReason === 'capacity' ? 'queueCapacity' : topic.queueReason === 'topic_busy' ? 'queueTopic' : topic.queueReason === 'project_busy' ? 'queueProject' : 'statusQueued')
+    : null
+  const parts = [topic.current ? text('statusCurrent') : '', key ? text(key) : '', topic.aside && !key ? text('statusAside') : '']
+  return parts.filter(Boolean).join(' · ')
+}
+
+/**
+ * The all-topics list's order: the topic main chat is in, then the ones doing something, then the rest, set-aside
+ * topics last; most recent first within each, ties by name, so the order is the same every time it opens.
+ */
+export function foamOrder(topics: readonly FoamTopic[]): FoamTopic[] {
+  const rank = (t: FoamTopic) => t.current ? 0 : t.phase !== 'idle' ? 1 : t.aside ? 3 : 2
+  return [...topics].sort((a, b) => rank(a) - rank(b) || (b.lastActive ?? 0) - (a.lastActive ?? 0) || b.weight - a.weight
+    || a.title.localeCompare(b.title) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+}
+
+/** Type-to-filter: a plain, case-insensitive substring of the title or the short label. Read-only. */
+export function foamFilter<T extends Pick<FoamTopic, 'title' | 'label'>>(topics: readonly T[], query: string): T[] {
+  const q = query.trim().toLocaleLowerCase()
+  return q ? topics.filter(t => t.title.toLocaleLowerCase().includes(q) || !!t.label?.toLocaleLowerCase().includes(q)) : [...topics]
+}
+
 type CellState = 'idle' | 'running' | 'queued' | 'done' | 'wait' | 'fail'
 interface Cell {
   id: string; kind: 'topic' | 'more'; title: string; short?: string; state: CellState; cur: boolean; ask: boolean; aside: boolean; oneOff: boolean
@@ -291,6 +334,7 @@ export function createFoam(options: FoamOptions): Foam {
   // Read live, so switching reduced motion on takes effect without a reload.
   const motion = matchMedia('(prefers-reduced-motion: reduce)'), reduced = () => motion.matches
   host.classList.add('theone-foam')
+  host.classList.toggle('rail', !!options.rail)
   const svg = document.createElementNS(NS, 'svg')
   svg.setAttribute('aria-hidden', 'true')
   svg.innerHTML = '<defs></defs><g data-part="cells"></g><g data-part="necks"></g><g data-part="vesicles"></g>'
@@ -300,6 +344,14 @@ export function createFoam(options: FoamOptions): Foam {
   // The cells are drawn, not focusable: a visually hidden list of buttons gives keyboard and screen-reader users the same topics.
   const list = document.createElement('div'); list.className = 'theone-foam-list'; list.setAttribute('role', 'list'); host.appendChild(list)
   const keys = new Map<string, HTMLButtonElement>()
+  // A quiet, always-there way to every topic (also on the collapsed rail and with nothing folded): a small line-drawn cluster under the cells.
+  const entry = document.createElement('button')
+  entry.type = 'button'; entry.className = 'theone-foam-all'; entry.hidden = true; entry.setAttribute('aria-haspopup', 'dialog')
+  entry.innerHTML = '<svg viewBox="0 0 22 14" aria-hidden="true"><circle cx="6.2" cy="8.4" r="3.7"/><circle cx="13.6" cy="5.6" r="3.9"/><circle cx="15.4" cy="11.3" r="1.9"/></svg><span></span>'
+  const entryCount = entry.lastChild as HTMLSpanElement
+  host.appendChild(entry)
+  /** The open details of one topic, or the all-topics list; `back` gets focus again when it closes. The list keeps the order it opened with. */
+  let pop: { el: HTMLDivElement; kind: 'detail' | 'all'; id: string; back: HTMLElement | null; sig: string; order: string[]; query: string } | null = null
 
   const cells: Cell[] = [], ves: Vesicle[] = []
   let links = new Map<string, number>(), bonds: [Cell, Cell][] = []
@@ -368,7 +420,8 @@ export function createFoam(options: FoamOptions): Foam {
       o.tx = o.x; o.ty = o.y
       try { o.g.setPointerCapture(e.pointerId) } catch { /* Older engines: the window listeners still see the release. */ }
     })
-    g.addEventListener('click', e => { if ((cellAt(e.clientX, e.clientY) ?? c).kind === 'more' && !drag) actions.openWorkspace() })
+    // "+N" opens the full list (folded topics included); Topic workspaces stays one row away at its foot.
+    g.addEventListener('click', e => { const at = cellAt(e.clientX, e.clientY) ?? c; if (at.kind === 'more' && !drag) openAll(activeOrNull(), at.m.getBoundingClientRect()) })
     // Hover only tells what the cell cannot show itself: a name that did not surface, or what a busy topic is doing.
     g.addEventListener('pointerenter', () => { if (drag) return; clearTimeout(hover); hover = window.setTimeout(() => { if (!drag) showTip(c) }, 420) })
     g.addEventListener('pointerleave', () => { clearTimeout(hover); if (tipOwner === c) hideTip() })
@@ -494,33 +547,48 @@ export function createFoam(options: FoamOptions): Foam {
     bonds = (model.pendingMerges ?? []).map(m => [byId(m.id), byId(m.into)] as [Cell | undefined, Cell | undefined]).filter((b): b is [Cell, Cell] => !!b[0] && !!b[1])
     first = false
     syncList()
+    syncEntry()
+    if (pop?.kind === 'detail') renderDetail(); else if (pop) renderAll()
     for (let i = 0; i < pending.length;) { if (apply(pending[i])) pending.splice(i, 1); else i++ }
     if (pending.length > 20) pending.splice(0, pending.length - 20)
   }
+  const topicOf = (id: string) => model.topics.find(t => t.id === id)
   function describe(c: Cell): string {
-    const status = c.state === 'running' ? text('running', { s: Math.max(0, Math.round((Date.now() - (c.startedAt ?? Date.now())) / 1000)) })
-      : c.state === 'wait' ? text('waiting') : c.state === 'fail' ? text('failed') : c.state === 'queued' ? text('queued') : c.state === 'done' ? text('answered') : ''
+    const t = topicOf(c.id), status = t ? foamStatusText(t, text) : ''
     return status ? c.title + ' · ' + status : c.title
   }
   function syncList() {
     const shown = topics().filter(c => !c.aside || busy(c))
-    for (const [id, el] of keys) if (!shown.some(c => c.id === id)) { el.remove(); keys.delete(id) }
+    for (const [id, el] of keys) if (!shown.some(c => c.id === id)) { el.parentElement?.remove(); keys.delete(id) }
     for (const c of shown) {
       let el = keys.get(c.id)
       if (!el) {
-        const b = el = document.createElement('button')
-        b.type = 'button'; b.setAttribute('role', 'listitem')
+        // A native button inside a list item; activating it opens the same details a click on the cell does.
+        const item = document.createElement('div'), b = el = document.createElement('button')
+        item.setAttribute('role', 'listitem'); item.appendChild(b)
+        b.type = 'button'; b.setAttribute('aria-haspopup', 'dialog')
         b.addEventListener('focus', () => c.g.classList.add('fuse'))
         b.addEventListener('blur', () => c.g.classList.remove('fuse'))
-        b.addEventListener('click', () => { if (!c.cur) actions.mount(c.id) })
+        b.addEventListener('click', () => { const live = byId(c.id); if (live) openDetail(live, b) })
         b.addEventListener('keydown', e => {
           if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) { e.preventDefault(); const r = c.m.getBoundingClientRect(); openMenu(r.left + r.width / 2, r.bottom, c, true) }
         })
-        keys.set(c.id, b); list.appendChild(b)
+        keys.set(c.id, b); list.appendChild(item)
       }
       el.textContent = describe(c)
       el.setAttribute('aria-current', c.cur ? 'true' : 'false')
     }
+  }
+  function entryLabel(): string {
+    const waiting = model.topics.filter(t => t.phase === 'waiting').length
+    return waiting ? text('allTopics') + ' · ' + text('allWaiting', { n: waiting }) : text('allTopics')
+  }
+  function syncEntry() {
+    const waiting = model.topics.filter(t => t.phase === 'waiting').length
+    entry.hidden = !model.topics.length
+    entry.classList.toggle('need', waiting > 0)
+    entryCount.textContent = waiting ? String(waiting) : ''
+    entry.setAttribute('aria-label', entryLabel())
   }
   function event(e: FoamEvent) { if (!apply(e)) pending.push(e) }
 
@@ -567,24 +635,36 @@ export function createFoam(options: FoamOptions): Foam {
       && !(restore === 'gone' && was.prev === keys.get(was.cell.id)) ? was.prev : null
     const to = back ?? prev
     if (to) to.focus()
+    // Its topic went away: focus lands on the all-topics entry, never on a neighbour.
+    else if (restore === 'gone' && !entry.hidden) entry.focus()
     else if (had.contains(document.activeElement)) (document.activeElement as HTMLElement).blur()
+  }
+  /** A cell's actions, for its right-click menu and its details alike; null is a separator. The key names the item. */
+  type MenuItem = [label: string, run: () => void, key: FoamTextKey] | null
+  function menuItems(c: Cell): MenuItem[] {
+    const id = c.id
+    const items: MenuItem[] = c.kind === 'more' ? [[text('menuWorkspace'), actions.openWorkspace, 'menuWorkspace']]
+      : c.state === 'running' ? [[text('menuOpen'), () => actions.open(id), 'menuOpen'], null, [text('menuStop'), () => actions.stop(id), 'menuStop']]
+      : c.state === 'queued' ? [[text('menuOpen'), () => actions.open(id), 'menuOpen'], [text('menuCancel'), () => actions.cancelQueued(id), 'menuCancel']]
+      : c.state === 'done' ? [[text('menuShowNow'), () => actions.showAnswer(id), 'menuShowNow'], [text('menuOpen'), () => actions.open(id), 'menuOpen']]
+      : c.state === 'wait' ? [[text('menuAnswer'), () => actions.answer(id), 'menuAnswer'], [text('menuOpen'), () => actions.open(id), 'menuOpen']]
+      : [[text('menuContinue'), () => actions.mount(id), 'menuContinue'], [text('menuOpen'), () => actions.open(id), 'menuOpen'],
+        ...(c.cur ? [] : [[text('menuAside'), () => void actions.putAside(id).then(ok => { if (!ok) tipAt(c, text('actionFailed')) }), 'menuAside'] as MenuItem]),
+        null, [text('menuDelete'), () => actions.remove(id), 'menuDelete']]
+    if (c.kind === 'topic') {
+      // A candidate routing hesitated over: the same move a click on the cell makes, reachable without the pointer.
+      if (c.offer) items.unshift([text('menuReroute'), () => rerouteTo(c), 'menuReroute'], null)
+      const extra: MenuItem[] = []
+      if (bonds.some(b => b[0] === c)) extra.push([text('menuCancelMerge'), () => actions.cancelMerge(id), 'menuCancelMerge'])
+      for (const m of (model.merges ?? []).filter(m => m.targetId === id).slice(0, 3)) extra.push([text('menuUnmerge', { name: m.title }), () => undoMerge(m.sourceId, c), 'menuUnmerge'])
+      if (extra.length) items.push(null, ...extra)
+    }
+    return items
   }
   function openMenu(x: number, y: number, c: Cell, fromKeyboard = false) {
     const prev = document.activeElement
-    closeMenu()
-    const items: ([string, () => void] | null)[] = c.kind === 'more' ? [[text('menuWorkspace'), actions.openWorkspace]]
-      : c.state === 'running' ? [[text('menuOpen'), () => actions.open(c.id)], null, [text('menuStop'), () => actions.stop(c.id)]]
-      : c.state === 'queued' ? [[text('menuOpen'), () => actions.open(c.id)], [text('menuCancel'), () => actions.cancelQueued(c.id)]]
-      : c.state === 'done' ? [[text('menuShowNow'), () => actions.showAnswer(c.id)], [text('menuOpen'), () => actions.open(c.id)]]
-      : c.state === 'wait' ? [[text('menuAnswer'), () => actions.answer(c.id)], [text('menuOpen'), () => actions.open(c.id)]]
-      : [[text('menuContinue'), () => actions.mount(c.id)], [text('menuOpen'), () => actions.open(c.id)], ...(c.cur ? [] : [[text('menuAside'), () => void actions.putAside(c.id).then(ok => { if (!ok) tipAt(c, text('actionFailed')) })] as [string, () => void]]),
-        null, [text('menuDelete'), () => actions.remove(c.id)]]
-    if (c.kind === 'topic') {
-      const extra: ([string, () => void] | null)[] = []
-      if (bonds.some(b => b[0] === c)) extra.push([text('menuCancelMerge'), () => actions.cancelMerge(c.id)])
-      for (const m of (model.merges ?? []).filter(m => m.targetId === c.id).slice(0, 3)) extra.push([text('menuUnmerge', { name: m.title }), () => undoMerge(m.sourceId, c)])
-      if (extra.length) items.push(null, ...extra)
-    }
+    closeMenu(); closePop()
+    const items = menuItems(c)
     const el = menu = document.createElement('div')
     el.className = 'theone-foam-menu'; el.setAttribute('role', 'menu')
     for (const item of items) {
@@ -602,8 +682,160 @@ export function createFoam(options: FoamOptions): Foam {
     menuOf = { cell: c, back: fromKeyboard ? keys.get(c.id) ?? null : null, prev, unkeys: foamMenuKeys(el, () => closeMenu(true)) }
     el.querySelector('button')?.focus()
   }
-  const outside = (e: PointerEvent) => { if (menu && !menu.contains(e.target as Node)) closeMenu() }
-  const keydown = (e: KeyboardEvent) => { if (e.key === 'Escape') { closeMenu(true); cancelDrag() } }
+  const outside = (e: PointerEvent) => {
+    const at = e.target as Node
+    if (menu && !menu.contains(at)) closeMenu()
+    if (pop && !pop.el.contains(at) && !(pop.kind === 'all' && entry.contains(at))) closePop()
+  }
+  const keydown = (e: KeyboardEvent) => {
+    if (e.key !== 'Escape') return
+    if (pop?.el.contains(e.target as Node)) {
+      e.preventDefault(); e.stopPropagation()
+      // Escape in a filled filter clears it first; the next one closes the list.
+      const input = e.target instanceof HTMLInputElement ? e.target : null
+      if (input?.value) { input.value = ''; pop.query = ''; renderAll() } else closePop(true)
+    } else if (pop) closePop()
+    closeMenu(true); cancelDrag()
+  }
+
+  // ---- Details and the all-topics list: light popovers in the menu's style. Looking never mounts, sets aside, merges or corrects anything.
+  const activeOrNull = () => { const a = document.activeElement; return a instanceof HTMLElement && a !== document.body ? a : null }
+  function closePop(restore = false, toEntry = false) {
+    if (!pop) return
+    const { el, back } = pop
+    const had = el.contains(document.activeElement)
+    pop = null; el.remove()
+    // Focus goes back to what opened it; when that is gone (or was nothing), to the all-topics entry.
+    if (restore || had) (!toEntry && back?.isConnected && !back.closest('[hidden]') ? back : entry.hidden ? null : entry)?.focus()
+  }
+  entry.addEventListener('click', () => { if (pop?.kind === 'all') closePop(true); else openAll(entry) })
+  entry.addEventListener('pointerenter', () => { if (drag) return; placeTip(entry.getBoundingClientRect(), entryLabel()) })
+  entry.addEventListener('pointerleave', () => hideTip())
+  /** Next to what opened it, held there (it does not follow the cell or the pointer), inside the window, and not over the card above the cluster. */
+  function placePop(el: HTMLElement, a: { left: number; right: number; top: number; bottom: number }, tall = innerHeight - 16) {
+    el.style.maxHeight = Math.max(120, Math.min(tall, innerHeight - 16)) + 'px'
+    const b = el.getBoundingClientRect()
+    let left = a.right + 8
+    if (left + b.width > innerWidth - 8) left = a.left - 8 - b.width
+    const top = Math.max(a.top - 6, host.getBoundingClientRect().top)
+    el.style.left = Math.max(8, Math.min(left, innerWidth - b.width - 8)) + 'px'
+    el.style.top = Math.max(8, Math.min(top, innerHeight - b.height - 8)) + 'px'
+  }
+  /** Arrow keys walk the popover's controls (wrapping), Home and End jump; Tab out of it closes it. */
+  function popNav(e: KeyboardEvent) {
+    if (!pop) return
+    const all = [...pop.el.querySelectorAll<HTMLElement>('input, button')].filter(x => !x.closest('[hidden]'))
+    const i = all.indexOf(document.activeElement as HTMLElement), inInput = document.activeElement instanceof HTMLInputElement
+    const next = e.key === 'ArrowDown' ? (i + 1) % all.length : e.key === 'ArrowUp' ? (i <= 0 ? all.length - 1 : i - 1)
+      : e.key === 'Home' && !inInput ? 0 : e.key === 'End' && !inInput ? all.length - 1 : -1
+    if (next < 0 || !all.length) return
+    e.preventDefault(); all[next].focus()
+  }
+  function makePop(kind: 'detail' | 'all', id: string, back: HTMLElement | null) {
+    const el = document.createElement('div')
+    el.className = 'theone-foam-menu theone-foam-pop ' + (kind === 'detail' ? 'theone-foam-detail' : 'theone-foam-all-list')
+    el.setAttribute('role', 'dialog')
+    el.addEventListener('keydown', popNav)
+    el.addEventListener('focusout', e => { const to = e.relatedTarget as Node | null; if (to && pop?.el === el && !el.contains(to) && to !== entry) closePop() })
+    pop = { el, kind, id, back, sig: '', order: [], query: '' }
+    return el
+  }
+  const span = (cls: string, s: string) => { const el = document.createElement('span'); el.className = cls; el.textContent = s; return el }
+  function popButton(label: string, run: () => void, cls = '') {
+    const b = document.createElement('button')
+    b.type = 'button'; b.textContent = label; if (cls) b.className = cls
+    b.onclick = () => { closePop(); run() }
+    return b
+  }
+
+  /** A topic's details: its whole name, what it is doing, one main action, and the same actions as its menu. */
+  function openDetail(c: Cell, back: HTMLElement | null) {
+    closeMenu(); hideTip()
+    // Opened from the all-topics list: closing goes back to the list's own trigger.
+    const keep = pop?.kind === 'all' ? pop.back ?? entry : back
+    closePop()
+    const el = makePop('detail', c.id, keep)
+    renderDetail()
+    if (pop?.el !== el) return
+    document.body.appendChild(el)
+    // Beside the cell when it is on screen; a folded, set-aside or rail-hidden one opens beside the all-topics entry.
+    const onScreen = c.mode === 'live' && !c.hidden && c.scale > .3
+    placePop(el, (onScreen ? c.m : entry.hidden ? host : entry).getBoundingClientRect())
+    el.querySelector('button')?.focus()
+  }
+  function renderDetail() {
+    if (!pop || pop.kind !== 'detail') return
+    const c = byId(pop.id), t = topicOf(pop.id)
+    // The topic went away (merged, deleted) while open: close, and focus lands on the all-topics entry, never on a neighbour.
+    if (!c || !t) { closePop(false, true); return }
+    const status = foamStatusText(t, text)
+    const items = menuItems(c).filter(item => item?.[2] !== 'menuContinue')
+    while (items[0] === null) items.shift()
+    const primary = !t.current
+    const sig = [c.title, status, primary, ...items.map(item => item ? item[0] : '-')].join('\n')
+    if (sig === pop.sig) return
+    const el = pop.el, focused = el.contains(document.activeElement) ? document.activeElement?.textContent : null
+    pop.sig = sig; el.textContent = ''
+    el.setAttribute('aria-label', c.title)
+    const head = document.createElement('div')
+    head.className = 'theone-foam-head'
+    head.appendChild(span('theone-foam-name', c.title))
+    if (status) head.appendChild(span('theone-foam-status' + (t.phase === 'waiting' ? ' need' : ''), status))
+    el.appendChild(head)
+    // Carrying on is the one main action; it is the only thing here that moves main chat.
+    if (primary) el.appendChild(popButton(text('menuContinue'), () => actions.mount(c.id), 'theone-foam-primary'))
+    if (items.length) el.appendChild(document.createElement('hr'))
+    for (const item of items) el.appendChild(item ? popButton(item[0], item[1]) : document.createElement('hr'))
+    if (focused) [...el.querySelectorAll('button')].find(b => b.textContent === focused)?.focus()
+  }
+
+  /** Every topic, set-aside and folded ones too, in a stable order, filtered as one types; a row opens that topic's details. */
+  function openAll(back: HTMLElement | null, at?: DOMRect) {
+    closeMenu(); hideTip(); closePop()
+    const el = makePop('all', '', back)
+    el.setAttribute('aria-label', text('allTopics'))
+    pop!.order = foamOrder(model.topics).map(t => t.id)
+    const input = document.createElement('input')
+    input.type = 'search'; input.className = 'theone-foam-filter'; input.placeholder = text('filter'); input.setAttribute('aria-label', text('filter'))
+    input.autocomplete = 'off'; input.spellcheck = false
+    input.addEventListener('input', () => { if (pop?.el === el) { pop.query = input.value; renderAll() } })
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); el.querySelector<HTMLButtonElement>('.theone-foam-row')?.click() } })
+    const rows = document.createElement('div')
+    rows.className = 'theone-foam-rows'; rows.setAttribute('role', 'list')
+    const empty = span('theone-foam-empty', text('noMatch'))
+    empty.hidden = true
+    el.append(input, rows, empty, document.createElement('hr'), popButton(text('menuWorkspace'), actions.openWorkspace))
+    renderAll()
+    document.body.appendChild(el)
+    placePop(el, at ?? (entry.hidden ? host : entry).getBoundingClientRect(), 440)
+    input.focus()
+  }
+  function renderAll() {
+    if (!pop || pop.kind !== 'all') return
+    const known = new Map(model.topics.map(t => [t.id, t]))
+    // The order is fixed while the list is open, so rows never move under the pointer; new topics join at the end.
+    for (const t of foamOrder(model.topics)) if (!pop.order.includes(t.id)) pop.order.push(t.id)
+    pop.order = pop.order.filter(id => known.has(id))
+    const shown = foamFilter(pop.order.map(id => known.get(id)!), pop.query)
+    const sig = pop.query + '\n' + shown.map(t => [t.id, t.title, t.current, foamStatusText(t, text)].join('\t')).join('\n')
+    if (sig === pop.sig) return
+    pop.sig = sig
+    const el = pop.el, rows = el.querySelector('.theone-foam-rows')!, empty = el.querySelector<HTMLElement>('.theone-foam-empty')!
+    const focused = (document.activeElement as HTMLElement | null)?.closest?.('.theone-foam-row')?.getAttribute('data-id')
+    rows.textContent = ''
+    for (const t of shown) {
+      const item = document.createElement('div'), b = document.createElement('button'), status = foamStatusText(t, text)
+      item.setAttribute('role', 'listitem')
+      b.type = 'button'; b.className = 'theone-foam-row'; b.setAttribute('data-id', t.id); b.setAttribute('aria-haspopup', 'dialog')
+      if (t.current) b.setAttribute('aria-current', 'true')
+      b.appendChild(span('theone-foam-name', t.title))
+      if (status) b.appendChild(span('theone-foam-status' + (t.phase === 'waiting' ? ' need' : ''), status))
+      b.onclick = () => { const c = byId(t.id); if (c) openDetail(c, null) }
+      item.appendChild(b); rows.appendChild(item)
+      if (t.id === focused) b.focus()
+    }
+    empty.hidden = shown.length > 0
+  }
   /** Escape, a lost pointer or the window losing focus: the cell goes back, nothing is sent. */
   function cancelDrag() {
     if (!drag) return
@@ -692,6 +924,18 @@ export function createFoam(options: FoamOptions): Foam {
     c.tx = p.x - drag.dx; c.ty = p.y - drag.dy
     showAim(c)
   }
+  /** Moves the message routing hesitated over into this candidate; a failed try keeps the candidate. */
+  function rerouteTo(c: Cell) {
+    if (!c.offer || c.g.classList.contains('pending')) return
+    const { messageId } = c.offer
+    c.g.classList.add('pending')
+    void actions.reroute(messageId, c.id).then(status => {
+      c.g.classList.remove('pending')
+      if (status >= 200 && status < 300) { for (const o of cells) if (o.offer?.messageId === messageId) clearOffer(o); light(c); return }
+      if (c.offer) c.offer.until = Math.max(c.offer.until, now() + 30000)
+      tipAt(c, text(status === 409 ? 'rerouteBusy' : 'rerouteFailed'))
+    })
+  }
   const up = (e: PointerEvent) => {
     if (!drag) return
     const c = drag.cell, trail = drag.trail, started = drag.started
@@ -700,16 +944,8 @@ export function createFoam(options: FoamOptions): Foam {
     const hit = started ? aim(e, c) : null
     c.g.classList.remove('drag'); drag = null; hideTip(); setTarget(null)
     if (!started) {
-      // A click on a candidate routing hesitated over moves the message there; a failed try keeps the candidate.
-      if (!c.offer || c.g.classList.contains('pending')) return
-      const { messageId } = c.offer
-      c.g.classList.add('pending')
-      void actions.reroute(messageId, c.id).then(status => {
-        c.g.classList.remove('pending')
-        if (status >= 200 && status < 300) { for (const o of cells) if (o.offer?.messageId === messageId) clearOffer(o); light(c); return }
-        if (c.offer) c.offer.until = Math.max(c.offer.until, now() + 30000)
-        tipAt(c, text(status === 409 ? 'rerouteBusy' : 'rerouteFailed'))
-      })
+      // A click on a candidate routing hesitated over moves the message there; a click on any other cell opens its details.
+      if (c.offer) rerouteTo(c); else openDetail(c, activeOrNull())
       return
     }
     if (hit?.kind === 'main') { if (!c.cur) actions.mount(c.id); return }
@@ -796,7 +1032,9 @@ export function createFoam(options: FoamOptions): Foam {
     const live = cells.filter(c => c.mode === 'live' && !c.hidden)
     let top = Infinity, bottom = -Infinity, x0 = Infinity, x1 = -Infinity
     for (const c of live) if (drag?.cell !== c) { top = Math.min(top, c.y - c.R); bottom = Math.max(bottom, c.y + c.R); x0 = Math.min(x0, c.x - c.R); x1 = Math.max(x1, c.x + c.R) }
-    const want = bottom > top ? Math.min(320, bottom - top + 14 * sz + 4) : 4
+    // A strip under the cells holds the all-topics entry, so no cell ever drifts under it.
+    const strip = entry.hidden ? 0 : STRIP
+    const want = (bottom > top ? Math.min(320, bottom - top + 14 * sz + 4) : 4) + strip
     // The box follows the cluster on a soft spring with a little give; small wobbles of the cells do not move the sidebar.
     if (heightTarget < 0) { height = heightTarget = want; host.style.height = fx(height) + 'px'; options.onHeight(height) }
     if (want > heightTarget + 2 || want < heightTarget - 6) heightTarget = want
@@ -806,7 +1044,7 @@ export function createFoam(options: FoamOptions): Foam {
     const nextHeight = reduced() ? heightTarget : heightV ? height + heightV * dt : heightTarget
     if (Math.abs(nextHeight - height) > .01) { height = nextHeight; host.style.height = fx(height) + 'px'; options.onHeight(height) }
     const fr = host.getBoundingClientRect(), mark = options.mark(), mr = mark?.getBoundingClientRect()
-    const w = fr.width, h = Math.max(height, 8), cx = w / 2, cy = Math.max(14, h / 2)
+    const w = fr.width, h = Math.max(height - strip, 8), cx = w / 2, cy = Math.max(14, h / 2)
     if (mr) L = { x: mr.left + mr.width / 2 - fr.left, y: mr.top + mr.height / 2 - fr.top }
     const markR = MARK_R + pulse * pulse * .8
     const shiftX = x1 > x0 ? (cx - (x0 + x1) / 2) * 3 : 0, shiftY = bottom > top ? (cy - (top + bottom) / 2) * 2 : 0
@@ -1023,12 +1261,12 @@ export function createFoam(options: FoamOptions): Foam {
 
   return {
     update, event,
-    setRail(on) { rail = on },
+    setRail(on) { rail = on; host.classList.toggle('rail', on) },
     destroy() {
       cancelAnimationFrame(raf); clearInterval(tipTimer)
       window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', blur); window.removeEventListener('blur', blur)
       document.removeEventListener('pointerdown', outside, true); document.removeEventListener('keydown', keydown, true)
-      closeMenu(); hideUndo(); undo.remove(); tip.remove(); svg.remove(); list.remove(); host.classList.remove('theone-foam')
+      closeMenu(); closePop(); hideUndo(); undo.remove(); tip.remove(); svg.remove(); list.remove(); entry.remove(); host.classList.remove('theone-foam', 'rail')
     },
   }
 }
@@ -1090,5 +1328,32 @@ html[data-theone-foam] button:has(.theone-workspace-entry){display:none}
 .theone-foam-menu button{display:flex;width:100%;min-height:34px;align-items:center;padding:7px 12px;line-height:1.4;white-space:normal;overflow-wrap:anywhere;border:0;border-radius:var(--dsw-radius-md,8px);background:none;color:inherit;font:inherit;font-size:13.5px;cursor:pointer;text-align:left}
 .theone-foam-menu button:hover,.theone-foam-menu button:focus-visible{background:var(--dsw-alias-interactive-bg-hover,#0000000a);outline:none}
 .theone-foam-menu hr{border:0;border-top:.5px solid var(--dsw-alias-border-l2,#8885);margin:4px 2px}
-@media(prefers-reduced-motion:reduce){.theone-cell [data-part=membrane],.theone-cell [data-part=body]{transition:none}.theone-cell.pending [data-part=membrane]{animation:none}.theone-foam-undo,.theone-foam-tip{transition:none}}
+.theone-foam-all{position:absolute;right:6px;bottom:0;display:flex;align-items:center;gap:2px;height:18px;min-width:24px;padding:0 4px;border:0;border-radius:6px;background:none;color:var(--foam-idle-line);font:inherit;font-size:10.5px;line-height:1;font-variant-numeric:tabular-nums;cursor:pointer;pointer-events:auto;transition:color .3s ease}
+.theone-foam-all[hidden]{display:none}
+.theone-foam.rail .theone-foam-all{right:auto;left:50%;transform:translateX(-50%)}
+.theone-foam-all svg{width:18px;height:12px;overflow:visible}
+.theone-foam-all circle{fill:var(--foam-bg);stroke:currentColor;stroke-width:1.1}
+.theone-foam-all:hover{color:var(--foam-line)}
+.theone-foam-all:focus-visible{outline:1.5px solid var(--foam-accent);outline-offset:1px;color:var(--foam-line)}
+.theone-foam-all.need{color:var(--foam-accent)}
+.theone-foam-all span:empty{display:none}
+.theone-foam-pop{--foam-accent:#a75b1e;width:max-content;max-width:min(280px,calc(100vw - 16px));overflow:auto;overscroll-behavior:contain;box-sizing:border-box}
+[data-ds-dark-theme] .theone-foam-pop{--foam-accent:#93c8f3}
+.theone-foam-pop button{height:auto;min-height:34px;padding-top:6px;padding-bottom:6px;line-height:1.35}
+.theone-foam-head{padding:8px 12px 6px;display:flex;flex-direction:column;gap:2px}
+.theone-foam-name{font-size:13.5px;line-height:1.4;white-space:normal;overflow-wrap:anywhere}
+.theone-foam-head .theone-foam-name{font-weight:600}
+.theone-foam-status{font-size:12px;line-height:1.4;color:var(--dsw-alias-label-secondary,#8a8a86)}
+.theone-foam-status.need{color:var(--foam-accent)}
+.theone-foam-pop .theone-foam-primary{color:var(--foam-accent);font-weight:600}
+.theone-foam-all-list{width:min(280px,calc(100vw - 16px));display:flex;flex-direction:column;overflow:hidden}
+.theone-foam-filter{flex:none;width:100%;box-sizing:border-box;height:30px;margin:0 0 4px;padding:0 10px;border:.5px solid var(--dsw-alias-border-l2,#8885);border-radius:var(--dsw-radius-md,8px);background:transparent;color:inherit;font:inherit;font-size:13px;outline:none}
+.theone-foam-filter:focus-visible{border-color:var(--foam-accent)}
+.theone-foam-rows{flex:1 1 auto;min-height:0;overflow:auto;overscroll-behavior:contain}
+.theone-foam-pop .theone-foam-row{flex-direction:column;align-items:flex-start;justify-content:center;gap:1px}
+.theone-foam-row[aria-current=true] .theone-foam-name{color:var(--foam-accent)}
+.theone-foam-empty{display:block;padding:6px 12px;font-size:12.5px;color:var(--dsw-alias-label-secondary,#8a8a86)}
+.theone-foam-empty[hidden]{display:none}
+.theone-foam-all-list>hr,.theone-foam-all-list>button{flex:none}
+@media(prefers-reduced-motion:reduce){.theone-foam-all{transition:none}.theone-cell [data-part=membrane],.theone-cell [data-part=body]{transition:none}.theone-cell.pending [data-part=membrane]{animation:none}.theone-foam-undo,.theone-foam-tip{transition:none}}
 `

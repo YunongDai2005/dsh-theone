@@ -132,6 +132,7 @@ var GAP = 2;
 var SOFT = 2.2;
 var MINI = 0.32;
 var MARK_R = 7.4;
+var STRIP = 18;
 var fx = (v) => v.toFixed(2);
 var clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
 var ease = (v, target, rate, dt) => v + (target - v) * Math.min(1, dt * rate);
@@ -279,10 +280,25 @@ function foamMenuKeys(el, close, items = "[role=menuitem]:not([disabled])") {
   el.addEventListener("keydown", onKey);
   return () => el.removeEventListener("keydown", onKey);
 }
+function foamStatusText(topic, text) {
+  const status = topic.status ?? topic.phase;
+  const key = status === "routing" ? "statusRouting" : status === "starting" ? "statusStarting" : status === "running" ? "statusRunning" : status === "recovering" ? "statusRecovering" : status === "answered" ? "statusAnswered" : status === "question" ? "statusQuestion" : status === "approval" ? "statusApproval" : status === "waiting" ? "statusWaiting" : status === "failed" ? "statusFailed" : status === "queued" ? topic.queueReason === "capacity" ? "queueCapacity" : topic.queueReason === "topic_busy" ? "queueTopic" : topic.queueReason === "project_busy" ? "queueProject" : "statusQueued" : null;
+  const parts = [topic.current ? text("statusCurrent") : "", key ? text(key) : "", topic.aside && !key ? text("statusAside") : ""];
+  return parts.filter(Boolean).join(" \xB7 ");
+}
+function foamOrder(topics) {
+  const rank = (t) => t.current ? 0 : t.phase !== "idle" ? 1 : t.aside ? 3 : 2;
+  return [...topics].sort((a, b) => rank(a) - rank(b) || (b.lastActive ?? 0) - (a.lastActive ?? 0) || b.weight - a.weight || a.title.localeCompare(b.title) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+}
+function foamFilter(topics, query) {
+  const q = query.trim().toLocaleLowerCase();
+  return q ? topics.filter((t) => t.title.toLocaleLowerCase().includes(q) || !!t.label?.toLocaleLowerCase().includes(q)) : [...topics];
+}
 function createFoam(options) {
   const { host, actions } = options;
   const motion = matchMedia("(prefers-reduced-motion: reduce)"), reduced = () => motion.matches;
   host.classList.add("theone-foam");
+  host.classList.toggle("rail", !!options.rail);
   const svg = document.createElementNS(NS, "svg");
   svg.setAttribute("aria-hidden", "true");
   svg.innerHTML = '<defs></defs><g data-part="cells"></g><g data-part="necks"></g><g data-part="vesicles"></g>';
@@ -296,6 +312,15 @@ function createFoam(options) {
   list.setAttribute("role", "list");
   host.appendChild(list);
   const keys = /* @__PURE__ */ new Map();
+  const entry = document.createElement("button");
+  entry.type = "button";
+  entry.className = "theone-foam-all";
+  entry.hidden = true;
+  entry.setAttribute("aria-haspopup", "dialog");
+  entry.innerHTML = '<svg viewBox="0 0 22 14" aria-hidden="true"><circle cx="6.2" cy="8.4" r="3.7"/><circle cx="13.6" cy="5.6" r="3.9"/><circle cx="15.4" cy="11.3" r="1.9"/></svg><span></span>';
+  const entryCount = entry.lastChild;
+  host.appendChild(entry);
+  let pop = null;
   const cells = [], ves = [];
   let links = /* @__PURE__ */ new Map(), bonds = [];
   let rail = !!options.rail, sz = rail ? MINI : 1, height = 8, heightTarget = -1, heightV = 0, pulse = 0, folded = 0, uid = 0, first = true;
@@ -423,7 +448,8 @@ function createFoam(options) {
       }
     });
     g.addEventListener("click", (e) => {
-      if ((cellAt(e.clientX, e.clientY) ?? c).kind === "more" && !drag) actions.openWorkspace();
+      const at = cellAt(e.clientX, e.clientY) ?? c;
+      if (at.kind === "more" && !drag) openAll(activeOrNull(), at.m.getBoundingClientRect());
     });
     g.addEventListener("pointerenter", () => {
       if (drag) return;
@@ -622,32 +648,39 @@ function createFoam(options) {
     bonds = (model.pendingMerges ?? []).map((m) => [byId(m.id), byId(m.into)]).filter((b) => !!b[0] && !!b[1]);
     first = false;
     syncList();
+    syncEntry();
+    if (pop?.kind === "detail") renderDetail();
+    else if (pop) renderAll();
     for (let i = 0; i < pending.length; ) {
       if (apply2(pending[i])) pending.splice(i, 1);
       else i++;
     }
     if (pending.length > 20) pending.splice(0, pending.length - 20);
   }
+  const topicOf = (id) => model.topics.find((t2) => t2.id === id);
   function describe(c) {
-    const status = c.state === "running" ? text("running", { s: Math.max(0, Math.round((Date.now() - (c.startedAt ?? Date.now())) / 1e3)) }) : c.state === "wait" ? text("waiting") : c.state === "fail" ? text("failed") : c.state === "queued" ? text("queued") : c.state === "done" ? text("answered") : "";
+    const t2 = topicOf(c.id), status = t2 ? foamStatusText(t2, text) : "";
     return status ? c.title + " \xB7 " + status : c.title;
   }
   function syncList() {
     const shown = topics().filter((c) => !c.aside || busy(c));
     for (const [id, el] of keys) if (!shown.some((c) => c.id === id)) {
-      el.remove();
+      el.parentElement?.remove();
       keys.delete(id);
     }
     for (const c of shown) {
       let el = keys.get(c.id);
       if (!el) {
-        const b = el = document.createElement("button");
+        const item = document.createElement("div"), b = el = document.createElement("button");
+        item.setAttribute("role", "listitem");
+        item.appendChild(b);
         b.type = "button";
-        b.setAttribute("role", "listitem");
+        b.setAttribute("aria-haspopup", "dialog");
         b.addEventListener("focus", () => c.g.classList.add("fuse"));
         b.addEventListener("blur", () => c.g.classList.remove("fuse"));
         b.addEventListener("click", () => {
-          if (!c.cur) actions.mount(c.id);
+          const live = byId(c.id);
+          if (live) openDetail(live, b);
         });
         b.addEventListener("keydown", (e) => {
           if (e.key === "ContextMenu" || e.shiftKey && e.key === "F10") {
@@ -657,11 +690,22 @@ function createFoam(options) {
           }
         });
         keys.set(c.id, b);
-        list.appendChild(b);
+        list.appendChild(item);
       }
       el.textContent = describe(c);
       el.setAttribute("aria-current", c.cur ? "true" : "false");
     }
+  }
+  function entryLabel() {
+    const waiting = model.topics.filter((t2) => t2.phase === "waiting").length;
+    return waiting ? text("allTopics") + " \xB7 " + text("allWaiting", { n: waiting }) : text("allTopics");
+  }
+  function syncEntry() {
+    const waiting = model.topics.filter((t2) => t2.phase === "waiting").length;
+    entry.hidden = !model.topics.length;
+    entry.classList.toggle("need", waiting > 0);
+    entryCount.textContent = waiting ? String(waiting) : "";
+    entry.setAttribute("aria-label", entryLabel());
   }
   function event(e) {
     if (!apply2(e)) pending.push(e);
@@ -717,26 +761,34 @@ function createFoam(options) {
     const prev = was.prev instanceof HTMLElement && was.prev.isConnected && was.prev !== document.body && !had.contains(was.prev) && !(restore === "gone" && was.prev === keys.get(was.cell.id)) ? was.prev : null;
     const to = back ?? prev;
     if (to) to.focus();
+    else if (restore === "gone" && !entry.hidden) entry.focus();
     else if (had.contains(document.activeElement)) document.activeElement.blur();
+  }
+  function menuItems(c) {
+    const id = c.id;
+    const items = c.kind === "more" ? [[text("menuWorkspace"), actions.openWorkspace, "menuWorkspace"]] : c.state === "running" ? [[text("menuOpen"), () => actions.open(id), "menuOpen"], null, [text("menuStop"), () => actions.stop(id), "menuStop"]] : c.state === "queued" ? [[text("menuOpen"), () => actions.open(id), "menuOpen"], [text("menuCancel"), () => actions.cancelQueued(id), "menuCancel"]] : c.state === "done" ? [[text("menuShowNow"), () => actions.showAnswer(id), "menuShowNow"], [text("menuOpen"), () => actions.open(id), "menuOpen"]] : c.state === "wait" ? [[text("menuAnswer"), () => actions.answer(id), "menuAnswer"], [text("menuOpen"), () => actions.open(id), "menuOpen"]] : [
+      [text("menuContinue"), () => actions.mount(id), "menuContinue"],
+      [text("menuOpen"), () => actions.open(id), "menuOpen"],
+      ...c.cur ? [] : [[text("menuAside"), () => void actions.putAside(id).then((ok) => {
+        if (!ok) tipAt(c, text("actionFailed"));
+      }), "menuAside"]],
+      null,
+      [text("menuDelete"), () => actions.remove(id), "menuDelete"]
+    ];
+    if (c.kind === "topic") {
+      if (c.offer) items.unshift([text("menuReroute"), () => rerouteTo(c), "menuReroute"], null);
+      const extra = [];
+      if (bonds.some((b) => b[0] === c)) extra.push([text("menuCancelMerge"), () => actions.cancelMerge(id), "menuCancelMerge"]);
+      for (const m of (model.merges ?? []).filter((m2) => m2.targetId === id).slice(0, 3)) extra.push([text("menuUnmerge", { name: m.title }), () => undoMerge(m.sourceId, c), "menuUnmerge"]);
+      if (extra.length) items.push(null, ...extra);
+    }
+    return items;
   }
   function openMenu(x, y, c, fromKeyboard = false) {
     const prev = document.activeElement;
     closeMenu();
-    const items = c.kind === "more" ? [[text("menuWorkspace"), actions.openWorkspace]] : c.state === "running" ? [[text("menuOpen"), () => actions.open(c.id)], null, [text("menuStop"), () => actions.stop(c.id)]] : c.state === "queued" ? [[text("menuOpen"), () => actions.open(c.id)], [text("menuCancel"), () => actions.cancelQueued(c.id)]] : c.state === "done" ? [[text("menuShowNow"), () => actions.showAnswer(c.id)], [text("menuOpen"), () => actions.open(c.id)]] : c.state === "wait" ? [[text("menuAnswer"), () => actions.answer(c.id)], [text("menuOpen"), () => actions.open(c.id)]] : [
-      [text("menuContinue"), () => actions.mount(c.id)],
-      [text("menuOpen"), () => actions.open(c.id)],
-      ...c.cur ? [] : [[text("menuAside"), () => void actions.putAside(c.id).then((ok) => {
-        if (!ok) tipAt(c, text("actionFailed"));
-      })]],
-      null,
-      [text("menuDelete"), () => actions.remove(c.id)]
-    ];
-    if (c.kind === "topic") {
-      const extra = [];
-      if (bonds.some((b) => b[0] === c)) extra.push([text("menuCancelMerge"), () => actions.cancelMerge(c.id)]);
-      for (const m of (model.merges ?? []).filter((m2) => m2.targetId === c.id).slice(0, 3)) extra.push([text("menuUnmerge", { name: m.title }), () => undoMerge(m.sourceId, c)]);
-      if (extra.length) items.push(null, ...extra);
-    }
+    closePop();
+    const items = menuItems(c);
     const el = menu = document.createElement("div");
     el.className = "theone-foam-menu";
     el.setAttribute("role", "menu");
@@ -762,14 +814,202 @@ function createFoam(options) {
     el.querySelector("button")?.focus();
   }
   const outside = (e) => {
-    if (menu && !menu.contains(e.target)) closeMenu();
+    const at = e.target;
+    if (menu && !menu.contains(at)) closeMenu();
+    if (pop && !pop.el.contains(at) && !(pop.kind === "all" && entry.contains(at))) closePop();
   };
   const keydown = (e) => {
-    if (e.key === "Escape") {
-      closeMenu(true);
-      cancelDrag();
-    }
+    if (e.key !== "Escape") return;
+    if (pop?.el.contains(e.target)) {
+      e.preventDefault();
+      e.stopPropagation();
+      const input = e.target instanceof HTMLInputElement ? e.target : null;
+      if (input?.value) {
+        input.value = "";
+        pop.query = "";
+        renderAll();
+      } else closePop(true);
+    } else if (pop) closePop();
+    closeMenu(true);
+    cancelDrag();
   };
+  const activeOrNull = () => {
+    const a = document.activeElement;
+    return a instanceof HTMLElement && a !== document.body ? a : null;
+  };
+  function closePop(restore = false, toEntry = false) {
+    if (!pop) return;
+    const { el, back } = pop;
+    const had = el.contains(document.activeElement);
+    pop = null;
+    el.remove();
+    if (restore || had) (!toEntry && back?.isConnected && !back.closest("[hidden]") ? back : entry.hidden ? null : entry)?.focus();
+  }
+  entry.addEventListener("click", () => {
+    if (pop?.kind === "all") closePop(true);
+    else openAll(entry);
+  });
+  entry.addEventListener("pointerenter", () => {
+    if (drag) return;
+    placeTip(entry.getBoundingClientRect(), entryLabel());
+  });
+  entry.addEventListener("pointerleave", () => hideTip());
+  function placePop(el, a, tall = innerHeight - 16) {
+    el.style.maxHeight = Math.max(120, Math.min(tall, innerHeight - 16)) + "px";
+    const b = el.getBoundingClientRect();
+    let left = a.right + 8;
+    if (left + b.width > innerWidth - 8) left = a.left - 8 - b.width;
+    const top = Math.max(a.top - 6, host.getBoundingClientRect().top);
+    el.style.left = Math.max(8, Math.min(left, innerWidth - b.width - 8)) + "px";
+    el.style.top = Math.max(8, Math.min(top, innerHeight - b.height - 8)) + "px";
+  }
+  function popNav(e) {
+    if (!pop) return;
+    const all = [...pop.el.querySelectorAll("input, button")].filter((x) => !x.closest("[hidden]"));
+    const i = all.indexOf(document.activeElement), inInput = document.activeElement instanceof HTMLInputElement;
+    const next = e.key === "ArrowDown" ? (i + 1) % all.length : e.key === "ArrowUp" ? i <= 0 ? all.length - 1 : i - 1 : e.key === "Home" && !inInput ? 0 : e.key === "End" && !inInput ? all.length - 1 : -1;
+    if (next < 0 || !all.length) return;
+    e.preventDefault();
+    all[next].focus();
+  }
+  function makePop(kind, id, back) {
+    const el = document.createElement("div");
+    el.className = "theone-foam-menu theone-foam-pop " + (kind === "detail" ? "theone-foam-detail" : "theone-foam-all-list");
+    el.setAttribute("role", "dialog");
+    el.addEventListener("keydown", popNav);
+    el.addEventListener("focusout", (e) => {
+      const to = e.relatedTarget;
+      if (to && pop?.el === el && !el.contains(to) && to !== entry) closePop();
+    });
+    pop = { el, kind, id, back, sig: "", order: [], query: "" };
+    return el;
+  }
+  const span = (cls, s) => {
+    const el = document.createElement("span");
+    el.className = cls;
+    el.textContent = s;
+    return el;
+  };
+  function popButton(label, run, cls = "") {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = label;
+    if (cls) b.className = cls;
+    b.onclick = () => {
+      closePop();
+      run();
+    };
+    return b;
+  }
+  function openDetail(c, back) {
+    closeMenu();
+    hideTip();
+    const keep = pop?.kind === "all" ? pop.back ?? entry : back;
+    closePop();
+    const el = makePop("detail", c.id, keep);
+    renderDetail();
+    if (pop?.el !== el) return;
+    document.body.appendChild(el);
+    const onScreen = c.mode === "live" && !c.hidden && c.scale > 0.3;
+    placePop(el, (onScreen ? c.m : entry.hidden ? host : entry).getBoundingClientRect());
+    el.querySelector("button")?.focus();
+  }
+  function renderDetail() {
+    if (!pop || pop.kind !== "detail") return;
+    const c = byId(pop.id), t2 = topicOf(pop.id);
+    if (!c || !t2) {
+      closePop(false, true);
+      return;
+    }
+    const status = foamStatusText(t2, text);
+    const items = menuItems(c).filter((item) => item?.[2] !== "menuContinue");
+    while (items[0] === null) items.shift();
+    const primary = !t2.current;
+    const sig = [c.title, status, primary, ...items.map((item) => item ? item[0] : "-")].join("\n");
+    if (sig === pop.sig) return;
+    const el = pop.el, focused = el.contains(document.activeElement) ? document.activeElement?.textContent : null;
+    pop.sig = sig;
+    el.textContent = "";
+    el.setAttribute("aria-label", c.title);
+    const head = document.createElement("div");
+    head.className = "theone-foam-head";
+    head.appendChild(span("theone-foam-name", c.title));
+    if (status) head.appendChild(span("theone-foam-status" + (t2.phase === "waiting" ? " need" : ""), status));
+    el.appendChild(head);
+    if (primary) el.appendChild(popButton(text("menuContinue"), () => actions.mount(c.id), "theone-foam-primary"));
+    if (items.length) el.appendChild(document.createElement("hr"));
+    for (const item of items) el.appendChild(item ? popButton(item[0], item[1]) : document.createElement("hr"));
+    if (focused) [...el.querySelectorAll("button")].find((b) => b.textContent === focused)?.focus();
+  }
+  function openAll(back, at) {
+    closeMenu();
+    hideTip();
+    closePop();
+    const el = makePop("all", "", back);
+    el.setAttribute("aria-label", text("allTopics"));
+    pop.order = foamOrder(model.topics).map((t2) => t2.id);
+    const input = document.createElement("input");
+    input.type = "search";
+    input.className = "theone-foam-filter";
+    input.placeholder = text("filter");
+    input.setAttribute("aria-label", text("filter"));
+    input.autocomplete = "off";
+    input.spellcheck = false;
+    input.addEventListener("input", () => {
+      if (pop?.el === el) {
+        pop.query = input.value;
+        renderAll();
+      }
+    });
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        el.querySelector(".theone-foam-row")?.click();
+      }
+    });
+    const rows = document.createElement("div");
+    rows.className = "theone-foam-rows";
+    rows.setAttribute("role", "list");
+    const empty = span("theone-foam-empty", text("noMatch"));
+    empty.hidden = true;
+    el.append(input, rows, empty, document.createElement("hr"), popButton(text("menuWorkspace"), actions.openWorkspace));
+    renderAll();
+    document.body.appendChild(el);
+    placePop(el, at ?? (entry.hidden ? host : entry).getBoundingClientRect(), 440);
+    input.focus();
+  }
+  function renderAll() {
+    if (!pop || pop.kind !== "all") return;
+    const known = new Map(model.topics.map((t2) => [t2.id, t2]));
+    for (const t2 of foamOrder(model.topics)) if (!pop.order.includes(t2.id)) pop.order.push(t2.id);
+    pop.order = pop.order.filter((id) => known.has(id));
+    const shown = foamFilter(pop.order.map((id) => known.get(id)), pop.query);
+    const sig = pop.query + "\n" + shown.map((t2) => [t2.id, t2.title, t2.current, foamStatusText(t2, text)].join("	")).join("\n");
+    if (sig === pop.sig) return;
+    pop.sig = sig;
+    const el = pop.el, rows = el.querySelector(".theone-foam-rows"), empty = el.querySelector(".theone-foam-empty");
+    const focused = document.activeElement?.closest?.(".theone-foam-row")?.getAttribute("data-id");
+    rows.textContent = "";
+    for (const t2 of shown) {
+      const item = document.createElement("div"), b = document.createElement("button"), status = foamStatusText(t2, text);
+      item.setAttribute("role", "listitem");
+      b.type = "button";
+      b.className = "theone-foam-row";
+      b.setAttribute("data-id", t2.id);
+      b.setAttribute("aria-haspopup", "dialog");
+      if (t2.current) b.setAttribute("aria-current", "true");
+      b.appendChild(span("theone-foam-name", t2.title));
+      if (status) b.appendChild(span("theone-foam-status" + (t2.phase === "waiting" ? " need" : ""), status));
+      b.onclick = () => {
+        const c = byId(t2.id);
+        if (c) openDetail(c, null);
+      };
+      item.appendChild(b);
+      rows.appendChild(item);
+      if (t2.id === focused) b.focus();
+    }
+    empty.hidden = shown.length > 0;
+  }
   function cancelDrag() {
     if (!drag) return;
     drag.cell.g.classList.remove("drag");
@@ -870,6 +1110,21 @@ function createFoam(options) {
     c.ty = p.y - drag.dy;
     showAim(c);
   };
+  function rerouteTo(c) {
+    if (!c.offer || c.g.classList.contains("pending")) return;
+    const { messageId } = c.offer;
+    c.g.classList.add("pending");
+    void actions.reroute(messageId, c.id).then((status) => {
+      c.g.classList.remove("pending");
+      if (status >= 200 && status < 300) {
+        for (const o of cells) if (o.offer?.messageId === messageId) clearOffer(o);
+        light(c);
+        return;
+      }
+      if (c.offer) c.offer.until = Math.max(c.offer.until, now() + 3e4);
+      tipAt(c, text(status === 409 ? "rerouteBusy" : "rerouteFailed"));
+    });
+  }
   const up = (e) => {
     if (!drag) return;
     const c = drag.cell, trail = drag.trail, started = drag.started;
@@ -880,19 +1135,8 @@ function createFoam(options) {
     hideTip();
     setTarget(null);
     if (!started) {
-      if (!c.offer || c.g.classList.contains("pending")) return;
-      const { messageId } = c.offer;
-      c.g.classList.add("pending");
-      void actions.reroute(messageId, c.id).then((status) => {
-        c.g.classList.remove("pending");
-        if (status >= 200 && status < 300) {
-          for (const o of cells) if (o.offer?.messageId === messageId) clearOffer(o);
-          light(c);
-          return;
-        }
-        if (c.offer) c.offer.until = Math.max(c.offer.until, now() + 3e4);
-        tipAt(c, text(status === 409 ? "rerouteBusy" : "rerouteFailed"));
-      });
+      if (c.offer) rerouteTo(c);
+      else openDetail(c, activeOrNull());
       return;
     }
     if (hit?.kind === "main") {
@@ -1019,7 +1263,8 @@ function createFoam(options) {
       x0 = Math.min(x0, c.x - c.R);
       x1 = Math.max(x1, c.x + c.R);
     }
-    const want = bottom > top ? Math.min(320, bottom - top + 14 * sz + 4) : 4;
+    const strip = entry.hidden ? 0 : STRIP;
+    const want = (bottom > top ? Math.min(320, bottom - top + 14 * sz + 4) : 4) + strip;
     if (heightTarget < 0) {
       height = heightTarget = want;
       host.style.height = fx(height) + "px";
@@ -1036,7 +1281,7 @@ function createFoam(options) {
       options.onHeight(height);
     }
     const fr = host.getBoundingClientRect(), mark = options.mark(), mr = mark?.getBoundingClientRect();
-    const w = fr.width, h3 = Math.max(height, 8), cx = w / 2, cy = Math.max(14, h3 / 2);
+    const w = fr.width, h3 = Math.max(height - strip, 8), cx = w / 2, cy = Math.max(14, h3 / 2);
     if (mr) L = { x: mr.left + mr.width / 2 - fr.left, y: mr.top + mr.height / 2 - fr.top };
     const markR = MARK_R + pulse * pulse * 0.8;
     const shiftX = x1 > x0 ? (cx - (x0 + x1) / 2) * 3 : 0, shiftY = bottom > top ? (cy - (top + bottom) / 2) * 2 : 0;
@@ -1247,10 +1492,10 @@ function createFoam(options) {
         c.lay = lay;
         c.label.textContent = "";
         for (const line of lay.lines) {
-          const span = document.createElementNS(NS, "tspan");
-          span.setAttribute("x", "0");
-          span.textContent = line;
-          c.label.appendChild(span);
+          const span2 = document.createElementNS(NS, "tspan");
+          span2.setAttribute("x", "0");
+          span2.textContent = line;
+          c.label.appendChild(span2);
         }
         c.label.setAttribute("font-size", String(lay.font));
       }
@@ -1332,6 +1577,7 @@ function createFoam(options) {
     event,
     setRail(on) {
       rail = on;
+      host.classList.toggle("rail", on);
     },
     destroy() {
       cancelAnimationFrame(raf);
@@ -1343,12 +1589,14 @@ function createFoam(options) {
       document.removeEventListener("pointerdown", outside, true);
       document.removeEventListener("keydown", keydown, true);
       closeMenu();
+      closePop();
       hideUndo();
       undo.remove();
       tip2.remove();
       svg.remove();
       list.remove();
-      host.classList.remove("theone-foam");
+      entry.remove();
+      host.classList.remove("theone-foam", "rail");
     }
   };
 }
@@ -1408,7 +1656,34 @@ html[data-theone-foam] button:has(.theone-workspace-entry){display:none}
 .theone-foam-menu button{display:flex;width:100%;min-height:34px;align-items:center;padding:7px 12px;line-height:1.4;white-space:normal;overflow-wrap:anywhere;border:0;border-radius:var(--dsw-radius-md,8px);background:none;color:inherit;font:inherit;font-size:13.5px;cursor:pointer;text-align:left}
 .theone-foam-menu button:hover,.theone-foam-menu button:focus-visible{background:var(--dsw-alias-interactive-bg-hover,#0000000a);outline:none}
 .theone-foam-menu hr{border:0;border-top:.5px solid var(--dsw-alias-border-l2,#8885);margin:4px 2px}
-@media(prefers-reduced-motion:reduce){.theone-cell [data-part=membrane],.theone-cell [data-part=body]{transition:none}.theone-cell.pending [data-part=membrane]{animation:none}.theone-foam-undo,.theone-foam-tip{transition:none}}
+.theone-foam-all{position:absolute;right:6px;bottom:0;display:flex;align-items:center;gap:2px;height:18px;min-width:24px;padding:0 4px;border:0;border-radius:6px;background:none;color:var(--foam-idle-line);font:inherit;font-size:10.5px;line-height:1;font-variant-numeric:tabular-nums;cursor:pointer;pointer-events:auto;transition:color .3s ease}
+.theone-foam-all[hidden]{display:none}
+.theone-foam.rail .theone-foam-all{right:auto;left:50%;transform:translateX(-50%)}
+.theone-foam-all svg{width:18px;height:12px;overflow:visible}
+.theone-foam-all circle{fill:var(--foam-bg);stroke:currentColor;stroke-width:1.1}
+.theone-foam-all:hover{color:var(--foam-line)}
+.theone-foam-all:focus-visible{outline:1.5px solid var(--foam-accent);outline-offset:1px;color:var(--foam-line)}
+.theone-foam-all.need{color:var(--foam-accent)}
+.theone-foam-all span:empty{display:none}
+.theone-foam-pop{--foam-accent:#a75b1e;width:max-content;max-width:min(280px,calc(100vw - 16px));overflow:auto;overscroll-behavior:contain;box-sizing:border-box}
+[data-ds-dark-theme] .theone-foam-pop{--foam-accent:#93c8f3}
+.theone-foam-pop button{height:auto;min-height:34px;padding-top:6px;padding-bottom:6px;line-height:1.35}
+.theone-foam-head{padding:8px 12px 6px;display:flex;flex-direction:column;gap:2px}
+.theone-foam-name{font-size:13.5px;line-height:1.4;white-space:normal;overflow-wrap:anywhere}
+.theone-foam-head .theone-foam-name{font-weight:600}
+.theone-foam-status{font-size:12px;line-height:1.4;color:var(--dsw-alias-label-secondary,#8a8a86)}
+.theone-foam-status.need{color:var(--foam-accent)}
+.theone-foam-pop .theone-foam-primary{color:var(--foam-accent);font-weight:600}
+.theone-foam-all-list{width:min(280px,calc(100vw - 16px));display:flex;flex-direction:column;overflow:hidden}
+.theone-foam-filter{flex:none;width:100%;box-sizing:border-box;height:30px;margin:0 0 4px;padding:0 10px;border:.5px solid var(--dsw-alias-border-l2,#8885);border-radius:var(--dsw-radius-md,8px);background:transparent;color:inherit;font:inherit;font-size:13px;outline:none}
+.theone-foam-filter:focus-visible{border-color:var(--foam-accent)}
+.theone-foam-rows{flex:1 1 auto;min-height:0;overflow:auto;overscroll-behavior:contain}
+.theone-foam-pop .theone-foam-row{flex-direction:column;align-items:flex-start;justify-content:center;gap:1px}
+.theone-foam-row[aria-current=true] .theone-foam-name{color:var(--foam-accent)}
+.theone-foam-empty{display:block;padding:6px 12px;font-size:12.5px;color:var(--dsw-alias-label-secondary,#8a8a86)}
+.theone-foam-empty[hidden]{display:none}
+.theone-foam-all-list>hr,.theone-foam-all-list>button{flex:none}
+@media(prefers-reduced-motion:reduce){.theone-foam-all{transition:none}.theone-cell [data-part=membrane],.theone-cell [data-part=body]{transition:none}.theone-cell.pending [data-part=membrane]{animation:none}.theone-foam-undo,.theone-foam-tip{transition:none}}
 `;
 
 // src/client-foam-host.ts
@@ -1420,6 +1695,21 @@ function phaseOf(items) {
   if (items.some((item) => item.phase === "queued")) return "queued";
   if (items.some((item) => (item.phase === "failed" || item.phase === "interrupted") && item.delivery.phase !== "shown")) return "failed";
   return "idle";
+}
+function statusOf(items, phase) {
+  if (phase === "waiting") {
+    const kinds = items.flatMap((item) => item.waits ?? []).map((wait) => wait.kind);
+    return { status: kinds.includes("question") ? "question" : kinds.includes("approval") ? "approval" : "waiting" };
+  }
+  if (phase === "running") {
+    const live = items.filter((item) => LIVE.has(item.phase)).map((item) => item.phase);
+    return { status: live.includes("running") ? "running" : live.includes("recovering") ? "recovering" : live.includes("starting") ? "starting" : "routing" };
+  }
+  if (phase === "queued") {
+    const reason = items.find((item) => item.phase === "queued")?.queueReason;
+    return reason ? { status: "queued", queueReason: reason } : { status: "queued" };
+  }
+  return { status: phase };
 }
 function modelFromBubbles(snapshot) {
   const now2 = snapshot.serverTime;
@@ -1443,7 +1733,9 @@ function modelFromBubbles(snapshot) {
       group: topic.groupId ?? void 0,
       aside: !busy && !topic.current && (topic.effectiveDone || topic.archived),
       oneOff: items.length > 0 && items.every((item) => item.temporary?.kind === "model_aside"),
-      startedAt: live ? live.updatedAt : void 0
+      startedAt: live ? live.updatedAt : void 0,
+      ...statusOf(items, phase),
+      lastActive: Math.max(topic.lastActivityAt ?? 0, topic.usage.lastUsedAt ?? 0) || void 0
     };
   });
   const links = snapshot.edges.map((edge) => ({ a: edge.a, b: edge.b, weight: edge.relation === "kept_apart" ? -0.3 : Math.max(0, Math.min(1, edge.strength)) }));
@@ -2347,10 +2639,10 @@ var zh = {
   "settings.help.contextsPath": "\u53EF\u9009\u3002\u5BFC\u5165\u81EA\u5B9A\u4E49\u8BDD\u9898\u76EE\u5F55\uFF08JSON\uFF09\u3002\u6E05\u7A7A\u6B64\u9879\u4E0D\u4F1A\u5220\u9664\u5DF2\u5BFC\u5165\u7684\u8BDD\u9898\u3002",
   "settings.help.gatewayKey": "\u7528\u4E8E\u533A\u5206\u4E3B\u804A\u5929\u5165\u53E3\uFF0C\u901A\u5E38\u4FDD\u6301 default\u3002\u4EC5\u53EF\u901A\u8FC7\u73AF\u5883\u53D8\u91CF THEONE_GATEWAY_KEY \u4FEE\u6539\u3002",
   "catalog.title": "\u8BDD\u9898\u5DE5\u4F5C\u533A",
-  "foam.more": "\u8FD8\u6709 {n} \u4E2A\u8BDD\u9898 \xB7 \u70B9\u5F00\u8BDD\u9898\u5DE5\u4F5C\u533A",
+  "foam.more": "\u8FD8\u6709 {n} \u4E2A\u8BDD\u9898 \xB7 \u70B9\u5F00\u770B\u5168\u90E8",
   "foam.running": "\u6B63\u5728\u56DE\u7B54 {s} \u79D2",
   "foam.queued": "\u6392\u961F\u4E2D",
-  "foam.answered": "\u7B54\u597D\u4E86\uFF0C\u7B49\u4E3B\u804A\u5929\u5C55\u793A",
+  "foam.answered": "\u7B54\u597D\u4E86\uFF0C\u8FD8\u6CA1\u5728\u4E3B\u804A\u5929\u663E\u793A",
   "foam.waiting": "\u5728\u7B49\u4F60\u56DE\u7B54",
   "foam.failed": "\u8FD9\u6B21\u6CA1\u6709\u5B8C\u6210",
   "foam.menuAnswer": "\u53BB\u4E3B\u804A\u5929\u56DE\u7B54",
@@ -2371,7 +2663,7 @@ var zh = {
   "foam.dropSession": "\u628A\u8FD9\u4E2A\u4F1A\u8BDD\u5173\u8054\u8FDB\u300C{name}\u300D",
   "foam.busyFling": "\u6B63\u5728\u56DE\u7B54\uFF0C\u7B54\u5B8C\u624D\u80FD\u653E\u4E00\u8FB9",
   "foam.currentFling": "\u4E3B\u804A\u5929\u6B63\u5728\u8FD9\u4E2A\u8BDD\u9898\u91CC",
-  "foam.menuContinue": "\u5728\u4E3B\u804A\u5929\u91CC\u63A5\u7740\u804A",
+  "foam.menuContinue": "\u5728\u4E3B\u804A\u5929\u63A5\u7740\u804A",
   "foam.menuOpen": "\u6253\u5F00\u8BDD\u9898",
   "foam.menuAside": "\u5148\u653E\u4E00\u8FB9",
   "foam.menuDelete": "\u5220\u9664\u8BDD\u9898",
@@ -2379,6 +2671,26 @@ var zh = {
   "foam.menuCancel": "\u53D6\u6D88\u6392\u961F",
   "foam.menuShowNow": "\u6253\u5F00\u4E3B\u804A\u5929",
   "foam.menuWorkspace": "\u6253\u5F00\u8BDD\u9898\u5DE5\u4F5C\u533A",
+  "foam.menuReroute": "\u628A\u521A\u624D\u7684\u6D88\u606F\u6362\u5230\u8FD9\u91CC",
+  "foam.allTopics": "\u6240\u6709\u8BDD\u9898",
+  "foam.allWaiting": "{n} \u4E2A\u5728\u7B49\u4F60",
+  "foam.filter": "\u7B5B\u9009\u8BDD\u9898",
+  "foam.noMatch": "\u6CA1\u6709\u5BF9\u5F97\u4E0A\u7684\u8BDD\u9898",
+  "foam.statusCurrent": "\u4E3B\u804A\u5929\u5728\u8FD9\u4E2A\u8BDD\u9898\u91CC",
+  "foam.statusAside": "\u5148\u653E\u5728\u4E00\u8FB9",
+  "foam.statusRouting": "\u6B63\u5728\u5206\u914D",
+  "foam.statusStarting": "\u6B63\u5728\u5F00\u59CB",
+  "foam.statusRunning": "\u6B63\u5728\u56DE\u7B54",
+  "foam.statusRecovering": "\u6B63\u5728\u6062\u590D",
+  "foam.statusQueued": "\u6392\u961F\u4E2D",
+  "foam.queueCapacity": "\u6392\u961F\u4E2D \xB7 \u7B49\u7A7A\u4F4D",
+  "foam.queueTopic": "\u6392\u961F\u4E2D \xB7 \u7B49\u8FD9\u4E2A\u8BDD\u9898\u4E0A\u4E00\u6761\u7B54\u5B8C",
+  "foam.queueProject": "\u6392\u961F\u4E2D \xB7 \u540C\u4E00\u9879\u76EE\u5728\u5FD9",
+  "foam.statusAnswered": "\u7B54\u597D\u4E86\uFF0C\u8FD8\u6CA1\u5728\u4E3B\u804A\u5929\u663E\u793A",
+  "foam.statusQuestion": "\u5728\u7B49\u4F60\u56DE\u7B54",
+  "foam.statusApproval": "\u5728\u7B49\u4F60\u6279\u51C6",
+  "foam.statusWaiting": "\u5728\u7B49\u4F60",
+  "foam.statusFailed": "\u8FD9\u6B21\u6CA1\u6709\u5B8C\u6210",
   "catalog.subtitle": "\u76F8\u5173\u7684\u4E8B\u653E\u5728\u4E00\u8D77\uFF0C\u56DE\u4E3B\u804A\u5929\u63A5\u7740\u804A\u3002",
   "catalog.figTopics": "\u4E2A\u8BDD\u9898",
   "catalog.figGroups": "\u5DE5\u4F5C\u533A",
@@ -2807,10 +3119,10 @@ var en = {
   "settings.help.contextsPath": "Optional. Import a custom topic list (JSON). Clearing this does not remove imported topics.",
   "settings.help.gatewayKey": "Distinguishes main chat entries; usually default. Can only be changed with THEONE_GATEWAY_KEY.",
   "catalog.title": "Topic workspaces",
-  "foam.more": "{n} more topics \xB7 open Topic workspaces",
+  "foam.more": "{n} more topics \xB7 click to see all",
   "foam.running": "Answering \xB7 {s}s",
-  "foam.queued": "Waiting for a free slot",
-  "foam.answered": "Answered, shows in main chat next",
+  "foam.queued": "Queued",
+  "foam.answered": "Answered, not yet shown in main chat",
   "foam.waiting": "Waiting for your answer",
   "foam.failed": "Did not finish this time",
   "foam.menuAnswer": "Answer in main chat",
@@ -2839,6 +3151,26 @@ var en = {
   "foam.menuCancel": "Cancel",
   "foam.menuShowNow": "Open main chat",
   "foam.menuWorkspace": "Open Topic workspaces",
+  "foam.menuReroute": "Move the last message here",
+  "foam.allTopics": "All topics",
+  "foam.allWaiting": "{n} waiting for you",
+  "foam.filter": "Filter topics",
+  "foam.noMatch": "No matching topic",
+  "foam.statusCurrent": "Main chat is in this topic",
+  "foam.statusAside": "Set aside",
+  "foam.statusRouting": "Being routed",
+  "foam.statusStarting": "Starting",
+  "foam.statusRunning": "Answering",
+  "foam.statusRecovering": "Recovering",
+  "foam.statusQueued": "Queued",
+  "foam.queueCapacity": "Queued \xB7 waiting for a free slot",
+  "foam.queueTopic": "Queued \xB7 after this topic's current answer",
+  "foam.queueProject": "Queued \xB7 its project is busy",
+  "foam.statusAnswered": "Answered, not yet shown in main chat",
+  "foam.statusQuestion": "Waiting for your answer",
+  "foam.statusApproval": "Waiting for your approval",
+  "foam.statusWaiting": "Waiting for you",
+  "foam.statusFailed": "Did not finish this time",
   "catalog.subtitle": "Related things together. Carry on in main chat.",
   "catalog.figTopics": "topics",
   "catalog.figGroups": "Workspaces",
