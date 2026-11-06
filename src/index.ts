@@ -3606,7 +3606,8 @@ export default class TheOne extends Service {
     if (decision.action === 'CLARIFY' || decision.contextId === previous.contextId) return unclear
     // Rules cannot name a new topic from "it's the paper one"; only from the message itself.
     if (decision.action === 'CREATE' && byRules && hint && decision.reason !== 'explicit-new-topic') return unclear
-    if (decision.action === 'CREATE' && !hint) decision = { ...newIndependentTopic(previous.text, this.store.contexts(), 'correction'), title: decision.title ?? undefined }
+    if (decision.action === 'CREATE' && !hint) decision = { ...newIndependentTopic(previous.text, this.store.contexts(), 'correction'),
+      title: decision.title ?? undefined, ...(decision.label ? { label: decision.label } : {}) }
     const { relatedIds: _, imports: _imports, ...chosen } = decision
     return { ...chosen, action: decision.action === 'CREATE' ? 'CREATE' : 'MOUNT', reason: 'correction', correctionOf: previous.id }
   }

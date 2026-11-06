@@ -1,6 +1,10 @@
 import { activityLabel, learnDormancy, topicStatus } from "./topic-memory.js";
-/** Use existing names only, without truncating them or inventing a title abbreviation. */
+import { normalizeTopicLabel } from "./topic-label.js";
+/** Prefer the classifier's short name; otherwise use existing terms without truncation. */
 function bubbleLabel(topic) {
+    const stored = normalizeTopicLabel(topic.label);
+    if (stored)
+        return stored;
     const title = topic.title.normalize('NFKC').toLowerCase();
     const candidates = [...topic.entities, ...topic.keywords].map((term, order) => {
         const label = term.normalize('NFKC').trim().replace(/ +/g, ' ');

@@ -6,6 +6,7 @@ import { dirname } from 'node:path'
 import { randomUUID, createHash } from 'node:crypto'
 import type { ExtractedTopic, HiddenReason, HistoryPart, TopicGroup } from './catalog-types.ts'
 import type { ContextDescriptor, ContextUsage, Decision, Progress, RouteRecord, RouteView, StoredContext, SourceRange, TopicLink } from './types.ts'
+import { normalizeTopicLabel } from './topic-label.ts'
 import { FACT_KINDS, FACT_LIMITS, factKey, safe, type FactEvidence, type FactKind, type FactStatus, type FactView } from './facts.ts'
 import { LearningJournal, uniqueSources, type LearningSource } from './learning-journal.ts'
 import { mergeSettled, type Settled, type TopicCard } from './topic-memory.ts'
@@ -641,6 +642,7 @@ export class ContextStore {
         const stated = existing && this.db.prepare('SELECT 1 FROM context_state_updates WHERE context_id = ? LIMIT 1').get(id)
         const summarized = existing && this.db.prepare('SELECT 1 FROM context_summary_updates WHERE context_id = ? LIMIT 1').get(id)
         const descriptor: ContextDescriptor = { id, title: existing?.title ?? topic.title,
+          ...(existing?.label ? { label: existing.label } : {}),
           summary: summarized ? existing.summary : topic.summary, entities: topic.entities, keywords: topic.keywords,
           lastState: stated ? existing.lastState : topic.lastState, ...(stated && existing.progress ? { progress: existing.progress } : {}) }
         if (existing) this.catalogDescriptor(id, descriptor)
@@ -921,11 +923,13 @@ export class ContextStore {
   /** A decision with its topic: a CREATE makes the topic (in its project's folder, when it has one). */
   private topicFor(proposed: Decision, messageId: string): Decision {
     if (proposed.action !== 'CREATE') return { ...proposed }
+    const label = normalizeTopicLabel(proposed.label)
     const context: ContextDescriptor = {
       id: randomUUID(), title: proposed.title!, summary: '新话题，尚无历史摘要。',
+      ...(label ? { label } : {}),
       entities: [], keywords: [proposed.title!], lastState: '等待首次执行',
     }
-    this.seed([{ ...context, title: '待整理话题', keywords: [] }])
+    this.seed([{ ...context, title: '待整理话题', label: undefined, keywords: [] }])
     this.withLearning([this.learningJournal.source(messageId, context.id)], () => this.catalogDescriptor(context.id, context))
     // A new topic about one of the user's projects works in that project's folder.
     if (proposed.folder) {
@@ -1175,7 +1179,7 @@ export class ContextStore {
       throw new Error('Invalid topic title')
     const summary = change.summary?.trim()
     if (summary !== undefined && (!summary || summary.length > 2000)) throw new Error('Invalid topic summary')
-    this.writeDescriptor({ ...context, ...(title ? { title } : {}), ...(summary ? { summary } : {}) })
+    this.writeDescriptor({ ...context, ...(title ? { title, ...(title !== context.title ? { label: undefined } : {}) } : {}), ...(summary ? { summary } : {}) })
     // A hand-written summary is kept like a compaction summary: re-indexing will not overwrite it.
     if (summary) this.db.prepare("INSERT OR REPLACE INTO context_summary_updates(context_id, session_id, summary_seq, end_seq, summary) VALUES (?, 'user', 0, 0, ?)").run(contextId, summary)
   }
@@ -1204,7 +1208,7 @@ export class ContextStore {
     const inherited = this.learningJournal.dependencies(`topic:${sourceId}`)
     this.withLearning(inherited, () => {
       const { workingSessionId: _, ...descriptor } = source
-      this.catalogDescriptor(id, { ...descriptor, id, title })
+      this.catalogDescriptor(id, { ...descriptor, id, title, label: undefined })
       const constraints = this.constraints(sourceId)
       if (constraints) this.setConstraints(id, constraints.text)
     })

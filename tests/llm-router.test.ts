@@ -264,7 +264,7 @@ test('every routing request uses identical instructions, including the second th
  for (const payload of [{}, { symbols: [{ id: 'f' }] }, { projects: [{ id: 'p' }] }, { running: { topicId: 'topic' } }, { recheck: { previous: 'CREATE' } }])
   assert.equal(routingPrompt(payload), plain)
  const schema = JSON.parse(ROUTING_PROMPT.match(/输出 JSON：(\{[^\n]+\})。/)![1])
- assert.deepEqual(Object.keys(schema), ['action', 'contextId', 'relatedIds', 'imports', 'title', 'historyIndependent', 'aside', 'projectId', 'candidateIds', 'question', 'reason'])
+ assert.deepEqual(Object.keys(schema), ['action', 'contextId', 'relatedIds', 'imports', 'title', 'label', 'historyIndependent', 'aside', 'projectId', 'candidateIds', 'question', 'reason'])
  assert.match(schema.reason, /40/)
 })
 
