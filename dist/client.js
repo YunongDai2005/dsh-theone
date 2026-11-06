@@ -222,6 +222,12 @@ function createFoam(options) {
   let rail = !!options.rail, sz = rail ? MINI : 1, height = 8, heightTarget = -1, heightV = 0, pulse = 0, folded = 0, uid = 0, first = true;
   let L = { x: 0, y: 0 }, ptr = null;
   let drag = null;
+  let model = { topics: [] };
+  const undo = document.createElement("button");
+  undo.type = "button";
+  undo.className = "theone-foam-undo";
+  document.body.appendChild(undo);
+  let undoTimer = 0;
   let target = null;
   let clarifying = null;
   let menu = null, tipOwner = null, raf = 0, last = now(), t = 0;
@@ -314,10 +320,13 @@ function createFoam(options) {
       clearTimeout(hover);
       hideTip();
       const p = local(e);
-      drag = { cell: c, dx: p.x - c.x, dy: p.y - c.y, trail: [{ x: e.clientX, y: e.clientY, t: now() }] };
+      drag = { cell: c, dx: p.x - c.x, dy: p.y - c.y, trail: [{ x: e.clientX, y: e.clientY, t: now() }], started: false, last: { x: e.clientX, y: e.clientY } };
       c.tx = c.x;
       c.ty = c.y;
-      g.classList.add("drag");
+      try {
+        g.setPointerCapture(e.pointerId);
+      } catch {
+      }
     });
     g.addEventListener("click", () => {
       if (c.kind === "more" && !drag) actions.openWorkspace();
@@ -404,10 +413,13 @@ function createFoam(options) {
         return true;
       }
       routeTo(c, (event2.related ?? []).map(byId).filter((o) => !!o && o !== c));
+      if (event2.messageId) {
+        for (const o of cells) if (o.offer && o.offer.messageId !== event2.messageId) clearOffer(o);
+      }
       for (const o of (event2.alternates ?? []).map(byId)) if (o && o !== c && !o.hidden) {
         o.flash = Math.max(o.flash, 0.3);
         o.g.classList.add("ask");
-        if (event2.messageId) o.offer = { messageId: event2.messageId, until: now() + 1e4 };
+        if (event2.messageId) o.offer = { messageId: event2.messageId, until: now() + 6e4 };
         else window.setTimeout(() => {
           if (!o.ask && !o.offer) o.g.classList.remove("ask");
         }, 1400);
@@ -455,10 +467,16 @@ function createFoam(options) {
       } else routeTo(b, []);
     } else if (event2.kind === "merged") {
       const a = byId(event2.id), b = byId(event2.into);
+      if (a && a.mode === "leave") return true;
       if (a && b) fuse(a, b);
       else if (a) fade(a);
     }
     return true;
+  }
+  function clearOffer(o) {
+    o.offer = void 0;
+    o.g.classList.remove("offer", "pending");
+    if (!o.ask) o.g.classList.remove("ask");
   }
   function endClarify() {
     if (!clarifying) return;
@@ -468,7 +486,8 @@ function createFoam(options) {
     }
     clarifying = null;
   }
-  function update(model) {
+  function update(next) {
+    model = next;
     const seen = /* @__PURE__ */ new Set();
     for (const topic of model.topics) {
       seen.add(topic.id);
@@ -601,10 +620,18 @@ function createFoam(options) {
     const items = c.kind === "more" ? [[text("menuWorkspace"), actions.openWorkspace]] : c.state === "running" ? [[text("menuOpen"), () => actions.open(c.id)], null, [text("menuStop"), () => actions.stop(c.id)]] : c.state === "queued" ? [[text("menuOpen"), () => actions.open(c.id)], [text("menuCancel"), () => actions.cancelQueued(c.id)]] : c.state === "done" ? [[text("menuShowNow"), () => actions.showAnswer(c.id)], [text("menuOpen"), () => actions.open(c.id)]] : c.state === "wait" ? [[text("menuAnswer"), () => actions.answer(c.id)], [text("menuOpen"), () => actions.open(c.id)]] : [
       [text("menuContinue"), () => actions.mount(c.id)],
       [text("menuOpen"), () => actions.open(c.id)],
-      ...c.cur ? [] : [[text("menuAside"), () => actions.putAside(c.id)]],
+      ...c.cur ? [] : [[text("menuAside"), () => void actions.putAside(c.id).then((ok) => {
+        if (!ok) tipAt(c, text("actionFailed"));
+      })]],
       null,
       [text("menuDelete"), () => actions.remove(c.id)]
     ];
+    if (c.kind === "topic") {
+      const extra = [];
+      if (bonds.some((b2) => b2[0] === c)) extra.push([text("menuCancelMerge"), () => actions.cancelMerge(c.id)]);
+      for (const m of (model.merges ?? []).filter((m2) => m2.targetId === c.id).slice(0, 3)) extra.push([text("menuUnmerge", { name: m.title }), () => undoMerge(m.sourceId, c)]);
+      if (extra.length) items.push(null, ...extra);
+    }
     const el = menu = document.createElement("div");
     el.className = "theone-foam-menu";
     el.setAttribute("role", "menu");
@@ -633,8 +660,45 @@ function createFoam(options) {
     if (menu && !menu.contains(e.target)) closeMenu();
   };
   const keydown = (e) => {
-    if (e.key === "Escape") closeMenu();
+    if (e.key === "Escape") {
+      closeMenu();
+      cancelDrag();
+    }
   };
+  function cancelDrag() {
+    if (!drag) return;
+    drag.cell.g.classList.remove("drag");
+    drag = null;
+    hideTip();
+    setTarget(null);
+  }
+  const blur = () => cancelDrag();
+  function undoMerge(sourceId, near) {
+    hideUndo();
+    void actions.unmerge(sourceId).then((ok) => {
+      if (!ok) tipAt(near, text("actionFailed"));
+    });
+  }
+  function offerUndo(sourceId, near) {
+    clearTimeout(undoTimer);
+    undo.textContent = text("undo");
+    const r = near.m.getBoundingClientRect();
+    undo.style.left = r.left + r.width / 2 + "px";
+    undo.style.top = r.bottom + 6 + "px";
+    undo.onclick = () => undoMerge(sourceId, near);
+    undo.classList.add("on");
+    undoTimer = window.setTimeout(hideUndo, 6e3);
+  }
+  function hideUndo() {
+    clearTimeout(undoTimer);
+    undo.classList.remove("on");
+    undo.onclick = null;
+  }
+  function tipAt(c, s) {
+    const r = c.m.getBoundingClientRect();
+    placeTip(r.left + r.width / 2, r.top - 28, s);
+    window.setTimeout(hideTip, 1800);
+  }
   function dropTarget(e, c) {
     for (const el of document.elementsFromPoint(e.clientX, e.clientY)) {
       if (c.g.contains(el)) continue;
@@ -664,38 +728,63 @@ function createFoam(options) {
     if (hit.kind === "cell") return text(busy(c) || busy(hit.cell) ? "dropMergeLater" : "dropMerge", { name: hit.cell.title });
     return text("dropSession", { name: c.title });
   }
+  const REST = 500;
+  function aim(e, c) {
+    const hit = dropTarget(e, c);
+    if (!drag) return hit;
+    if (hit?.kind !== "cell") {
+      drag.rest = void 0;
+      return hit;
+    }
+    if (drag.rest?.cell !== hit.cell) drag.rest = { cell: hit.cell, since: now() };
+    return now() - drag.rest.since >= REST ? hit : null;
+  }
+  function showAim(c) {
+    if (!drag) return;
+    const hit = aim({ clientX: drag.last.x, clientY: drag.last.y }, c);
+    setTarget(hit);
+    const resting = !hit && drag.rest ? text("mergeHold", { name: drag.rest.cell.title }) : "";
+    placeTip(drag.last.x, drag.last.y - 32, hit ? dropText(c, hit) : resting);
+  }
   const move = (e) => {
     const p = local(e), r = host.getBoundingClientRect();
     ptr = e.clientX > r.left - 24 && e.clientX < r.right + 24 && e.clientY > r.top - 10 && e.clientY < r.bottom + 24 ? p : null;
     if (!drag) return;
     const c = drag.cell;
-    c.tx = p.x - drag.dx;
-    c.ty = p.y - drag.dy;
+    drag.last = { x: e.clientX, y: e.clientY };
     drag.trail.push({ x: e.clientX, y: e.clientY, t: now() });
     if (drag.trail.length > 8) drag.trail.shift();
-    const hit = dropTarget(e, c);
-    setTarget(hit);
-    placeTip(e.clientX, e.clientY - 32, hit ? dropText(c, hit) : "");
+    if (!drag.started) {
+      if (Math.hypot(e.clientX - drag.trail[0].x, e.clientY - drag.trail[0].y) < 5) return;
+      drag.started = true;
+      c.g.classList.add("drag");
+    }
+    c.tx = p.x - drag.dx;
+    c.ty = p.y - drag.dy;
+    showAim(c);
   };
   const up = (e) => {
     if (!drag) return;
-    const c = drag.cell, hit = target, trail = drag.trail;
+    const c = drag.cell, trail = drag.trail, started = drag.started;
+    drag.last = { x: e.clientX, y: e.clientY };
+    const hit = started ? aim(e, c) : null;
     c.g.classList.remove("drag");
     drag = null;
     hideTip();
     setTarget(null);
-    const moved = trail.length > 1 && Math.hypot(trail[trail.length - 1].x - trail[0].x, trail[trail.length - 1].y - trail[0].y) > 5;
-    if (!moved && c.offer) {
-      const { messageId } = c.offer, x = e.clientX, y = e.clientY;
-      for (const o of cells) if (o.offer?.messageId === messageId) {
-        o.offer = void 0;
-        if (!o.ask) o.g.classList.remove("ask");
-      }
+    if (!started) {
+      if (!c.offer || c.g.classList.contains("pending")) return;
+      const { messageId } = c.offer;
+      c.g.classList.add("pending");
       void actions.reroute(messageId, c.id).then((status) => {
-        if (status === 409) {
-          placeTip(x, y - 32, text("rerouteBusy"));
-          window.setTimeout(hideTip, 1600);
-        } else if (status < 300) light(c);
+        c.g.classList.remove("pending");
+        if (status >= 200 && status < 300) {
+          for (const o of cells) if (o.offer?.messageId === messageId) clearOffer(o);
+          light(c);
+          return;
+        }
+        if (c.offer) c.offer.until = Math.max(c.offer.until, now() + 3e4);
+        tipAt(c, text(status === 409 ? "rerouteBusy" : "rerouteFailed"));
       });
       return;
     }
@@ -704,8 +793,17 @@ function createFoam(options) {
       return;
     }
     if (hit?.kind === "cell") {
-      bonds = [...bonds.filter((b) => b[0] !== c && b[1] !== c), [c, hit.cell]];
-      actions.merge(c.id, hit.cell.id, busy(c) || busy(hit.cell));
+      const into = hit.cell;
+      bonds = [...bonds.filter((b) => b[0] !== c && b[1] !== c), [c, into]];
+      void actions.merge(c.id, into.id).then((result) => {
+        if (result === "merged") {
+          apply2({ kind: "merged", id: c.id, into: into.id });
+          offerUndo(c.id, into);
+        } else if (result === "failed") {
+          bonds = bonds.filter((b) => b[0] !== c);
+          tipAt(into, text("mergeFailed"));
+        }
+      });
       return;
     }
     if (hit?.kind === "session") {
@@ -714,8 +812,10 @@ function createFoam(options) {
         const a = icon.getBoundingClientRect(), b = host.getBoundingClientRect();
         return { x: a.left + a.width / 2 - b.left, y: a.top + a.height / 2 - b.top };
       };
-      vesicle(box, () => pos(c), () => light(c));
-      actions.attach(c.id, hit.id);
+      void actions.attach(c.id, hit.id).then((ok) => {
+        if (ok) vesicle(box, () => pos(c), () => light(c));
+        else tipAt(c, text("actionFailed"));
+      });
       return;
     }
     const firstS = trail.find((s) => now() - s.t < 90) ?? trail[0], lastS = trail[trail.length - 1];
@@ -723,7 +823,8 @@ function createFoam(options) {
     const dt = Math.max(16, lastS.t - firstS.t) / 1e3, vx = (lastS.x - firstS.x) / dt, vy = (lastS.y - firstS.y) / dt;
     const sr = options.side()?.getBoundingClientRect();
     const out = !!sr && (e.clientX > sr.right + 6 || e.clientX < sr.left - 6);
-    if (Math.hypot(vx, vy) <= 1100 && !out) return;
+    const speed = Math.hypot(vx, vy);
+    if (speed <= 1100 && !(out && speed > 500)) return;
     if (busy(c) || c.cur) {
       c.vx = -vx * 0.15;
       c.vy = -vy * 0.15;
@@ -732,23 +833,39 @@ function createFoam(options) {
       window.setTimeout(hideTip, 1300);
       return;
     }
-    const v = out && Math.hypot(vx, vy) < 400 ? { x: sr && e.clientX > sr.right ? 900 : -900, y: 0 } : { x: vx, y: vy };
-    const k = Math.min(1, 2600 / Math.hypot(v.x, v.y));
+    const k = Math.min(1, 2600 / speed);
     c.mode = "fling";
     c.age = 0;
-    c.vx = v.x * k;
-    c.vy = v.y * k;
+    c.vx = vx * k;
+    c.vy = vy * k;
     c.g.style.pointerEvents = "none";
     bonds = bonds.filter((b) => b[0] !== c && b[1] !== c);
-    actions.putAside(c.id);
+    void actions.putAside(c.id).then((ok) => {
+      if (ok || c.mode !== "fling") return;
+      c.mode = "bud";
+      c.age = 0;
+      c.x = L.x;
+      c.y = L.y;
+      c.vx = 0;
+      c.vy = 0;
+      c.scale = 0.12;
+      c.alpha = 1;
+      c.hidden = false;
+      c.g.style.pointerEvents = "";
+      pulse = Math.max(pulse, 0.6);
+      c.onBorn = () => tipAt(c, text("actionFailed"));
+    });
   };
   window.addEventListener("pointermove", move);
   window.addEventListener("pointerup", up);
+  window.addEventListener("pointercancel", blur);
+  window.addEventListener("blur", blur);
   document.addEventListener("pointerdown", outside, true);
   document.addEventListener("keydown", keydown, true);
   function step(dt) {
     const T = now();
     options.place?.();
+    if (drag?.started && drag.rest && target?.kind !== "cell") showAim(drag.cell);
     sz = ease(sz, rail ? MINI : 1, 4, dt);
     const words = clamp((sz - 0.72) / 0.28);
     const all = topics().filter((c) => c.mode !== "fling");
@@ -779,9 +896,12 @@ function createFoam(options) {
       more.kick = 0.8;
     }
     for (const b of [...bonds]) if (b.some((c) => c.mode !== "live")) bonds.splice(bonds.indexOf(b), 1);
-    for (const c of all) if (c.offer && T > c.offer.until) {
-      c.offer = void 0;
-      if (!c.ask) c.g.classList.remove("ask");
+    for (const c of all) if (c.offer) {
+      if (T > c.offer.until) clearOffer(c);
+      else if (T > c.offer.until - 56e3 && !c.g.classList.contains("offer")) {
+        c.g.classList.add("offer");
+        if (!c.ask) c.g.classList.remove("ask");
+      }
     }
     const live = cells.filter((c) => c.mode === "live" && !c.hidden);
     let top = Infinity, bottom = -Infinity, x0 = Infinity, x1 = -Infinity;
@@ -800,7 +920,7 @@ function createFoam(options) {
     if (want > heightTarget + 2 || want < heightTarget - 6) heightTarget = want;
     const hk = 70, hc = 2 * 0.72 * Math.sqrt(hk);
     heightV += (hk * (heightTarget - height) - hc * heightV) * dt;
-    if (Math.abs(heightTarget - height) < 0.05 && Math.abs(heightV) < 0.05) heightV = 0;
+    if (reduced() || Math.abs(heightTarget - height) < 0.05 && Math.abs(heightV) < 0.05) heightV = 0;
     const nextHeight = reduced() ? heightTarget : heightV ? height + heightV * dt : heightTarget;
     if (Math.abs(nextHeight - height) > 0.01) {
       height = nextHeight;
@@ -875,6 +995,9 @@ function createFoam(options) {
       if (drag?.cell === c) {
         fx2 += (c.tx - c.x) * 70;
         fy2 += (c.ty - c.y) * 70;
+      } else if (drag?.started && c.mode === "live" && !c.hidden) {
+        c.vx = c.vy = 0;
+        continue;
       }
       c.vx = (c.vx + fx2 * dt) * Math.pow(damp, dt);
       c.vy = (c.vy + fy2 * dt) * Math.pow(damp, dt);
@@ -1088,9 +1211,13 @@ function createFoam(options) {
       clearInterval(tipTimer);
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", blur);
+      window.removeEventListener("blur", blur);
       document.removeEventListener("pointerdown", outside, true);
       document.removeEventListener("keydown", keydown, true);
       closeMenu();
+      hideUndo();
+      undo.remove();
       tip2.remove();
       svg.remove();
       list.remove();
@@ -1133,6 +1260,13 @@ var foamCss = `
 .theone-cell.ask [data-part=membrane]{stroke:var(--foam-accent);stroke-dasharray:3 3}
 .theone-cell.fuse [data-part=membrane]{stroke:var(--foam-accent);stroke-width:1.6}
 .theone-cell.more{cursor:pointer}
+.theone-cell.offer{cursor:pointer}
+.theone-cell.offer [data-part=membrane]{stroke:var(--foam-line)}
+.theone-cell.offer [data-part=nucleus]{fill:var(--foam-accent)}
+.theone-cell.pending [data-part=membrane]{stroke:var(--foam-accent);stroke-dasharray:2 3;animation:theone-foam-march 1s linear infinite}
+@keyframes theone-foam-march{to{stroke-dashoffset:-10}}
+.theone-foam-undo{position:fixed;z-index:1000;transform:translate(-50%,3px);padding:3px 10px;border:.5px solid var(--dsw-alias-border-l2,#8885);border-radius:999px;background:var(--dsw-alias-bg-base,#fff);color:var(--dsw-alias-label-primary,#2b2b2b);font:inherit;font-size:12px;line-height:1.5;cursor:pointer;opacity:0;pointer-events:none;transition:opacity .15s,transform .15s}
+.theone-foam-undo.on{opacity:1;pointer-events:auto;transform:translate(-50%,0)}
 .theone-cell.more [data-part=membrane]{stroke-dasharray:1.2 3}
 .theone-neck [data-part=edge]{fill:none;stroke:var(--foam-line);stroke-width:1.3;stroke-linecap:round}
 .theone-vesicle [data-part=membrane]{fill:var(--foam-tint);stroke:var(--foam-accent);stroke-width:1.1}
@@ -1145,7 +1279,7 @@ html[data-theone-foam] button:has(.theone-workspace-entry){display:none}
 .theone-foam-menu button{display:flex;width:100%;height:34px;align-items:center;padding:0 12px;border:0;border-radius:var(--dsw-radius-md,8px);background:none;color:inherit;font:inherit;font-size:13.5px;cursor:pointer;text-align:left}
 .theone-foam-menu button:hover,.theone-foam-menu button:focus-visible{background:var(--dsw-alias-interactive-bg-hover,#0000000a);outline:none}
 .theone-foam-menu hr{border:0;border-top:.5px solid var(--dsw-alias-border-l2,#8885);margin:4px 2px}
-@media(prefers-reduced-motion:reduce){.theone-cell [data-part=membrane],.theone-cell [data-part=body]{transition:none}}
+@media(prefers-reduced-motion:reduce){.theone-cell [data-part=membrane],.theone-cell [data-part=body]{transition:none}.theone-cell.pending [data-part=membrane]{animation:none}.theone-foam-undo,.theone-foam-tip{transition:none}}
 `;
 
 // src/client-foam-host.ts
@@ -1226,40 +1360,50 @@ function modelFromCatalog(snapshot) {
     for (const other of entry.related) if (id < other.id) links.push({ a: id, b: other.id, weight: other.reasons.includes("manual") ? 1 : other.reasons.includes("learned") ? 0.5 : 0.3 });
   return { topics, links };
 }
-function createWave(button) {
-  const K = 210, C = 2 * 0.6 * Math.sqrt(K), SLACK = 8, URGENT = 24;
+function createWave(button, clip) {
+  const K = 210, C = 2 * 0.6 * Math.sqrt(K), SLACK = 4;
   const motion = matchMedia("(prefers-reduced-motion: reduce)");
-  let base = 0, wanted = 0, started = false, frame = 0, last = 0, pressed = false;
+  let base = 0, wanted = 0, height = 0, started = false, frame = 0, retry = 0, last = 0, clipped = false;
   let pointer;
+  const pressed = /* @__PURE__ */ new Set();
   const state = /* @__PURE__ */ new Map();
+  const region = () => {
+    const next = button.parentElement?.nextElementSibling;
+    return next instanceof HTMLElement && next.offsetHeight && next.nextElementSibling ? next : null;
+  };
   const rows = () => {
     const list = [];
     for (let row = button.nextElementSibling; row; row = row.nextElementSibling) if (row instanceof HTMLElement && row.offsetHeight) list.push(row);
-    const next = button.parentElement?.nextElementSibling;
-    if (next instanceof HTMLElement && next.offsetHeight && next.nextElementSibling) list.push(next);
+    const block = region();
+    if (block) list.push(block);
     return list;
   };
   const track = (el, y) => {
     let s = state.get(el);
-    if (!s) state.set(el, s = { y, v: 0, transform: el.style.transform, willChange: el.style.willChange });
+    if (!s) state.set(el, s = { y, v: 0 });
     return s;
   };
   const release = (el) => {
-    const s = state.get(el);
-    if (!s) return;
-    el.style.transform = s.transform;
-    el.style.willChange = s.willChange;
+    el.style.removeProperty("translate");
+    el.style.removeProperty("clip-path");
     state.delete(el);
   };
   const busy = (list = rows()) => {
-    if (pressed) return true;
+    if (pressed.size) return true;
+    if (list.some((el) => el.matches('[aria-expanded="true"]') || el.querySelector('[aria-expanded="true"]'))) return true;
     const active = document.activeElement;
-    if (active && active !== document.body && list.some((el) => el.contains(active))) return true;
+    if (document.hasFocus() && active && active !== document.body && list.some((el) => el.contains(active))) return true;
     if (!pointer) return false;
     return list.some((el) => {
       const r = el.getBoundingClientRect();
       return pointer.x >= r.left && pointer.x <= r.right && pointer.y >= r.top && pointer.y <= r.bottom;
     });
+  };
+  const limit = (frozen) => {
+    const room = frozen && height + 10 > base ? base - 10 : null;
+    if (room === null && !clipped) return;
+    clipped = room !== null;
+    clip(room);
   };
   function step(now2) {
     frame = 0;
@@ -1267,7 +1411,13 @@ function createWave(button) {
     last = now2;
     const list = rows();
     for (const el of [...state.keys()]) if (!list.includes(el)) release(el);
-    if (busy(list)) return;
+    if (busy(list)) {
+      limit(true);
+      clearTimeout(retry);
+      retry = window.setTimeout(wake, 400);
+      return;
+    }
+    limit(false);
     if (wanted !== base) {
       apply2(wanted, list);
       return;
@@ -1301,6 +1451,7 @@ function createWave(button) {
   }
   function draw(list) {
     let moving = false;
+    const block = region();
     for (const el of list) {
       const s = state.get(el);
       if (!s) continue;
@@ -1309,8 +1460,9 @@ function createWave(button) {
         continue;
       }
       moving = true;
-      el.style.willChange = "transform";
-      el.style.transform = `translateY(${(s.y - base).toFixed(2)}px)`;
+      const d = s.y - base;
+      el.style.translate = `0 ${d.toFixed(2)}px`;
+      if (el === block) el.style.clipPath = d > 0 ? `inset(0 0 ${d.toFixed(2)}px 0)` : "";
     }
     return moving;
   }
@@ -1329,28 +1481,31 @@ function createWave(button) {
       frame = requestAnimationFrame(step);
     }
   }
-  const wake = () => {
-    if (!frame && (wanted !== base || state.size)) {
+  function wake() {
+    if (!frame && (wanted !== base || state.size || clipped)) {
       last = performance.now();
       frame = requestAnimationFrame(step);
     }
-  };
-  const move = (event) => {
-    pointer = { x: event.clientX, y: event.clientY };
+  }
+  const forget = () => {
+    pointer = void 0;
+    pressed.clear();
     wake();
   };
-  const leave = () => {
-    pointer = void 0;
+  const move = (event) => {
+    if (event.pointerType !== "touch") pointer = { x: event.clientX, y: event.clientY };
     wake();
   };
   const down = (event) => {
-    if (rows().some((el) => el.contains(event.target))) pressed = true;
+    if (rows().some((el) => el.contains(event.target))) pressed.add(event.pointerId);
   };
-  const up = () => {
-    if (pressed) {
-      pressed = false;
-      wake();
-    }
+  const up = (event) => {
+    if (!pressed.delete(event.pointerId) && event.pointerType !== "touch") return;
+    if (event.pointerType === "touch") pointer = void 0;
+    wake();
+  };
+  const visible = () => {
+    if (document.visibilityState !== "visible") forget();
   };
   const settle = () => {
     if (!motion.matches) return;
@@ -1361,39 +1516,46 @@ function createWave(button) {
   document.addEventListener("pointerdown", down, true);
   document.addEventListener("pointerup", up, true);
   document.addEventListener("pointercancel", up, true);
-  document.documentElement.addEventListener("pointerleave", leave);
+  document.addEventListener("lostpointercapture", up, true);
+  document.documentElement.addEventListener("pointerleave", forget);
   document.addEventListener("focusout", wake);
-  window.addEventListener("blur", up);
+  document.addEventListener("visibilitychange", visible);
+  window.addEventListener("blur", forget);
   motion.addEventListener("change", settle);
   return {
-    set(height) {
-      const next = Math.round(height * 2) / 2 + 10;
-      wanted = next;
-      if (next === base) return;
+    set(next) {
+      height = next;
+      const room = Math.round(next * 2) / 2 + 10;
+      wanted = room;
+      if (room === base) return;
       if (!started || motion.matches) {
         started = true;
-        apply2(next, rows(), true);
+        apply2(room, rows(), true);
         return;
       }
       const list = rows();
       if (busy(list)) {
-        if (next - base > URGENT) apply2(next, list, true);
-        else wake();
+        limit(true);
+        wake();
         return;
       }
-      apply2(next, list);
+      apply2(room, list);
     },
     destroy() {
       cancelAnimationFrame(frame);
+      clearTimeout(retry);
       for (const el of [...state.keys()]) release(el);
+      clip(null);
       button.style.marginBottom = "";
       document.removeEventListener("pointermove", move);
       document.removeEventListener("pointerdown", down, true);
       document.removeEventListener("pointerup", up, true);
       document.removeEventListener("pointercancel", up, true);
-      document.documentElement.removeEventListener("pointerleave", leave);
+      document.removeEventListener("lostpointercapture", up, true);
+      document.documentElement.removeEventListener("pointerleave", forget);
       document.removeEventListener("focusout", wake);
-      window.removeEventListener("blur", up);
+      document.removeEventListener("visibilitychange", visible);
+      window.removeEventListener("blur", forget);
       motion.removeEventListener("change", settle);
     }
   };
@@ -1403,39 +1565,48 @@ function mountFoamHost(options) {
   const host = document.createElement("div");
   host.setAttribute("translate", "no");
   document.body.appendChild(host);
-  const wave = createWave(button);
+  const wave = createWave(button, (room) => {
+    host.style.clipPath = room === null ? "" : `inset(-400px -80px ${Math.max(0, host.offsetHeight - room).toFixed(1)}px -80px)`;
+  });
   const sessionOf = /* @__PURE__ */ new Map();
   let latest;
   const workOf = (id, queued) => latest?.workItems.find((item) => item.contextId === id && item.stop.allowed && (queued ? item.phase === "queued" : LIVE.has(item.phase) || item.phase === "waiting_user"));
   const stopWork = (id, queued) => {
     const item = workOf(id, queued);
-    if (item) act({ action: "stop", workItemId: item.id });
+    if (item) void act({ action: "stop", workItemId: item.id });
     else options.openMainChat();
   };
-  const failed = () => {
-    refresh();
-  };
-  const act = (body) => {
-    void post("/api/theone/topics", body, signal).then((ok) => {
-      if (!ok) failed();
-      else refresh();
-    }).catch(failed);
-  };
+  const act = (body) => post("/api/theone/topics", body, signal).catch(() => false).finally(refresh);
+  let undoable = [], shown;
   const actions = {
     mount: (id) => {
       void options.mount(id).finally(refresh);
     },
-    merge: (id, into, whenIdle) => {
-      void fetch("/api/theone/topics", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        signal,
-        cache: "no-store",
-        body: JSON.stringify({ action: "merge", id, into, ...whenIdle ? { whenIdle: true, requestId: `${id}>${into}` } : {} })
-      }).then((response) => {
-        if (response.status === 200) foam.event({ kind: "merged", id, into });
+    merge: async (id, into) => {
+      try {
+        const response = await fetch("/api/theone/topics", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          signal,
+          cache: "no-store",
+          body: JSON.stringify({ action: "merge", id, into, whenIdle: true, requestId: `${id}>${into}:${Date.now().toString(36)}` })
+        });
+        if (response.status === 200) void readCatalog(false);
+        return response.status === 200 ? "merged" : response.status === 202 ? "queued" : "failed";
+      } catch {
+        return "failed";
+      } finally {
         refresh();
-      }).catch(failed);
+      }
+    },
+    cancelMerge: (id) => {
+      const op = latest?.merges.find((merge) => merge.sourceId === id && merge.state === "queued");
+      if (op) void act({ action: "cancelMerge", operationId: op.operationId });
+    },
+    unmerge: async (sourceId) => {
+      const ok = await act({ action: "unmerge", id: sourceId });
+      if (ok) await readCatalog(false);
+      return ok;
     },
     attach: (id, sessionId) => act({ action: "attach", id, sessionId }),
     putAside: (id) => act({ action: "status", id, done: true }),
@@ -1488,7 +1659,8 @@ function mountFoamHost(options) {
     }
   });
   const show = (model) => {
-    foam.update(model);
+    shown = model;
+    foam.update({ ...model, merges: undoable });
     options.onTopics?.(model.topics.length);
   };
   let readingCatalog = false;
@@ -1500,7 +1672,9 @@ function mountFoamHost(options) {
       if (!response.ok) return;
       const snapshot = await response.json();
       for (const context of snapshot.contexts) sessionOf.set(context.id, context.sourceSessionIds[0] ?? context.workingSessionId);
+      undoable = (snapshot.merges ?? []).map((merge) => ({ sourceId: merge.sourceId, targetId: merge.targetId, title: merge.title }));
       if (feed2) show(modelFromCatalog(snapshot));
+      else if (shown) show(shown);
     } catch {
     } finally {
       readingCatalog = false;
@@ -2050,14 +2224,21 @@ var zh = {
   "foam.answered": "\u7B54\u597D\u4E86\uFF0C\u7B49\u4E3B\u804A\u5929\u5C55\u793A",
   "foam.waiting": "\u5728\u7B49\u4F60\u56DE\u7B54",
   "foam.failed": "\u8FD9\u6B21\u6CA1\u6709\u5B8C\u6210",
-  "foam.menuAnswer": "\u53BB\u56DE\u7B54",
+  "foam.menuAnswer": "\u53BB\u4E3B\u804A\u5929\u56DE\u7B54",
   "foam.offer": "\u53EF\u80FD\u662F\u8FD9\u4E2A\u8BDD\u9898 \xB7 \u70B9\u4E00\u4E0B\u6362\u8FC7\u53BB",
-  "foam.rerouteBusy": "\u6B63\u5728\u56DE\u7B54\uFF0C\u7B54\u5B8C\u540E\u518D\u70B9",
+  "foam.rerouteBusy": "TheOne \u6B63\u5FD9\uFF0C\u7A7A\u4E0B\u6765\u540E\u518D\u70B9\u4E00\u6B21",
+  "foam.rerouteFailed": "\u6CA1\u6362\u6210\uFF0C\u518D\u70B9\u4E00\u6B21\u8BD5\u8BD5",
+  "foam.actionFailed": "\u6CA1\u505A\u6210\uFF0C\u7A0D\u540E\u518D\u8BD5",
+  "foam.mergeFailed": "\u8FD9\u6B21\u6CA1\u5408\u5E76\u6210",
+  "foam.mergeHold": "\u505C\u4F4F\uFF0C\u5C31\u5E76\u8FDB\u300C{name}\u300D",
+  "foam.undo": "\u64A4\u9500\u5408\u5E76",
+  "foam.menuCancelMerge": "\u53D6\u6D88\u5408\u5E76",
+  "foam.menuUnmerge": "\u64A4\u9500\u5408\u5E76\u300C{name}\u300D",
   "foam.asking": "\u4E3B\u804A\u5929\u5728\u95EE\u4F60\u662F\u4E0D\u662F\u8FD9\u4E2A\u8BDD\u9898",
-  "foam.bond": "\u7B54\u5B8C\u540E\u548C\u300C{name}\u300D\u5408\u5E76",
+  "foam.bond": "TheOne \u7A7A\u4E0B\u6765\u540E\u548C\u300C{name}\u300D\u5408\u5E76",
   "foam.dropMain": "\u4E3B\u804A\u5929\u63A5\u7740\u804A\u300C{name}\u300D",
-  "foam.dropMerge": "\u5E76\u8FDB\u300C{name}\u300D",
-  "foam.dropMergeLater": "\u7B54\u5B8C\u540E\u5E76\u8FDB\u300C{name}\u300D",
+  "foam.dropMerge": "\u677E\u624B\uFF0C\u5E76\u8FDB\u300C{name}\u300D",
+  "foam.dropMergeLater": "\u677E\u624B\uFF0CTheOne \u7A7A\u4E0B\u6765\u540E\u5E76\u8FDB\u300C{name}\u300D",
   "foam.dropSession": "\u628A\u8FD9\u4E2A\u4F1A\u8BDD\u5173\u8054\u8FDB\u300C{name}\u300D",
   "foam.busyFling": "\u6B63\u5728\u56DE\u7B54\uFF0C\u7B54\u5B8C\u624D\u80FD\u653E\u4E00\u8FB9",
   "foam.currentFling": "\u4E3B\u804A\u5929\u6B63\u5728\u8FD9\u4E2A\u8BDD\u9898\u91CC",
@@ -2067,7 +2248,7 @@ var zh = {
   "foam.menuDelete": "\u5220\u9664\u8BDD\u9898",
   "foam.menuStop": "\u505C\u6B62",
   "foam.menuCancel": "\u53D6\u6D88\u6392\u961F",
-  "foam.menuShowNow": "\u73B0\u5728\u5728\u4E3B\u804A\u5929\u91CC\u770B",
+  "foam.menuShowNow": "\u6253\u5F00\u4E3B\u804A\u5929",
   "foam.menuWorkspace": "\u6253\u5F00\u8BDD\u9898\u5DE5\u4F5C\u533A",
   "catalog.subtitle": "\u76F8\u5173\u7684\u4E8B\u653E\u5728\u4E00\u8D77\uFF0C\u56DE\u4E3B\u804A\u5929\u63A5\u7740\u804A\u3002",
   "catalog.figTopics": "\u4E2A\u8BDD\u9898",
@@ -2503,14 +2684,21 @@ var en = {
   "foam.answered": "Answered, shows in main chat next",
   "foam.waiting": "Waiting for your answer",
   "foam.failed": "Did not finish this time",
-  "foam.menuAnswer": "Answer it",
+  "foam.menuAnswer": "Answer in main chat",
   "foam.offer": "Maybe this topic \xB7 click to move it here",
-  "foam.rerouteBusy": "Still answering; click again once it is done",
+  "foam.rerouteBusy": "TheOne is busy; click again once it is free",
+  "foam.rerouteFailed": "Did not move; click to try again",
+  "foam.actionFailed": "Could not do that; try again later",
+  "foam.mergeFailed": "Did not merge this time",
+  "foam.mergeHold": 'Hold here to merge into "{name}"',
+  "foam.undo": "Undo merge",
+  "foam.menuCancelMerge": "Cancel merge",
+  "foam.menuUnmerge": 'Undo merging "{name}"',
   "foam.asking": "Main chat is asking whether you mean this one",
-  "foam.bond": 'Merges into "{name}" once answered',
+  "foam.bond": 'Merges into "{name}" once TheOne is free',
   "foam.dropMain": 'Carry on with "{name}" in main chat',
-  "foam.dropMerge": 'Merge into "{name}"',
-  "foam.dropMergeLater": 'Merge into "{name}" once answered',
+  "foam.dropMerge": 'Let go to merge into "{name}"',
+  "foam.dropMergeLater": 'Let go to merge into "{name}" once TheOne is free',
   "foam.dropSession": 'Attach this chat to "{name}"',
   "foam.busyFling": "Still answering; set it aside afterwards",
   "foam.currentFling": "Main chat is in this topic",
@@ -2520,7 +2708,7 @@ var en = {
   "foam.menuDelete": "Delete topic",
   "foam.menuStop": "Stop",
   "foam.menuCancel": "Cancel",
-  "foam.menuShowNow": "Show in main chat now",
+  "foam.menuShowNow": "Open main chat",
   "foam.menuWorkspace": "Open Topic workspaces",
   "catalog.subtitle": "Related things together. Carry on in main chat.",
   "catalog.figTopics": "topics",

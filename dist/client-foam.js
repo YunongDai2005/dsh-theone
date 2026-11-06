@@ -106,7 +106,14 @@ export function createFoam(options) {
     let links = new Map(), bonds = [];
     let rail = !!options.rail, sz = rail ? MINI : 1, height = 8, heightTarget = -1, heightV = 0, pulse = 0, folded = 0, uid = 0, first = true;
     let L = { x: 0, y: 0 }, ptr = null;
+    /** A press on a cell; it becomes a drag only after the pointer has really moved. A merge needs the pointer to rest on the other cell first. */
     let drag = null;
+    let model = { topics: [] };
+    const undo = document.createElement('button');
+    undo.type = 'button';
+    undo.className = 'theone-foam-undo';
+    document.body.appendChild(undo);
+    let undoTimer = 0;
     let target = null;
     let clarifying = null;
     let menu = null, tipOwner = null, raf = 0, last = now(), t = 0;
@@ -152,10 +159,13 @@ export function createFoam(options) {
             clearTimeout(hover);
             hideTip();
             const p = local(e);
-            drag = { cell: c, dx: p.x - c.x, dy: p.y - c.y, trail: [{ x: e.clientX, y: e.clientY, t: now() }] };
+            drag = { cell: c, dx: p.x - c.x, dy: p.y - c.y, trail: [{ x: e.clientX, y: e.clientY, t: now() }], started: false, last: { x: e.clientX, y: e.clientY } };
             c.tx = c.x;
             c.ty = c.y;
-            g.classList.add('drag');
+            try {
+                g.setPointerCapture(e.pointerId);
+            }
+            catch { /* Older engines: the window listeners still see the release. */ }
         });
         g.addEventListener('click', () => { if (c.kind === 'more' && !drag)
             actions.openWorkspace(); });
@@ -238,12 +248,17 @@ export function createFoam(options) {
             }
             routeTo(c, (event.related ?? []).map(byId).filter((o) => !!o && o !== c));
             // The other close candidates light up for a while: routing was not sure, and one click on one of them moves the message there.
+            if (event.messageId)
+                for (const o of cells)
+                    if (o.offer && o.offer.messageId !== event.messageId)
+                        clearOffer(o);
             for (const o of (event.alternates ?? []).map(byId))
                 if (o && o !== c && !o.hidden) {
                     o.flash = Math.max(o.flash, .3);
                     o.g.classList.add('ask');
+                    // Bright for a few seconds, then a quiet mark that stays until the next message is routed (or a minute passes).
                     if (event.messageId)
-                        o.offer = { messageId: event.messageId, until: now() + 10000 };
+                        o.offer = { messageId: event.messageId, until: now() + 60000 };
                     else
                         window.setTimeout(() => { if (!o.ask && !o.offer)
                             o.g.classList.remove('ask'); }, 1400);
@@ -303,6 +318,8 @@ export function createFoam(options) {
         }
         else if (event.kind === 'merged') {
             const a = byId(event.id), b = byId(event.into);
+            if (a && a.mode === 'leave')
+                return true;
             if (a && b)
                 fuse(a, b);
             else if (a)
@@ -310,6 +327,8 @@ export function createFoam(options) {
         }
         return true;
     }
+    function clearOffer(o) { o.offer = undefined; o.g.classList.remove('offer', 'pending'); if (!o.ask)
+        o.g.classList.remove('ask'); }
     function endClarify() {
         if (!clarifying)
             return;
@@ -319,7 +338,8 @@ export function createFoam(options) {
         }
         clarifying = null;
     }
-    function update(model) {
+    function update(next) {
+        model = next;
         const seen = new Set();
         for (const topic of model.topics) {
             seen.add(topic.id);
@@ -460,8 +480,18 @@ export function createFoam(options) {
                 : c.state === 'queued' ? [[text('menuOpen'), () => actions.open(c.id)], [text('menuCancel'), () => actions.cancelQueued(c.id)]]
                     : c.state === 'done' ? [[text('menuShowNow'), () => actions.showAnswer(c.id)], [text('menuOpen'), () => actions.open(c.id)]]
                         : c.state === 'wait' ? [[text('menuAnswer'), () => actions.answer(c.id)], [text('menuOpen'), () => actions.open(c.id)]]
-                            : [[text('menuContinue'), () => actions.mount(c.id)], [text('menuOpen'), () => actions.open(c.id)], ...(c.cur ? [] : [[text('menuAside'), () => actions.putAside(c.id)]]),
+                            : [[text('menuContinue'), () => actions.mount(c.id)], [text('menuOpen'), () => actions.open(c.id)], ...(c.cur ? [] : [[text('menuAside'), () => void actions.putAside(c.id).then(ok => { if (!ok)
+                                            tipAt(c, text('actionFailed')); })]]),
                                 null, [text('menuDelete'), () => actions.remove(c.id)]];
+        if (c.kind === 'topic') {
+            const extra = [];
+            if (bonds.some(b => b[0] === c))
+                extra.push([text('menuCancelMerge'), () => actions.cancelMerge(c.id)]);
+            for (const m of (model.merges ?? []).filter(m => m.targetId === c.id).slice(0, 3))
+                extra.push([text('menuUnmerge', { name: m.title }), () => undoMerge(m.sourceId, c)]);
+            if (extra.length)
+                items.push(null, ...extra);
+        }
         const el = menu = document.createElement('div');
         el.className = 'theone-foam-menu';
         el.setAttribute('role', 'menu');
@@ -485,8 +515,42 @@ export function createFoam(options) {
     }
     const outside = (e) => { if (menu && !menu.contains(e.target))
         closeMenu(); };
-    const keydown = (e) => { if (e.key === 'Escape')
-        closeMenu(); };
+    const keydown = (e) => { if (e.key === 'Escape') {
+        closeMenu();
+        cancelDrag();
+    } };
+    /** Escape, a lost pointer or the window losing focus: the cell goes back, nothing is sent. */
+    function cancelDrag() {
+        if (!drag)
+            return;
+        drag.cell.g.classList.remove('drag');
+        drag = null;
+        hideTip();
+        setTarget(null);
+    }
+    const blur = () => cancelDrag();
+    function undoMerge(sourceId, near) {
+        hideUndo();
+        void actions.unmerge(sourceId).then(ok => { if (!ok)
+            tipAt(near, text('actionFailed')); });
+    }
+    /** Right after a merge: a small "undo" under the merged cell for a few seconds; the cell's menu keeps the undo after it fades. */
+    function offerUndo(sourceId, near) {
+        clearTimeout(undoTimer);
+        undo.textContent = text('undo');
+        const r = near.m.getBoundingClientRect();
+        undo.style.left = (r.left + r.width / 2) + 'px';
+        undo.style.top = (r.bottom + 6) + 'px';
+        undo.onclick = () => undoMerge(sourceId, near);
+        undo.classList.add('on');
+        undoTimer = window.setTimeout(hideUndo, 6000);
+    }
+    function hideUndo() { clearTimeout(undoTimer); undo.classList.remove('on'); undo.onclick = null; }
+    function tipAt(c, s) {
+        const r = c.m.getBoundingClientRect();
+        placeTip(r.left + r.width / 2, r.top - 28, s);
+        window.setTimeout(hideTip, 1800);
+    }
     function dropTarget(e, c) {
         for (const el of document.elementsFromPoint(e.clientX, e.clientY)) {
             if (c.g.contains(el))
@@ -529,46 +593,79 @@ export function createFoam(options) {
             return text(busy(c) || busy(hit.cell) ? 'dropMergeLater' : 'dropMerge', { name: hit.cell.title });
         return text('dropSession', { name: c.title });
     }
+    const REST = 500;
+    /** Where a release would land right now; another cell counts only once the pointer has rested on it. */
+    function aim(e, c) {
+        const hit = dropTarget(e, c);
+        if (!drag)
+            return hit;
+        if (hit?.kind !== 'cell') {
+            drag.rest = undefined;
+            return hit;
+        }
+        if (drag.rest?.cell !== hit.cell)
+            drag.rest = { cell: hit.cell, since: now() };
+        return now() - drag.rest.since >= REST ? hit : null;
+    }
+    /** The tip and highlight for where the drag is aiming: resting on a cell first says what holding will do. */
+    function showAim(c) {
+        if (!drag)
+            return;
+        const hit = aim({ clientX: drag.last.x, clientY: drag.last.y }, c);
+        setTarget(hit);
+        const resting = !hit && drag.rest ? text('mergeHold', { name: drag.rest.cell.title }) : '';
+        placeTip(drag.last.x, drag.last.y - 32, hit ? dropText(c, hit) : resting);
+    }
     const move = (e) => {
         const p = local(e), r = host.getBoundingClientRect();
         ptr = e.clientX > r.left - 24 && e.clientX < r.right + 24 && e.clientY > r.top - 10 && e.clientY < r.bottom + 24 ? p : null;
         if (!drag)
             return;
         const c = drag.cell;
-        c.tx = p.x - drag.dx;
-        c.ty = p.y - drag.dy;
+        drag.last = { x: e.clientX, y: e.clientY };
         drag.trail.push({ x: e.clientX, y: e.clientY, t: now() });
         if (drag.trail.length > 8)
             drag.trail.shift();
-        const hit = dropTarget(e, c);
-        setTarget(hit);
-        placeTip(e.clientX, e.clientY - 32, hit ? dropText(c, hit) : '');
+        // A press becomes a drag only after a real move, so a click or a shaky press never drags.
+        if (!drag.started) {
+            if (Math.hypot(e.clientX - drag.trail[0].x, e.clientY - drag.trail[0].y) < 5)
+                return;
+            drag.started = true;
+            c.g.classList.add('drag');
+        }
+        c.tx = p.x - drag.dx;
+        c.ty = p.y - drag.dy;
+        showAim(c);
     };
     const up = (e) => {
         if (!drag)
             return;
-        const c = drag.cell, hit = target, trail = drag.trail;
+        const c = drag.cell, trail = drag.trail, started = drag.started;
+        drag.last = { x: e.clientX, y: e.clientY };
+        // Checked again where the pointer was let go, not where it last moved.
+        const hit = started ? aim(e, c) : null;
         c.g.classList.remove('drag');
         drag = null;
         hideTip();
         setTarget(null);
-        // A click (no real movement) on a candidate routing hesitated over moves the message there.
-        const moved = trail.length > 1 && Math.hypot(trail[trail.length - 1].x - trail[0].x, trail[trail.length - 1].y - trail[0].y) > 5;
-        if (!moved && c.offer) {
-            const { messageId } = c.offer, x = e.clientX, y = e.clientY;
-            for (const o of cells)
-                if (o.offer?.messageId === messageId) {
-                    o.offer = undefined;
-                    if (!o.ask)
-                        o.g.classList.remove('ask');
-                }
+        if (!started) {
+            // A click on a candidate routing hesitated over moves the message there; a failed try keeps the candidate.
+            if (!c.offer || c.g.classList.contains('pending'))
+                return;
+            const { messageId } = c.offer;
+            c.g.classList.add('pending');
             void actions.reroute(messageId, c.id).then(status => {
-                if (status === 409) {
-                    placeTip(x, y - 32, text('rerouteBusy'));
-                    window.setTimeout(hideTip, 1600);
-                }
-                else if (status < 300)
+                c.g.classList.remove('pending');
+                if (status >= 200 && status < 300) {
+                    for (const o of cells)
+                        if (o.offer?.messageId === messageId)
+                            clearOffer(o);
                     light(c);
+                    return;
+                }
+                if (c.offer)
+                    c.offer.until = Math.max(c.offer.until, now() + 30000);
+                tipAt(c, text(status === 409 ? 'rerouteBusy' : 'rerouteFailed'));
             });
             return;
         }
@@ -578,26 +675,40 @@ export function createFoam(options) {
             return;
         }
         if (hit?.kind === 'cell') {
-            // The two are joined by a neck until TheOne confirms; only then they fuse (a `merged` event), otherwise the neck lets go.
-            bonds = [...bonds.filter(b => b[0] !== c && b[1] !== c), [c, hit.cell]];
-            actions.merge(c.id, hit.cell.id, busy(c) || busy(hit.cell));
+            // The two are joined by a neck until TheOne confirms; only then they fuse, otherwise the neck lets go.
+            const into = hit.cell;
+            bonds = [...bonds.filter(b => b[0] !== c && b[1] !== c), [c, into]];
+            void actions.merge(c.id, into.id).then(result => {
+                if (result === 'merged') {
+                    apply({ kind: 'merged', id: c.id, into: into.id });
+                    offerUndo(c.id, into);
+                }
+                else if (result === 'failed') {
+                    bonds = bonds.filter(b => b[0] !== c);
+                    tipAt(into, text('mergeFailed'));
+                }
+            });
             return;
         }
         if (hit?.kind === 'session') {
             const icon = hit.el.querySelector('svg, img, i') ?? hit.el;
             const box = () => { const a = icon.getBoundingClientRect(), b = host.getBoundingClientRect(); return { x: a.left + a.width / 2 - b.left, y: a.top + a.height / 2 - b.top }; };
-            vesicle(box, () => pos(c), () => light(c));
-            actions.attach(c.id, hit.id);
+            // The chat flies in only once TheOne has attached it.
+            void actions.attach(c.id, hit.id).then(ok => { if (ok)
+                vesicle(box, () => pos(c), () => light(c));
+            else
+                tipAt(c, text('actionFailed')); });
             return;
         }
-        // A throw: fast enough, or let go past the sidebar's edge.
+        // A throw needs speed: a slow drag past the sidebar's edge is not a throw.
         const firstS = trail.find(s => now() - s.t < 90) ?? trail[0], lastS = trail[trail.length - 1];
         if (!firstS || !lastS)
             return;
         const dt = Math.max(16, lastS.t - firstS.t) / 1000, vx = (lastS.x - firstS.x) / dt, vy = (lastS.y - firstS.y) / dt;
         const sr = options.side()?.getBoundingClientRect();
         const out = !!sr && (e.clientX > sr.right + 6 || e.clientX < sr.left - 6);
-        if (Math.hypot(vx, vy) <= 1100 && !out)
+        const speed = Math.hypot(vx, vy);
+        if (speed <= 1100 && !(out && speed > 500))
             return;
         if (busy(c) || c.cur) {
             c.vx = -vx * .15;
@@ -607,23 +718,42 @@ export function createFoam(options) {
             window.setTimeout(hideTip, 1300);
             return;
         }
-        const v = out && Math.hypot(vx, vy) < 400 ? { x: sr && e.clientX > sr.right ? 900 : -900, y: 0 } : { x: vx, y: vy };
-        const k = Math.min(1, 2600 / Math.hypot(v.x, v.y));
+        const k = Math.min(1, 2600 / speed);
         c.mode = 'fling';
         c.age = 0;
-        c.vx = v.x * k;
-        c.vy = v.y * k;
+        c.vx = vx * k;
+        c.vy = vy * k;
         c.g.style.pointerEvents = 'none';
         bonds = bonds.filter(b => b[0] !== c && b[1] !== c);
-        actions.putAside(c.id);
+        void actions.putAside(c.id).then(ok => {
+            if (ok || c.mode !== 'fling')
+                return;
+            // TheOne said no: the topic buds back out of the mark.
+            c.mode = 'bud';
+            c.age = 0;
+            c.x = L.x;
+            c.y = L.y;
+            c.vx = 0;
+            c.vy = 0;
+            c.scale = .12;
+            c.alpha = 1;
+            c.hidden = false;
+            c.g.style.pointerEvents = '';
+            pulse = Math.max(pulse, .6);
+            c.onBorn = () => tipAt(c, text('actionFailed'));
+        });
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', blur);
+    window.addEventListener('blur', blur);
     document.addEventListener('pointerdown', outside, true);
     document.addEventListener('keydown', keydown, true);
     function step(dt) {
         const T = now();
         options.place?.();
+        if (drag?.started && drag.rest && target?.kind !== 'cell')
+            showAim(drag.cell);
         sz = ease(sz, rail ? MINI : 1, 4, dt);
         const words = clamp((sz - .72) / .28);
         // Which topics show: past the limit the least used fold into "+N", set-aside topics always fold, the collapsed rail shows only active ones.
@@ -659,10 +789,14 @@ export function createFoam(options) {
             if (b.some(c => c.mode !== 'live'))
                 bonds.splice(bonds.indexOf(b), 1);
         for (const c of all)
-            if (c.offer && T > c.offer.until) {
-                c.offer = undefined;
-                if (!c.ask)
-                    c.g.classList.remove('ask');
+            if (c.offer) {
+                if (T > c.offer.until)
+                    clearOffer(c);
+                else if (T > c.offer.until - 56000 && !c.g.classList.contains('offer')) {
+                    c.g.classList.add('offer');
+                    if (!c.ask)
+                        c.g.classList.remove('ask');
+                }
             }
         const live = cells.filter(c => c.mode === 'live' && !c.hidden);
         let top = Infinity, bottom = -Infinity, x0 = Infinity, x1 = -Infinity;
@@ -684,7 +818,7 @@ export function createFoam(options) {
             heightTarget = want;
         const hk = 70, hc = 2 * .72 * Math.sqrt(hk);
         heightV += (hk * (heightTarget - height) - hc * heightV) * dt;
-        if (Math.abs(heightTarget - height) < .05 && Math.abs(heightV) < .05)
+        if (reduced() || (Math.abs(heightTarget - height) < .05 && Math.abs(heightV) < .05))
             heightV = 0;
         const nextHeight = reduced() ? heightTarget : heightV ? height + heightV * dt : heightTarget;
         if (Math.abs(nextHeight - height) > .01) {
@@ -772,6 +906,11 @@ export function createFoam(options) {
             if (drag?.cell === c) {
                 fx2 += (c.tx - c.x) * 70;
                 fy2 += (c.ty - c.y) * 70;
+            }
+            // While a cell is being dragged the others hold their places, so the one under the pointer stays there to be dropped on.
+            else if (drag?.started && c.mode === 'live' && !c.hidden) {
+                c.vx = c.vy = 0;
+                continue;
             }
             c.vx = (c.vx + fx2 * dt) * Math.pow(damp, dt);
             c.vy = (c.vy + fy2 * dt) * Math.pow(damp, dt);
@@ -1012,9 +1151,13 @@ export function createFoam(options) {
             clearInterval(tipTimer);
             window.removeEventListener('pointermove', move);
             window.removeEventListener('pointerup', up);
+            window.removeEventListener('pointercancel', blur);
+            window.removeEventListener('blur', blur);
             document.removeEventListener('pointerdown', outside, true);
             document.removeEventListener('keydown', keydown, true);
             closeMenu();
+            hideUndo();
+            undo.remove();
             tip.remove();
             svg.remove();
             list.remove();
@@ -1058,6 +1201,13 @@ export const foamCss = `
 .theone-cell.ask [data-part=membrane]{stroke:var(--foam-accent);stroke-dasharray:3 3}
 .theone-cell.fuse [data-part=membrane]{stroke:var(--foam-accent);stroke-width:1.6}
 .theone-cell.more{cursor:pointer}
+.theone-cell.offer{cursor:pointer}
+.theone-cell.offer [data-part=membrane]{stroke:var(--foam-line)}
+.theone-cell.offer [data-part=nucleus]{fill:var(--foam-accent)}
+.theone-cell.pending [data-part=membrane]{stroke:var(--foam-accent);stroke-dasharray:2 3;animation:theone-foam-march 1s linear infinite}
+@keyframes theone-foam-march{to{stroke-dashoffset:-10}}
+.theone-foam-undo{position:fixed;z-index:1000;transform:translate(-50%,3px);padding:3px 10px;border:.5px solid var(--dsw-alias-border-l2,#8885);border-radius:999px;background:var(--dsw-alias-bg-base,#fff);color:var(--dsw-alias-label-primary,#2b2b2b);font:inherit;font-size:12px;line-height:1.5;cursor:pointer;opacity:0;pointer-events:none;transition:opacity .15s,transform .15s}
+.theone-foam-undo.on{opacity:1;pointer-events:auto;transform:translate(-50%,0)}
 .theone-cell.more [data-part=membrane]{stroke-dasharray:1.2 3}
 .theone-neck [data-part=edge]{fill:none;stroke:var(--foam-line);stroke-width:1.3;stroke-linecap:round}
 .theone-vesicle [data-part=membrane]{fill:var(--foam-tint);stroke:var(--foam-accent);stroke-width:1.1}
@@ -1070,5 +1220,5 @@ html[data-theone-foam] button:has(.theone-workspace-entry){display:none}
 .theone-foam-menu button{display:flex;width:100%;height:34px;align-items:center;padding:0 12px;border:0;border-radius:var(--dsw-radius-md,8px);background:none;color:inherit;font:inherit;font-size:13.5px;cursor:pointer;text-align:left}
 .theone-foam-menu button:hover,.theone-foam-menu button:focus-visible{background:var(--dsw-alias-interactive-bg-hover,#0000000a);outline:none}
 .theone-foam-menu hr{border:0;border-top:.5px solid var(--dsw-alias-border-l2,#8885);margin:4px 2px}
-@media(prefers-reduced-motion:reduce){.theone-cell [data-part=membrane],.theone-cell [data-part=body]{transition:none}}
+@media(prefers-reduced-motion:reduce){.theone-cell [data-part=membrane],.theone-cell [data-part=body]{transition:none}.theone-cell.pending [data-part=membrane]{animation:none}.theone-foam-undo,.theone-foam-tip{transition:none}}
 `;

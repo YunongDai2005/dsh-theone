@@ -106,52 +106,58 @@ export function modelFromCatalog(snapshot: CatalogSnapshot): FoamModel {
  * Makes room under the card and lets the rows below follow like a wave: the layout moves at once, and each
  * row is drawn back to where the row above it is, on its own spring, so a change ripples down the sidebar
  * instead of shifting it in one block. Rows: the card's siblings in DSH's list, then the next block (the
- * workspace region); the footer stays put.
+ * workspace region, clipped at its own bottom so it never slides over the footer); the footer stays put.
  *
- * Rows are things people click, so they hold still while someone is using them: with the pointer over
- * them, a button pressed on them or focus inside them, a change waits and is applied when they leave
- * (a large growth moves them at once, in one block, so the cluster never covers them). With reduced
- * motion the rows simply sit where the layout puts them. A row's own inline transform is put back after.
+ * Rows are things people click, so they hold still while someone is using them: the pointer over them, a
+ * press on them, focus inside them, or a menu opened from them. A change waits until they are free; the
+ * cluster meanwhile is clipped at the room it has, so it never covers a row. With reduced motion the rows
+ * simply sit where the layout puts them. The offset uses the CSS `translate` property, which adds to
+ * whatever transform DSH gives a row, and only that property is removed afterwards.
  */
-function createWave(button: HTMLElement) {
-  const K = 210, C = 2 * .6 * Math.sqrt(K), SLACK = 8, URGENT = 24
+function createWave(button: HTMLElement, clip: (room: number | null) => void) {
+  const K = 210, C = 2 * .6 * Math.sqrt(K), SLACK = 4
   const motion = matchMedia('(prefers-reduced-motion: reduce)')
-  let base = 0, wanted = 0, started = false, frame = 0, last = 0, pressed = false
+  let base = 0, wanted = 0, height = 0, started = false, frame = 0, retry = 0, last = 0, clipped = false
   let pointer: { x: number; y: number } | undefined
-  const state = new Map<HTMLElement, { y: number; v: number; transform: string; willChange: string }>()
+  const pressed = new Set<number>()
+  const state = new Map<HTMLElement, { y: number; v: number }>()
+  const region = () => { const next = button.parentElement?.nextElementSibling; return next instanceof HTMLElement && next.offsetHeight && next.nextElementSibling ? next : null }
   const rows = () => {
     const list: HTMLElement[] = []
     for (let row = button.nextElementSibling; row; row = row.nextElementSibling) if (row instanceof HTMLElement && row.offsetHeight) list.push(row)
-    const next = button.parentElement?.nextElementSibling
-    if (next instanceof HTMLElement && next.offsetHeight && next.nextElementSibling) list.push(next)
+    const block = region()
+    if (block) list.push(block)
     return list
   }
   const track = (el: HTMLElement, y: number) => {
     let s = state.get(el)
-    if (!s) state.set(el, s = { y, v: 0, transform: el.style.transform, willChange: el.style.willChange })
+    if (!s) state.set(el, s = { y, v: 0 })
     return s
   }
-  const release = (el: HTMLElement) => {
-    const s = state.get(el)
-    if (!s) return
-    el.style.transform = s.transform; el.style.willChange = s.willChange
-    state.delete(el)
-  }
-  /** Someone is using the rows: the pointer is over them, pressing on them, or focus is inside them. */
+  const release = (el: HTMLElement) => { el.style.removeProperty('translate'); el.style.removeProperty('clip-path'); state.delete(el) }
+  /** Someone is using the rows: the pointer is over them, a press on them, focus inside them, or a menu opened from one. */
   const busy = (list = rows()) => {
-    if (pressed) return true
+    if (pressed.size) return true
+    if (list.some(el => el.matches('[aria-expanded="true"]') || el.querySelector('[aria-expanded="true"]'))) return true
     const active = document.activeElement
-    if (active && active !== document.body && list.some(el => el.contains(active))) return true
+    if (document.hasFocus() && active && active !== document.body && list.some(el => el.contains(active))) return true
     if (!pointer) return false
     return list.some(el => { const r = el.getBoundingClientRect(); return pointer!.x >= r.left && pointer!.x <= r.right && pointer!.y >= r.top && pointer!.y <= r.bottom })
   }
+  /** While the rows hold still, the cluster may not draw past the room it has; null lifts the limit. */
+  const limit = (frozen: boolean) => { const room = frozen && height + 10 > base ? base - 10 : null; if (room === null && !clipped) return; clipped = room !== null; clip(room) }
   function step(now: number) {
     frame = 0
     let dt = Math.min(.1, (now - last) / 1000 || 1 / 60)
     last = now
     const list = rows()
     for (const el of [...state.keys()]) if (!list.includes(el)) release(el)
-    if (busy(list)) return
+    if (busy(list)) {
+      // Checked again shortly: a lost pointerleave or a node DSH replaced must not hold the rows forever.
+      limit(true); clearTimeout(retry); retry = window.setTimeout(wake, 400)
+      return
+    }
+    limit(false)
     if (wanted !== base) { apply(wanted, list); return }
     while (dt > 0) {
       const h = Math.min(dt, 1 / 120)
@@ -168,8 +174,8 @@ function createWave(button: HTMLElement) {
     if (draw(list)) frame = requestAnimationFrame(step)
   }
   /**
-   * Rows may stretch apart freely but bunch up only a little: a row that lags too far behind the one above
-   * is pushed along, so text never runs into the row above it or into the cluster.
+   * Rows may stretch apart freely but bunch up only by DSH's own gap between rows, so text and the
+   * places one clicks never overlap the row above or the cluster.
    */
   function hold(list: HTMLElement[]) {
     let above = base, speed = 0
@@ -183,13 +189,16 @@ function createWave(button: HTMLElement) {
   /** Each row drawn at its own spring's height while the layout already has it at `base`; true while any row still moves. */
   function draw(list: HTMLElement[]) {
     let moving = false
+    const block = region()
     for (const el of list) {
       const s = state.get(el)
       if (!s) continue
       if (Math.abs(s.y - base) < .1 && Math.abs(s.v) < .5) { release(el); continue }
       moving = true
-      el.style.willChange = 'transform'
-      el.style.transform = `translateY(${(s.y - base).toFixed(2)}px)`
+      const d = s.y - base
+      el.style.translate = `0 ${d.toFixed(2)}px`
+      // The workspace region fills down to the footer: pushed down, its bottom is cut so it stays above it.
+      if (el === block) el.style.clipPath = d > 0 ? `inset(0 0 ${d.toFixed(2)}px 0)` : ''
     }
     return moving
   }
@@ -203,11 +212,16 @@ function createWave(button: HTMLElement) {
     hold(list)
     if (draw(list) && !frame) { last = performance.now(); frame = requestAnimationFrame(step) }
   }
-  const wake = () => { if (!frame && (wanted !== base || state.size)) { last = performance.now(); frame = requestAnimationFrame(step) } }
-  const move = (event: PointerEvent) => { pointer = { x: event.clientX, y: event.clientY }; wake() }
-  const leave = () => { pointer = undefined; wake() }
-  const down = (event: PointerEvent) => { if (rows().some(el => el.contains(event.target as Node))) pressed = true }
-  const up = () => { if (pressed) { pressed = false; wake() } }
+  function wake() { if (!frame && (wanted !== base || state.size || clipped)) { last = performance.now(); frame = requestAnimationFrame(step) } }
+  const forget = () => { pointer = undefined; pressed.clear(); wake() }
+  const move = (event: PointerEvent) => { if (event.pointerType !== 'touch') pointer = { x: event.clientX, y: event.clientY }; wake() }
+  const down = (event: PointerEvent) => { if (rows().some(el => el.contains(event.target as Node))) pressed.add(event.pointerId) }
+  const up = (event: PointerEvent) => {
+    if (!pressed.delete(event.pointerId) && event.pointerType !== 'touch') return
+    if (event.pointerType === 'touch') pointer = undefined
+    wake()
+  }
+  const visible = () => { if (document.visibilityState !== 'visible') forget() }
   const settle = () => {
     // Reduced motion switched on while rows were moving: they go straight to their place.
     if (!motion.matches) return
@@ -218,37 +232,38 @@ function createWave(button: HTMLElement) {
   document.addEventListener('pointerdown', down, true)
   document.addEventListener('pointerup', up, true)
   document.addEventListener('pointercancel', up, true)
-  document.documentElement.addEventListener('pointerleave', leave)
+  document.addEventListener('lostpointercapture', up, true)
+  document.documentElement.addEventListener('pointerleave', forget)
   document.addEventListener('focusout', wake)
-  window.addEventListener('blur', up)
+  document.addEventListener('visibilitychange', visible)
+  window.addEventListener('blur', forget)
   motion.addEventListener('change', settle)
   return {
-    set(height: number) {
-      const next = Math.round(height * 2) / 2 + 10
-      wanted = next
-      if (next === base) return
+    set(next: number) {
+      height = next
+      const room = Math.round(next * 2) / 2 + 10
+      wanted = room
+      if (room === base) return
       // The first placement and reduced motion: the rows simply sit where the layout puts them.
-      if (!started || motion.matches) { started = true; apply(next, rows(), true); return }
+      if (!started || motion.matches) { started = true; apply(room, rows(), true); return }
       const list = rows()
-      if (busy(list)) {
-        // Waits while the rows are in use, unless the cluster has grown enough to reach them: then one plain move.
-        if (next - base > URGENT) apply(next, list, true)
-        else wake()
-        return
-      }
-      apply(next, list)
+      if (busy(list)) { limit(true); wake(); return }
+      apply(room, list)
     },
     destroy() {
-      cancelAnimationFrame(frame)
+      cancelAnimationFrame(frame); clearTimeout(retry)
       for (const el of [...state.keys()]) release(el)
+      clip(null)
       button.style.marginBottom = ''
       document.removeEventListener('pointermove', move)
       document.removeEventListener('pointerdown', down, true)
       document.removeEventListener('pointerup', up, true)
       document.removeEventListener('pointercancel', up, true)
-      document.documentElement.removeEventListener('pointerleave', leave)
+      document.removeEventListener('lostpointercapture', up, true)
+      document.documentElement.removeEventListener('pointerleave', forget)
       document.removeEventListener('focusout', wake)
-      window.removeEventListener('blur', up)
+      document.removeEventListener('visibilitychange', visible)
+      window.removeEventListener('blur', forget)
       motion.removeEventListener('change', settle)
     },
   }
@@ -259,7 +274,8 @@ export function mountFoamHost(options: FoamHostOptions): FoamHost {
   const host = document.createElement('div')
   host.setAttribute('translate', 'no')
   document.body.appendChild(host)
-  const wave = createWave(button)
+  // While the rows below hold still, the cluster is cut at the room it has (cells may still rise over the card above).
+  const wave = createWave(button, room => { host.style.clipPath = room === null ? '' : `inset(-400px -80px ${Math.max(0, host.offsetHeight - room).toFixed(1)}px -80px)` })
   const sessionOf = new Map<string, string>()
   let latest: BubbleSnapshot | undefined
   /** The work item a stop gesture means: the topic's running (or waiting) execution, or its queued input. */
@@ -267,18 +283,32 @@ export function mountFoamHost(options: FoamHostOptions): FoamHost {
     && (queued ? item.phase === 'queued' : LIVE.has(item.phase) || item.phase === 'waiting_user'))
   const stopWork = (id: string, queued: boolean) => {
     const item = workOf(id, queued)
-    if (item) act({ action: 'stop', workItemId: item.id }); else options.openMainChat()
+    if (item) void act({ action: 'stop', workItemId: item.id }); else options.openMainChat()
   }
-  const failed = () => { refresh() }
-  const act = (body: Record<string, unknown>) => { void post('/api/theone/topics', body, signal).then(ok => { if (!ok) failed(); else refresh() }).catch(failed) }
+  /** Sends a topic operation; resolves to whether TheOne did it, and asks for fresh state either way. */
+  const act = (body: Record<string, unknown>) => post('/api/theone/topics', body, signal).catch(() => false).finally(refresh)
+  let undoable: NonNullable<FoamModel['merges']> = [], shown: FoamModel | undefined
   const actions: FoamActions = {
     mount: id => { void options.mount(id).finally(refresh) },
-    merge: (id, into, whenIdle) => {
-      // 200: merged now, so the cells fuse. 202: queued until TheOne is idle; the snapshot's pending merges keep the neck. Anything else: the neck lets go.
-      void fetch('/api/theone/topics', { method: 'POST', headers: { 'content-type': 'application/json' }, signal, cache: 'no-store',
-        body: JSON.stringify({ action: 'merge', id, into, ...(whenIdle ? { whenIdle: true, requestId: `${id}>${into}` } : {}) }) })
-        .then(response => { if (response.status === 200) foam.event({ kind: 'merged', id, into }); refresh() })
-        .catch(failed)
+    merge: async (id, into) => {
+      // Always "when idle": TheOne merges at once if it is free (200) or queues it (202) and the snapshot's pending merges keep the neck.
+      // Each gesture is a new intent, so it gets its own request id; an old cancelled or expired one never replays.
+      try {
+        const response = await fetch('/api/theone/topics', { method: 'POST', headers: { 'content-type': 'application/json' }, signal, cache: 'no-store',
+          body: JSON.stringify({ action: 'merge', id, into, whenIdle: true, requestId: `${id}>${into}:${Date.now().toString(36)}` }) })
+        if (response.status === 200) void readCatalog(false)
+        return response.status === 200 ? 'merged' : response.status === 202 ? 'queued' : 'failed'
+      } catch { return 'failed' }
+      finally { refresh() }
+    },
+    cancelMerge: id => {
+      const op = latest?.merges.find(merge => merge.sourceId === id && merge.state === 'queued')
+      if (op) void act({ action: 'cancelMerge', operationId: op.operationId })
+    },
+    unmerge: async sourceId => {
+      const ok = await act({ action: 'unmerge', id: sourceId })
+      if (ok) await readCatalog(false)
+      return ok
     },
     attach: (id, sessionId) => act({ action: 'attach', id, sessionId }),
     putAside: id => act({ action: 'status', id, done: true }),
@@ -319,7 +349,7 @@ export function mountFoamHost(options: FoamHostOptions): FoamHost {
     },
   })
 
-  const show = (model: FoamModel) => { foam.update(model); options.onTopics?.(model.topics.length) }
+  const show = (model: FoamModel) => { shown = model; foam.update({ ...model, merges: undoable }); options.onTopics?.(model.topics.length) }
 
   // The topic directory: session ids for "open topic", and the whole feed when TheOne has no bubble endpoint (an older back end).
   let readingCatalog = false
@@ -331,7 +361,9 @@ export function mountFoamHost(options: FoamHostOptions): FoamHost {
       if (!response.ok) return
       const snapshot = await response.json() as CatalogSnapshot
       for (const context of snapshot.contexts) sessionOf.set(context.id, context.sourceSessionIds[0] ?? context.workingSessionId)
-      if (feed) show(modelFromCatalog(snapshot))
+      // Finished merges that can still be undone, for the merged cell's menu.
+      undoable = (snapshot.merges ?? []).map(merge => ({ sourceId: merge.sourceId, targetId: merge.targetId, title: merge.title }))
+      if (feed) show(modelFromCatalog(snapshot)); else if (shown) show(shown)
     } catch { /* The next round tries again. */ }
     finally { readingCatalog = false }
   }
