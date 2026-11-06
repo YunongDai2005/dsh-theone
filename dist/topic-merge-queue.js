@@ -33,16 +33,21 @@ export class TopicMergeQueue {
         this.timer.unref();
     }
     active() { return structuredClone([...this.operations.values()].filter(pending)); }
+    receipts() { return structuredClone([...this.operations.values()]); }
+    receipt(operationId) {
+        const op = this.operations.get(operationId);
+        return op && structuredClone(op);
+    }
     conflicts(sourceId, targetId, except) {
         return [...this.operations.values()].some(op => pending(op) && op.operationId !== except &&
             [op.sourceId, op.targetId].some(id => id === sourceId || id === targetId));
     }
-    async request(sourceId, targetId, requestId, whenIdle) {
+    async request(sourceId, targetId, requestId, whenIdle, suggestionId) {
         if (this.closed)
             throw new Error('MERGE_UNAVAILABLE');
         const previous = [...this.operations.values()].find(op => op.requestId === requestId);
         if (previous) {
-            if (previous.sourceId !== sourceId || previous.targetId !== targetId || previous.whenIdle !== whenIdle)
+            if (previous.sourceId !== sourceId || previous.targetId !== targetId || previous.whenIdle !== whenIdle || previous.suggestionId !== suggestionId)
                 throw new Error('REQUEST_ID_CONFLICT');
             return structuredClone(previous);
         }
@@ -53,13 +58,13 @@ export class TopicMergeQueue {
             throw new Error('GATEWAY_BUSY');
         const at = this.now();
         const op = { operationId: randomUUID(), requestId, sourceId, targetId, whenIdle,
-            state: 'queued', createdAt: at, updatedAt: at, expiresAt: at + this.ttlMs };
+            state: 'queued', createdAt: at, updatedAt: at, expiresAt: at + this.ttlMs, ...(suggestionId ? { suggestionId } : {}) };
         this.operations.set(op.operationId, op);
         this.change(op, 'queued');
         await this.attempt(op);
         return structuredClone(op);
     }
-    cancel(operationId) {
+    cancel(operationId, reason = 'MERGE_CANCELLED') {
         const op = this.operations.get(operationId);
         if (!op)
             throw new Error('UNKNOWN_MERGE');
@@ -69,7 +74,7 @@ export class TopicMergeQueue {
             throw new Error('MERGE_EXECUTING');
         if (op.state !== 'queued')
             throw new Error('MERGE_FINISHED');
-        this.change(op, 'cancelled', 'MERGE_CANCELLED');
+        this.change(op, 'cancelled', reason);
         return structuredClone(op);
     }
     async drain() {

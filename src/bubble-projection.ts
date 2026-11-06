@@ -32,12 +32,15 @@ export function doneCapability(work: readonly BubbleWorkItem[]): Capability {
 export function projectBubbles(store: ContextStore, input: {
   scope: BubbleScope; workItems?: readonly BubbleWorkItem[]; gateway?: BubbleGateway | null; busy?: boolean
   merges?: BubbleView['merges']
+  mergeReceipts?: BubbleView['merges']
   sessionCreatedAt?: ReadonlyMap<string, number>
   doneCapabilities?: ReadonlyMap<string, Capability>
   linkScope?: LinkScope; health?: BubbleView['health']; now?: number
 }): BubbleView {
   const now = input.now ?? Date.now(), scope = { ...input.scope }
+  const suggestions = store.mergeSuggestions().filter(s => s.state === 'pending' && s.scope.gatewayKey === scope.gatewayKey && s.scope.gatewayId === scope.gatewayId)
   const contexts = store.contexts(), hidden = store.hiddenReasons(), privateIds = store.privateIds()
+  const unavailable = store.unreachable()
   const current = store.current(scope.gatewayKey) ?? null
   const usage = new Map(store.contextUsage(scope.gatewayKey, now).map(row => [row.contextId, row]))
   const latest = store.latestTopicRuns(), declared = store.declaredTopics()
@@ -60,7 +63,8 @@ export function projectBubbles(store: ContextStore, input: {
   const topics: BubbleTopic[] = contexts.filter(context => {
     const reason = hidden.get(context.id)
     if (reason === 'orphaned' || reason === 'excluded') return false
-    return reason !== 'archived' || context.id === current || !(input.doneCapabilities?.get(context.id) ?? doneCapability(byTopic.get(context.id) ?? [])).allowed
+    return reason !== 'archived' || context.id === current || suggestions.some(s => s.pair.includes(context.id)) ||
+      !(input.doneCapabilities?.get(context.id) ?? doneCapability(byTopic.get(context.id) ?? [])).allowed
   }).map(context => {
     const ownWork = byTopic.get(context.id) ?? [], record = latest.get(context.id)
     const live = ownWork.find(item => item.executionId && item.primaryMessageId === record?.messageId)
@@ -120,5 +124,8 @@ export function projectBubbles(store: ContextStore, input: {
   for (const topic of topics) for (const edge of edges.filter(edge => edge.a === topic.id || edge.b === topic.id)
     .sort((a, b) => b.strength - a.strength || a.a.localeCompare(b.a) || a.b.localeCompare(b.b)).slice(0, 4)) selected.add(edge)
   return { scope, topics, workItems, gateway, edges: edges.filter(edge => selected.has(edge)).slice(0, 256), merges: structuredClone((input.merges ?? []).filter(op => visible.has(op.sourceId) && visible.has(op.targetId))),
+    mergeSuggestions: suggestions.filter(s => s.pair.every(id => visible.has(id))),
+    mergeReceipts: structuredClone((input.mergeReceipts ?? []).filter(op => !['queued', 'executing'].includes(op.state) &&
+      !unavailable.has(op.sourceId) && !unavailable.has(op.targetId))),
     health: input.health ?? { catalog: 'unknown', router: 'unknown' } }
 }

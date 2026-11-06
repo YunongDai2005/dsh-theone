@@ -102,6 +102,9 @@ export class BubbleAggregator {
             // A committed merge/removal references the old identity after it leaves the snapshot.
             // Exclusions still remove that identity from buffered events in the same published cut.
             const removed = event.type === 'topic.changed' && event.change === 'removed';
+            if (event.type === 'mergeSuggestion.appeared' && (!event.suggestion.pair.every(id => visible.has(id)) ||
+                !head.view.mergeSuggestions?.some(s => s.suggestionId === event.suggestion.suggestionId)))
+                return [];
             if ('contextId' in event && !(removed ? visibleOrRemoved(event.contextId) : visible.has(event.contextId)) ||
                 'fromId' in event && (!visible.has(event.fromId) || !visible.has(event.toId)) ||
                 'suggestedId' in event && !visible.has(event.suggestedId) ||

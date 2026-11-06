@@ -7,7 +7,49 @@ import { HostConnectionService } from '@deepseek-ai/dsh-client-connection'
 import { harness, peered } from './harness.ts'
 import type { BubbleReadResponse, BubbleCursor } from '../src/bubble-types.ts'
 
+for (const reason of ['excluded', 'orphaned', 'archived']) test(`route correction uses the mount reachability guard (${reason})`, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'theone-route-reachable-')), app = await harness(root)
+  try {
+    const { ask } = await import('./harness.ts')
+    const handler = peered(new HostConnectionService(app.ctx, [], undefined as never))
+    await new Promise<void>(resolve => setImmediate(resolve))
+    const first = await ask(app.gateway, 'Qwen hardware'), store = app.ctx.theone.store
+    store.replaceHidden([{ id: 'ctx_thesis', reason }])
+    const post = (path: string) => handler.fetch(new Request('http://dsh.internal/api/theone/' + path, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ messageId: first.input.id, contextId: 'ctx_thesis' }),
+    }))
+    const correction = await post('routes')
+    assert.equal(correction.status, reason === 'archived' ? 200 : 409)
+    if (reason !== 'archived') {
+      assert.equal((await correction.json() as any).error, 'TOPIC_HIDDEN')
+      assert.equal((await post('context/mount')).status, 409)
+      assert.equal(store.recentRoutes('test-gateway', 1)[0]?.correctedTo, undefined)
+      assert.equal(store.current('test-gateway'), 'ctx_qwen_9070xt')
+    }
+  } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
+})
+
 export const queryFor = (cursor: BubbleCursor, gatewayId: string) => new URLSearchParams({ gatewayId, epoch: cursor.epoch, since: String(cursor.version), after: String(cursor.seq), waitMs: '0' })
+
+test('undo rejects an unreachable original topic before undoing learning or mounting it', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'theone-route-undo-reachable-')), app = await harness(root)
+  try {
+    const { ask } = await import('./harness.ts')
+    const handler = peered(new HostConnectionService(app.ctx, [], undefined as never))
+    await new Promise<void>(resolve => setImmediate(resolve))
+    const first = await ask(app.gateway, 'Qwen hardware'), store = app.ctx.theone.store
+    const post = (body: unknown) => handler.fetch(new Request('http://dsh.internal/api/theone/routes', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+    }))
+    assert.equal((await post({ messageId: first.input.id, contextId: 'ctx_thesis' })).status, 200)
+    await app.ctx.theone.learning
+    store.replaceHidden([{ id: 'ctx_qwen_9070xt', reason: 'excluded' }])
+    const response = await post({ messageId: first.input.id, undo: true })
+    assert.equal(response.status, 409); assert.equal((await response.json() as any).error, 'TOPIC_HIDDEN')
+    assert.equal(store.recentRoutes('test-gateway', 1)[0].correctedTo, 'ctx_thesis')
+    assert.equal(store.current('test-gateway'), 'ctx_thesis')
+  } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
+})
 
 test('bubbles GET is read-only, uses coherent snapshot/event cursors and observes non-HTTP writes', { timeout: 15000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'theone-bubble-api-')), app = await harness(root)

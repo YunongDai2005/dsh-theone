@@ -9,6 +9,8 @@ import type { ContextDescriptor, ContextUsage, Decision, Progress, RouteRecord, 
 import { FACT_KINDS, FACT_LIMITS, factKey, safe, type FactEvidence, type FactKind, type FactStatus, type FactView } from './facts.ts'
 import { LearningJournal, uniqueSources, type LearningSource } from './learning-journal.ts'
 import { mergeSettled, type Settled, type TopicCard } from './topic-memory.ts'
+import { mergeSimilarity } from './routing-policy.ts'
+import type { BubbleMergeSuggestion, BubbleScope } from './bubble-types.ts'
 
 /** A write to a topic's facts, after its evidence was checked against the session. */
 export interface FactWrite {
@@ -210,6 +212,10 @@ export class ContextStore {
         a TEXT NOT NULL, b TEXT NOT NULL, answer TEXT NOT NULL CHECK (answer IN ('merged', 'declined', 'dismissed')),
         at INTEGER NOT NULL, PRIMARY KEY (a, b), CHECK (a < b)
       );
+      CREATE TABLE IF NOT EXISTS merge_suggestions (
+        id TEXT PRIMARY KEY, a TEXT NOT NULL, b TEXT NOT NULL, origin_id TEXT NOT NULL,
+        structure TEXT NOT NULL, record TEXT NOT NULL, UNIQUE(a, b), CHECK(a < b)
+      );
       CREATE TABLE IF NOT EXISTS topic_merges (
         source_id TEXT PRIMARY KEY, target_id TEXT NOT NULL, at INTEGER NOT NULL, journal TEXT NOT NULL
       );
@@ -410,7 +416,7 @@ export class ContextStore {
     return row ? { answer: row.answer as MergePromptAnswer, at: Number(row.at) } : undefined
   }
 
-  /** A dismissed reservation also prevents two background cards (or a restart) asking the same pair. */
+  /** Legacy dismissed rows remain suppressions, never explicit declines. New reservations live separately. */
   @publishes
   recordMergePrompt(a: string, b: string, answer: MergePromptAnswer, now = Date.now()): void {
     if (a === b) return
@@ -418,6 +424,72 @@ export class ContextStore {
     if (!known.get(a, a) || !known.get(b, b)) return
     this.db.prepare('INSERT INTO merge_prompts VALUES (?, ?, ?, ?) ON CONFLICT(a, b) DO UPDATE SET answer = excluded.answer, at = excluded.at')
       .run(...[a, b].sort(), answer, now)
+  }
+
+  mergeSuggestions(): BubbleMergeSuggestion[] {
+    return this.db.prepare('SELECT record FROM merge_suggestions ORDER BY rowid').all().map(row => JSON.parse(String(row.record)))
+  }
+
+  mergeSuggestion(suggestionId: string): BubbleMergeSuggestion | undefined {
+    const row = this.db.prepare('SELECT record FROM merge_suggestions WHERE id = ?').get(suggestionId)
+    return row ? JSON.parse(String(row.record)) : undefined
+  }
+
+  mergeSuggestionSeen(a: string, b: string): boolean {
+    return !!this.mergePrompt(a, b) || !!this.db.prepare('SELECT 1 FROM merge_suggestions WHERE a = ? AND b = ?').get(...[a, b].sort())
+  }
+
+  /** A private precondition fingerprint; not a general topicRevision or a content/learning snapshot. */
+  private mergeSuggestionStructure(pair: readonly string[]): string {
+    const topics = this.contexts(), groups = this.groups()
+    return createHash('sha256').update(JSON.stringify(pair.map(id => {
+      const topic = topics.find(topic => topic.id === id)
+      return [id, topic?.workingSessionId, topic?.title, groups.find(group => group.contextIds.includes(id))?.id ?? null,
+        this.origin(id)?.cwd ?? null, this.hasFlag(`merge-moved:${id}`), this.hasFlag(`merge-handled:${id}`)]
+    }))).digest('hex')
+  }
+
+  mergeSuggestionValid(suggestionId: string): boolean {
+    const row = this.db.prepare('SELECT origin_id, structure, record FROM merge_suggestions WHERE id = ?').get(suggestionId)
+    if (!row) return false
+    const suggestion = JSON.parse(String(row.record)) as BubbleMergeSuggestion
+    const topics = this.contexts(), names = this.names(), unavailable = this.unreachable()
+    const pair = suggestion.pair.map(id => topics.find(topic => topic.id === id))
+    if (!pair[0] || !pair[1] || suggestion.pair.some(id => unavailable.has(id))) return false
+    const describe = (topic: StoredContext) => ({ ...topic, names: names.get(topic.id), cwd: this.origin(topic.id)?.cwd })
+    return !suggestion.reason && this.mergeSuggestionGateway(String(row.origin_id)) === suggestion.scope.gatewayId &&
+      this.gatewayIds(suggestion.scope.gatewayKey).includes(suggestion.scope.gatewayId!) &&
+      !this.mergePrompt(...suggestion.pair) && row.structure === this.mergeSuggestionStructure(suggestion.pair) &&
+      !!mergeSimilarity(describe(pair[0]), describe(pair[1]))
+  }
+
+  /** The unique normalized pair reserves concurrency without recording any user decision. */
+  @publishes
+  createMergeSuggestion(originId: string, otherId: string, scope: BubbleScope, evidence: BubbleMergeSuggestion['evidence'],
+    expiresAt: number, now = Date.now()): BubbleMergeSuggestion | undefined {
+    if (originId === otherId || this.mergeSuggestionSeen(originId, otherId)) return undefined
+    const pair = [originId, otherId].sort() as [string, string]
+    const suggestion: BubbleMergeSuggestion = { suggestionId: randomUUID(), scope, pair,
+      directions: [{ sourceId: originId, targetId: otherId }, { sourceId: otherId, targetId: originId }],
+      evidence, createdAt: now, updatedAt: now, expiresAt, state: 'pending' }
+    this.db.prepare('INSERT INTO merge_suggestions VALUES (?, ?, ?, ?, ?, ?)')
+      .run(suggestion.suggestionId, ...pair, originId, this.mergeSuggestionStructure(pair), JSON.stringify(suggestion))
+    return suggestion
+  }
+
+  @publishes
+  finishMergeSuggestion(suggestionId: string, state: Exclude<BubbleMergeSuggestion['state'], 'pending'>,
+    detail: Pick<BubbleMergeSuggestion, 'operationId' | 'sourceId' | 'targetId' | 'requestId' | 'reason'> = {}, now = Date.now()): BubbleMergeSuggestion | undefined {
+    const suggestion = this.mergeSuggestion(suggestionId)
+    if (!suggestion || suggestion.state !== 'pending' && !(suggestion.state === 'accepted' && state === 'accepted' && detail.reason && detail.reason !== suggestion.reason)) return suggestion
+    Object.assign(suggestion, detail, { state, updatedAt: now })
+    this.db.exec('SAVEPOINT store_write')
+    try {
+      this.db.prepare('UPDATE merge_suggestions SET record = ? WHERE id = ?').run(JSON.stringify(suggestion), suggestionId)
+      if (state === 'declined') this.recordMergePrompt(...suggestion.pair, 'declined', now)
+      this.db.exec('RELEASE store_write')
+    } catch (error) { this.rollbackWrite(); throw error }
+    return suggestion
   }
 
   /** Other names cards gave a topic (or every topic), most recently confirmed first. */

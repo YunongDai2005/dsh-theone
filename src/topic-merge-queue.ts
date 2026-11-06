@@ -35,15 +35,20 @@ export class TopicMergeQueue {
     this.timer.unref()
   }
   active(): BubbleMerge[] { return structuredClone([...this.operations.values()].filter(pending)) }
+  receipts(): BubbleMerge[] { return structuredClone([...this.operations.values()]) }
+  receipt(operationId: string): BubbleMerge | undefined {
+    const op = this.operations.get(operationId)
+    return op && structuredClone(op)
+  }
   conflicts(sourceId: string, targetId: string, except?: string): boolean {
     return [...this.operations.values()].some(op => pending(op) && op.operationId !== except &&
       [op.sourceId, op.targetId].some(id => id === sourceId || id === targetId))
   }
-  async request(sourceId: string, targetId: string, requestId: string, whenIdle: boolean): Promise<BubbleMerge> {
+  async request(sourceId: string, targetId: string, requestId: string, whenIdle: boolean, suggestionId?: string): Promise<BubbleMerge> {
     if (this.closed) throw new Error('MERGE_UNAVAILABLE')
     const previous = [...this.operations.values()].find(op => op.requestId === requestId)
     if (previous) {
-      if (previous.sourceId !== sourceId || previous.targetId !== targetId || previous.whenIdle !== whenIdle) throw new Error('REQUEST_ID_CONFLICT')
+      if (previous.sourceId !== sourceId || previous.targetId !== targetId || previous.whenIdle !== whenIdle || previous.suggestionId !== suggestionId) throw new Error('REQUEST_ID_CONFLICT')
       return structuredClone(previous)
     }
     this.hooks.validate(sourceId, targetId)
@@ -51,19 +56,19 @@ export class TopicMergeQueue {
     if (!whenIdle && this.hooks.busy()) throw new Error('GATEWAY_BUSY')
     const at = this.now()
     const op: BubbleMerge = { operationId: randomUUID(), requestId, sourceId, targetId, whenIdle,
-      state: 'queued', createdAt: at, updatedAt: at, expiresAt: at + this.ttlMs }
+      state: 'queued', createdAt: at, updatedAt: at, expiresAt: at + this.ttlMs, ...(suggestionId ? { suggestionId } : {}) }
     this.operations.set(op.operationId, op)
     this.change(op, 'queued')
     await this.attempt(op)
     return structuredClone(op)
   }
-  cancel(operationId: string): BubbleMerge {
+  cancel(operationId: string, reason = 'MERGE_CANCELLED'): BubbleMerge {
     const op = this.operations.get(operationId)
     if (!op) throw new Error('UNKNOWN_MERGE')
     if (op.state === 'cancelled') return structuredClone(op)
     if (op.state === 'executing') throw new Error('MERGE_EXECUTING')
     if (op.state !== 'queued') throw new Error('MERGE_FINISHED')
-    this.change(op, 'cancelled', 'MERGE_CANCELLED')
+    this.change(op, 'cancelled', reason)
     return structuredClone(op)
   }
   async drain(): Promise<void> {

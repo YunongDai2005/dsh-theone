@@ -39,6 +39,7 @@ import { randomUUID, createHash } from 'node:crypto';
 import { FACT_KINDS, FACT_LIMITS, factKey, safe } from "./facts.js";
 import { LearningJournal, uniqueSources } from "./learning-journal.js";
 import { mergeSettled } from "./topic-memory.js";
+import { mergeSimilarity } from "./routing-policy.js";
 /** Terms learned from corrections fade by half every 30 days unless they are confirmed again. */
 export const TERM_HALF_LIFE_MS = 30 * 86400000;
 /** A whole session attached by hand counts as reviewed from its first event to its last. */
@@ -70,6 +71,8 @@ let ContextStore = (() => {
     let _seed_decorators;
     let _applyCard_decorators;
     let _recordMergePrompt_decorators;
+    let _createMergeSuggestion_decorators;
+    let _finishMergeSuggestion_decorators;
     let _rememberGateway_decorators;
     let _markStowed_decorators;
     let _setCatalogConsent_decorators;
@@ -134,6 +137,8 @@ let ContextStore = (() => {
             _seed_decorators = [publishes];
             _applyCard_decorators = [publishes];
             _recordMergePrompt_decorators = [publishes];
+            _createMergeSuggestion_decorators = [publishes];
+            _finishMergeSuggestion_decorators = [publishes];
             _rememberGateway_decorators = [publishes];
             _markStowed_decorators = [publishes];
             _setCatalogConsent_decorators = [publishes];
@@ -195,6 +200,8 @@ let ContextStore = (() => {
             __esDecorate(this, null, _seed_decorators, { kind: "method", name: "seed", static: false, private: false, access: { has: obj => "seed" in obj, get: obj => obj.seed }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _applyCard_decorators, { kind: "method", name: "applyCard", static: false, private: false, access: { has: obj => "applyCard" in obj, get: obj => obj.applyCard }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _recordMergePrompt_decorators, { kind: "method", name: "recordMergePrompt", static: false, private: false, access: { has: obj => "recordMergePrompt" in obj, get: obj => obj.recordMergePrompt }, metadata: _metadata }, null, _instanceExtraInitializers);
+            __esDecorate(this, null, _createMergeSuggestion_decorators, { kind: "method", name: "createMergeSuggestion", static: false, private: false, access: { has: obj => "createMergeSuggestion" in obj, get: obj => obj.createMergeSuggestion }, metadata: _metadata }, null, _instanceExtraInitializers);
+            __esDecorate(this, null, _finishMergeSuggestion_decorators, { kind: "method", name: "finishMergeSuggestion", static: false, private: false, access: { has: obj => "finishMergeSuggestion" in obj, get: obj => obj.finishMergeSuggestion }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _rememberGateway_decorators, { kind: "method", name: "rememberGateway", static: false, private: false, access: { has: obj => "rememberGateway" in obj, get: obj => obj.rememberGateway }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _markStowed_decorators, { kind: "method", name: "markStowed", static: false, private: false, access: { has: obj => "markStowed" in obj, get: obj => obj.markStowed }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _setCatalogConsent_decorators, { kind: "method", name: "setCatalogConsent", static: false, private: false, access: { has: obj => "setCatalogConsent" in obj, get: obj => obj.setCatalogConsent }, metadata: _metadata }, null, _instanceExtraInitializers);
@@ -377,6 +384,10 @@ let ContextStore = (() => {
       CREATE TABLE IF NOT EXISTS merge_prompts (
         a TEXT NOT NULL, b TEXT NOT NULL, answer TEXT NOT NULL CHECK (answer IN ('merged', 'declined', 'dismissed')),
         at INTEGER NOT NULL, PRIMARY KEY (a, b), CHECK (a < b)
+      );
+      CREATE TABLE IF NOT EXISTS merge_suggestions (
+        id TEXT PRIMARY KEY, a TEXT NOT NULL, b TEXT NOT NULL, origin_id TEXT NOT NULL,
+        structure TEXT NOT NULL, record TEXT NOT NULL, UNIQUE(a, b), CHECK(a < b)
       );
       CREATE TABLE IF NOT EXISTS topic_merges (
         source_id TEXT PRIMARY KEY, target_id TEXT NOT NULL, at INTEGER NOT NULL, journal TEXT NOT NULL
@@ -574,7 +585,7 @@ let ContextStore = (() => {
             const row = this.db.prepare('SELECT answer, at FROM merge_prompts WHERE a = ? AND b = ?').get(...[a, b].sort());
             return row ? { answer: row.answer, at: Number(row.at) } : undefined;
         }
-        /** A dismissed reservation also prevents two background cards (or a restart) asking the same pair. */
+        /** Legacy dismissed rows remain suppressions, never explicit declines. New reservations live separately. */
         recordMergePrompt(a, b, answer, now = Date.now()) {
             if (a === b)
                 return;
@@ -583,6 +594,70 @@ let ContextStore = (() => {
                 return;
             this.db.prepare('INSERT INTO merge_prompts VALUES (?, ?, ?, ?) ON CONFLICT(a, b) DO UPDATE SET answer = excluded.answer, at = excluded.at')
                 .run(...[a, b].sort(), answer, now);
+        }
+        mergeSuggestions() {
+            return this.db.prepare('SELECT record FROM merge_suggestions ORDER BY rowid').all().map(row => JSON.parse(String(row.record)));
+        }
+        mergeSuggestion(suggestionId) {
+            const row = this.db.prepare('SELECT record FROM merge_suggestions WHERE id = ?').get(suggestionId);
+            return row ? JSON.parse(String(row.record)) : undefined;
+        }
+        mergeSuggestionSeen(a, b) {
+            return !!this.mergePrompt(a, b) || !!this.db.prepare('SELECT 1 FROM merge_suggestions WHERE a = ? AND b = ?').get(...[a, b].sort());
+        }
+        /** A private precondition fingerprint; not a general topicRevision or a content/learning snapshot. */
+        mergeSuggestionStructure(pair) {
+            const topics = this.contexts(), groups = this.groups();
+            return createHash('sha256').update(JSON.stringify(pair.map(id => {
+                const topic = topics.find(topic => topic.id === id);
+                return [id, topic?.workingSessionId, topic?.title, groups.find(group => group.contextIds.includes(id))?.id ?? null,
+                    this.origin(id)?.cwd ?? null, this.hasFlag(`merge-moved:${id}`), this.hasFlag(`merge-handled:${id}`)];
+            }))).digest('hex');
+        }
+        mergeSuggestionValid(suggestionId) {
+            const row = this.db.prepare('SELECT origin_id, structure, record FROM merge_suggestions WHERE id = ?').get(suggestionId);
+            if (!row)
+                return false;
+            const suggestion = JSON.parse(String(row.record));
+            const topics = this.contexts(), names = this.names(), unavailable = this.unreachable();
+            const pair = suggestion.pair.map(id => topics.find(topic => topic.id === id));
+            if (!pair[0] || !pair[1] || suggestion.pair.some(id => unavailable.has(id)))
+                return false;
+            const describe = (topic) => ({ ...topic, names: names.get(topic.id), cwd: this.origin(topic.id)?.cwd });
+            return !suggestion.reason && this.mergeSuggestionGateway(String(row.origin_id)) === suggestion.scope.gatewayId &&
+                this.gatewayIds(suggestion.scope.gatewayKey).includes(suggestion.scope.gatewayId) &&
+                !this.mergePrompt(...suggestion.pair) && row.structure === this.mergeSuggestionStructure(suggestion.pair) &&
+                !!mergeSimilarity(describe(pair[0]), describe(pair[1]));
+        }
+        /** The unique normalized pair reserves concurrency without recording any user decision. */
+        createMergeSuggestion(originId, otherId, scope, evidence, expiresAt, now = Date.now()) {
+            if (originId === otherId || this.mergeSuggestionSeen(originId, otherId))
+                return undefined;
+            const pair = [originId, otherId].sort();
+            const suggestion = { suggestionId: randomUUID(), scope, pair,
+                directions: [{ sourceId: originId, targetId: otherId }, { sourceId: otherId, targetId: originId }],
+                evidence, createdAt: now, updatedAt: now, expiresAt, state: 'pending' };
+            this.db.prepare('INSERT INTO merge_suggestions VALUES (?, ?, ?, ?, ?, ?)')
+                .run(suggestion.suggestionId, ...pair, originId, this.mergeSuggestionStructure(pair), JSON.stringify(suggestion));
+            return suggestion;
+        }
+        finishMergeSuggestion(suggestionId, state, detail = {}, now = Date.now()) {
+            const suggestion = this.mergeSuggestion(suggestionId);
+            if (!suggestion || suggestion.state !== 'pending' && !(suggestion.state === 'accepted' && state === 'accepted' && detail.reason && detail.reason !== suggestion.reason))
+                return suggestion;
+            Object.assign(suggestion, detail, { state, updatedAt: now });
+            this.db.exec('SAVEPOINT store_write');
+            try {
+                this.db.prepare('UPDATE merge_suggestions SET record = ? WHERE id = ?').run(JSON.stringify(suggestion), suggestionId);
+                if (state === 'declined')
+                    this.recordMergePrompt(...suggestion.pair, 'declined', now);
+                this.db.exec('RELEASE store_write');
+            }
+            catch (error) {
+                this.rollbackWrite();
+                throw error;
+            }
+            return suggestion;
         }
         /** Other names cards gave a topic (or every topic), most recently confirmed first. */
         names(contextId) {

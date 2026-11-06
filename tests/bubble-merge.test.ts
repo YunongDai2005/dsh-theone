@@ -159,8 +159,32 @@ test('expired operations never execute and observation reads do not expire or wr
     const receipt = await queue.request('a', 'b', 'expire', true)
     assert.equal(receipt.operationId, op.operationId)
     assert.equal(receipt.state, 'expired'); assert.equal(receipt.error, 'MERGE_EXPIRED')
+    assert.equal(queue.receipts().find(item => item.operationId === op.operationId)?.error, 'MERGE_EXPIRED')
     assert.equal(executions, 0)
   } finally { await queue.close() }
+})
+
+test('new explicit request IDs work after cancellation and merge undo while old IDs replay their receipts', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'theone-merge-intents-')), app = await setup(root)
+  const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>()
+  try {
+    app.model.behavior = async function* () { entered.resolve(); await release.promise; yield* textResponse('answer') }
+    const running = ask(app.gateway, 'Qwen hardware'); await entered.promise
+    const first = await app.post(merge('intent-1'))
+    const cancelled = await app.post({ action: 'cancelMerge', operationId: first.body.operationId })
+    assert.equal(cancelled.body.state, 'cancelled')
+    const next = await app.post(merge('intent-2'))
+    assert.equal(next.status, 202); assert.notEqual(next.body.operationId, first.body.operationId)
+    const view = app.ctx.theone.bubbleView(app.gateway.id)
+    assert.equal(view.mergeReceipts?.find(op => op.operationId === first.body.operationId)?.state, 'cancelled')
+    assert.equal(view.topics.find(topic => topic.id === source)?.capabilities.queueMerge.allowed, false)
+    release.resolve(); await running; await app.ctx.theone.mergeQueue.drain()
+    assert.equal((await app.post(merge('intent-1'))).body.error, 'MERGE_CANCELLED')
+    assert.equal((await app.post({ action: 'unmerge', id: source })).status, 200)
+    const third = await app.post(merge('intent-3'))
+    assert.equal(third.status, 200); assert.notEqual(third.body.operationId, next.body.operationId)
+    assert.equal(app.ctx.theone.bubbleView(app.gateway.id).topics.find(topic => topic.id === target)?.capabilities.queueMerge.allowed, true)
+  } finally { release.resolve(); await app.close(); await rm(root, { recursive: true, force: true }) }
 })
 
 test('queued merge snapshots are read-only and do not call a model', { timeout: 15000 }, async () => {

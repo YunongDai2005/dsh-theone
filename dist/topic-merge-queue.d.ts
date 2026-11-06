@@ -19,9 +19,11 @@ export declare class TopicMergeQueue {
     constructor(path: string, hooks: MergeHooks, now?: () => number, ttlMs?: number);
     start(): void;
     active(): BubbleMerge[];
+    receipts(): BubbleMerge[];
+    receipt(operationId: string): BubbleMerge | undefined;
     conflicts(sourceId: string, targetId: string, except?: string): boolean;
-    request(sourceId: string, targetId: string, requestId: string, whenIdle: boolean): Promise<BubbleMerge>;
-    cancel(operationId: string): BubbleMerge;
+    request(sourceId: string, targetId: string, requestId: string, whenIdle: boolean, suggestionId?: string): Promise<BubbleMerge>;
+    cancel(operationId: string, reason?: string): BubbleMerge;
     drain(): Promise<void>;
     private attempt;
     private execute;

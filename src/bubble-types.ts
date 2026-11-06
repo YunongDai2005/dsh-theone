@@ -43,12 +43,25 @@ export interface BubbleEdge {
 }
 export interface BubbleMerge {
   operationId: string; requestId: string; sourceId: string; targetId: string; whenIdle: boolean
+  suggestionId?: string
   state: 'queued' | 'executing' | 'succeeded' | 'cancelled' | 'expired' | 'failed'
   createdAt: number; updatedAt: number; expiresAt: number; error?: string
+}
+export interface BubbleMergeSuggestion {
+  suggestionId: string; scope: BubbleScope; pair: [string, string]
+  /** Source is removed; target retains its identity. The first direction is the default. */
+  directions: [{ sourceId: string; targetId: string }, { sourceId: string; targetId: string }]
+  evidence: { sharedNames: number; titleSimilarity: number }
+  createdAt: number; updatedAt: number; expiresAt: number
+  state: 'pending' | 'accepted' | 'declined' | 'dismissed' | 'expired'
+  operationId?: string; sourceId?: string; targetId?: string; requestId?: string; reason?: string
 }
 export interface BubbleView {
   scope: BubbleScope; topics: BubbleTopic[]; workItems: BubbleWorkItem[]; gateway: BubbleGateway | null; edges: BubbleEdge[]
   merges: BubbleMerge[]
+  /** Always supplied by current servers; optional for older schemaVersion 1 producers. */
+  mergeReceipts?: BubbleMerge[]
+  mergeSuggestions?: BubbleMergeSuggestion[]
   health: { catalog: 'ready' | 'indexing' | 'unavailable' | 'consent_required' | 'unknown'; router: 'ready' | 'rules' | 'unavailable' | 'unknown' }
 }
 export interface BubbleSnapshot extends BubbleView {
@@ -56,6 +69,8 @@ export interface BubbleSnapshot extends BubbleView {
 }
 export type BubbleEventData =
   | ({ type: 'merge.changed' } & BubbleMerge)
+  | { type: 'mergeSuggestion.appeared'; suggestion: BubbleMergeSuggestion }
+  | { type: 'mergeSuggestion.ended'; suggestionId: string; state: Exclude<BubbleMergeSuggestion['state'], 'pending'>; operationId?: string; reason?: string }
   | { type: 'route.assigned'; workItemId: string; messageIds: string[]; contextId: string; action: 'KEEP' | 'MOUNT' | 'SWAP' | 'CREATE'; created: boolean; relatedProposedIds: string[]; alternateIds: string[]; temporary?: BubbleWorkItem['temporary'] }
   | { type: 'route.blocked'; workItemId: string; reason: 'model_missing' | 'correction_unclear' | 'unknown'; candidateIds: string[] }
   | { type: 'work.changed'; workItemId: string; executionId: string | null; phase: WorkPhase; queueReason?: QueueReason }
