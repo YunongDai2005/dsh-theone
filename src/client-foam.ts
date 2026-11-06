@@ -50,7 +50,12 @@ export interface FoamModel {
   pendingMerges?: { id: string; into: string }[]
   /** Finished merges that can still be taken apart, newest first: the target cell's menu offers to undo them. */
   merges?: { sourceId: string; targetId: string; title: string }[]
+  /** Possible duplicates TheOne keeps for the user to decide: a quiet dotted relation between the two cells. */
+  suggestions?: FoamSuggestion[]
 }
+
+/** One possible duplicate: the pair, and both ways of merging it (source goes into target), TheOne's default first. */
+export interface FoamSuggestion { id: string; a: string; b: string; directions: { sourceId: string; targetId: string }[] }
 
 export type FoamEvent =
   /** A message settled on a topic; `alternates` were the other close candidates, they only flicker. */
@@ -71,6 +76,7 @@ export type FoamTextKey =
   | 'allTopics' | 'allWaiting' | 'filter' | 'noMatch'
   | 'statusCurrent' | 'statusAside' | 'statusRouting' | 'statusStarting' | 'statusRunning' | 'statusRecovering' | 'statusQueued' | 'queueCapacity' | 'queueTopic' | 'queueProject'
   | 'statusAnswered' | 'statusQuestion' | 'statusApproval' | 'statusWaiting' | 'statusFailed'
+  | 'dupMenu' | 'dupTip' | 'dupTitle' | 'dupInto' | 'dupNo' | 'dupLater'
 
 export interface FoamActions {
   mount(id: string): void
@@ -80,6 +86,11 @@ export interface FoamActions {
   cancelMerge(id: string): void
   /** Take a finished merge apart; resolves to whether TheOne did it. */
   unmerge(sourceId: string): Promise<boolean>
+  /**
+   * Answer a possible duplicate: accept merges in the chosen direction (merged now, queued, or refused),
+   * decline says they are not the same thing, later leaves it pending. Resolves to the outcome.
+   */
+  answerSuggestion(id: string, response: 'accept' | 'decline' | 'later', direction?: { sourceId: string; targetId: string }): Promise<'merged' | 'queued' | 'done' | 'failed'>
   attach(id: string, sessionId: string): Promise<boolean>
   /** Declare the topic done for now; resolves to whether TheOne accepted it. */
   putAside(id: string): Promise<boolean>
@@ -340,6 +351,9 @@ export function createFoam(options: FoamOptions): Foam {
   svg.innerHTML = '<defs></defs><g data-part="cells"></g><g data-part="necks"></g><g data-part="vesicles"></g>'
   host.appendChild(svg)
   const defs = svg.firstChild as SVGDefsElement, layer = svg.children[1] as SVGGElement, necks = svg.children[2] as SVGGElement, vlayer = svg.children[3] as SVGGElement
+  // Possible duplicates: the dotted thread lies under the cells, so only the gap between the two shows it; its small pore sits on top to be clicked.
+  const threads = document.createElementNS(NS, 'g'), pores = document.createElementNS(NS, 'g')
+  threads.setAttribute('data-part', 'threads'); pores.setAttribute('data-part', 'pores'); layer.before(threads); vlayer.before(pores)
   const tip = document.createElement('div'); tip.className = 'theone-foam-tip'; document.body.appendChild(tip)
   // The cells are drawn, not focusable: a visually hidden list of buttons gives keyboard and screen-reader users the same topics.
   const list = document.createElement('div'); list.className = 'theone-foam-list'; list.setAttribute('role', 'list'); host.appendChild(list)
@@ -545,6 +559,7 @@ export function createFoam(options: FoamOptions): Foam {
     links = new Map()
     for (const link of model.links ?? []) { links.set(link.a + '|' + link.b, link.weight); links.set(link.b + '|' + link.a, link.weight) }
     bonds = (model.pendingMerges ?? []).map(m => [byId(m.id), byId(m.into)] as [Cell | undefined, Cell | undefined]).filter((b): b is [Cell, Cell] => !!b[0] && !!b[1])
+    syncDups()
     first = false
     syncList()
     syncEntry()
@@ -605,6 +620,8 @@ export function createFoam(options: FoamOptions): Foam {
     if (c.state === 'queued') return who + text('queued')
     if (c.state === 'done') return who + text('answered')
     if (c.state === 'running') return who + text('running', { s: Math.max(0, Math.round((Date.now() - (c.startedAt ?? Date.now())) / 1000)) })
+    const dup = dupsOf(c)[0]
+    if (dup) return who + text('dupTip', { name: (dup.a === c ? dup.b : dup.a).title })
     return c.full ? '' : c.title
   }
   /** A hint above what it is about (below when there is no room), whole inside the viewport, long names wrapped. */
@@ -655,6 +672,7 @@ export function createFoam(options: FoamOptions): Foam {
       // A candidate routing hesitated over: the same move a click on the cell makes, reachable without the pointer.
       if (c.offer) items.unshift([text('menuReroute'), () => rerouteTo(c), 'menuReroute'], null)
       const extra: MenuItem[] = []
+      for (const d of dupsOf(c)) extra.push([text('dupMenu', { name: (d.a === c ? d.b : d.a).title }), () => openDup(d.s.id, c), 'dupMenu'])
       if (bonds.some(b => b[0] === c)) extra.push([text('menuCancelMerge'), () => actions.cancelMerge(id), 'menuCancelMerge'])
       for (const m of (model.merges ?? []).filter(m => m.targetId === id).slice(0, 3)) extra.push([text('menuUnmerge', { name: m.title }), () => undoMerge(m.sourceId, c), 'menuUnmerge'])
       if (extra.length) items.push(null, ...extra)
@@ -861,6 +879,173 @@ export function createFoam(options: FoamOptions): Foam {
     placeTip(c.m.getBoundingClientRect(), s); window.setTimeout(hideTip, 1800)
   }
 
+  /*
+   * Possible duplicates. TheOne keeps them for the user instead of asking in main chat; the cluster shows each as a
+   * quiet dotted thread between the two cells with a small pore to click. It never pulls them together. Only
+   * "not the same" declines; Esc, clicking elsewhere, moving away or setting a cell aside leave it pending.
+   */
+  interface Dup { s: FoamSuggestion; a: Cell; b: Cell; thread: SVGPathElement; pore: SVGGElement; hit: SVGCircleElement; alpha: number }
+  const dups = new Map<string, Dup>()
+  /** Answered here and waiting for TheOne's next state: the thread is not drawn meanwhile. */
+  const answering = new Set<string>()
+  let dupPanel: { el: HTMLDivElement; id: string; back: Element | null; from?: Cell } | null = null, keyboard = false
+  const dupsOf = (c: Cell) => [...dups.values()].filter(d => (d.a === c || d.b === c) && !answering.has(d.s.id))
+  const shownCell = (d: Dup) => [d.a, d.b].find(c => !c.hidden && c.mode === 'live') ?? d.a
+  function syncDups() {
+    const seen = new Set<string>()
+    for (const s of model.suggestions ?? []) {
+      const a = byId(s.a), b = byId(s.b)
+      if (!a || !b || a === b) continue
+      seen.add(s.id)
+      let d = dups.get(s.id)
+      if (!d) {
+        const thread = document.createElementNS(NS, 'path'); thread.setAttribute('class', 'theone-dup-thread'); threads.appendChild(thread)
+        const pore = document.createElementNS(NS, 'g'); pore.setAttribute('class', 'theone-dup')
+        pore.innerHTML = '<circle data-part="hit" r="8"/><circle data-part="ring" r="3.2"/>'
+        pores.appendChild(pore)
+        const id = s.id
+        pore.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation() })
+        pore.addEventListener('click', () => { if (dupPanel?.id === id) closeDup(); else openDup(id) })
+        pore.addEventListener('pointerenter', () => { if (drag) return; placeTip(pore.getBoundingClientRect(), text('dupTitle')) })
+        pore.addEventListener('pointerleave', () => { if (!tipOwner) tip.classList.remove('on') })
+        d = { s, a, b, thread, pore, hit: pore.firstChild as SVGCircleElement, alpha: 0 }
+        dups.set(id, d)
+      }
+      d.s = s; d.a = a; d.b = b
+    }
+    for (const [id, d] of dups) if (!seen.has(id)) { d.thread.remove(); d.pore.remove(); dups.delete(id) }
+    for (const id of answering) if (!seen.has(id)) answering.delete(id)
+    if (dupPanel && !dups.has(dupPanel.id)) closeDup()
+  }
+  /** The pending suggestion between two cells, and its direction with `c` going into `into`. */
+  function dupBetween(c: Cell, into: Cell): { id: string; direction: { sourceId: string; targetId: string } } | undefined {
+    for (const d of dupsOf(c)) {
+      if (d.a !== into && d.b !== into) continue
+      const direction = d.s.directions.find(x => x.sourceId === c.id && x.targetId === into.id)
+      if (direction) return { id: d.s.id, direction }
+    }
+    return undefined
+  }
+  function drawDups(dt: number) {
+    for (const d of dups.values()) {
+      const { a, b } = d
+      const show = !answering.has(d.s.id) && sz > .7 && [a, b].every(c => cells.includes(c) && c.mode === 'live' && !c.hidden && c.scale > .5)
+        && !(drag?.started && (drag.cell === a || drag.cell === b))
+      d.alpha = reduced() ? (show ? 1 : 0) : ease(d.alpha, show ? 1 : 0, show ? 1.4 : 6, dt)
+      d.hit.style.pointerEvents = drag || !show ? 'none' : ''
+      if (d.alpha < .02) { d.thread.setAttribute('d', ''); d.pore.style.display = 'none'; continue }
+      d.pore.style.display = ''
+      const ra = a.R * a.scale, rb = b.R * b.scale, dx = b.cx - a.cx, dy = b.cy - a.cy, dist = Math.hypot(dx, dy) || .01, ux = dx / dist, uy = dy / dist
+      const gap = dist - ra - rb
+      let path = '', px: number, py: number
+      if (gap < Math.min(ra, rb) * 1.4) {
+        // Close together: a dotted neck outline in the crevice between them, the pore on their shared wall.
+        path = bridge(pos(a), ra, pos(b), rb, 1e6, .42)?.edge ?? ''
+        px = (a.cx + ux * ra + b.cx - ux * rb) / 2; py = (a.cy + uy * ra + b.cy - uy * rb) / 2
+      } else {
+        // Further apart: a gently bowed dotted thread from wall to wall, the pore halfway.
+        const sx = a.cx + ux * (ra + 2), sy = a.cy + uy * (ra + 2), ex = b.cx - ux * (rb + 2), ey = b.cy - uy * (rb + 2)
+        const mx = (sx + ex) / 2 - uy * gap * .12, my = (sy + ey) / 2 + ux * gap * .12
+        path = `M${fx(sx)} ${fx(sy)}Q${fx(mx)} ${fx(my)} ${fx(ex)} ${fx(ey)}`
+        px = .25 * sx + .5 * mx + .25 * ex; py = .25 * sy + .5 * my + .25 * ey
+      }
+      const open = dupPanel?.id === d.s.id
+      // A slow breath, not a blink; it stands still with reduced motion (t does not advance then).
+      const o = d.alpha * (open ? 1 : .8 + .2 * Math.sin(t * 1.2 + a.phase))
+      d.thread.setAttribute('d', path); d.thread.style.opacity = fx(o * .85); d.thread.classList.toggle('open', open)
+      d.pore.setAttribute('transform', `translate(${fx(px)} ${fx(py)}) scale(${fx(Math.max(.7, sz))})`); d.pore.style.opacity = fx(o); d.pore.classList.toggle('open', open)
+    }
+  }
+  /** The small panel for one possible duplicate, near the pair: both full names, which one to keep, not the same, later. */
+  function openDup(id: string, from?: Cell) {
+    const d = dups.get(id)
+    if (!d) return
+    const back = document.activeElement
+    closeMenu(); closeDup(false); hideTip()
+    const el = document.createElement('div')
+    el.className = 'theone-foam-menu theone-foam-dup'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-label', text('dupTitle'))
+    const head = document.createElement('div'); head.className = 'theone-foam-dup-head'
+    const title = document.createElement('div'); title.className = 'theone-foam-dup-title'; title.textContent = text('dupTitle'); head.appendChild(title)
+    for (const c of [d.a, d.b]) { const name = document.createElement('div'); name.className = 'theone-foam-dup-name'; name.textContent = c.title; head.appendChild(name) }
+    el.appendChild(head)
+    const row = (label: string, run: () => void) => {
+      const button = document.createElement('button'); button.type = 'button'; button.textContent = label; button.onclick = run; el.appendChild(button)
+    }
+    el.appendChild(document.createElement('hr'))
+    for (const direction of d.s.directions) {
+      const into = direction.targetId === d.a.id ? d.a : d.b
+      row(text('dupInto', { name: into.title }), () => acceptDup(id, direction))
+    }
+    el.appendChild(document.createElement('hr'))
+    row(text('dupNo'), () => declineDup(id))
+    row(text('dupLater'), () => laterDup(id))
+    // Arrow keys move between the choices; Tab stays inside until the panel closes.
+    el.addEventListener('keydown', e => {
+      const buttons = [...el.querySelectorAll('button')], at = buttons.indexOf(document.activeElement as HTMLButtonElement)
+      const by = e.key === 'ArrowDown' || (e.key === 'Tab' && !e.shiftKey) ? 1 : e.key === 'ArrowUp' || (e.key === 'Tab' && e.shiftKey) ? -1 : 0
+      const jump = e.key === 'Home' ? 0 : e.key === 'End' ? buttons.length - 1 : -1
+      if (!by && jump < 0) return
+      e.preventDefault()
+      buttons[jump >= 0 ? jump : (at + by + buttons.length) % buttons.length]?.focus()
+    })
+    document.body.appendChild(el)
+    dupPanel = { el, id, back, from }
+    // Below the pair, centred on it; above it when there is no room below. It stays where it opened.
+    const boxes = [d.a, d.b].filter(c => !c.hidden && c.scale > .3).map(c => c.m.getBoundingClientRect())
+    const hr = host.getBoundingClientRect(), p = el.getBoundingClientRect()
+    const left = boxes.length ? Math.min(...boxes.map(r => r.left)) : hr.left, right = boxes.length ? Math.max(...boxes.map(r => r.right)) : hr.right
+    const top = boxes.length ? Math.min(...boxes.map(r => r.top)) : hr.top, bottom = boxes.length ? Math.max(...boxes.map(r => r.bottom)) : hr.top
+    let y = bottom + 8
+    if (y + p.height > innerHeight - 8) y = Math.max(8, top - p.height - 8)
+    el.style.left = clamp((left + right) / 2 - p.width / 2, 8, Math.max(8, innerWidth - p.width - 8)) + 'px'; el.style.top = y + 'px'
+    el.querySelector('button')?.focus()
+  }
+  /** Closes the panel; nothing is sent. Focus goes back where it was, or to the topic in the keyboard list. */
+  function closeDup(restore = true) {
+    if (!dupPanel) return
+    const { el, back, from, id } = dupPanel
+    dupPanel = null; el.remove()
+    if (!restore) return
+    if (back instanceof HTMLElement && back.isConnected && back !== document.body && !back.closest('.theone-foam-menu')) { back.focus(); return }
+    const d = dups.get(id), c = from ?? (d && shownCell(d))
+    if (keyboard && c) keys.get(c.id)?.focus()
+  }
+  function acceptDup(id: string, direction: { sourceId: string; targetId: string }) {
+    const d = dups.get(id)
+    if (!d) return
+    closeDup()
+    const c = byId(direction.sourceId), into = byId(direction.targetId), near = (into && !into.hidden ? into : undefined) ?? shownCell(d)
+    answering.add(id)
+    // Same as a merge by hand: a neck until TheOne confirms, then the two fuse and "undo" is offered; queued keeps the neck.
+    if (c && into && !c.hidden && !into.hidden) bonds = [...bonds.filter(b => b[0] !== c && b[1] !== c), [c, into]]
+    void actions.answerSuggestion(id, 'accept', direction).then(result => {
+      if (result === 'merged' && c && into) { apply({ kind: 'merged', id: c.id, into: into.id }); offerUndo(c.id, into) }
+      else if (result === 'failed') { answering.delete(id); if (c) bonds = bonds.filter(b => b[0] !== c); tipAt(near, text('mergeFailed')) }
+    })
+  }
+  function declineDup(id: string) {
+    const d = dups.get(id)
+    if (!d) return
+    closeDup()
+    answering.add(id)
+    void actions.answerSuggestion(id, 'decline').then(result => { if (result === 'failed') { answering.delete(id); tipAt(shownCell(d), text('actionFailed')) } })
+  }
+  /** Later: the panel closes and the thread stays; TheOne keeps the suggestion pending. */
+  function laterDup(id: string) {
+    closeDup()
+    void actions.answerSuggestion(id, 'later')
+  }
+  const dupPointer = (e: PointerEvent) => {
+    keyboard = false
+    if (dupPanel && !dupPanel.el.contains(e.target as Node) && !dups.get(dupPanel.id)?.pore.contains(e.target as Node)) closeDup(false)
+  }
+  const dupKey = (e: KeyboardEvent) => {
+    keyboard = true
+    if (e.key === 'Escape' && dupPanel) { e.preventDefault(); closeDup() }
+  }
+  document.addEventListener('pointerdown', dupPointer, true)
+  document.addEventListener('keydown', dupKey, true)
+
   function dropTarget(e: PointerEvent, c: Cell): typeof target {
     for (const el of document.elementsFromPoint(e.clientX, e.clientY)) {
       if (c.g.contains(el)) continue
@@ -950,6 +1135,9 @@ export function createFoam(options: FoamOptions): Foam {
     }
     if (hit?.kind === 'main') { if (!c.cur) actions.mount(c.id); return }
     if (hit?.kind === 'cell') {
+      // Dropped on the topic TheOne thought might be the same one: that answers its suggestion, in this direction.
+      const dup = dupBetween(c, hit.cell)
+      if (dup) { acceptDup(dup.id, dup.direction); return }
       // The two are joined by a neck until TheOne confirms; only then they fuse, otherwise the neck lets go.
       const into = hit.cell
       bonds = [...bonds.filter(b => b[0] !== c && b[1] !== c), [c, into]]
@@ -1216,6 +1404,7 @@ export function createFoam(options: FoamOptions): Foam {
       if (neck) c.nf.style.fill = other?.state === 'done' ? 'var(--foam-done)' : other && other.state === 'idle' && !other.cur ? 'var(--foam-bg)' : 'var(--foam-tint)'
       c.neck.style.opacity = fx(c.alpha)
     }
+    drawDups(dt)
 
     // Hit areas: small cells get a steady 24px circle to press where there is room, split fairly between neighbours and kept
     // inside the box. The cell being dragged is left out, so the ones it may land on keep theirs while it passes over them.
@@ -1266,6 +1455,7 @@ export function createFoam(options: FoamOptions): Foam {
       cancelAnimationFrame(raf); clearInterval(tipTimer)
       window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', blur); window.removeEventListener('blur', blur)
       document.removeEventListener('pointerdown', outside, true); document.removeEventListener('keydown', keydown, true)
+      closeDup(false); document.removeEventListener('pointerdown', dupPointer, true); document.removeEventListener('keydown', dupKey, true)
       closeMenu(); closePop(); hideUndo(); undo.remove(); tip.remove(); svg.remove(); list.remove(); entry.remove(); host.classList.remove('theone-foam', 'rail')
     },
   }
@@ -1317,6 +1507,17 @@ export const foamCss = `
 .theone-foam-undo.on{opacity:1;pointer-events:auto;transform:translate(-50%,0)}
 .theone-cell.more [data-part=membrane]{stroke-dasharray:1.2 3}
 .theone-neck [data-part=edge]{fill:none;stroke:var(--foam-line);stroke-width:1.3;stroke-linecap:round}
+.theone-dup-thread{fill:none;stroke:var(--foam-line);stroke-width:1.2;stroke-linecap:round;stroke-dasharray:0 3.4;pointer-events:none}
+.theone-dup-thread.open{stroke:var(--foam-accent)}
+.theone-dup{cursor:pointer}
+.theone-dup [data-part=hit]{fill:none;stroke:none;pointer-events:all}
+.theone-dup [data-part=ring]{fill:var(--foam-bg);stroke:var(--foam-line);stroke-width:1.1;stroke-linecap:round;stroke-dasharray:0 2.5;pointer-events:none;transition:stroke .2s ease}
+.theone-dup:hover [data-part=ring],.theone-dup.open [data-part=ring]{stroke:var(--foam-accent)}
+.theone-foam-dup{width:max-content;max-width:min(260px,calc(100vw - 16px))}
+.theone-foam-dup-head{padding:6px 12px 4px}
+.theone-foam-dup-title{font-size:12px;line-height:1.5;color:var(--dsw-alias-label-secondary,#8a8a86)}
+.theone-foam-dup-name{font-size:13.5px;line-height:1.4;padding:2px 0;white-space:normal;overflow-wrap:anywhere}
+.theone-foam-menu.theone-foam-dup button{height:auto;min-height:34px;padding:7px 12px;line-height:1.35;white-space:normal;overflow-wrap:anywhere}
 .theone-vesicle [data-part=membrane]{fill:var(--foam-tint);stroke:var(--foam-accent);stroke-width:1.1}
 .theone-vesicle [data-part=nucleus]{fill:var(--foam-accent)}
 html[data-theone-foam] button:has(.theone-workspace-entry){display:none}
@@ -1355,5 +1556,5 @@ html[data-theone-foam] button:has(.theone-workspace-entry){display:none}
 .theone-foam-empty{display:block;padding:6px 12px;font-size:12.5px;color:var(--dsw-alias-label-secondary,#8a8a86)}
 .theone-foam-empty[hidden]{display:none}
 .theone-foam-all-list>hr,.theone-foam-all-list>button{flex:none}
-@media(prefers-reduced-motion:reduce){.theone-foam-all{transition:none}.theone-cell [data-part=membrane],.theone-cell [data-part=body]{transition:none}.theone-cell.pending [data-part=membrane]{animation:none}.theone-foam-undo,.theone-foam-tip{transition:none}}
+@media(prefers-reduced-motion:reduce){.theone-foam-all{transition:none}.theone-cell [data-part=membrane],.theone-cell [data-part=body]{transition:none}.theone-cell.pending [data-part=membrane]{animation:none}.theone-foam-undo,.theone-foam-tip{transition:none}.theone-dup [data-part=ring]{transition:none}}
 `

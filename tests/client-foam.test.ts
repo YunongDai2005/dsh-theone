@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { foamFilter, foamHitRadii, foamLabel, foamNearest, foamOrder, foamPlace, foamShortName, foamStatusText, type FoamTopic } from '../src/client-foam.ts'
-import { foamEventsFrom, modelFromBubbles, modelFromCatalog } from '../src/client-foam-host.ts'
+import { foamEventsFrom, modelFromBubbles, modelFromCatalog, suggestionsFromBubbles } from '../src/client-foam-host.ts'
 import type { CatalogSnapshot } from '../src/catalog-types.ts'
 import type { BubbleEvent, BubbleSnapshot, BubbleTopic, BubbleWorkItem } from '../src/bubble-types.ts'
 
@@ -261,4 +261,30 @@ test('type-to-filter is a plain case-insensitive substring of the title or the s
   assert.deepEqual(foamFilter(list, 'week').map(t => t.id), ['3'])
   assert.deepEqual(foamFilter(list, 'k').map(t => t.id), ['2', '3'])
   assert.deepEqual(foamFilter(list, '日本 旅游').map(t => t.id), [])
+})
+
+test('possible duplicates reach the cluster: pending, in time, both topics shown, neither already merging, both directions kept', () => {
+  const snap = snapshot([topic('a'), topic('b'), topic('c'), topic('d'), topic('e'), topic('f')])
+  const suggestion = (suggestionId: string, a: string, b: string, extra: Partial<NonNullable<BubbleSnapshot['mergeSuggestions']>[number]> = {}): NonNullable<BubbleSnapshot['mergeSuggestions']>[number] => ({
+    suggestionId, scope: { gatewayKey: 'default', gatewayId: 'g' }, pair: [a, b], directions: [{ sourceId: b, targetId: a }, { sourceId: a, targetId: b }],
+    evidence: { sharedNames: 2, titleSimilarity: .8 }, createdAt: NOW - 1000, updatedAt: NOW - 1000, expiresAt: NOW + 1800000, state: 'pending', ...extra })
+  snap.mergeSuggestions = [
+    suggestion('s1', 'a', 'b'),
+    suggestion('s2', 'a', 'c', { state: 'declined' }),
+    suggestion('s3', 'b', 'c', { expiresAt: NOW - 1 }),
+    suggestion('s4', 'c', 'gone'),
+    suggestion('s5', 'd', 'e'),
+    suggestion('s6', 'c', 'e', { directions: [{ sourceId: 'c', targetId: 'e' }, { sourceId: 'x', targetId: 'c' }] }),
+  ]
+  snap.merges = [{ operationId: 'o', requestId: 'r', sourceId: 'd', targetId: 'f', whenIdle: true, state: 'queued', createdAt: NOW, updatedAt: NOW, expiresAt: NOW + 300000 }]
+  assert.deepEqual(modelFromBubbles(snap).suggestions, [
+    { id: 's1', a: 'a', b: 'b', directions: [{ sourceId: 'b', targetId: 'a' }, { sourceId: 'a', targetId: 'b' }] },
+    { id: 's6', a: 'c', b: 'e', directions: [{ sourceId: 'c', targetId: 'e' }] },
+  ])
+})
+
+test('an older back end without merge suggestions gives the cluster none', () => {
+  const snap = snapshot([topic('a'), topic('b')])
+  assert.deepEqual(suggestionsFromBubbles(snap), [])
+  assert.deepEqual(modelFromBubbles(snap).suggestions, [])
 })

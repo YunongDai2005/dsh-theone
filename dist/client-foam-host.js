@@ -62,7 +62,28 @@ export function modelFromBubbles(snapshot) {
     const links = snapshot.edges.map(edge => ({ a: edge.a, b: edge.b, weight: edge.relation === 'kept_apart' ? -.3 : Math.max(0, Math.min(1, edge.strength)) }));
     // Merges waiting for TheOne to go quiet hold the two cells together by a neck.
     const pendingMerges = (snapshot.merges ?? []).filter(merge => merge.state === 'queued' || merge.state === 'executing').map(merge => ({ id: merge.sourceId, into: merge.targetId }));
-    return { topics, links, pendingMerges };
+    return { topics, links, pendingMerges, suggestions: suggestionsFromBubbles(snapshot) };
+}
+/**
+ * Possible duplicates TheOne noticed and keeps for the user: pending, not past their time, both topics on the
+ * cluster, and neither already in a merge. Each keeps both directions, TheOne's default (new into old) first.
+ */
+export function suggestionsFromBubbles(snapshot) {
+    const shown = new Set(snapshot.topics.map(topic => topic.id));
+    const merging = new Set((snapshot.merges ?? []).filter(merge => merge.state === 'queued' || merge.state === 'executing').flatMap(merge => [merge.sourceId, merge.targetId]));
+    const out = [];
+    for (const suggestion of snapshot.mergeSuggestions ?? []) {
+        const [a, b] = suggestion.pair;
+        if (suggestion.state !== 'pending' || suggestion.expiresAt <= snapshot.serverTime || a === b)
+            continue;
+        if (!shown.has(a) || !shown.has(b) || merging.has(a) || merging.has(b))
+            continue;
+        const directions = suggestion.directions.filter(d => (d.sourceId === a && d.targetId === b) || (d.sourceId === b && d.targetId === a))
+            .map(d => ({ sourceId: d.sourceId, targetId: d.targetId }));
+        if (directions.length)
+            out.push({ id: suggestion.suggestionId, a, b, directions });
+    }
+    return out;
 }
 /** What each routing event looks like on the cluster. Hints and bookkeeping events play nothing. */
 export function foamEventsFrom(events, snapshot) {
@@ -386,6 +407,26 @@ export function mountFoamHost(options) {
             if (ok)
                 await readCatalog(false);
             return ok;
+        },
+        answerSuggestion: async (suggestionId, response, direction) => {
+            // Each accept is a new intent with its own request id; "later" leaves the suggestion pending on TheOne's side.
+            const requestId = typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `${suggestionId}:${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+            const pick = response === 'accept' && direction ? { sourceId: direction.sourceId, targetId: direction.targetId, requestId } : {};
+            try {
+                const res = await fetch('/api/theone/topics', { method: 'POST', headers: { 'content-type': 'application/json' }, signal, cache: 'no-store',
+                    body: JSON.stringify({ action: 'mergeSuggestion', suggestionId, response, ...pick }) });
+                if (response !== 'accept')
+                    return res.ok ? 'done' : 'failed';
+                if (res.status === 200)
+                    void readCatalog(false);
+                return res.status === 200 ? 'merged' : res.status === 202 ? 'queued' : 'failed';
+            }
+            catch {
+                return 'failed';
+            }
+            finally {
+                refresh();
+            }
         },
         attach: (id, sessionId) => act({ action: 'attach', id, sessionId }),
         putAside: id => act({ action: 'status', id, done: true }),
