@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { foamLabel, foamShortName } from '../src/client-foam.ts'
+import { foamHitRadii, foamLabel, foamNearest, foamPlace, foamShortName } from '../src/client-foam.ts'
 import { foamEventsFrom, modelFromBubbles, modelFromCatalog } from '../src/client-foam-host.ts'
 import type { CatalogSnapshot } from '../src/catalog-types.ts'
 import type { BubbleEvent, BubbleSnapshot, BubbleTopic, BubbleWorkItem } from '../src/bubble-types.ts'
@@ -128,4 +128,74 @@ test('the directory feeds the cluster: hidden topics drop out, done and archived
   assert.equal(byId.e.aside, true)
   assert.equal(byId.a.aside, false)
   assert.deepEqual(model.links, [{ a: 'a', b: 'b', weight: .3 }, { a: 'b', b: 'd', weight: .5 }])
+})
+
+test('a small cell alone gets a 24px hit circle; a big one keeps its own outline', () => {
+  const box = { w: 300, h: 200 }
+  assert.deepEqual(foamHitRadii([{ x: 100, y: 100, r: 6 }], box), [12])
+  assert.deepEqual(foamHitRadii([{ x: 100, y: 100, r: 29 }], box), [29])
+})
+
+test('hit circles split the room between neighbours by size and never reach into each other', () => {
+  const box = { w: 300, h: 200 }
+  // Two small cells 16px apart: 8 each, they meet but do not overlap.
+  assert.deepEqual(foamHitRadii([{ x: 100, y: 100, r: 6 }, { x: 116, y: 100, r: 6 }], box), [8, 8])
+  // A small cell next to a bigger one: the free 4px is split evenly, so the small one never covers the big one's outline.
+  const [small, big] = foamHitRadii([{ x: 100, y: 100, r: 6 }, { x: 120, y: 100, r: 10 }], box)
+  assert.equal(small, 8); assert.equal(big, 12)
+  assert.ok(small + 10 <= 20 && big + 6 <= 20)
+  // Many random layouts whose outlines do not overlap: hit circles never overlap and never shrink below the outline's floor.
+  let seed = 7
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647
+  for (let round = 0; round < 300; round++) {
+    const items: { x: number; y: number; r: number; floor: number }[] = []
+    for (let tries = 0; items.length < 12 && tries < 200; tries++) {
+      const r = 4 + rnd() * 14, it = { x: rnd() * 300, y: rnd() * 200, r, floor: r * (.7 + rnd() * .3) }
+      if (items.every(o => Math.hypot(o.x - it.x, o.y - it.y) >= o.floor + it.floor)) items.push(it)
+    }
+    const h = foamHitRadii(items, box)
+    items.forEach((a, i) => {
+      assert.ok(h[i] >= a.floor - 1e-9, `floor ${i}`)
+      items.forEach((b, j) => { if (j > i) assert.ok(h[i] + h[j] <= Math.hypot(a.x - b.x, a.y - b.y) + 1e-9, `overlap ${i}-${j} in round ${round}`) })
+    })
+  }
+})
+
+test('a hit circle never reaches past the cluster box, but never shrinks below the cell outline', () => {
+  const box = { w: 300, h: 40 }
+  assert.deepEqual(foamHitRadii([{ x: 150, y: 9, r: 6 }], box), [9])
+  assert.deepEqual(foamHitRadii([{ x: 150, y: 3, r: 6 }], box), [6])
+  assert.deepEqual(foamHitRadii([{ x: 150, y: 3, r: 6, floor: 5 }], box), [5])
+})
+
+test('a press goes to the nearest centre among the circles that hold it', () => {
+  const items = [{ x: 0, y: 0, r: 12 }, { x: 16, y: 0, r: 12 }]
+  assert.equal(foamNearest({ x: 7, y: 0 }, items), 0)
+  assert.equal(foamNearest({ x: 9, y: 0 }, items), 1)
+  assert.equal(foamNearest({ x: 40, y: 0 }, items), -1)
+  // A big neighbour's circle holds the point too, but the small cell's centre is nearer.
+  assert.equal(foamNearest({ x: 22, y: 0 }, [{ x: 0, y: 0, r: 30 }, { x: 26, y: 0, r: 8 }]), 1)
+})
+
+test('a hint sits above its cell, flips below when there is no room, and stays whole on all four sides', () => {
+  const view = { w: 400, h: 300 }, cell = { left: 100, top: 100, right: 120, bottom: 120 }
+  assert.deepEqual(foamPlace({ w: 80, h: 24 }, cell, view), { left: 70, top: 70, side: 'above' })
+  assert.deepEqual(foamPlace({ w: 80, h: 24 }, { left: 100, top: 10, right: 120, bottom: 30 }, view), { left: 70, top: 36, side: 'below' })
+  // Near the left and right edges the hint slides in instead of going off screen.
+  assert.equal(foamPlace({ w: 200, h: 24 }, { left: 0, top: 100, right: 10, bottom: 110 }, view).left, 8)
+  assert.equal(foamPlace({ w: 200, h: 24 }, { left: 390, top: 100, right: 400, bottom: 110 }, view).left, 192)
+  // Wider than the viewport: pinned to the left margin (CSS max-width keeps it from being wider in practice).
+  assert.equal(foamPlace({ w: 500, h: 24 }, cell, view).left, 8)
+  // No room either way: the roomier side, held inside the margins.
+  const tall = foamPlace({ w: 80, h: 200 }, { left: 100, top: 120, right: 120, bottom: 140 }, view)
+  assert.equal(tall.side, 'below'); assert.equal(tall.top, 92)
+})
+
+test('a menu opens at the pointer, flips left and up near the edges, and never leaves the viewport', () => {
+  const view = { w: 400, h: 300 }, at = (x: number, y: number) => ({ left: x, top: y, right: x, bottom: y })
+  const opts = { side: 'below' as const, align: 'start' as const, gap: 2 }
+  assert.deepEqual(foamPlace({ w: 170, h: 120 }, at(50, 50), view, opts), { left: 50, top: 52, side: 'below' })
+  assert.deepEqual(foamPlace({ w: 170, h: 120 }, at(350, 250), view, opts), { left: 180, top: 128, side: 'above' })
+  // Taller than the viewport (CSS caps it and scrolls): starts at the top margin.
+  assert.equal(foamPlace({ w: 170, h: 400 }, at(50, 50), view, opts).top, 8)
 })

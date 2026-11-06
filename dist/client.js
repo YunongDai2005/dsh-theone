@@ -200,6 +200,85 @@ function foamLabel(name, radius) {
   }
   return { lines: [], font: big, lh: 0 };
 }
+function foamHitRadii(items, box, min = 12) {
+  const floor = items.map((a) => Math.max(0, a.floor ?? a.r));
+  const dist = (i, j) => Math.hypot(items[j].x - items[i].x, items[j].y - items[i].y);
+  const h3 = items.map((a, i) => {
+    let v = Math.max(a.r, min);
+    for (let j = 0; j < items.length; j++) if (j !== i) v = Math.min(v, a.r + (dist(i, j) - a.r - items[j].r) / 2);
+    if (box) v = Math.min(v, a.x, box.w - a.x, a.y, box.h - a.y);
+    return Math.max(v, floor[i]);
+  });
+  for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) {
+    const over = h3[i] + h3[j] - dist(i, j), si = h3[i] - floor[i], sj = h3[j] - floor[j];
+    if (over <= 0 || si + sj <= 0) continue;
+    const k = Math.min(1, over / (si + sj));
+    h3[i] -= si * k;
+    h3[j] -= sj * k;
+  }
+  return h3;
+}
+function foamNearest(p, items) {
+  let best = -1, bestD = Infinity;
+  items.forEach((a, i) => {
+    const d = Math.hypot(p.x - a.x, p.y - a.y);
+    if (d <= a.r && d < bestD) {
+      best = i;
+      bestD = d;
+    }
+  });
+  return best;
+}
+function foamPlace(size, anchor, view, opts = {}) {
+  const m = opts.margin ?? 8, g = opts.gap ?? 6, { w, h: h3 } = size;
+  const above = anchor.top - g - h3, below = anchor.bottom + g;
+  const fitsAbove = above >= m, fitsBelow = below + h3 <= view.h - m;
+  let side = opts.side ?? "above";
+  if (side === "above" ? !fitsAbove : !fitsBelow) {
+    if (side === "above" ? fitsBelow : fitsAbove) side = side === "above" ? "below" : "above";
+    else side = anchor.top - m >= view.h - m - anchor.bottom ? "above" : "below";
+  }
+  const top = Math.max(m, Math.min(side === "above" ? above : below, view.h - m - h3));
+  let left = opts.align === "start" ? anchor.left : (anchor.left + anchor.right) / 2 - w / 2;
+  if (opts.align === "start" && left + w > view.w - m) left = anchor.right - w;
+  left = Math.max(m, Math.min(left, view.w - m - w));
+  return { left, top, side };
+}
+function foamClampToViewport(el, anchor, opts = {}) {
+  el.style.left = "0px";
+  el.style.top = "0px";
+  const r = el.getBoundingClientRect(), root = document.documentElement;
+  const p = foamPlace({ w: r.width, h: r.height }, anchor, { w: root.clientWidth || innerWidth, h: root.clientHeight || innerHeight }, opts);
+  el.style.left = p.left + "px";
+  el.style.top = p.top + "px";
+  el.dataset.side = p.side;
+  return p;
+}
+function foamMenuKeys(el, close, items = "[role=menuitem]:not([disabled])") {
+  const onKey = (e) => {
+    const list = Array.from(el.querySelectorAll(items)), at = list.indexOf(document.activeElement);
+    const go = (i) => {
+      e.preventDefault();
+      e.stopPropagation();
+      list[(i + list.length) % list.length]?.focus();
+    };
+    if (e.key === "ArrowDown") go(at < 0 ? 0 : at + 1);
+    else if (e.key === "ArrowUp") go(at < 0 ? list.length - 1 : at - 1);
+    else if (e.key === "Home") go(0);
+    else if (e.key === "End") go(list.length - 1);
+    else if ((e.key === "Enter" || e.key === " ") && at >= 0) {
+      e.preventDefault();
+      e.stopPropagation();
+      list[at].click();
+    } else if (e.key === "Escape" || e.key === "Tab") {
+      e.preventDefault();
+      e.stopPropagation();
+      close();
+    }
+  };
+  el.addEventListener("keydown", onKey);
+  return () => el.removeEventListener("keydown", onKey);
+}
 function createFoam(options) {
   const { host, actions } = options;
   const motion = matchMedia("(prefers-reduced-motion: reduce)"), reduced = () => motion.matches;
@@ -244,6 +323,12 @@ function createFoam(options) {
   };
   const pos = (c) => ({ x: c.cx, y: c.cy });
   const markPos = () => ({ x: L.x, y: L.y });
+  function cellAt(x, y, skip, topicsOnly = false) {
+    const r = host.getBoundingClientRect();
+    const list2 = cells.filter((o) => o !== skip && o.mode === "live" && !o.hidden && o.scale >= 0.02 && (!topicsOnly || o.kind === "topic"));
+    const i = foamNearest({ x: x - r.left, y: y - r.top }, list2.map((o) => ({ x: o.cx, y: o.cy, r: Math.max(o.hit, o.vr) })));
+    return i < 0 ? void 0 : list2[i];
+  }
   function makeCell(id, title, spawn) {
     const gid = `theone-foam-${uid++}`;
     const gr = document.createElementNS(NS, "radialGradient");
@@ -259,6 +344,9 @@ function createFoam(options) {
     neck.setAttribute("class", "theone-neck");
     neck.innerHTML = '<path data-part="fill"/><path data-part="edge"/>';
     necks.appendChild(neck);
+    const hc = document.createElementNS(NS, "circle");
+    hc.setAttribute("data-part", "hit");
+    hc.setAttribute("r", "0");
     const w = host.clientWidth;
     const c = {
       id,
@@ -270,6 +358,10 @@ function createFoam(options) {
       aside: false,
       oneOff: false,
       w: 0.05,
+      hc,
+      hit: 0,
+      vin: 0,
+      vr: 0,
       g,
       gr,
       stop: gr.firstChild,
@@ -313,23 +405,25 @@ function createFoam(options) {
       lay: { lines: [], font: 9.5, lh: 0 },
       showing: false
     };
+    g.insertBefore(hc, g.firstChild);
     let hover = 0;
     g.addEventListener("pointerdown", (e) => {
-      if (e.button || c.mode !== "live" || c.kind === "more") return;
+      const o = cellAt(e.clientX, e.clientY) ?? c;
+      if (e.button || o.mode !== "live" || o.kind === "more") return;
       e.preventDefault();
       clearTimeout(hover);
       hideTip();
       const p = local(e);
-      drag = { cell: c, dx: p.x - c.x, dy: p.y - c.y, trail: [{ x: e.clientX, y: e.clientY, t: now() }], started: false, last: { x: e.clientX, y: e.clientY } };
-      c.tx = c.x;
-      c.ty = c.y;
+      drag = { cell: o, dx: p.x - o.x, dy: p.y - o.y, trail: [{ x: e.clientX, y: e.clientY, t: now() }], started: false, last: { x: e.clientX, y: e.clientY } };
+      o.tx = o.x;
+      o.ty = o.y;
       try {
-        g.setPointerCapture(e.pointerId);
+        o.g.setPointerCapture(e.pointerId);
       } catch {
       }
     });
-    g.addEventListener("click", () => {
-      if (c.kind === "more" && !drag) actions.openWorkspace();
+    g.addEventListener("click", (e) => {
+      if ((cellAt(e.clientX, e.clientY) ?? c).kind === "more" && !drag) actions.openWorkspace();
     });
     g.addEventListener("pointerenter", () => {
       if (drag) return;
@@ -346,7 +440,7 @@ function createFoam(options) {
       e.preventDefault();
       clearTimeout(hover);
       hideTip();
-      openMenu(e.clientX, e.clientY, c);
+      openMenu(e.clientX, e.clientY, cellAt(e.clientX, e.clientY) ?? c);
     });
     cells.push(c);
     return c;
@@ -559,7 +653,7 @@ function createFoam(options) {
           if (e.key === "ContextMenu" || e.shiftKey && e.key === "F10") {
             e.preventDefault();
             const r = c.m.getBoundingClientRect();
-            openMenu(r.left + r.width / 2, r.bottom, c);
+            openMenu(r.left + r.width / 2, r.bottom, c, true);
           }
         });
         keys.set(c.id, b);
@@ -589,20 +683,19 @@ function createFoam(options) {
     if (c.state === "running") return who + text("running", { s: Math.max(0, Math.round((Date.now() - (c.startedAt ?? Date.now())) / 1e3)) });
     return c.full ? "" : c.title;
   }
-  function placeTip(x, y, s) {
+  function placeTip(anchor, s) {
     if (!s) {
       tip2.classList.remove("on");
       return;
     }
     tip2.textContent = s;
-    tip2.style.left = x + "px";
-    tip2.style.top = y + "px";
+    foamClampToViewport(tip2, anchor, { side: "above", align: "center", gap: 6 });
     tip2.classList.add("on");
   }
+  const pointerBox = (x, y) => ({ left: x, right: x, top: y - 2, bottom: y + 18 });
   function showTip(c) {
     tipOwner = c;
-    const r = c.m.getBoundingClientRect();
-    placeTip(r.left + r.width / 2, r.top - 28, tipText(c));
+    placeTip(c.m.getBoundingClientRect(), tipText(c));
   }
   function hideTip() {
     tipOwner = null;
@@ -611,11 +704,23 @@ function createFoam(options) {
   const tipTimer = window.setInterval(() => {
     if (tipOwner) showTip(tipOwner);
   }, 500);
-  function closeMenu() {
+  let menuOf = null;
+  function closeMenu(restore = false) {
+    const was = menuOf, had = menu;
     menu?.remove();
     menu = null;
+    menuOf = null;
+    if (!had || !was) return;
+    was.unkeys();
+    if (!restore) return;
+    const back = restore === true && was.back?.isConnected ? was.back : null;
+    const prev = was.prev instanceof HTMLElement && was.prev.isConnected && was.prev !== document.body && !had.contains(was.prev) && !(restore === "gone" && was.prev === keys.get(was.cell.id)) ? was.prev : null;
+    const to = back ?? prev;
+    if (to) to.focus();
+    else if (had.contains(document.activeElement)) document.activeElement.blur();
   }
-  function openMenu(x, y, c) {
+  function openMenu(x, y, c, fromKeyboard = false) {
+    const prev = document.activeElement;
     closeMenu();
     const items = c.kind === "more" ? [[text("menuWorkspace"), actions.openWorkspace]] : c.state === "running" ? [[text("menuOpen"), () => actions.open(c.id)], null, [text("menuStop"), () => actions.stop(c.id)]] : c.state === "queued" ? [[text("menuOpen"), () => actions.open(c.id)], [text("menuCancel"), () => actions.cancelQueued(c.id)]] : c.state === "done" ? [[text("menuShowNow"), () => actions.showAnswer(c.id)], [text("menuOpen"), () => actions.open(c.id)]] : c.state === "wait" ? [[text("menuAnswer"), () => actions.answer(c.id)], [text("menuOpen"), () => actions.open(c.id)]] : [
       [text("menuContinue"), () => actions.mount(c.id)],
@@ -628,7 +733,7 @@ function createFoam(options) {
     ];
     if (c.kind === "topic") {
       const extra = [];
-      if (bonds.some((b2) => b2[0] === c)) extra.push([text("menuCancelMerge"), () => actions.cancelMerge(c.id)]);
+      if (bonds.some((b) => b[0] === c)) extra.push([text("menuCancelMerge"), () => actions.cancelMerge(c.id)]);
       for (const m of (model.merges ?? []).filter((m2) => m2.targetId === c.id).slice(0, 3)) extra.push([text("menuUnmerge", { name: m.title }), () => undoMerge(m.sourceId, c)]);
       if (extra.length) items.push(null, ...extra);
     }
@@ -645,15 +750,15 @@ function createFoam(options) {
       row.setAttribute("role", "menuitem");
       row.textContent = item[0];
       row.onclick = () => {
-        closeMenu();
+        closeMenu(fromKeyboard);
         item[1]();
       };
       el.appendChild(row);
     }
     document.body.appendChild(el);
-    const b = el.getBoundingClientRect();
-    el.style.left = Math.min(x, innerWidth - b.width - 8) + "px";
-    el.style.top = Math.min(y, innerHeight - b.height - 8) + "px";
+    const anchor = fromKeyboard ? c.m.getBoundingClientRect() : { left: x, right: x, top: y, bottom: y };
+    foamClampToViewport(el, anchor, fromKeyboard ? { side: "below", align: "center", gap: 6 } : { side: "below", align: "start", gap: 2 });
+    menuOf = { cell: c, back: fromKeyboard ? keys.get(c.id) ?? null : null, prev, unkeys: foamMenuKeys(el, () => closeMenu(true)) };
     el.querySelector("button")?.focus();
   }
   const outside = (e) => {
@@ -661,7 +766,7 @@ function createFoam(options) {
   };
   const keydown = (e) => {
     if (e.key === "Escape") {
-      closeMenu();
+      closeMenu(true);
       cancelDrag();
     }
   };
@@ -695,8 +800,7 @@ function createFoam(options) {
     undo.onclick = null;
   }
   function tipAt(c, s) {
-    const r = c.m.getBoundingClientRect();
-    placeTip(r.left + r.width / 2, r.top - 28, s);
+    placeTip(c.m.getBoundingClientRect(), s);
     window.setTimeout(hideTip, 1800);
   }
   function dropTarget(e, c) {
@@ -705,8 +809,11 @@ function createFoam(options) {
       const mark = options.mark();
       const card = mark?.closest("button");
       if (card?.contains(el)) return { kind: "main" };
-      const g = el.closest(".theone-cell"), o = g && cells.find((x) => x.g === g && x.mode === "live" && x.kind === "topic");
-      if (o && o !== c) return { kind: "cell", cell: o };
+      const g = el.closest(".theone-cell"), o = g && (cellAt(e.clientX, e.clientY, c, true) ?? cells.find((x) => x.g === g && x.mode === "live" && x.kind === "topic"));
+      if (o && o !== c) {
+        if (rail) continue;
+        return { kind: "cell", cell: o };
+      }
       const row = el.closest('[data-row-key^="session:"]');
       if (row) return { kind: "session", el: row, id: row.getAttribute("data-row-key").slice(8) };
     }
@@ -744,7 +851,7 @@ function createFoam(options) {
     const hit = aim({ clientX: drag.last.x, clientY: drag.last.y }, c);
     setTarget(hit);
     const resting = !hit && drag.rest ? text("mergeHold", { name: drag.rest.cell.title }) : "";
-    placeTip(drag.last.x, drag.last.y - 32, hit ? dropText(c, hit) : resting);
+    placeTip(pointerBox(drag.last.x, drag.last.y), hit ? dropText(c, hit) : resting);
   }
   const move = (e) => {
     const p = local(e), r = host.getBoundingClientRect();
@@ -818,6 +925,7 @@ function createFoam(options) {
       });
       return;
     }
+    if (rail) return;
     const firstS = trail.find((s) => now() - s.t < 90) ?? trail[0], lastS = trail[trail.length - 1];
     if (!firstS || !lastS) return;
     const dt = Math.max(16, lastS.t - firstS.t) / 1e3, vx = (lastS.x - firstS.x) / dt, vy = (lastS.y - firstS.y) / dt;
@@ -829,7 +937,7 @@ function createFoam(options) {
       c.vx = -vx * 0.15;
       c.vy = -vy * 0.15;
       c.kick = 1;
-      placeTip(e.clientX, e.clientY - 32, text(c.cur ? "currentFling" : "busyFling"));
+      placeTip(pointerBox(e.clientX, e.clientY), text(c.cur ? "currentFling" : "busyFling"));
       window.setTimeout(hideTip, 1300);
       return;
     }
@@ -1109,6 +1217,13 @@ function createFoam(options) {
       gy /= N;
       c.cx = gx;
       c.cy = gy;
+      c.vin = Infinity;
+      c.vr = 0;
+      for (const p of pts) {
+        const r = Math.hypot(p[0] - gx, p[1] - gy);
+        c.vin = Math.min(c.vin, r);
+        c.vr = Math.max(c.vr, r);
+      }
       const d = curve(pts);
       c.b.setAttribute("d", d);
       c.h.setAttribute("d", d);
@@ -1165,6 +1280,18 @@ function createFoam(options) {
       if (neck) c.nf.style.fill = other?.state === "done" ? "var(--foam-done)" : other && other.state === "idle" && !other.cur ? "var(--foam-bg)" : "var(--foam-tint)";
       c.neck.style.opacity = fx(c.alpha);
     }
+    const pressable = cells.filter((c) => c.mode === "live" && !c.hidden && c.scale >= 0.02 && !(drag?.started && drag.cell === c));
+    const radii = foamHitRadii(pressable.map((c) => ({ x: c.cx, y: c.cy, r: c.R * c.scale, floor: c.vin })), { w, h: h3 });
+    for (const c of cells) {
+      const i = pressable.indexOf(c), r = i < 0 ? 0 : radii[i];
+      if (r || c.hit) {
+        c.hit = r;
+        c.hc.setAttribute("cx", fx(c.cx));
+        c.hc.setAttribute("cy", fx(c.cy));
+        c.hc.setAttribute("r", fx(r));
+      }
+    }
+    if (menuOf && menuOf.cell.kind === "topic" && (menuOf.cell.mode === "leave" || !cells.includes(menuOf.cell))) closeMenu("gone");
     for (const v of [...ves]) {
       v.t += dt / v.dur;
       const p0 = v.from(), p2 = v.to(), k = v.t >= 1 ? 1 : v.t < 0.5 ? 2 * v.t * v.t : 1 - (-2 * v.t + 2) ** 2 / 2;
@@ -1232,6 +1359,7 @@ var foamCss = `
 .theone-foam-list{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .theone-cell{cursor:grab;pointer-events:auto}
 .theone-cell.drag{cursor:grabbing}
+.theone-cell [data-part=hit]{fill:transparent;stroke:none;pointer-events:all}
 .theone-cell [data-part=body]{stroke:none;fill:var(--foam-bg);transition:fill .8s ease}
 .theone-cell [data-part=membrane]{fill:none;stroke:var(--foam-idle-line);stroke-width:1.2;stroke-linejoin:round;stroke-linecap:round;transition:stroke .8s ease,stroke-width .4s ease}
 .theone-cell [data-part=nucleus]{fill:var(--foam-idle-dot);transition:fill .6s ease,stroke .6s ease}
@@ -1273,10 +1401,11 @@ var foamCss = `
 .theone-vesicle [data-part=nucleus]{fill:var(--foam-accent)}
 html[data-theone-foam] button:has(.theone-workspace-entry){display:none}
 [data-row-key][data-theone-drop=true]{background:color-mix(in srgb,#ff7800 10%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,#a75b1e 40%,transparent);border-radius:10px}
-.theone-foam-tip{position:fixed;z-index:1000;padding:4px 8px;border-radius:7px;background:var(--dsw-alias-label-primary,#2e2d2a);color:var(--dsw-alias-bg-base,#f4f3ef);font-size:11.5px;line-height:1.5;white-space:nowrap;pointer-events:none;opacity:0;transform:translate(-50%,3px);transition:opacity .12s,transform .12s}
-.theone-foam-tip.on{opacity:1;transform:translate(-50%,0)}
-.theone-foam-menu{position:fixed;z-index:1000;min-width:168px;padding:4px;border:.5px solid var(--dsw-alias-border-l2,#8885);border-radius:var(--dsw-radius-lg,12px);background:var(--dsw-specific-menu,var(--dsw-alias-bg-layer-2,#fff));backdrop-filter:blur(24px) saturate(1.4);box-shadow:var(--dsw-elevation-prominent,0 8px 30px #0003);color:var(--dsw-alias-label-primary)}
-.theone-foam-menu button{display:flex;width:100%;height:34px;align-items:center;padding:0 12px;border:0;border-radius:var(--dsw-radius-md,8px);background:none;color:inherit;font:inherit;font-size:13.5px;cursor:pointer;text-align:left}
+.theone-foam-tip{position:fixed;z-index:1000;padding:4px 8px;border-radius:7px;background:var(--dsw-alias-label-primary,#2e2d2a);color:var(--dsw-alias-bg-base,#f4f3ef);font-size:11.5px;line-height:1.5;max-width:min(240px,calc(100vw - 16px));box-sizing:border-box;white-space:normal;overflow-wrap:anywhere;pointer-events:none;opacity:0;transform:translateY(3px);transition:opacity .12s,transform .12s}
+.theone-foam-tip[data-side=below]{transform:translateY(-3px)}
+.theone-foam-tip.on{opacity:1;transform:none}
+.theone-foam-menu{position:fixed;z-index:1000;box-sizing:border-box;min-width:168px;max-width:min(320px,calc(100vw - 16px));max-height:calc(100vh - 16px);overflow-y:auto;overscroll-behavior:contain;padding:4px;border:.5px solid var(--dsw-alias-border-l2,#8885);border-radius:var(--dsw-radius-lg,12px);background:var(--dsw-specific-menu,var(--dsw-alias-bg-layer-2,#fff));backdrop-filter:blur(24px) saturate(1.4);box-shadow:var(--dsw-elevation-prominent,0 8px 30px #0003);color:var(--dsw-alias-label-primary)}
+.theone-foam-menu button{display:flex;width:100%;min-height:34px;align-items:center;padding:7px 12px;line-height:1.4;white-space:normal;overflow-wrap:anywhere;border:0;border-radius:var(--dsw-radius-md,8px);background:none;color:inherit;font:inherit;font-size:13.5px;cursor:pointer;text-align:left}
 .theone-foam-menu button:hover,.theone-foam-menu button:focus-visible{background:var(--dsw-alias-interactive-bg-hover,#0000000a);outline:none}
 .theone-foam-menu hr{border:0;border-top:.5px solid var(--dsw-alias-border-l2,#8885);margin:4px 2px}
 @media(prefers-reduced-motion:reduce){.theone-cell [data-part=membrane],.theone-cell [data-part=body]{transition:none}.theone-cell.pending [data-part=membrane]{animation:none}.theone-foam-undo,.theone-foam-tip{transition:none}}
