@@ -77,6 +77,7 @@ let ContextStore = (() => {
     let _markStowed_decorators;
     let _setCatalogConsent_decorators;
     let _setCatalogExcluded_decorators;
+    let _rememberCatalogSessions_decorators;
     let _markIndex_decorators;
     let _importTopics_decorators;
     let _mount_decorators;
@@ -143,6 +144,7 @@ let ContextStore = (() => {
             _markStowed_decorators = [publishes];
             _setCatalogConsent_decorators = [publishes];
             _setCatalogExcluded_decorators = [publishes];
+            _rememberCatalogSessions_decorators = [publishes];
             _markIndex_decorators = [publishes];
             _importTopics_decorators = [publishes];
             _mount_decorators = [publishes];
@@ -206,6 +208,7 @@ let ContextStore = (() => {
             __esDecorate(this, null, _markStowed_decorators, { kind: "method", name: "markStowed", static: false, private: false, access: { has: obj => "markStowed" in obj, get: obj => obj.markStowed }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _setCatalogConsent_decorators, { kind: "method", name: "setCatalogConsent", static: false, private: false, access: { has: obj => "setCatalogConsent" in obj, get: obj => obj.setCatalogConsent }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _setCatalogExcluded_decorators, { kind: "method", name: "setCatalogExcluded", static: false, private: false, access: { has: obj => "setCatalogExcluded" in obj, get: obj => obj.setCatalogExcluded }, metadata: _metadata }, null, _instanceExtraInitializers);
+            __esDecorate(this, null, _rememberCatalogSessions_decorators, { kind: "method", name: "rememberCatalogSessions", static: false, private: false, access: { has: obj => "rememberCatalogSessions" in obj, get: obj => obj.rememberCatalogSessions }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _markIndex_decorators, { kind: "method", name: "markIndex", static: false, private: false, access: { has: obj => "markIndex" in obj, get: obj => obj.markIndex }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _importTopics_decorators, { kind: "method", name: "importTopics", static: false, private: false, access: { has: obj => "importTopics" in obj, get: obj => obj.importTopics }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _mount_decorators, { kind: "method", name: "mount", static: false, private: false, access: { has: obj => "mount" in obj, get: obj => obj.mount }, metadata: _metadata }, null, _instanceExtraInitializers);
@@ -313,6 +316,7 @@ let ContextStore = (() => {
       CREATE TABLE IF NOT EXISTS history_index (
         session_id TEXT PRIMARY KEY, through_seq INTEGER NOT NULL, status TEXT NOT NULL, error_code TEXT
       );
+      CREATE TABLE IF NOT EXISTS catalog_seen_sessions (session_id TEXT PRIMARY KEY NOT NULL);
       CREATE TABLE IF NOT EXISTS history_turns (
         session_id TEXT NOT NULL, user_seq INTEGER NOT NULL, end_seq INTEGER NOT NULL,
         fingerprint TEXT NOT NULL, context_id TEXT NOT NULL REFERENCES contexts(id),
@@ -449,6 +453,15 @@ let ContextStore = (() => {
       CREATE TABLE IF NOT EXISTS hidden_contexts (
         context_id TEXT PRIMARY KEY REFERENCES contexts(id), reason TEXT NOT NULL, detected_at INTEGER NOT NULL
       );
+    `);
+            // Index suppression is not evidence of existence: merge/delete can mark an unrun Worker excluded.
+            // Old merges saved the previous index row; recover that evidence without trusting the sentinel.
+            this.db.exec(`
+      INSERT OR IGNORE INTO catalog_seen_sessions SELECT session_id FROM history_index WHERE status IN ('ready', 'failed', 'skipped');
+      INSERT OR IGNORE INTO catalog_seen_sessions
+        SELECT json_extract(journal, '$.index.sessionId') FROM topic_merges
+        WHERE json_extract(journal, '$.index.row.status') IN ('ready', 'failed', 'skipped')
+          AND json_type(journal, '$.index.sessionId') = 'text';
     `);
             this.learningJournal = new LearningJournal(this.db, stream => this.learningSnapshot(stream), (stream, snapshot) => this.restoreLearning(stream, snapshot), (kind, args) => {
                 if (!['learnLink', 'setManualLink', 'markSeen'].includes(kind) && !this.contexts().some(topic => topic.id === args[0]))
@@ -744,8 +757,17 @@ let ContextStore = (() => {
             const row = this.db.prepare('SELECT * FROM history_index WHERE session_id = ?').get(sessionId);
             return row ? { throughSeq: Number(row.through_seq), status: String(row.status) } : undefined;
         }
+        /** Durable existence evidence, independent of indexing suppression and merge undo. */
+        seenCatalogSessions() {
+            return new Set(this.db.prepare('SELECT session_id FROM catalog_seen_sessions').all().map(row => String(row.session_id)));
+        }
+        rememberCatalogSessions(sessionIds) {
+            this.db.prepare('INSERT OR IGNORE INTO catalog_seen_sessions SELECT value FROM json_each(?)').run(JSON.stringify(sessionIds));
+        }
         markIndex(sessionId, throughSeq, status, errorCode) {
             this.db.prepare('INSERT OR REPLACE INTO history_index VALUES (?, ?, ?, ?)').run(sessionId, throughSeq, status, errorCode ?? null);
+            if (status !== 'excluded')
+                this.rememberCatalogSessions([sessionId]);
         }
         /** A turn of a topic the user deleted; the catalog must not extract it again while it is unchanged. */
         dismissedTurn(sessionId, seq) {

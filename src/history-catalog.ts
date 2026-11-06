@@ -149,6 +149,8 @@ export class HistoryCatalog {
     let records
     try { records = await this.ctx.sessionQuery.listSessions(signal) }
     catch { signal.throwIfAborted(); this.status.failed = 1; this.status.pending = 1; this.settledPending = 1; return }
+    // Headers prove existence even when content indexing is skipped, excluded or waiting for consent.
+    this.store.rememberCatalogSessions(records.map(record => record.header.id))
     this.status.pending = records.length
     const archived = this.archivedSessionIds()
     let budget = this.batchBudget
@@ -286,15 +288,16 @@ export class HistoryCatalog {
     const exclusions = this.store.catalogExclusions()
     const directories = new Map(records.map(record => [record.header.id, record.header.cwd]))
     const excluded = (id: string) => catalogSessionExcluded(id, directories.get(id), exclusions)
+    const seen = this.store.seenCatalogSessions()
     const hidden: { id: string; reason: HiddenReason }[] = []
     for (const context of this.store.contexts()) {
       const conversations = [context.workingSessionId, ...this.store.sources(context.id)]
-      // Only conversations the catalog has actually seen count: a Worker session exists on disk only
-      // once TheOne has run it, so an untouched placeholder must not look like a lost conversation.
-      const known = conversations.filter(sessionId => this.store.indexState(sessionId) !== undefined)
+      // A merge's excluded index entry may describe a Worker that never existed. Only observed
+      // sessions (including pre-merge evidence) can make a missing conversation an orphan.
+      const known = conversations.filter(sessionId => seen.has(sessionId))
       if (known.length && known.every(excluded)) hidden.push({ id: context.id, reason: 'excluded' })
       else if (known.length && known.every(sessionId => archived.has(sessionId))) hidden.push({ id: context.id, reason: 'archived' })
-      // Nothing left to read: every conversation is off disk, and at least one of them was indexed.
+      // Nothing left to read: every conversation is absent, and at least one was actually seen.
       else if (known.length && !conversations.some(sessionId => live.has(sessionId)))
         hidden.push({ id: context.id, reason: 'orphaned' })
     }

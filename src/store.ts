@@ -140,6 +140,7 @@ export class ContextStore {
       CREATE TABLE IF NOT EXISTS history_index (
         session_id TEXT PRIMARY KEY, through_seq INTEGER NOT NULL, status TEXT NOT NULL, error_code TEXT
       );
+      CREATE TABLE IF NOT EXISTS catalog_seen_sessions (session_id TEXT PRIMARY KEY NOT NULL);
       CREATE TABLE IF NOT EXISTS history_turns (
         session_id TEXT NOT NULL, user_seq INTEGER NOT NULL, end_seq INTEGER NOT NULL,
         fingerprint TEXT NOT NULL, context_id TEXT NOT NULL REFERENCES contexts(id),
@@ -276,6 +277,15 @@ export class ContextStore {
       CREATE TABLE IF NOT EXISTS hidden_contexts (
         context_id TEXT PRIMARY KEY REFERENCES contexts(id), reason TEXT NOT NULL, detected_at INTEGER NOT NULL
       );
+    `)
+    // Index suppression is not evidence of existence: merge/delete can mark an unrun Worker excluded.
+    // Old merges saved the previous index row; recover that evidence without trusting the sentinel.
+    this.db.exec(`
+      INSERT OR IGNORE INTO catalog_seen_sessions SELECT session_id FROM history_index WHERE status IN ('ready', 'failed', 'skipped');
+      INSERT OR IGNORE INTO catalog_seen_sessions
+        SELECT json_extract(journal, '$.index.sessionId') FROM topic_merges
+        WHERE json_extract(journal, '$.index.row.status') IN ('ready', 'failed', 'skipped')
+          AND json_type(journal, '$.index.sessionId') = 'text';
     `)
     this.learningJournal = new LearningJournal(this.db, stream => this.learningSnapshot(stream),
       (stream, snapshot) => this.restoreLearning(stream, snapshot),
@@ -591,9 +601,20 @@ export class ContextStore {
     return row ? { throughSeq: Number(row.through_seq), status: String(row.status) } : undefined
   }
 
+  /** Durable existence evidence, independent of indexing suppression and merge undo. */
+  seenCatalogSessions(): Set<string> {
+    return new Set(this.db.prepare('SELECT session_id FROM catalog_seen_sessions').all().map(row => String(row.session_id)))
+  }
+
+  @publishes
+  rememberCatalogSessions(sessionIds: readonly string[]): void {
+    this.db.prepare('INSERT OR IGNORE INTO catalog_seen_sessions SELECT value FROM json_each(?)').run(JSON.stringify(sessionIds))
+  }
+
   @publishes
   markIndex(sessionId: string, throughSeq: number, status: 'ready' | 'failed' | 'skipped' | 'excluded', errorCode?: string): void {
     this.db.prepare('INSERT OR REPLACE INTO history_index VALUES (?, ?, ?, ?)').run(sessionId, throughSeq, status, errorCode ?? null)
+    if (status !== 'excluded') this.rememberCatalogSessions([sessionId])
   }
 
   /** A turn of a topic the user deleted; the catalog must not extract it again while it is unchanged. */

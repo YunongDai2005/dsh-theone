@@ -145,6 +145,9 @@ export declare class ContextStore {
         throughSeq: number;
         status: string;
     } | undefined;
+    /** Durable existence evidence, independent of indexing suppression and merge undo. */
+    seenCatalogSessions(): Set<string>;
+    rememberCatalogSessions(sessionIds: readonly string[]): void;
     markIndex(sessionId: string, throughSeq: number, status: 'ready' | 'failed' | 'skipped' | 'excluded', errorCode?: string): void;
     /** A turn of a topic the user deleted; the catalog must not extract it again while it is unchanged. */
     dismissedTurn(sessionId: string, seq: number): string | undefined;
