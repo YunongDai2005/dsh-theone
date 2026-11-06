@@ -8,6 +8,11 @@ import type { CatalogSnapshot } from './catalog-types.ts';
 import type { BubbleEvent, BubbleSnapshot } from './bubble-types.ts';
 /** The cluster's model from TheOne's bubble snapshot. Weight: recency (half-life about three days) and the last 30 days' use. */
 export declare function modelFromBubbles(snapshot: BubbleSnapshot): FoamModel;
+/**
+ * Possible duplicates TheOne noticed and keeps for the user: pending, not past their time, both topics on the
+ * cluster, and neither already in a merge. Each keeps both directions, TheOne's default (new into old) first.
+ */
+export declare function suggestionsFromBubbles(snapshot: BubbleSnapshot): NonNullable<FoamModel['suggestions']>;
 /** What each routing event looks like on the cluster. Hints and bookkeeping events play nothing. */
 export declare function foamEventsFrom(events: BubbleEvent[], snapshot: BubbleSnapshot): FoamEvent[];
 export interface FoamHostOptions {

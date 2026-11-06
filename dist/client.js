@@ -209,6 +209,11 @@ function createFoam(options) {
   svg.innerHTML = '<defs></defs><g data-part="cells"></g><g data-part="necks"></g><g data-part="vesicles"></g>';
   host.appendChild(svg);
   const defs = svg.firstChild, layer = svg.children[1], necks = svg.children[2], vlayer = svg.children[3];
+  const threads = document.createElementNS(NS, "g"), pores = document.createElementNS(NS, "g");
+  threads.setAttribute("data-part", "threads");
+  pores.setAttribute("data-part", "pores");
+  layer.before(threads);
+  vlayer.before(pores);
   const tip2 = document.createElement("div");
   tip2.className = "theone-foam-tip";
   document.body.appendChild(tip2);
@@ -526,6 +531,7 @@ function createFoam(options) {
       links.set(link.b + "|" + link.a, link.weight);
     }
     bonds = (model.pendingMerges ?? []).map((m) => [byId(m.id), byId(m.into)]).filter((b) => !!b[0] && !!b[1]);
+    syncDups();
     first = false;
     syncList();
     for (let i = 0; i < pending.length; ) {
@@ -587,6 +593,8 @@ function createFoam(options) {
     if (c.state === "queued") return who + text("queued");
     if (c.state === "done") return who + text("answered");
     if (c.state === "running") return who + text("running", { s: Math.max(0, Math.round((Date.now() - (c.startedAt ?? Date.now())) / 1e3)) });
+    const dup = dupsOf(c)[0];
+    if (dup) return who + text("dupTip", { name: (dup.a === c ? dup.b : dup.a).title });
     return c.full ? "" : c.title;
   }
   function placeTip(x, y, s) {
@@ -628,6 +636,7 @@ function createFoam(options) {
     ];
     if (c.kind === "topic") {
       const extra = [];
+      for (const d of dupsOf(c)) extra.push([text("dupMenu", { name: (d.a === c ? d.b : d.a).title }), () => openDup(d.s.id, c)]);
       if (bonds.some((b2) => b2[0] === c)) extra.push([text("menuCancelMerge"), () => actions.cancelMerge(c.id)]);
       for (const m of (model.merges ?? []).filter((m2) => m2.targetId === c.id).slice(0, 3)) extra.push([text("menuUnmerge", { name: m.title }), () => undoMerge(m.sourceId, c)]);
       if (extra.length) items.push(null, ...extra);
@@ -699,6 +708,221 @@ function createFoam(options) {
     placeTip(r.left + r.width / 2, r.top - 28, s);
     window.setTimeout(hideTip, 1800);
   }
+  const dups = /* @__PURE__ */ new Map();
+  const answering = /* @__PURE__ */ new Set();
+  let dupPanel = null, keyboard = false;
+  const dupsOf = (c) => [...dups.values()].filter((d) => (d.a === c || d.b === c) && !answering.has(d.s.id));
+  const shownCell = (d) => [d.a, d.b].find((c) => !c.hidden && c.mode === "live") ?? d.a;
+  function syncDups() {
+    const seen = /* @__PURE__ */ new Set();
+    for (const s of model.suggestions ?? []) {
+      const a = byId(s.a), b = byId(s.b);
+      if (!a || !b || a === b) continue;
+      seen.add(s.id);
+      let d = dups.get(s.id);
+      if (!d) {
+        const thread = document.createElementNS(NS, "path");
+        thread.setAttribute("class", "theone-dup-thread");
+        threads.appendChild(thread);
+        const pore = document.createElementNS(NS, "g");
+        pore.setAttribute("class", "theone-dup");
+        pore.innerHTML = '<circle data-part="hit" r="8"/><circle data-part="ring" r="3.2"/>';
+        pores.appendChild(pore);
+        const id = s.id;
+        pore.addEventListener("pointerdown", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        });
+        pore.addEventListener("click", () => {
+          if (dupPanel?.id === id) closeDup();
+          else openDup(id);
+        });
+        pore.addEventListener("pointerenter", () => {
+          if (drag) return;
+          const r = pore.getBoundingClientRect();
+          placeTip(r.left + r.width / 2, r.top - 26, text("dupTitle"));
+        });
+        pore.addEventListener("pointerleave", () => {
+          if (!tipOwner) tip2.classList.remove("on");
+        });
+        d = { s, a, b, thread, pore, hit: pore.firstChild, alpha: 0 };
+        dups.set(id, d);
+      }
+      d.s = s;
+      d.a = a;
+      d.b = b;
+    }
+    for (const [id, d] of dups) if (!seen.has(id)) {
+      d.thread.remove();
+      d.pore.remove();
+      dups.delete(id);
+    }
+    for (const id of answering) if (!seen.has(id)) answering.delete(id);
+    if (dupPanel && !dups.has(dupPanel.id)) closeDup();
+  }
+  function dupBetween(c, into) {
+    for (const d of dupsOf(c)) {
+      if (d.a !== into && d.b !== into) continue;
+      const direction = d.s.directions.find((x) => x.sourceId === c.id && x.targetId === into.id);
+      if (direction) return { id: d.s.id, direction };
+    }
+    return void 0;
+  }
+  function drawDups(dt) {
+    for (const d of dups.values()) {
+      const { a, b } = d;
+      const show = !answering.has(d.s.id) && sz > 0.7 && [a, b].every((c) => cells.includes(c) && c.mode === "live" && !c.hidden && c.scale > 0.5) && !(drag?.started && (drag.cell === a || drag.cell === b));
+      d.alpha = reduced() ? show ? 1 : 0 : ease(d.alpha, show ? 1 : 0, show ? 1.4 : 6, dt);
+      d.hit.style.pointerEvents = drag || !show ? "none" : "";
+      if (d.alpha < 0.02) {
+        d.thread.setAttribute("d", "");
+        d.pore.style.display = "none";
+        continue;
+      }
+      d.pore.style.display = "";
+      const ra = a.R * a.scale, rb = b.R * b.scale, dx = b.cx - a.cx, dy = b.cy - a.cy, dist = Math.hypot(dx, dy) || 0.01, ux = dx / dist, uy = dy / dist;
+      const gap = dist - ra - rb;
+      let path = "", px, py;
+      if (gap < Math.min(ra, rb) * 1.4) {
+        path = bridge(pos(a), ra, pos(b), rb, 1e6, 0.42)?.edge ?? "";
+        px = (a.cx + ux * ra + b.cx - ux * rb) / 2;
+        py = (a.cy + uy * ra + b.cy - uy * rb) / 2;
+      } else {
+        const sx = a.cx + ux * (ra + 2), sy = a.cy + uy * (ra + 2), ex = b.cx - ux * (rb + 2), ey = b.cy - uy * (rb + 2);
+        const mx = (sx + ex) / 2 - uy * gap * 0.12, my = (sy + ey) / 2 + ux * gap * 0.12;
+        path = `M${fx(sx)} ${fx(sy)}Q${fx(mx)} ${fx(my)} ${fx(ex)} ${fx(ey)}`;
+        px = 0.25 * sx + 0.5 * mx + 0.25 * ex;
+        py = 0.25 * sy + 0.5 * my + 0.25 * ey;
+      }
+      const open = dupPanel?.id === d.s.id;
+      const o = d.alpha * (open ? 1 : 0.8 + 0.2 * Math.sin(t * 1.2 + a.phase));
+      d.thread.setAttribute("d", path);
+      d.thread.style.opacity = fx(o * 0.85);
+      d.thread.classList.toggle("open", open);
+      d.pore.setAttribute("transform", `translate(${fx(px)} ${fx(py)}) scale(${fx(Math.max(0.7, sz))})`);
+      d.pore.style.opacity = fx(o);
+      d.pore.classList.toggle("open", open);
+    }
+  }
+  function openDup(id, from) {
+    const d = dups.get(id);
+    if (!d) return;
+    const back = document.activeElement;
+    closeMenu();
+    closeDup(false);
+    hideTip();
+    const el = document.createElement("div");
+    el.className = "theone-foam-menu theone-foam-dup";
+    el.setAttribute("role", "dialog");
+    el.setAttribute("aria-label", text("dupTitle"));
+    const head = document.createElement("div");
+    head.className = "theone-foam-dup-head";
+    const title = document.createElement("div");
+    title.className = "theone-foam-dup-title";
+    title.textContent = text("dupTitle");
+    head.appendChild(title);
+    for (const c of [d.a, d.b]) {
+      const name = document.createElement("div");
+      name.className = "theone-foam-dup-name";
+      name.textContent = c.title;
+      head.appendChild(name);
+    }
+    el.appendChild(head);
+    const row = (label, run) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = label;
+      button.onclick = run;
+      el.appendChild(button);
+    };
+    el.appendChild(document.createElement("hr"));
+    for (const direction of d.s.directions) {
+      const into = direction.targetId === d.a.id ? d.a : d.b;
+      row(text("dupInto", { name: into.title }), () => acceptDup(id, direction));
+    }
+    el.appendChild(document.createElement("hr"));
+    row(text("dupNo"), () => declineDup(id));
+    row(text("dupLater"), () => laterDup(id));
+    el.addEventListener("keydown", (e) => {
+      const buttons = [...el.querySelectorAll("button")], at = buttons.indexOf(document.activeElement);
+      const by = e.key === "ArrowDown" || e.key === "Tab" && !e.shiftKey ? 1 : e.key === "ArrowUp" || e.key === "Tab" && e.shiftKey ? -1 : 0;
+      const jump = e.key === "Home" ? 0 : e.key === "End" ? buttons.length - 1 : -1;
+      if (!by && jump < 0) return;
+      e.preventDefault();
+      buttons[jump >= 0 ? jump : (at + by + buttons.length) % buttons.length]?.focus();
+    });
+    document.body.appendChild(el);
+    dupPanel = { el, id, back, from };
+    const boxes = [d.a, d.b].filter((c) => !c.hidden && c.scale > 0.3).map((c) => c.m.getBoundingClientRect());
+    const hr = host.getBoundingClientRect(), p = el.getBoundingClientRect();
+    const left = boxes.length ? Math.min(...boxes.map((r) => r.left)) : hr.left, right = boxes.length ? Math.max(...boxes.map((r) => r.right)) : hr.right;
+    const top = boxes.length ? Math.min(...boxes.map((r) => r.top)) : hr.top, bottom = boxes.length ? Math.max(...boxes.map((r) => r.bottom)) : hr.top;
+    let y = bottom + 8;
+    if (y + p.height > innerHeight - 8) y = Math.max(8, top - p.height - 8);
+    el.style.left = clamp((left + right) / 2 - p.width / 2, 8, Math.max(8, innerWidth - p.width - 8)) + "px";
+    el.style.top = y + "px";
+    el.querySelector("button")?.focus();
+  }
+  function closeDup(restore = true) {
+    if (!dupPanel) return;
+    const { el, back, from, id } = dupPanel;
+    dupPanel = null;
+    el.remove();
+    if (!restore) return;
+    if (back instanceof HTMLElement && back.isConnected && back !== document.body && !back.closest(".theone-foam-menu")) {
+      back.focus();
+      return;
+    }
+    const d = dups.get(id), c = from ?? (d && shownCell(d));
+    if (keyboard && c) keys.get(c.id)?.focus();
+  }
+  function acceptDup(id, direction) {
+    const d = dups.get(id);
+    if (!d) return;
+    closeDup();
+    const c = byId(direction.sourceId), into = byId(direction.targetId), near = (into && !into.hidden ? into : void 0) ?? shownCell(d);
+    answering.add(id);
+    if (c && into && !c.hidden && !into.hidden) bonds = [...bonds.filter((b) => b[0] !== c && b[1] !== c), [c, into]];
+    void actions.answerSuggestion(id, "accept", direction).then((result) => {
+      if (result === "merged" && c && into) {
+        apply2({ kind: "merged", id: c.id, into: into.id });
+        offerUndo(c.id, into);
+      } else if (result === "failed") {
+        answering.delete(id);
+        if (c) bonds = bonds.filter((b) => b[0] !== c);
+        tipAt(near, text("mergeFailed"));
+      }
+    });
+  }
+  function declineDup(id) {
+    const d = dups.get(id);
+    if (!d) return;
+    closeDup();
+    answering.add(id);
+    void actions.answerSuggestion(id, "decline").then((result) => {
+      if (result === "failed") {
+        answering.delete(id);
+        tipAt(shownCell(d), text("actionFailed"));
+      }
+    });
+  }
+  function laterDup(id) {
+    closeDup();
+    void actions.answerSuggestion(id, "later");
+  }
+  const dupPointer = (e) => {
+    keyboard = false;
+    if (dupPanel && !dupPanel.el.contains(e.target) && !dups.get(dupPanel.id)?.pore.contains(e.target)) closeDup(false);
+  };
+  const dupKey = (e) => {
+    keyboard = true;
+    if (e.key === "Escape" && dupPanel) {
+      e.preventDefault();
+      closeDup();
+    }
+  };
+  document.addEventListener("pointerdown", dupPointer, true);
+  document.addEventListener("keydown", dupKey, true);
   function dropTarget(e, c) {
     for (const el of document.elementsFromPoint(e.clientX, e.clientY)) {
       if (c.g.contains(el)) continue;
@@ -793,6 +1017,11 @@ function createFoam(options) {
       return;
     }
     if (hit?.kind === "cell") {
+      const dup = dupBetween(c, hit.cell);
+      if (dup) {
+        acceptDup(dup.id, dup.direction);
+        return;
+      }
       const into = hit.cell;
       bonds = [...bonds.filter((b) => b[0] !== c && b[1] !== c), [c, into]];
       void actions.merge(c.id, into.id).then((result) => {
@@ -1165,6 +1394,7 @@ function createFoam(options) {
       if (neck) c.nf.style.fill = other?.state === "done" ? "var(--foam-done)" : other && other.state === "idle" && !other.cur ? "var(--foam-bg)" : "var(--foam-tint)";
       c.neck.style.opacity = fx(c.alpha);
     }
+    drawDups(dt);
     for (const v of [...ves]) {
       v.t += dt / v.dur;
       const p0 = v.from(), p2 = v.to(), k = v.t >= 1 ? 1 : v.t < 0.5 ? 2 * v.t * v.t : 1 - (-2 * v.t + 2) ** 2 / 2;
@@ -1215,6 +1445,9 @@ function createFoam(options) {
       window.removeEventListener("blur", blur);
       document.removeEventListener("pointerdown", outside, true);
       document.removeEventListener("keydown", keydown, true);
+      closeDup(false);
+      document.removeEventListener("pointerdown", dupPointer, true);
+      document.removeEventListener("keydown", dupKey, true);
       closeMenu();
       hideUndo();
       undo.remove();
@@ -1269,6 +1502,17 @@ var foamCss = `
 .theone-foam-undo.on{opacity:1;pointer-events:auto;transform:translate(-50%,0)}
 .theone-cell.more [data-part=membrane]{stroke-dasharray:1.2 3}
 .theone-neck [data-part=edge]{fill:none;stroke:var(--foam-line);stroke-width:1.3;stroke-linecap:round}
+.theone-dup-thread{fill:none;stroke:var(--foam-line);stroke-width:1.2;stroke-linecap:round;stroke-dasharray:0 3.4;pointer-events:none}
+.theone-dup-thread.open{stroke:var(--foam-accent)}
+.theone-dup{cursor:pointer}
+.theone-dup [data-part=hit]{fill:none;stroke:none;pointer-events:all}
+.theone-dup [data-part=ring]{fill:var(--foam-bg);stroke:var(--foam-line);stroke-width:1.1;stroke-linecap:round;stroke-dasharray:0 2.5;pointer-events:none;transition:stroke .2s ease}
+.theone-dup:hover [data-part=ring],.theone-dup.open [data-part=ring]{stroke:var(--foam-accent)}
+.theone-foam-dup{width:max-content;max-width:min(260px,calc(100vw - 16px))}
+.theone-foam-dup-head{padding:6px 12px 4px}
+.theone-foam-dup-title{font-size:12px;line-height:1.5;color:var(--dsw-alias-label-secondary,#8a8a86)}
+.theone-foam-dup-name{font-size:13.5px;line-height:1.4;padding:2px 0;white-space:normal;overflow-wrap:anywhere}
+.theone-foam-menu.theone-foam-dup button{height:auto;min-height:34px;padding:7px 12px;line-height:1.35;white-space:normal;overflow-wrap:anywhere}
 .theone-vesicle [data-part=membrane]{fill:var(--foam-tint);stroke:var(--foam-accent);stroke-width:1.1}
 .theone-vesicle [data-part=nucleus]{fill:var(--foam-accent)}
 html[data-theone-foam] button:has(.theone-workspace-entry){display:none}
@@ -1279,7 +1523,7 @@ html[data-theone-foam] button:has(.theone-workspace-entry){display:none}
 .theone-foam-menu button{display:flex;width:100%;height:34px;align-items:center;padding:0 12px;border:0;border-radius:var(--dsw-radius-md,8px);background:none;color:inherit;font:inherit;font-size:13.5px;cursor:pointer;text-align:left}
 .theone-foam-menu button:hover,.theone-foam-menu button:focus-visible{background:var(--dsw-alias-interactive-bg-hover,#0000000a);outline:none}
 .theone-foam-menu hr{border:0;border-top:.5px solid var(--dsw-alias-border-l2,#8885);margin:4px 2px}
-@media(prefers-reduced-motion:reduce){.theone-cell [data-part=membrane],.theone-cell [data-part=body]{transition:none}.theone-cell.pending [data-part=membrane]{animation:none}.theone-foam-undo,.theone-foam-tip{transition:none}}
+@media(prefers-reduced-motion:reduce){.theone-cell [data-part=membrane],.theone-cell [data-part=body]{transition:none}.theone-cell.pending [data-part=membrane]{animation:none}.theone-foam-undo,.theone-foam-tip{transition:none}.theone-dup [data-part=ring]{transition:none}}
 `;
 
 // src/client-foam-host.ts
@@ -1319,7 +1563,20 @@ function modelFromBubbles(snapshot) {
   });
   const links = snapshot.edges.map((edge) => ({ a: edge.a, b: edge.b, weight: edge.relation === "kept_apart" ? -0.3 : Math.max(0, Math.min(1, edge.strength)) }));
   const pendingMerges = (snapshot.merges ?? []).filter((merge) => merge.state === "queued" || merge.state === "executing").map((merge) => ({ id: merge.sourceId, into: merge.targetId }));
-  return { topics, links, pendingMerges };
+  return { topics, links, pendingMerges, suggestions: suggestionsFromBubbles(snapshot) };
+}
+function suggestionsFromBubbles(snapshot) {
+  const shown = new Set(snapshot.topics.map((topic) => topic.id));
+  const merging = new Set((snapshot.merges ?? []).filter((merge) => merge.state === "queued" || merge.state === "executing").flatMap((merge) => [merge.sourceId, merge.targetId]));
+  const out = [];
+  for (const suggestion of snapshot.mergeSuggestions ?? []) {
+    const [a, b] = suggestion.pair;
+    if (suggestion.state !== "pending" || suggestion.expiresAt <= snapshot.serverTime || a === b) continue;
+    if (!shown.has(a) || !shown.has(b) || merging.has(a) || merging.has(b)) continue;
+    const directions = suggestion.directions.filter((d) => d.sourceId === a && d.targetId === b || d.sourceId === b && d.targetId === a).map((d) => ({ sourceId: d.sourceId, targetId: d.targetId }));
+    if (directions.length) out.push({ id: suggestion.suggestionId, a, b, directions });
+  }
+  return out;
 }
 function foamEventsFrom(events, snapshot) {
   const items = new Map(snapshot.workItems.map((item) => [item.id, item]));
@@ -1607,6 +1864,26 @@ function mountFoamHost(options) {
       const ok = await act({ action: "unmerge", id: sourceId });
       if (ok) await readCatalog(false);
       return ok;
+    },
+    answerSuggestion: async (suggestionId, response, direction) => {
+      const requestId = typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${suggestionId}:${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+      const pick = response === "accept" && direction ? { sourceId: direction.sourceId, targetId: direction.targetId, requestId } : {};
+      try {
+        const res = await fetch("/api/theone/topics", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          signal,
+          cache: "no-store",
+          body: JSON.stringify({ action: "mergeSuggestion", suggestionId, response, ...pick })
+        });
+        if (response !== "accept") return res.ok ? "done" : "failed";
+        if (res.status === 200) void readCatalog(false);
+        return res.status === 200 ? "merged" : res.status === 202 ? "queued" : "failed";
+      } catch {
+        return "failed";
+      } finally {
+        refresh();
+      }
     },
     attach: (id, sessionId) => act({ action: "attach", id, sessionId }),
     putAside: (id) => act({ action: "status", id, done: true }),
@@ -2250,6 +2527,12 @@ var zh = {
   "foam.menuCancel": "\u53D6\u6D88\u6392\u961F",
   "foam.menuShowNow": "\u6253\u5F00\u4E3B\u804A\u5929",
   "foam.menuWorkspace": "\u6253\u5F00\u8BDD\u9898\u5DE5\u4F5C\u533A",
+  "foam.dupMenu": "\u53EF\u80FD\u548C\u300C{name}\u300D\u91CD\u590D\u2026",
+  "foam.dupTip": "\u53EF\u80FD\u548C\u300C{name}\u300D\u91CD\u590D",
+  "foam.dupTitle": "\u53EF\u80FD\u662F\u540C\u4E00\u4EF6\u4E8B",
+  "foam.dupInto": "\u5E76\u8FDB\u300C{name}\u300D",
+  "foam.dupNo": "\u4E0D\u662F\u4E00\u56DE\u4E8B",
+  "foam.dupLater": "\u7A0D\u540E",
   "catalog.subtitle": "\u76F8\u5173\u7684\u4E8B\u653E\u5728\u4E00\u8D77\uFF0C\u56DE\u4E3B\u804A\u5929\u63A5\u7740\u804A\u3002",
   "catalog.figTopics": "\u4E2A\u8BDD\u9898",
   "catalog.figGroups": "\u5DE5\u4F5C\u533A",
@@ -2710,6 +2993,12 @@ var en = {
   "foam.menuCancel": "Cancel",
   "foam.menuShowNow": "Open main chat",
   "foam.menuWorkspace": "Open Topic workspaces",
+  "foam.dupMenu": 'Maybe the same as "{name}"\u2026',
+  "foam.dupTip": 'Maybe the same as "{name}"',
+  "foam.dupTitle": "Maybe the same thing",
+  "foam.dupInto": 'Merge into "{name}"',
+  "foam.dupNo": "Not the same",
+  "foam.dupLater": "Later",
   "catalog.subtitle": "Related things together. Carry on in main chat.",
   "catalog.figTopics": "topics",
   "catalog.figGroups": "Workspaces",

@@ -227,6 +227,12 @@ export declare const zh: {
     readonly 'foam.menuCancel': "取消排队";
     readonly 'foam.menuShowNow': "打开主聊天";
     readonly 'foam.menuWorkspace': "打开话题工作区";
+    readonly 'foam.dupMenu': "可能和「{name}」重复…";
+    readonly 'foam.dupTip': "可能和「{name}」重复";
+    readonly 'foam.dupTitle': "可能是同一件事";
+    readonly 'foam.dupInto': "并进「{name}」";
+    readonly 'foam.dupNo': "不是一回事";
+    readonly 'foam.dupLater': "稍后";
     readonly "catalog.subtitle": "相关的事放在一起，回主聊天接着聊。";
     readonly "catalog.figTopics": "个话题";
     readonly 'catalog.figGroups': "工作区";
