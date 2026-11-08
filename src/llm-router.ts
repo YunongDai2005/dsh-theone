@@ -372,7 +372,7 @@ export class DshRouter implements RoutingRouter {
           decision = validateRoutingDecision(request.decode(value), { ...input, currentId: payload.currentId ?? undefined })
           this.budget.succeeded()
         } catch (error) {
-          const failure = routingFailure(error)
+          const failure = bounded.aborted && !signal?.aborted ? new RouterFailure('ROUTER_TIMEOUT') : routingFailure(error)
           attempt.errorCode = failure.code
           if (failure.detail) attempt.errorDetail = failure.detail
           if (number >= 2 || bounded.aborted || !retryable(failure)) throw failure
@@ -389,7 +389,7 @@ export class DshRouter implements RoutingRouter {
       }
     } catch (error) {
       signal?.throwIfAborted()
-      const failure = routingFailure(error)
+      const failure = bounded.aborted ? new RouterFailure('ROUTER_TIMEOUT') : routingFailure(error)
       if (!['ROUTER_RATE_LIMITED', 'ROUTER_CIRCUIT_OPEN'].includes(failure.code)) this.budget.failed(failure.meta?.httpStatus)
       const delay = this.budget.delay()
       throw new RouterFailure(failure.code, { ...failure.meta, elapsedMs: Math.round(performance.now() - start), usage, attempts,

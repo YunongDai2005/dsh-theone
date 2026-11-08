@@ -21,6 +21,7 @@ export declare class WorkerRun {
     observe?: () => void;
     readonly delivery: BubbleWorkItem['delivery'];
     private started;
+    private superseded;
     private waits;
     get observedPhase(): WorkPhase;
     select(): void;
@@ -32,6 +33,7 @@ export declare class WorkerRun {
     private shown;
     private restarting;
     private characters;
+    private completedChanges;
     private waiters;
     /** Worker results per call id, consumed in order: some providers reuse ids such as `call_0` every step. */
     private readonly results;
@@ -64,6 +66,7 @@ export declare class WorkerRun {
     /** Resolve once the Worker is idle or has started a step the main chat has not shown yet. */
     idleOrUnshown(): Promise<void>;
     cancel(): void;
+    supersede(): void;
     dispose(): void;
     /** Whether one of this Worker's steps made tool call `callId` (main chat may ask after a hand-back moved on). */
     owns(callId: string): boolean;

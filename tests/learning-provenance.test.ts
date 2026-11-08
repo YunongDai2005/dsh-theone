@@ -126,6 +126,8 @@ test('handback starts the replacement only after the first worker is idle', { ti
   try {
     const result = await ask(app.gateway, '消融表格排版')
     assert.equal(result.output, '论文回答')
+    assert.equal(model.requests.filter(request => topicOf(request) === A && !request.system?.startsWith(ROUTING_PROMPT)).length, 1,
+      'hand-back does not leave the old worker making another provider request')
     assert.equal(overlapping, 0)
     const right = app.ctx.theone.store.contexts().find(topic => topic.id === B)!.workingSessionId
     assert.deepEqual(edits, [right], 'zero wrong-project writes; one actual execution')

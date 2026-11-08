@@ -3,7 +3,7 @@ import type { ContextDescriptor, Decision } from './types.ts'
 
 /** Keep credentials out of classifier payloads and automatically generated titles. */
 export function redactRoutingText(text: string): string {
-  return text.replace(/\bsk-[A-Za-z0-9_-]{12,}\b/g, '[REDACTED_KEY]')
+  return text.replace(/\b(?:sk-|oc_sk_)[A-Za-z0-9_-]{12,}\b/g, '[REDACTED_KEY]')
     .replace(/\bBearer\s+\S+/gi, 'Bearer [REDACTED]')
     .replace(/((?:api[_-]?key|access[_-]?token|password|secret|密码|密钥)\s*[=:：]\s*)[^\s,;，；]+/gi, '$1[REDACTED]')
     .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, '[REDACTED_EMAIL]')
@@ -36,9 +36,10 @@ export function settleUnclear(decision: Decision, text: string, contexts: readon
   const known = (id?: string): id is string => !!id && contexts.some(context => context.id === id)
   const candidates = [...new Set(decision.relatedIds ?? [])].filter(known)
   const chosen = currentId && candidates.includes(currentId) ? currentId : candidates[0] ?? (known(currentId) ? currentId : undefined)
-  if (!chosen) return newIndependentTopic(text, [...contexts], 'unclear-new')
+  const confirmation = decision.needsTargetConfirmation ? { needsTargetConfirmation: true } : {}
+  if (!chosen) return { ...newIndependentTopic(text, [...contexts], 'unclear-new'), ...confirmation }
   const alternateIds = candidates.filter(id => id !== chosen).slice(0, 3)
-  return { action: chosen === currentId ? 'KEEP' : currentId ? 'SWAP' : 'MOUNT', contextId: chosen, reason: 'unclear-settled', ...(alternateIds.length ? { alternateIds } : {}) }
+  return { action: chosen === currentId ? 'KEEP' : currentId ? 'SWAP' : 'MOUNT', contextId: chosen, reason: 'unclear-settled', ...(alternateIds.length ? { alternateIds } : {}), ...confirmation }
 }
 
 export function newIndependentTopic(text: string, contexts: ContextDescriptor[], reason: string): Decision {

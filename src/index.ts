@@ -2399,10 +2399,12 @@ export default class TheOne extends Service {
       const doubt = this.targetDoubt(decision, contextId, worker, exec.arguments)
       if (!doubt) return next()
       const denied = { kind: 'deny' as const, reason: 'The user did not confirm that this topic should make this change. Do not change anything; say briefly that the message may belong to another topic, which the user can choose in Topic workspaces.' }
+      if (this.store.hasFlag(`target-denied:${run.inputId}`)) return denied
+      const denyUnconfirmed = () => { this.store.markOnce(`target-denied:${run.inputId}`); return denied }
       const contexts = this.store.contexts(), unavailable = this.store.unreachable()
       const alternatives = [...new Set(decision.alternateIds ?? [])].flatMap(id =>
         id !== contextId && !unavailable.has(id) ? contexts.find(context => context.id === id) ?? [] : []).slice(0, 3)
-      if (alternatives.length && !this.store.hasFlag(`handback:${run.inputId}`)) {
+      if ((alternatives.length || decision.needsTargetConfirmation) && !this.store.hasFlag(`handback:${run.inputId}`)) {
         const english = writtenInEnglish(run.request)
         const title = contexts.find(context => context.id === contextId)?.title ?? ''
         const [stay, fresh, ...others] = this.choiceOptions([
@@ -2416,7 +2418,10 @@ export default class TheOne extends Service {
         const options = [stay, ...others, fresh]
         const choice = await this.askChoice(run.gateway, {
           header: english ? 'Which topic' : '放在哪个话题',
-          question: english
+          question: decision.needsTargetConfirmation ? english
+            ? `I couldn't confirm which topic this message belongs to. It is currently in "${title}". Where should I make the changes?`
+            : `暂时无法确认这条消息属于哪个话题，目前放在「${title}」。在哪里做改动？`
+            : english
             ? `This message went to "${title}", but it may be about ${alternatives.map(context => `"${context.title}"`).join(' or ')}. Where should it be done?`
             : `这条消息放在了「${title}」，但也可能是「${alternatives.map(context => context.title).join('」或「')}」的事。在哪里做？`,
           options,
@@ -2429,17 +2434,20 @@ export default class TheOne extends Service {
           else if (selected && 'contextId' in selected && typeof selected.contextId === 'string') chosen = { action: 'MOUNT', contextId: selected.contextId, reason: 'correction' }
           else if (choice?.custom) {
             try { chosen = await this.reroute({ id: run.inputId, text: run.request, contextId }, choice.custom, exec.signal, { mode: this.router ? 'llm' : 'rules' }) }
-            catch { exec.signal.throwIfAborted(); return denied }
+            catch { exec.signal.throwIfAborted(); return decision.needsTargetConfirmation ? denyUnconfirmed() : denied }
           }
-          if (!chosen || chosen.action === 'CLARIFY') return denied
+          if (!chosen || chosen.action === 'CLARIFY') return decision.needsTargetConfirmation ? denyUnconfirmed() : denied
           const handed = await this.handToTopic(run, contextId, chosen, 'user-choice', exec.signal, exec.callId)
           if (handed !== undefined) return { kind: 'deny' as const,
             reason: `The user confirmed that this message belongs to "${handed}" and it has been handed there. Do not change anything, answer this message or call any tool here.` }
+          if (decision.needsTargetConfirmation) return denyUnconfirmed()
           // As with handBack, a failed transfer leaves this message here and lets it proceed once.
           this.store.markOnce(`target:${run.inputId}`)
           return next()
         }
       }
+      // No answer, invalid answer, or unavailable UI is never permission to mutate an uncertain target.
+      if (decision.needsTargetConfirmation) return denyUnconfirmed()
       const approval = this.ctx.get('approval') as { request(req: ApprovalRequestEvent): Promise<ApprovalOutcome> } | undefined
       if (!approval) return next()
       const outcome = await approval.request({ agent: run.gateway, toolName: exec.name, reason: doubt.en, displayReason: doubt, signal: exec.signal })
@@ -2454,6 +2462,10 @@ export default class TheOne extends Service {
   private targetDoubt(decision: Decision, contextId: string, worker: Agent, args: unknown): { en: string; zh: string } | undefined {
     const titleOf = (id: string) => this.store.contexts().find(context => context.id === id)?.title
     const title = titleOf(contextId) ?? ''
+    if (decision.needsTargetConfirmation) return {
+      en: `I couldn't confirm which topic this message belongs to. Make this change in "${title}"?`,
+      zh: `暂时无法确认这条消息属于哪个话题。确定在「${title}」里做这个改动吗？`,
+    }
     const maybe = (decision.alternateIds ?? []).flatMap(id => titleOf(id) ?? [])
     if (maybe.length) return {
       en: `This message went to "${title}", but it may be about ${maybe.map(item => `"${item}"`).join(' or ')}. Make this change in "${title}"?`,
@@ -3065,12 +3077,13 @@ export default class TheOne extends Service {
         if (error.code === 'ROUTER_MODEL_MISSING') proposed = {action:'CLARIFY' as const,reason:error.code,question:'请先在 DSH 中选择一个已配置的聊天模型，再打开 TheOne。无需另配 API Key。'}
         else {
           // The classifier is unavailable: route by rules, and when they are unsure stay with the
-          // current topic rather than stop the conversation to ask.
+          // current topic for reading/answers. An uncertain target still needs consent before changes.
           const fallback = resolveContext(text, contexts, currentId)
           const unsure = fallback.action === 'CLARIFY' || (fallback.action === 'CREATE' && fallback.reason !== 'explicit-new-topic')
           proposed = currentId && unsure && contexts.some(context => context.id === currentId)
-            ? { action: 'KEEP' as const, contextId: currentId, reason: `router-fallback:${error.code}` }
-            : { ...fallback, reason: `router-fallback:${error.code}` }
+            ? { action: 'KEEP' as const, contextId: currentId, reason: `router-fallback:${error.code}`, needsTargetConfirmation: true,
+              ...(fallback.relatedIds?.length ? { alternateIds: fallback.relatedIds.filter(id => id !== currentId) } : {}) }
+            : { ...fallback, reason: `router-fallback:${error.code}`, ...(unsure ? { needsTargetConfirmation: true } : {}) }
         }
       }
     } else proposed = resolveContext(text,contexts,currentId)
@@ -3556,6 +3569,7 @@ export default class TheOne extends Service {
       signal.throwIfAborted()
       return undefined
     }
+    run.supersede()
     this.bubbleActivity.publish([{ type: 'route.moved', messageId: run.inputId, fromId: contextId, toId: moved.contextId, cause: 'handback', reexecute: true }], gateway.id)
     this.store.reassignLearning(run.inputId, moved.contextId)
     // The first topic stops after this result; its turn is kept out of its history and memory.

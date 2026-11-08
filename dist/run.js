@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import { createUserMessage } from '@deepseek-ai/dsh-llm';
+import { createUserMessage, LlmError } from '@deepseek-ai/dsh-llm';
+import { changesSomething } from "./lifecycle.js";
+import { redactRoutingText } from "./routing-policy.js";
 /** Finish code with which the main chat redoes its attempt after the Worker retried the step being shown. */
 export const RESTART_CODE = 'THEONE_WORKER_RETRY';
 /**
@@ -17,8 +19,11 @@ export class WorkerRun {
     observe;
     delivery = { phase: 'waiting', shownSteps: 0, committedSteps: 0, commit: null };
     started = false;
+    superseded = false;
     waits = 0;
     get observedPhase() {
+        if (this.superseded)
+            return 'superseded';
         if (this.done)
             return this.failure ? 'failed' : this.cancelled ? 'stopped' : this.outcome?.kind === 'completed' ? 'succeeded' : 'failed';
         return this.waits ? 'waiting_user' : this.started ? 'running' : 'starting';
@@ -41,6 +46,7 @@ export class WorkerRun {
     shown = 0;
     restarting = false;
     characters = 0;
+    completedChanges = 0;
     waiters = [];
     /** Worker results per call id, consumed in order: some providers reuse ids such as `call_0` every step. */
     results = new Map();
@@ -59,6 +65,9 @@ export class WorkerRun {
         this.inputId = inputId;
         this.maxChars = maxChars;
         this.beforeToolCalls = beforeToolCalls;
+        // A handoff finishes the current tool batch, then closes the old turn before another model request.
+        // Cancelling inside the tool would abort its result and could cancel main chat's mirrored call too.
+        this.disposers.push(ctx.on('agent/pre-step', (payload, next) => payload.agent === worker && this.superseded && !this.done ? Promise.resolve({ kind: 'reject' }) : next(), { prepend: true }));
         this.disposers.push(ctx.on('agent/assistant-stream', ({ agent, frame }) => {
             if (agent.id !== worker.id)
                 return;
@@ -96,6 +105,8 @@ export class WorkerRun {
         this.disposers.push(ctx.on('tools/result', (exec, result) => {
             if (exec.agent?.id !== worker.id || exec.parent !== undefined)
                 return;
+            if (!result.isError && changesSomething(exec.name))
+                this.completedChanges++;
             const entry = this.entry(exec.callId);
             const waiting = entry.waiting.shift();
             if (waiting)
@@ -167,7 +178,7 @@ export class WorkerRun {
         });
     }
     /** Steering sent to the main chat during the reply reaches the Worker at its next step. */
-    get canForward() { return !this.done && this.worker.status === 'running'; }
+    get canForward() { return !this.done && !this.superseded && this.worker.status === 'running'; }
     forward(message) {
         const copy = createUserMessage({ source: message.source, content: message.content });
         this.forwarded.set(message.id, copy.id);
@@ -199,6 +210,7 @@ export class WorkerRun {
         if (this.worker.status !== 'idle')
             this.worker.cancel({ kind: 'parent' });
     }
+    supersede() { this.superseded = true; this.observe?.(); }
     dispose() { for (const dispose of this.disposers.splice(0))
         dispose(); }
     /** Whether one of this Worker's steps made tool call `callId` (main chat may ask after a hand-back moved on). */
@@ -288,6 +300,14 @@ export class WorkerRun {
                         finished = true;
                         yield { type: 'finish', reason: { kind: 'stop' } };
                         return;
+                    }
+                    if (this.outcome?.kind === 'error') {
+                        const error = this.outcome.error;
+                        const message = redactRoutingText(error.message).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '').slice(0, 1000);
+                        const changed = this.completedChanges ? /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/.test(this.request)
+                            ? '\n已有操作执行完成，结果已保留。继续前请检查现状，避免重复执行。'
+                            : '\nOperations already executed; their results are retained. Check the current state before continuing to avoid repeating them.' : '';
+                        throw new LlmError(message + changed, error.code, { status: error.status, providerRetryAfterMs: error.providerRetryAfterMs, requestId: error.requestId });
                     }
                     throw new Error(`Worker turn did not complete: ${this.outcome?.kind ?? 'missing turn/end'}`);
                 }

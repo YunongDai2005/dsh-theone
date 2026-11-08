@@ -323,7 +323,7 @@ export class DshRouter {
                     this.budget.succeeded();
                 }
                 catch (error) {
-                    const failure = routingFailure(error);
+                    const failure = bounded.aborted && !signal?.aborted ? new RouterFailure('ROUTER_TIMEOUT') : routingFailure(error);
                     attempt.errorCode = failure.code;
                     if (failure.detail)
                         attempt.errorDetail = failure.detail;
@@ -346,7 +346,7 @@ export class DshRouter {
         }
         catch (error) {
             signal?.throwIfAborted();
-            const failure = routingFailure(error);
+            const failure = bounded.aborted ? new RouterFailure('ROUTER_TIMEOUT') : routingFailure(error);
             if (!['ROUTER_RATE_LIMITED', 'ROUTER_CIRCUIT_OPEN'].includes(failure.code))
                 this.budget.failed(failure.meta?.httpStatus);
             const delay = this.budget.delay();

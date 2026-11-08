@@ -49,6 +49,8 @@ export interface Decision {
   relatedIds?: string[]
   /** Topics the message may have meant instead (an unclear pick, or a first pick the second look changed): reference only, never learned as related. */
   alternateIds?: string[]
+  /** Classifier unavailable and rules uncertain: confirm the target before any change. Internal only. */
+  needsTargetConfirmation?: boolean
   /** Confirmed facts of other topics this request uses (ids from the offered candidates). */
   imports?: string[]
   /** The user said message `correctionOf` went to the wrong topic; this route redoes it here. */

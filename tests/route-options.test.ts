@@ -23,7 +23,7 @@ const custom = (text: string): AskUserQuestionAnswer => ({ answers: [{ id: 'theo
 const labels = (request: AskUserQuestionRequestEvent) => request.questions[0].options!.map(option => option.label)
 
 /** Only the model and the human answerer are synthetic; the DSH question service and loop are real. */
-async function fixture(options: { editing?: boolean; questions?: boolean; history?: boolean; llm?: boolean; path?: string } = {}) {
+async function fixture(options: { editing?: boolean; questions?: boolean; history?: boolean; llm?: boolean; path?: string; parallel?: boolean } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'theone-route-options-'))
   const model = new FixtureModel()
   const app = await harness(root, model, { routerMode: options.llm ? 'llm' : 'rules', historyCatalog: options.history })
@@ -41,6 +41,7 @@ async function fixture(options: { editing?: boolean; questions?: boolean; histor
     })
   }
   app.ctx.tools.register(defineTool({ name: 'edit', description: 'Synthetic edit', parameters: { file_path: { type: 'string', required: true } },
+    isConcurrencySafe: () => options.parallel === true,
     output: { schema: { type: 'string' }, render: (_args, value: string) => [{ type: 'text', text: value }] },
     execute: async (_args, exec) => { edits.push(exec.agent!.id); return 'edited' } }))
   model.behavior = async function* (request) {
@@ -89,6 +90,127 @@ test('target choices stay in A once per message and mark its work as waiting for
   } finally { await app.close() }
 })
 
+/** An actual failed classifier request, followed by the normal Worker/tool loop. */
+async function unavailableRouter(options: Parameters<typeof fixture>[0] = {}, mounted = true) {
+  const app = await fixture({ ...options, llm: true })
+  const work = app.model.behavior!
+  let unavailable = !mounted
+  app.model.behavior = async function* (request) {
+    if (request.system?.startsWith(ROUTING_PROMPT)) {
+      if (unavailable) yield { type: 'finish', reason: { kind: 'error', failure: { code: 'HTTP', status: 400, message: 'Invalid request' } } }
+      else yield* textResponse(JSON.stringify({ action: 'EXISTING', contextId: A, reason: 'named' }))
+      return
+    }
+    yield* work(request)
+  }
+  if (mounted) {
+    await ask(app.gateway, 'Qwen 的安装环境')
+    app.edits.length = 0
+    app.prompts.length = 0
+    app.approvals.length = 0
+    unavailable = true
+  }
+  return app
+}
+
+const uncertainRequest = '帮我把这个方案保存到文件，补上注意事项'
+for (const mounted of [true, false]) test(`unavailable routing asks once before changing an uncertain ${mounted ? 'current' : 'new'} topic`, async () => {
+  const app = await unavailableRouter({}, mounted)
+  try {
+    app.choose(request => {
+      assert.equal(app.edits.length, 0, 'ask before the first effect')
+      assert.match(request.questions[0].question, /暂时无法.*话题|无法.*确认/)
+      return select(labels(request)[0])
+    })
+    const result = await ask(app.gateway, uncertainRequest)
+    assert.equal(result.end?.data.reason.kind, 'completed')
+    assert.equal(app.prompts.length, 1)
+    assert.equal(app.approvals.length, 0)
+    assert.equal(app.edits.length, 2)
+    assert.ok(app.ctx.theone.store.hasFlag(`target:${result.input.id}`))
+  } finally { await app.close() }
+})
+
+for (const kind of ['missing-ui', 'dismissed', 'invalid-answer'] as const) test(`uncertain fallback blocks changes when target confirmation is ${kind}`, async () => {
+  const app = await unavailableRouter({ questions: kind !== 'missing-ui' })
+  try {
+    app.choose(() => kind === 'invalid-answer' ? select('not-an-option') : undefined)
+    await ask(app.gateway, uncertainRequest)
+    assert.equal(app.edits.length, 0)
+    assert.equal(app.approvals.length, 0, 'do not bypass the unanswered target choice with general approval')
+    assert.equal(app.prompts.length, kind === 'missing-ui' ? 0 : 1)
+  } finally { await app.close() }
+})
+
+test('unavailable routing permits ordinary answers and a confidently named target without a question', async () => {
+  const chat = await unavailableRouter({ editing: false })
+  try {
+    assert.equal((await ask(chat.gateway, uncertainRequest)).end?.data.reason.kind, 'completed')
+    assert.equal(chat.prompts.length, 0)
+  } finally { await chat.close() }
+  const edit = await unavailableRouter()
+  try {
+    assert.equal((await ask(edit.gateway, 'Qwen 的安装步骤写入笔记')).end?.data.reason.kind, 'completed')
+    assert.equal(edit.prompts.length, 0)
+    assert.equal(edit.edits.length, 2)
+  } finally { await edit.close() }
+})
+
+test('an uncertain fallback can move to a new topic without executing the original topic', async () => {
+  const app = await unavailableRouter()
+  try {
+    const start = app.model.requests.length
+    app.choose(request => select(labels(request).at(-1)!))
+    const result = await ask(app.gateway, uncertainRequest)
+    const target = app.ctx.theone.store.route(result.input.id)?.decision.contextId
+    assert.ok(target && target !== A)
+    assert.equal(result.end?.data.reason.kind, 'completed')
+    assert.deepEqual(app.edits, [app.workerId(target), app.workerId(target)])
+    assert.equal(app.model.requests.slice(start).filter(request => topicOf(request) === A).length, 1)
+    assert.equal(app.prompts.length, 1)
+  } finally { await app.close() }
+})
+
+test('an unanswered target choice blocks later parallel tool attempts without asking again', async () => {
+  const app = await unavailableRouter({ parallel: true })
+  const prior = app.model.behavior!
+  let calls = 0
+  app.model.behavior = async function* (request) {
+    if (request.system?.startsWith(ROUTING_PROMPT)) { yield* prior(request); return }
+    if (++calls <= 2) {
+      for (let index = 0; index < 2; index++) {
+        yield { type: 'block-start', index, blockType: 'tool-call' }
+        yield { type: 'block-end', index, block: { type: 'tool-call', id: ToolCallId(`retry-${calls}-${index}`), name: 'edit', arguments: '{"file_path":"notes.md"}' } }
+      }
+      yield { type: 'finish', reason: { kind: 'tool-calls' } }
+    } else yield* textResponse('等待确认')
+  }
+  try {
+    app.choose(async () => { await new Promise(resolve => setTimeout(resolve, 30)); return undefined })
+    const result = await ask(app.gateway, uncertainRequest)
+    assert.equal(result.end?.data.reason.kind, 'completed')
+    assert.equal(app.edits.length, 0)
+    assert.equal(app.prompts.length, 1)
+    assert.equal(result.events.filter(event => event.type === 'tool/result').length, 4)
+  } finally { await app.close() }
+})
+
+test('failed handoff after an uncertain fallback does not authorize changes in the old topic', async () => {
+  const app = await unavailableRouter()
+  try {
+    app.choose(request => {
+      app.ctx.theone.store.deleteTopic(B)
+      return select(labels(request).find(label => label.includes('Video Attention'))!)
+    })
+    const result = await ask(app.gateway, requestText)
+    assert.equal(result.end?.data.reason.kind, 'completed')
+    assert.equal(app.ctx.theone.store.route(result.input.id)?.decision.contextId, A)
+    assert.equal(app.edits.length, 0)
+    assert.equal(app.prompts.length, 1)
+    assert.equal(app.ctx.theone.store.hasFlag(`misroute:${result.input.id}`), false, 'a failed attempt is not a successful move')
+  } finally { await app.close() }
+})
+
 test('choosing B denies A, shows B in main chat, excludes A history and teaches B', { timeout: 30000 }, async () => {
   const app = await fixture()
   try {
@@ -131,6 +253,23 @@ test('target choices can create an independent topic and give it the original me
     assert.notEqual(decision.contextId, B)
     assert.equal(result.output, `answer:${decision.contextId}`)
     assert.deepEqual(app.edits, [app.workerId(decision.contextId!), app.workerId(decision.contextId!)])
+  } finally { await app.close() }
+})
+
+for (const target of ['existing', 'new'] as const) test(`handoff to a ${target} topic closes the old turn without another provider request`, { timeout: 30000 }, async () => {
+  const app = await fixture()
+  try {
+    app.choose(request => select(target === 'existing' ? labels(request)[1] : labels(request).at(-1)!))
+    const result = await ask(app.gateway, requestText)
+    assert.equal(result.end?.data.reason.kind, 'completed')
+    assert.equal(app.model.requests.filter(request => topicOf(request) === A).length, 1,
+      'the transferred worker must finish at the tool boundary, not ask the provider to obey a stop instruction')
+    const to = app.ctx.theone.store.route(result.input.id)!.decision.contextId!
+    assert.notEqual(to, A)
+    assert.deepEqual(app.edits, [app.workerId(to), app.workerId(to)])
+    assert.equal(result.output, `answer:${to}`)
+    assert.ok(app.ctx.agents.get(SessionId(app.workerId(A)))!.session.snapshotEvents().some(event => event.type === 'tool/result'),
+      'the source tool result is committed before its turn closes')
   } finally { await app.close() }
 })
 

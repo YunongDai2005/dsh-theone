@@ -91,7 +91,11 @@ test('retry uses the remainder of one deadline rather than a fresh timeout', asy
 
 test('an exhausted first attempt cannot start a retry', async () => {
   const app = fixture(async function* () { await new Promise(r => setTimeout(r, 30)); yield* answer('broken') }, 10)
-  await assert.rejects(app.router.decide(input), RouterFailure)
+  await assert.rejects(app.router.decide(input), (error: any) => {
+    assert.equal(error.code, 'ROUTER_TIMEOUT')
+    assert.equal(error.meta.attempts[0].errorCode, 'ROUTER_TIMEOUT')
+    return true
+  })
   assert.equal(app.requests.length, 1)
 })
 
