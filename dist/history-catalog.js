@@ -133,10 +133,14 @@ export class HistoryCatalog {
             this.schedule(1000);
     }
     async close() { this.abort.abort(); clearTimeout(this.timer); await this.run?.catch(() => { }); }
+    /** Live status only; frequent health reads do not need topic descriptors, groups or source mappings. */
+    statusSnapshot() {
+        return { ...this.status, consent: this.askFirst ? this.store.catalogConsent() ?? 'ask' : this.store.catalogConsent(),
+            waiting: this.status.waiting ?? 0, excluded: this.status.excluded ?? 0 };
+    }
     snapshot() {
         const hidden = this.store.hiddenReasons();
-        return { status: { ...this.status, consent: this.askFirst ? this.store.catalogConsent() ?? 'ask' : this.store.catalogConsent(),
-                waiting: this.status.waiting ?? 0, excluded: this.status.excluded ?? 0 }, groups: this.store.groups(),
+        return { status: this.statusSnapshot(), groups: this.store.groups(),
             contexts: this.store.contexts().map(context => ({ ...context, sourceSessionIds: this.store.sources(context.id),
                 ...(hidden.has(context.id) ? { hidden: hidden.get(context.id) } : {}) })) };
     }

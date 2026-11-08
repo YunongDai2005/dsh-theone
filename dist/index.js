@@ -1107,11 +1107,12 @@ export default class TheOne extends Service {
         const agent = gatewayId ? this.ctx.agents.get(SessionId(gatewayId)) : undefined;
         const workItems = this.bubbleActivity.snapshot().map(item => ({ ...item, stop: this.workStopTarget(item).capability })), latestRuns = this.store.latestTopicRuns();
         const doneCapabilities = new Map(this.store.contexts().map(topic => [topic.id, this.topicDoneCapability(topic.id, workItems, latestRuns)]));
+        const catalog = this.catalog?.statusSnapshot();
         return projectBubbles(this.store, { scope: { gatewayKey: this.config.gatewayKey, gatewayId: gatewayId ?? null },
             workItems, doneCapabilities, sessionCreatedAt: this.bubbleSessionDates, merges: this.mergeQueue?.active(), mergeReceipts: this.mergeQueue?.receipts(), busy: this.busy || this.maintenance.isBusy(), linkScope: this.config.linkScope,
             gateway: agent ? this.bubbleActivity.gateway(agent, this.store.current(this.config.gatewayKey) ?? null) : null,
-            health: { catalog: !this.catalog ? 'unavailable' : this.catalog.snapshot().status.consent !== 'granted' ? 'consent_required'
-                    : this.catalog.snapshot().status.running ? 'indexing' : this.catalog.snapshot().status.searchUnavailable ? 'unavailable' : 'ready',
+            health: { catalog: !catalog ? 'unavailable' : catalog.consent !== 'granted' ? 'consent_required'
+                    : catalog.running ? 'indexing' : catalog.searchUnavailable ? 'unavailable' : 'ready',
                 router: this.router ? 'unknown' : 'rules' } });
     }
     /** The API and snapshot use the same live ownership check; persisted observations cannot cancel work. */
@@ -1469,7 +1470,7 @@ export default class TheOne extends Service {
                         return Response.json({ error: 'INVALID_INPUT' }, { status: 400 });
                     this.store.setCatalogConsent(body.consent ? 'granted' : 'declined');
                     this.catalog.requestRefresh();
-                    return Response.json(this.catalog.snapshot().status, { headers: { 'cache-control': 'no-store' } });
+                    return Response.json(this.catalog.statusSnapshot(), { headers: { 'cache-control': 'no-store' } });
                 } }));
             child.effect(() => connection.fetch.register({ path: '/api/theone/catalog/sessions', methods: ['GET', 'POST'], requestBody: 'buffered', fetch: async (request) => {
                     if (request.method === 'POST') {
@@ -1867,7 +1868,7 @@ export default class TheOne extends Service {
         const c = this.config;
         const settings = await this.settingsSnapshot().catch(() => undefined);
         const values = settings?.values;
-        const status = this.catalog?.snapshot().status;
+        const status = this.catalog?.statusSnapshot();
         const update = await this.updater.status().catch(() => undefined);
         const routes = this.store.recentRoutes(c.gatewayKey, FEEDBACK_LIMITS.routes);
         const diagnostics = {

@@ -65,6 +65,9 @@ test('native gateway never asks back: unsupported clarification becomes CREATE, 
   const app = await harness(root,undefined,{routerMode:'llm',historyCatalog:true})
   try {
     app.ctx.theone.store.seed(Array.from({length:70},(_,i)=>({...contexts[0],id:`unrelated-${i}`,title:`无关项目 ${i}`})))
+    const readContexts = app.ctx.theone.store.contexts.bind(app.ctx.theone.store)
+    let decodedDescriptors = 0
+    app.ctx.theone.store.contexts = () => { const rows = readContexts(); decodedDescriptors += rows.length; return rows }
     app.ctx.theone.catalog!.candidates = async () => app.ctx.theone.store.contexts().slice(0,16)
     app.model.behavior = async function* (options) {
       yield* textResponse(options.system?.startsWith(ROUTING_PROMPT) ? JSON.stringify(clarify) : '由聊天模型正常处理新问题')
@@ -83,6 +86,8 @@ test('native gateway never asks back: unsupported clarification becomes CREATE, 
     assert.equal(unresolved.output,'由聊天模型正常处理新问题')
     assert.equal(app.ctx.theone.store.route(unresolved.input.id)?.decision.action,'KEEP')
     assert.equal(app.ctx.theone.store.route(unresolved.input.id)?.decision.contextId,current)
+    // Keep the 30s deadline; this work budget catches the quadratic full-table reads even on a fast machine.
+    assert.ok(decodedDescriptors < 100000, `three messages decoded ${decodedDescriptors} topic descriptors`)
   } finally {await app.close();await rm(root,{recursive:true,force:true})}
 })
 

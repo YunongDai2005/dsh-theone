@@ -6,6 +6,32 @@ import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { ContextStore } from '../src/store.ts'
 
+test('source-range reads classify sources without decoding unrelated topic descriptors', () => {
+  const store = new ContextStore(':memory:')
+  try {
+    store.seed(['target', ...Array.from({ length: 70 }, (_, i) => `other-${i}`)].map(id =>
+      ({ id, title: id, summary: 'unrelated content', entities: [], keywords: [], lastState: '' })))
+    const worker = store.contexts().find(context => context.id === 'target')!.workingSessionId
+    store.addSource('target', worker)
+    store.addSource('target', 'history', { startSeq: 2, endSeq: 5 })
+    store.addSource('target', 'history', { startSeq: 9, endSeq: 12 })
+    const db = (store as unknown as { db: DatabaseSync }).db
+    db.prepare('INSERT INTO context_sources VALUES (?, ?)').run('target', 'legacy')
+    // Count real full-table reads while still executing them, so both the result and the cost are checked.
+    const contexts = store.contexts.bind(store)
+    let decoded = 0
+    store.contexts = () => { const rows = contexts(); decoded += rows.length; return rows }
+    assert.deepEqual(new Set(store.sourceRanges('target')), new Set([
+      { sessionId: 'history', kind: 'bounded', startSeq: 2, endSeq: 5 },
+      { sessionId: 'history', kind: 'bounded', startSeq: 9, endSeq: 12 },
+      { sessionId: worker, kind: 'worker' }, { sessionId: 'legacy', kind: 'unscoped' },
+    ]))
+    assert.deepEqual(new Set(store.sources('target')), new Set(['history', worker, 'legacy']))
+    assert.deepEqual(store.sourceRanges('missing'), [])
+    assert.equal(decoded, 0, 'a source lookup must not decode every topic in the catalog')
+  } finally { store.close() }
+})
+
 test('legacy whole-session mappings are blocked until ranges are supplied', () => {
   const root = mkdtempSync(join(tmpdir(), 'theone-migrate-'))
   const path = join(root, 'store.db')

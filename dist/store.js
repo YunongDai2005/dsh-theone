@@ -1206,7 +1206,9 @@ let ContextStore = (() => {
         }
         /** Old unscoped historical mappings remain visible, but cannot be searched. */
         sourceRanges(contextId) {
-            const worker = this.contexts().find(item => item.id === contextId)?.workingSessionId;
+            // Called for every visible topic on each bubble update: never decode the whole catalog just to find one worker.
+            const topic = this.db.prepare('SELECT working_session_id FROM contexts WHERE id = ?').get(contextId);
+            const worker = topic ? String(topic.working_session_id) : undefined;
             const ranges = this.db.prepare('SELECT * FROM context_source_ranges WHERE context_id = ? ORDER BY session_id, start_seq')
                 .all(contextId).map(row => ({ sessionId: String(row.session_id), kind: 'bounded', startSeq: Number(row.start_seq), endSeq: Number(row.end_seq) }));
             for (const row of this.db.prepare('SELECT session_id FROM context_sources WHERE context_id = ? ORDER BY session_id').all(contextId)) {

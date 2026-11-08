@@ -34,3 +34,5 @@ Local evidence in the repair checkout's ignored `.theone/` directory:
 - `ui-boundary-measurements.json`: per-scenario measurement summaries.
 
 This verifies the reported overlap and related interactions in DSH Web. It is not a claim that every desktop UI state is bug-free. No real model key or user profile was needed for these UI checks.
+
+Follow-up: profiling identified repeated full-table descriptor decoding in bubble publication as the major cost behind the slow routing test. The performance repair and subsequent full-suite results are recorded in [bubble projection performance validation](bubble-projection-performance-validation.md).

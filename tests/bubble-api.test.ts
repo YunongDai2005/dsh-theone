@@ -7,6 +7,36 @@ import { HostConnectionService } from '@deepseek-ai/dsh-client-connection'
 import { harness, peered } from './harness.ts'
 import type { BubbleReadResponse, BubbleCursor } from '../src/bubble-types.ts'
 
+test('bubble health reads and consent responses do not assemble full catalog contents', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'theone-bubble-health-cost-'))
+  const app = await harness(root, undefined, { historyCatalog: true })
+  try {
+    const catalog = app.ctx.theone.catalog!, snapshot = catalog.snapshot.bind(catalog)
+    let snapshots = 0
+    catalog.snapshot = () => { snapshots++; return snapshot() }
+    assert.equal(app.ctx.theone.bubbleView(app.gateway.id).health.catalog, 'consent_required')
+    assert.equal(snapshots, 0, 'reading health must not enumerate topics and their source histories')
+    app.ctx.theone.store.setCatalogConsent('granted')
+    await catalog.refresh()
+    snapshots = 0
+    assert.equal(app.ctx.theone.bubbleView(app.gateway.id).health.catalog, 'ready')
+    assert.equal(snapshots, 0)
+    const handler = peered(new HostConnectionService(app.ctx, [], undefined as never))
+    await new Promise<void>(resolve => setImmediate(resolve))
+    const response = await handler.fetch(new Request('http://dsh.internal/api/theone/catalog/consent', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ consent: false }),
+    }))
+    assert.equal(response.status, 200)
+    assert.equal((await response.json() as { consent: string }).consent, 'declined')
+    assert.equal(app.ctx.theone.bubbleView(app.gateway.id).health.catalog, 'consent_required')
+    assert.equal(snapshots, 0, 'the consent response needs status, not the complete catalog')
+    const status = catalog.snapshot().status, scanned = status.scanned
+    status.consent = 'granted'; status.scanned = -1
+    assert.equal(catalog.statusSnapshot().consent, 'declined')
+    assert.equal(catalog.statusSnapshot().scanned, scanned, 'returned status must not mutate the live catalog')
+  } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
+})
+
 for (const reason of ['excluded', 'orphaned', 'archived']) test(`route correction uses the mount reachability guard (${reason})`, async () => {
   const root = await mkdtemp(join(tmpdir(), 'theone-route-reachable-')), app = await harness(root)
   try {
