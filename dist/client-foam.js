@@ -309,13 +309,15 @@ export function createFoam(options) {
         g.addEventListener('pointerdown', e => {
             // Where hit areas and outlines meet, the press belongs to the cell whose centre is nearest.
             const o = cellAt(e.clientX, e.clientY) ?? c;
-            if (e.button || o.mode !== 'live' || o.kind === 'more')
+            // One gesture at a time: a second finger or pointer never takes over a drag.
+            if (e.button || drag || o.mode !== 'live' || o.kind === 'more')
                 return;
             e.preventDefault();
             clearTimeout(hover);
             hideTip();
             const p = local(e);
-            drag = { cell: o, dx: p.x - o.x, dy: p.y - o.y, trail: [{ x: e.clientX, y: e.clientY, t: now() }], started: false, last: { x: e.clientX, y: e.clientY } };
+            drag = { cell: o, dx: p.x - o.x, dy: p.y - o.y, trail: [{ x: e.clientX, y: e.clientY, t: now() }], started: false, last: { x: e.clientX, y: e.clientY },
+                origin: { x: e.clientX, y: e.clientY }, pointer: e.pointerId };
             o.tx = o.x;
             o.ty = o.y;
             try {
@@ -425,6 +427,7 @@ export function createFoam(options) {
             const c = byId(event.to);
             if (!c)
                 return false;
+            clearOffers();
             if (!c.hidden) {
                 const v = vesicle(markPos, () => pos(c), () => { c.kick = Math.max(c.kick, .5); }, .55);
                 v.el.setAttribute('data-small', 'true');
@@ -434,6 +437,7 @@ export function createFoam(options) {
             const c = byId(event.to);
             if (!c)
                 return false;
+            clearOffers();
             pulse = Math.max(pulse, .55);
             if (c.mode === 'bud')
                 c.onBorn = () => light(c);
@@ -465,6 +469,8 @@ export function createFoam(options) {
             const a = byId(event.from), b = byId(event.to);
             if (!b)
                 return false;
+            // A message was moved (here or in another window): what was offered for it no longer applies.
+            clearOffers();
             if (a && !a.hidden) {
                 a.flash = 0;
                 a.kick = .6;
@@ -475,6 +481,8 @@ export function createFoam(options) {
         }
         else if (event.kind === 'merged') {
             const a = byId(event.id), b = byId(event.into);
+            if (b && event.undo)
+                offerUndo(event.id, b);
             if (a && a.mode === 'leave')
                 return true;
             if (a && b)
@@ -482,8 +490,17 @@ export function createFoam(options) {
             else if (a)
                 fade(a);
         }
+        else if (event.kind === 'mergeEnded') {
+            const a = byId(event.id), b = byId(event.into);
+            bonds = bonds.filter(x => x[0] !== a);
+            if (event.failed && b)
+                tipAt(b, text('mergeFailed'));
+        }
         return true;
     }
+    function clearOffers() { for (const o of cells)
+        if (o.offer)
+            clearOffer(o); }
     function clearOffer(o) { o.offer = undefined; o.g.classList.remove('offer', 'pending'); if (!o.ask)
         o.g.classList.remove('ask'); }
     function endClarify() {
@@ -696,8 +713,9 @@ export function createFoam(options) {
             const extra = [];
             for (const d of dupsOf(c))
                 extra.push([text('dupMenu', { name: (d.a === c ? d.b : d.a).title }), () => openDup(d.s.id, c), 'dupMenu']);
-            if (bonds.some(b => b[0] === c))
-                extra.push([text('menuCancelMerge'), () => actions.cancelMerge(id), 'menuCancelMerge']);
+            if ((model.pendingMerges ?? []).some(m => m.id === id && m.state !== 'executing'))
+                extra.push([text('menuCancelMerge'), () => void actions.cancelMerge(id).then(ok => { if (!ok)
+                        tipAt(c, text('actionFailed')); }), 'menuCancelMerge']);
             for (const m of (model.merges ?? []).filter(m => m.targetId === id).slice(0, 3))
                 extra.push([text('menuUnmerge', { name: m.title }), () => undoMerge(m.sourceId, c), 'menuUnmerge']);
             if (extra.length)
@@ -955,12 +973,22 @@ export function createFoam(options) {
     function cancelDrag() {
         if (!drag)
             return;
-        drag.cell.g.classList.remove('drag');
+        const { cell, pointer } = drag;
+        cell.g.classList.remove('drag');
         drag = null;
         hideTip();
         setTarget(null);
+        try {
+            if (cell.g.hasPointerCapture(pointer))
+                cell.g.releasePointerCapture(pointer);
+        }
+        catch { /* Already released. */ }
     }
-    const blur = () => cancelDrag();
+    /** Losing the pointer (another pointer's cancel never counts), the window or the page: the drag is called off. */
+    const blur = (e) => { if (e instanceof PointerEvent && drag && e.pointerId !== drag.pointer)
+        return; cancelDrag(); };
+    const hiddenPage = () => { if (document.visibilityState !== 'visible')
+        cancelDrag(); };
     function undoMerge(sourceId, near) {
         hideUndo();
         void actions.unmerge(sourceId).then(ok => { if (!ok)
@@ -1293,16 +1321,16 @@ export function createFoam(options) {
     const move = (e) => {
         const p = local(e), r = host.getBoundingClientRect();
         ptr = e.clientX > r.left - 24 && e.clientX < r.right + 24 && e.clientY > r.top - 10 && e.clientY < r.bottom + 24 ? p : null;
-        if (!drag)
+        if (!drag || e.pointerId !== drag.pointer)
             return;
         const c = drag.cell;
         drag.last = { x: e.clientX, y: e.clientY };
         drag.trail.push({ x: e.clientX, y: e.clientY, t: now() });
         if (drag.trail.length > 8)
             drag.trail.shift();
-        // A press becomes a drag only after a real move, so a click or a shaky press never drags.
+        // A press becomes a drag once the pointer is 5px from where it went down, however slowly it got there.
         if (!drag.started) {
-            if (Math.hypot(e.clientX - drag.trail[0].x, e.clientY - drag.trail[0].y) < 5)
+            if (Math.hypot(e.clientX - drag.origin.x, e.clientY - drag.origin.y) < 5)
                 return;
             drag.started = true;
             c.g.classList.add('drag');
@@ -1332,10 +1360,12 @@ export function createFoam(options) {
         });
     }
     const up = (e) => {
-        if (!drag)
+        if (!drag || e.pointerId !== drag.pointer)
             return;
-        const c = drag.cell, trail = drag.trail, started = drag.started;
+        const c = drag.cell, trail = drag.trail, started = drag.started, resting = !!drag.rest;
+        const click = !started && Math.hypot(e.clientX - drag.origin.x, e.clientY - drag.origin.y) < 5;
         drag.last = { x: e.clientX, y: e.clientY };
+        trail.push({ x: e.clientX, y: e.clientY, t: now() });
         // Checked again where the pointer was let go, not where it last moved.
         const hit = started ? aim(e, c) : null;
         c.g.classList.remove('drag');
@@ -1343,10 +1373,9 @@ export function createFoam(options) {
         hideTip();
         setTarget(null);
         if (!started) {
-            // A click on a candidate routing hesitated over moves the message there; a click on any other cell opens its details.
-            if (c.offer)
-                rerouteTo(c);
-            else
+            // A click opens the topic's details. On a candidate routing hesitated over, the details lead with moving the message here:
+            // moving it teaches routing, so it is a choice made there, never a side effect of looking.
+            if (click)
                 openDetail(c, activeOrNull());
             return;
         }
@@ -1390,9 +1419,13 @@ export function createFoam(options) {
         // No throwing small cells in the collapsed rail: they are for watching and clicking, so a quick stray drag sets nothing aside.
         if (rail)
             return;
-        // A throw needs speed: a slow drag past the sidebar's edge is not a throw.
-        const firstS = trail.find(s => now() - s.t < 90) ?? trail[0], lastS = trail[trail.length - 1];
-        if (!firstS || !lastS)
+        // Resting on a cell without waiting long enough to merge: the cell just goes back.
+        if (resting)
+            return;
+        // A throw needs speed in the last moment before letting go: a pause before release, or a slow drag past the edge, is not a throw.
+        const lastS = trail[trail.length - 1], recent = trail.filter(s => lastS.t - s.t <= 100);
+        const firstS = recent[0];
+        if (!firstS || recent.length < 2)
             return;
         const dt = Math.max(16, lastS.t - firstS.t) / 1000, vx = (lastS.x - firstS.x) / dt, vy = (lastS.y - firstS.y) / dt;
         const sr = options.side()?.getBoundingClientRect();
@@ -1414,11 +1447,14 @@ export function createFoam(options) {
         c.vx = vx * k;
         c.vy = vy * k;
         c.g.style.pointerEvents = 'none';
+        c.flung = true;
         bonds = bonds.filter(b => b[0] !== c && b[1] !== c);
         void actions.putAside(c.id).then(ok => {
-            if (ok || c.mode !== 'fling')
+            const waiting = c.flung;
+            c.flung = false;
+            if (ok || !waiting || !cells.includes(c))
                 return;
-            // TheOne said no: the topic buds back out of the mark.
+            // TheOne said no, however late: the topic buds back out of the mark, not set aside.
             c.mode = 'bud';
             c.age = 0;
             c.x = L.x;
@@ -1428,6 +1464,8 @@ export function createFoam(options) {
             c.scale = .12;
             c.alpha = 1;
             c.hidden = false;
+            c.away = false;
+            c.aside = false;
             c.g.style.pointerEvents = '';
             pulse = Math.max(pulse, .6);
             c.onBorn = () => tipAt(c, text('actionFailed'));
@@ -1436,6 +1474,8 @@ export function createFoam(options) {
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
     window.addEventListener('pointercancel', blur);
+    window.addEventListener('lostpointercapture', blur);
+    document.addEventListener('visibilitychange', hiddenPage);
     window.addEventListener('blur', blur);
     document.addEventListener('pointerdown', outside, true);
     document.addEventListener('keydown', keydown, true);
@@ -1702,7 +1742,8 @@ export function createFoam(options) {
                 r *= 1 + st * (2 * along * along - 1);
                 if (c.mode === 'live')
                     for (const o of live) {
-                        if (o === c)
+                        // The cell being dragged floats over the others: it does not dent them, so the one under the pointer keeps its shape.
+                        if (o === c || (drag?.started && o === drag.cell))
                             continue;
                         const ox = o.x - c.x, oy = o.y - c.y, D = Math.hypot(ox, oy);
                         if (D < .01 || D > c.R + o.R + 4)
@@ -1861,13 +1902,16 @@ export function createFoam(options) {
     raf = requestAnimationFrame(frame);
     return {
         update, event,
-        setRail(on) { rail = on; host.classList.toggle('rail', on); },
+        setRail(on) { if (on !== rail)
+            cancelDrag(); rail = on; host.classList.toggle('rail', on); },
         destroy() {
             cancelAnimationFrame(raf);
             clearInterval(tipTimer);
             window.removeEventListener('pointermove', move);
             window.removeEventListener('pointerup', up);
             window.removeEventListener('pointercancel', blur);
+            window.removeEventListener('lostpointercapture', blur);
+            document.removeEventListener('visibilitychange', hiddenPage);
             window.removeEventListener('blur', blur);
             document.removeEventListener('pointerdown', outside, true);
             document.removeEventListener('keydown', keydown, true);

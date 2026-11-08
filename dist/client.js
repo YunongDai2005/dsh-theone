@@ -439,12 +439,21 @@ function createFoam(options) {
     let hover = 0;
     g.addEventListener("pointerdown", (e) => {
       const o = cellAt(e.clientX, e.clientY) ?? c;
-      if (e.button || o.mode !== "live" || o.kind === "more") return;
+      if (e.button || drag || o.mode !== "live" || o.kind === "more") return;
       e.preventDefault();
       clearTimeout(hover);
       hideTip();
       const p = local(e);
-      drag = { cell: o, dx: p.x - o.x, dy: p.y - o.y, trail: [{ x: e.clientX, y: e.clientY, t: now() }], started: false, last: { x: e.clientX, y: e.clientY } };
+      drag = {
+        cell: o,
+        dx: p.x - o.x,
+        dy: p.y - o.y,
+        trail: [{ x: e.clientX, y: e.clientY, t: now() }],
+        started: false,
+        last: { x: e.clientX, y: e.clientY },
+        origin: { x: e.clientX, y: e.clientY },
+        pointer: e.pointerId
+      };
       o.tx = o.x;
       o.ty = o.y;
       try {
@@ -552,6 +561,7 @@ function createFoam(options) {
     } else if (event2.kind === "supplement") {
       const c = byId(event2.to);
       if (!c) return false;
+      clearOffers();
       if (!c.hidden) {
         const v = vesicle(markPos, () => pos(c), () => {
           c.kick = Math.max(c.kick, 0.5);
@@ -561,6 +571,7 @@ function createFoam(options) {
     } else if (event2.kind === "create") {
       const c = byId(event2.to);
       if (!c) return false;
+      clearOffers();
       pulse = Math.max(pulse, 0.55);
       if (c.mode === "bud") c.onBorn = () => light(c);
       else light(c);
@@ -585,6 +596,7 @@ function createFoam(options) {
     } else if (event2.kind === "correct") {
       const a = byId(event2.from), b = byId(event2.to);
       if (!b) return false;
+      clearOffers();
       if (a && !a.hidden) {
         a.flash = 0;
         a.kick = 0.6;
@@ -592,11 +604,19 @@ function createFoam(options) {
       } else routeTo(b, []);
     } else if (event2.kind === "merged") {
       const a = byId(event2.id), b = byId(event2.into);
+      if (b && event2.undo) offerUndo(event2.id, b);
       if (a && a.mode === "leave") return true;
       if (a && b) fuse(a, b);
       else if (a) fade(a);
+    } else if (event2.kind === "mergeEnded") {
+      const a = byId(event2.id), b = byId(event2.into);
+      bonds = bonds.filter((x) => x[0] !== a);
+      if (event2.failed && b) tipAt(b, text("mergeFailed"));
     }
     return true;
+  }
+  function clearOffers() {
+    for (const o of cells) if (o.offer) clearOffer(o);
   }
   function clearOffer(o) {
     o.offer = void 0;
@@ -787,7 +807,10 @@ function createFoam(options) {
       if (c.offer) items.unshift([text("menuReroute"), () => rerouteTo(c), "menuReroute"], null);
       const extra = [];
       for (const d of dupsOf(c)) extra.push([text("dupMenu", { name: (d.a === c ? d.b : d.a).title }), () => openDup(d.s.id, c), "dupMenu"]);
-      if (bonds.some((b) => b[0] === c)) extra.push([text("menuCancelMerge"), () => actions.cancelMerge(id), "menuCancelMerge"]);
+      if ((model.pendingMerges ?? []).some((m) => m.id === id && m.state !== "executing"))
+        extra.push([text("menuCancelMerge"), () => void actions.cancelMerge(id).then((ok) => {
+          if (!ok) tipAt(c, text("actionFailed"));
+        }), "menuCancelMerge"]);
       for (const m of (model.merges ?? []).filter((m2) => m2.targetId === id).slice(0, 3)) extra.push([text("menuUnmerge", { name: m.title }), () => undoMerge(m.sourceId, c), "menuUnmerge"]);
       if (extra.length) items.push(null, ...extra);
     }
@@ -1021,12 +1044,23 @@ function createFoam(options) {
   }
   function cancelDrag() {
     if (!drag) return;
-    drag.cell.g.classList.remove("drag");
+    const { cell: cell2, pointer } = drag;
+    cell2.g.classList.remove("drag");
     drag = null;
     hideTip();
     setTarget(null);
+    try {
+      if (cell2.g.hasPointerCapture(pointer)) cell2.g.releasePointerCapture(pointer);
+    } catch {
+    }
   }
-  const blur = () => cancelDrag();
+  const blur = (e) => {
+    if (e instanceof PointerEvent && drag && e.pointerId !== drag.pointer) return;
+    cancelDrag();
+  };
+  const hiddenPage = () => {
+    if (document.visibilityState !== "visible") cancelDrag();
+  };
   function undoMerge(sourceId, near) {
     hideUndo();
     void actions.unmerge(sourceId).then((ok) => {
@@ -1319,13 +1353,13 @@ function createFoam(options) {
   const move = (e) => {
     const p = local(e), r = host.getBoundingClientRect();
     ptr = e.clientX > r.left - 24 && e.clientX < r.right + 24 && e.clientY > r.top - 10 && e.clientY < r.bottom + 24 ? p : null;
-    if (!drag) return;
+    if (!drag || e.pointerId !== drag.pointer) return;
     const c = drag.cell;
     drag.last = { x: e.clientX, y: e.clientY };
     drag.trail.push({ x: e.clientX, y: e.clientY, t: now() });
     if (drag.trail.length > 8) drag.trail.shift();
     if (!drag.started) {
-      if (Math.hypot(e.clientX - drag.trail[0].x, e.clientY - drag.trail[0].y) < 5) return;
+      if (Math.hypot(e.clientX - drag.origin.x, e.clientY - drag.origin.y) < 5) return;
       drag.started = true;
       c.g.classList.add("drag");
     }
@@ -1349,17 +1383,18 @@ function createFoam(options) {
     });
   }
   const up = (e) => {
-    if (!drag) return;
-    const c = drag.cell, trail = drag.trail, started = drag.started;
+    if (!drag || e.pointerId !== drag.pointer) return;
+    const c = drag.cell, trail = drag.trail, started = drag.started, resting = !!drag.rest;
+    const click = !started && Math.hypot(e.clientX - drag.origin.x, e.clientY - drag.origin.y) < 5;
     drag.last = { x: e.clientX, y: e.clientY };
+    trail.push({ x: e.clientX, y: e.clientY, t: now() });
     const hit = started ? aim(e, c) : null;
     c.g.classList.remove("drag");
     drag = null;
     hideTip();
     setTarget(null);
     if (!started) {
-      if (c.offer) rerouteTo(c);
-      else openDetail(c, activeOrNull());
+      if (click) openDetail(c, activeOrNull());
       return;
     }
     if (hit?.kind === "main") {
@@ -1398,8 +1433,10 @@ function createFoam(options) {
       return;
     }
     if (rail) return;
-    const firstS = trail.find((s) => now() - s.t < 90) ?? trail[0], lastS = trail[trail.length - 1];
-    if (!firstS || !lastS) return;
+    if (resting) return;
+    const lastS = trail[trail.length - 1], recent = trail.filter((s) => lastS.t - s.t <= 100);
+    const firstS = recent[0];
+    if (!firstS || recent.length < 2) return;
     const dt = Math.max(16, lastS.t - firstS.t) / 1e3, vx = (lastS.x - firstS.x) / dt, vy = (lastS.y - firstS.y) / dt;
     const sr = options.side()?.getBoundingClientRect();
     const out = !!sr && (e.clientX > sr.right + 6 || e.clientX < sr.left - 6);
@@ -1419,9 +1456,12 @@ function createFoam(options) {
     c.vx = vx * k;
     c.vy = vy * k;
     c.g.style.pointerEvents = "none";
+    c.flung = true;
     bonds = bonds.filter((b) => b[0] !== c && b[1] !== c);
     void actions.putAside(c.id).then((ok) => {
-      if (ok || c.mode !== "fling") return;
+      const waiting = c.flung;
+      c.flung = false;
+      if (ok || !waiting || !cells.includes(c)) return;
       c.mode = "bud";
       c.age = 0;
       c.x = L.x;
@@ -1431,6 +1471,8 @@ function createFoam(options) {
       c.scale = 0.12;
       c.alpha = 1;
       c.hidden = false;
+      c.away = false;
+      c.aside = false;
       c.g.style.pointerEvents = "";
       pulse = Math.max(pulse, 0.6);
       c.onBorn = () => tipAt(c, text("actionFailed"));
@@ -1439,6 +1481,8 @@ function createFoam(options) {
   window.addEventListener("pointermove", move);
   window.addEventListener("pointerup", up);
   window.addEventListener("pointercancel", blur);
+  window.addEventListener("lostpointercapture", blur);
+  document.addEventListener("visibilitychange", hiddenPage);
   window.addEventListener("blur", blur);
   document.addEventListener("pointerdown", outside, true);
   document.addEventListener("keydown", keydown, true);
@@ -1667,7 +1711,7 @@ function createFoam(options) {
         let r = (c.R + (running ? (0.35 * Math.sin(2 * th + tt * 0.5 + c.phase) + 0.25 * Math.sin(3 * th - tt * 0.37 + c.phase)) * sz : 0)) * c.scale * sigh;
         r *= 1 + st * (2 * along * along - 1);
         if (c.mode === "live") for (const o of live) {
-          if (o === c) continue;
+          if (o === c || drag?.started && o === drag.cell) continue;
           const ox = o.x - c.x, oy = o.y - c.y, D = Math.hypot(ox, oy);
           if (D < 0.01 || D > c.R + o.R + 4) continue;
           const dot = (ux * ox + uy * oy) / D;
@@ -1805,6 +1849,7 @@ function createFoam(options) {
     update,
     event,
     setRail(on) {
+      if (on !== rail) cancelDrag();
       rail = on;
       host.classList.toggle("rail", on);
     },
@@ -1814,6 +1859,8 @@ function createFoam(options) {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
       window.removeEventListener("pointercancel", blur);
+      window.removeEventListener("lostpointercapture", blur);
+      document.removeEventListener("visibilitychange", hiddenPage);
       window.removeEventListener("blur", blur);
       document.removeEventListener("pointerdown", outside, true);
       document.removeEventListener("keydown", keydown, true);
@@ -1982,7 +2029,7 @@ function modelFromBubbles(snapshot) {
     };
   });
   const links = snapshot.edges.map((edge) => ({ a: edge.a, b: edge.b, weight: edge.relation === "kept_apart" ? -0.3 : Math.max(0, Math.min(1, edge.strength)) }));
-  const pendingMerges = (snapshot.merges ?? []).filter((merge) => merge.state === "queued" || merge.state === "executing").map((merge) => ({ id: merge.sourceId, into: merge.targetId }));
+  const pendingMerges = (snapshot.merges ?? []).filter((merge) => merge.state === "queued" || merge.state === "executing").map((merge) => ({ id: merge.sourceId, into: merge.targetId, state: merge.state }));
   return { topics, links, pendingMerges, suggestions: suggestionsFromBubbles(snapshot) };
 }
 function suggestionsFromBubbles(snapshot) {
@@ -2067,7 +2114,7 @@ function createWave(button, clip) {
   };
   const busy = (list = rows()) => {
     if (pressed.size) return true;
-    if (list.some((el) => el.matches('[aria-expanded="true"]') || el.querySelector('[aria-expanded="true"]'))) return true;
+    if (list.some((el) => el.matches('[aria-haspopup][aria-expanded="true"]') || el.querySelector('[aria-haspopup][aria-expanded="true"]'))) return true;
     const active = document.activeElement;
     if (document.hasFocus() && active && active !== document.body && list.some((el) => el.contains(active))) return true;
     if (!pointer) return false;
@@ -2096,7 +2143,7 @@ function createWave(button, clip) {
     }
     limit(false);
     if (wanted !== base) {
-      apply2(wanted, list);
+      apply2(wanted, list, motion.matches);
       return;
     }
     while (dt > 0) {
@@ -2186,8 +2233,9 @@ function createWave(button, clip) {
   };
   const settle = () => {
     if (!motion.matches) return;
+    const list = rows();
     for (const el of [...state.keys()]) release(el);
-    if (wanted !== base) apply2(wanted, rows(), true);
+    if (wanted !== base && !busy(list)) apply2(wanted, list, true);
   };
   document.addEventListener("pointermove", move, { passive: true });
   document.addEventListener("pointerdown", down, true);
@@ -2205,15 +2253,15 @@ function createWave(button, clip) {
       const room = Math.round(next * 2) / 2 + 10;
       wanted = room;
       if (room === base) return;
-      if (!started || motion.matches) {
-        started = true;
-        apply2(room, rows(), true);
-        return;
-      }
       const list = rows();
-      if (busy(list)) {
+      if (started && busy(list)) {
         limit(true);
         wake();
+        return;
+      }
+      if (!started || motion.matches) {
+        started = true;
+        apply2(room, list, true);
         return;
       }
       apply2(room, list);
@@ -2255,6 +2303,7 @@ function mountFoamHost(options) {
   };
   const act = (body) => post("/api/theone/topics", body, signal).catch(() => false).finally(refresh);
   let undoable = [], shown;
+  const mergeStates = /* @__PURE__ */ new Map();
   const actions = {
     mount: (id) => {
       void options.mount(id).finally(refresh);
@@ -2276,9 +2325,9 @@ function mountFoamHost(options) {
         refresh();
       }
     },
-    cancelMerge: (id) => {
+    cancelMerge: async (id) => {
       const op = latest?.merges.find((merge) => merge.sourceId === id && merge.state === "queued");
-      if (op) void act({ action: "cancelMerge", operationId: op.operationId });
+      return op ? act({ action: "cancelMerge", operationId: op.operationId }) : false;
     },
     unmerge: async (sourceId) => {
       const ok = await act({ action: "unmerge", id: sourceId });
@@ -2395,6 +2444,15 @@ function mountFoamHost(options) {
         if (body.kind === "update") {
           latest = body.snapshot;
           for (const topic of body.snapshot.topics) if (topic.openSessionId) sessionOf.set(topic.id, topic.openSessionId);
+          for (const merge of body.snapshot.merges ?? []) {
+            const was = mergeStates.get(merge.operationId);
+            mergeStates.set(merge.operationId, merge.state);
+            if (was !== "queued" && was !== "executing") continue;
+            if (merge.state === "succeeded") {
+              void readCatalog(false);
+              foam.event({ kind: "merged", id: merge.sourceId, into: merge.targetId, undo: true });
+            } else if (merge.state !== "queued" && merge.state !== "executing") foam.event({ kind: "mergeEnded", id: merge.sourceId, into: merge.targetId, failed: merge.state !== "cancelled" });
+          }
           show(modelFromBubbles(body.snapshot));
           if (!body.reset) for (const event of foamEventsFrom(body.events, body.snapshot)) foam.event(event);
           cursor = body.snapshot.cursor;
@@ -2922,7 +2980,7 @@ var zh = {
   "foam.waiting": "\u5728\u7B49\u4F60\u56DE\u7B54",
   "foam.failed": "\u8FD9\u6B21\u6CA1\u6709\u5B8C\u6210",
   "foam.menuAnswer": "\u53BB\u4E3B\u804A\u5929\u56DE\u7B54",
-  "foam.offer": "\u53EF\u80FD\u662F\u8FD9\u4E2A\u8BDD\u9898 \xB7 \u70B9\u4E00\u4E0B\u6362\u8FC7\u53BB",
+  "foam.offer": "\u53EF\u80FD\u662F\u8FD9\u4E2A\u8BDD\u9898 \xB7 \u70B9\u5F00\u53EF\u4EE5\u628A\u6D88\u606F\u6362\u8FC7\u6765",
   "foam.rerouteBusy": "TheOne \u6B63\u5FD9\uFF0C\u7A7A\u4E0B\u6765\u540E\u518D\u70B9\u4E00\u6B21",
   "foam.rerouteFailed": "\u6CA1\u6362\u6210\uFF0C\u518D\u70B9\u4E00\u6B21\u8BD5\u8BD5",
   "foam.actionFailed": "\u6CA1\u505A\u6210\uFF0C\u7A0D\u540E\u518D\u8BD5",
@@ -3408,7 +3466,7 @@ var en = {
   "foam.waiting": "Waiting for your answer",
   "foam.failed": "Did not finish this time",
   "foam.menuAnswer": "Answer in main chat",
-  "foam.offer": "Maybe this topic \xB7 click to move it here",
+  "foam.offer": "Maybe this topic \xB7 open it to move the message here",
   "foam.rerouteBusy": "TheOne is busy; click again once it is free",
   "foam.rerouteFailed": "Did not move; click to try again",
   "foam.actionFailed": "Could not do that; try again later",

@@ -202,7 +202,7 @@ export declare const zh: {
     readonly 'foam.waiting': "在等你回答";
     readonly 'foam.failed': "这次没有完成";
     readonly 'foam.menuAnswer': "去主聊天回答";
-    readonly 'foam.offer': "可能是这个话题 · 点一下换过去";
+    readonly 'foam.offer': "可能是这个话题 · 点开可以把消息换过来";
     readonly 'foam.rerouteBusy': "TheOne 正忙，空下来后再点一次";
     readonly 'foam.rerouteFailed': "没换成，再点一次试试";
     readonly 'foam.actionFailed': "没做成，稍后再试";

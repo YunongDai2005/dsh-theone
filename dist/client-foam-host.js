@@ -61,7 +61,7 @@ export function modelFromBubbles(snapshot) {
     });
     const links = snapshot.edges.map(edge => ({ a: edge.a, b: edge.b, weight: edge.relation === 'kept_apart' ? -.3 : Math.max(0, Math.min(1, edge.strength)) }));
     // Merges waiting for TheOne to go quiet hold the two cells together by a neck.
-    const pendingMerges = (snapshot.merges ?? []).filter(merge => merge.state === 'queued' || merge.state === 'executing').map(merge => ({ id: merge.sourceId, into: merge.targetId }));
+    const pendingMerges = (snapshot.merges ?? []).filter(merge => merge.state === 'queued' || merge.state === 'executing').map(merge => ({ id: merge.sourceId, into: merge.targetId, state: merge.state }));
     return { topics, links, pendingMerges, suggestions: suggestionsFromBubbles(snapshot) };
 }
 /**
@@ -174,7 +174,7 @@ function createWave(button, clip) {
     const busy = (list = rows()) => {
         if (pressed.size)
             return true;
-        if (list.some(el => el.matches('[aria-expanded="true"]') || el.querySelector('[aria-expanded="true"]')))
+        if (list.some(el => el.matches('[aria-haspopup][aria-expanded="true"]') || el.querySelector('[aria-haspopup][aria-expanded="true"]')))
             return true;
         const active = document.activeElement;
         if (document.hasFocus() && active && active !== document.body && list.some(el => el.contains(active)))
@@ -203,7 +203,7 @@ function createWave(button, clip) {
         }
         limit(false);
         if (wanted !== base) {
-            apply(wanted, list);
+            apply(wanted, list, motion.matches);
             return;
         }
         while (dt > 0) {
@@ -300,10 +300,11 @@ function createWave(button, clip) {
         // Reduced motion switched on while rows were moving: they go straight to their place.
         if (!motion.matches)
             return;
+        const list = rows();
         for (const el of [...state.keys()])
             release(el);
-        if (wanted !== base)
-            apply(wanted, rows(), true);
+        if (wanted !== base && !busy(list))
+            apply(wanted, list, true);
     };
     document.addEventListener('pointermove', move, { passive: true });
     document.addEventListener('pointerdown', down, true);
@@ -322,16 +323,17 @@ function createWave(button, clip) {
             wanted = room;
             if (room === base)
                 return;
+            const list = rows();
+            // In use: wait, whatever the motion setting (the cluster is cut at the room it has meanwhile).
+            if (started && busy(list)) {
+                limit(true);
+                wake();
+                return;
+            }
             // The first placement and reduced motion: the rows simply sit where the layout puts them.
             if (!started || motion.matches) {
                 started = true;
-                apply(room, rows(), true);
-                return;
-            }
-            const list = rows();
-            if (busy(list)) {
-                limit(true);
-                wake();
+                apply(room, list, true);
                 return;
             }
             apply(room, list);
@@ -378,6 +380,7 @@ export function mountFoamHost(options) {
     /** Sends a topic operation; resolves to whether TheOne did it, and asks for fresh state either way. */
     const act = (body) => post('/api/theone/topics', body, signal).catch(() => false).finally(refresh);
     let undoable = [], shown;
+    const mergeStates = new Map();
     const actions = {
         mount: id => { void options.mount(id).finally(refresh); },
         merge: async (id, into) => {
@@ -397,10 +400,9 @@ export function mountFoamHost(options) {
                 refresh();
             }
         },
-        cancelMerge: id => {
+        cancelMerge: async (id) => {
             const op = latest?.merges.find(merge => merge.sourceId === id && merge.state === 'queued');
-            if (op)
-                void act({ action: 'cancelMerge', operationId: op.operationId });
+            return op ? act({ action: 'cancelMerge', operationId: op.operationId }) : false;
         },
         unmerge: async (sourceId) => {
             const ok = await act({ action: 'unmerge', id: sourceId });
@@ -526,6 +528,18 @@ export function mountFoamHost(options) {
                     for (const topic of body.snapshot.topics)
                         if (topic.openSessionId)
                             sessionOf.set(topic.id, topic.openSessionId);
+                    for (const merge of body.snapshot.merges ?? []) {
+                        const was = mergeStates.get(merge.operationId);
+                        mergeStates.set(merge.operationId, merge.state);
+                        if (was !== 'queued' && was !== 'executing')
+                            continue;
+                        if (merge.state === 'succeeded') {
+                            void readCatalog(false);
+                            foam.event({ kind: 'merged', id: merge.sourceId, into: merge.targetId, undo: true });
+                        }
+                        else if (merge.state !== 'queued' && merge.state !== 'executing')
+                            foam.event({ kind: 'mergeEnded', id: merge.sourceId, into: merge.targetId, failed: merge.state !== 'cancelled' });
+                    }
                     show(modelFromBubbles(body.snapshot));
                     if (!body.reset)
                         for (const event of foamEventsFrom(body.events, body.snapshot))

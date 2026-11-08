@@ -25,7 +25,7 @@ test('a topic keeps its short label, and merges still waiting hold their two cel
   const model = modelFromBubbles(snap)
   assert.equal(model.topics[0].label, '日本')
   assert.equal(model.topics[1].label, undefined)
-  assert.deepEqual(model.pendingMerges, [{ id: 'a', into: 'b' }])
+  assert.deepEqual(model.pendingMerges, [{ id: 'a', into: 'b', state: 'queued' }])
 })
 
 test('a topic shows what its work is doing: waiting on the user first, then answering, answered, queued, failed', () => {

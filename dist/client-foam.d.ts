@@ -51,6 +51,7 @@ export interface FoamModel {
     pendingMerges?: {
         id: string;
         into: string;
+        state?: 'queued' | 'executing';
     }[];
     /** Finished merges that can still be taken apart, newest first: the target cell's menu offers to undo them. */
     merges?: {
@@ -99,10 +100,20 @@ export type FoamEvent =
     kind: 'correct';
     from: string;
     to: string;
-} | {
+}
+/** Two topics became one. `undo`: offer the undo chip (a queued merge that just finished). */
+ | {
     kind: 'merged';
     id: string;
     into: string;
+    undo?: boolean;
+}
+/** A queued merge ended without merging (cancelled, expired or failed). */
+ | {
+    kind: 'mergeEnded';
+    id: string;
+    into: string;
+    failed: boolean;
 };
 export type FoamTextKey = 'more' | 'running' | 'queued' | 'answered' | 'asking' | 'bond' | 'waiting' | 'failed' | 'menuAnswer' | 'offer' | 'rerouteBusy' | 'rerouteFailed' | 'actionFailed' | 'mergeFailed' | 'mergeHold' | 'undo' | 'menuCancelMerge' | 'menuUnmerge' | 'dropMain' | 'dropMerge' | 'dropMergeLater' | 'dropSession' | 'busyFling' | 'currentFling' | 'menuContinue' | 'menuOpen' | 'menuAside' | 'menuDelete' | 'menuStop' | 'menuCancel' | 'menuShowNow' | 'menuWorkspace' | 'menuReroute' | 'allTopics' | 'allWaiting' | 'filter' | 'noMatch' | 'statusCurrent' | 'statusAside' | 'statusRouting' | 'statusStarting' | 'statusRunning' | 'statusRecovering' | 'statusQueued' | 'queueCapacity' | 'queueTopic' | 'queueProject' | 'statusAnswered' | 'statusQuestion' | 'statusApproval' | 'statusWaiting' | 'statusFailed' | 'dupMenu' | 'dupTip' | 'dupTitle' | 'dupInto' | 'dupNo' | 'dupLater';
 export interface FoamActions {
@@ -110,7 +121,8 @@ export interface FoamActions {
     /** Merge `id` into `into`: merged now, queued until TheOne is free, or refused. */
     merge(id: string, into: string): Promise<'merged' | 'queued' | 'failed'>;
     /** Cancel a queued merge of `id`. */
-    cancelMerge(id: string): void;
+    /** Cancel a queued merge of `id`; resolves to whether TheOne cancelled it. */
+    cancelMerge(id: string): Promise<boolean>;
     /** Take a finished merge apart; resolves to whether TheOne did it. */
     unmerge(sourceId: string): Promise<boolean>;
     /**

@@ -47,7 +47,7 @@ export interface FoamModel {
   /** Learned or manual relatedness between topics, 0..1 (negative: the user kept them apart). */
   links?: { a: string; b: string; weight: number }[]
   /** Merges waiting for the topics to go quiet. */
-  pendingMerges?: { id: string; into: string }[]
+  pendingMerges?: { id: string; into: string; state?: 'queued' | 'executing' }[]
   /** Finished merges that can still be taken apart, newest first: the target cell's menu offers to undo them. */
   merges?: { sourceId: string; targetId: string; title: string }[]
   /** Possible duplicates TheOne keeps for the user to decide: a quiet dotted relation between the two cells. */
@@ -67,7 +67,10 @@ export type FoamEvent =
   | { kind: 'clarify'; candidates: string[] }
   | { kind: 'resolve'; to?: string }
   | { kind: 'correct'; from: string; to: string }
-  | { kind: 'merged'; id: string; into: string }
+  /** Two topics became one. `undo`: offer the undo chip (a queued merge that just finished). */
+  | { kind: 'merged'; id: string; into: string; undo?: boolean }
+  /** A queued merge ended without merging (cancelled, expired or failed). */
+  | { kind: 'mergeEnded'; id: string; into: string; failed: boolean }
 
 export type FoamTextKey =
   | 'more' | 'running' | 'queued' | 'answered' | 'asking' | 'bond' | 'waiting' | 'failed' | 'menuAnswer' | 'offer' | 'rerouteBusy' | 'rerouteFailed' | 'actionFailed' | 'mergeFailed' | 'mergeHold' | 'undo' | 'menuCancelMerge' | 'menuUnmerge'
@@ -83,7 +86,8 @@ export interface FoamActions {
   /** Merge `id` into `into`: merged now, queued until TheOne is free, or refused. */
   merge(id: string, into: string): Promise<'merged' | 'queued' | 'failed'>
   /** Cancel a queued merge of `id`. */
-  cancelMerge(id: string): void
+  /** Cancel a queued merge of `id`; resolves to whether TheOne cancelled it. */
+  cancelMerge(id: string): Promise<boolean>
   /** Take a finished merge apart; resolves to whether TheOne did it. */
   unmerge(sourceId: string): Promise<boolean>
   /**
@@ -334,6 +338,8 @@ interface Cell {
   x: number; y: number; vx: number; vy: number; svx: number; svy: number; tx: number; ty: number; R: number; scale: number; alpha: number
   heat: number; solid: number; kick: number; flash: number; reveal: number; want: number; nx: number; ny: number; cx: number; cy: number
   offer?: { messageId: string; until: number }
+  /** Thrown aside and TheOne has not answered yet: a refusal brings it back even after the throw animation ended. */
+  flung?: boolean
   phase: number; shownKey: string; full: boolean; lay: { lines: string[]; font: number; lh: number }; showing: boolean
   /** The invisible hit circle under the outline, its radius, and the outline's nearest and farthest reach from the centre. */
   hc: SVGCircleElement; hit: number; vin: number; vr: number
@@ -372,7 +378,7 @@ export function createFoam(options: FoamOptions): Foam {
   let rail = !!options.rail, sz = rail ? MINI : 1, height = 8, heightTarget = -1, heightV = 0, pulse = 0, folded = 0, uid = 0, first = true
   let L: Pt = { x: 0, y: 0 }, ptr: Pt | null = null
   /** A press on a cell; it becomes a drag only after the pointer has really moved. A merge needs the pointer to rest on the other cell first. */
-  let drag: { cell: Cell; dx: number; dy: number; trail: { x: number; y: number; t: number }[]; started: boolean; last: Pt; rest?: { cell: Cell; since: number } } | null = null
+  let drag: { cell: Cell; dx: number; dy: number; trail: { x: number; y: number; t: number }[]; started: boolean; last: Pt; origin: Pt; pointer: number; rest?: { cell: Cell; since: number } } | null = null
   let model: FoamModel = { topics: [] }
   const undo = document.createElement('button'); undo.type = 'button'; undo.className = 'theone-foam-undo'; document.body.appendChild(undo)
   let undoTimer = 0
@@ -427,10 +433,12 @@ export function createFoam(options: FoamOptions): Foam {
     g.addEventListener('pointerdown', e => {
       // Where hit areas and outlines meet, the press belongs to the cell whose centre is nearest.
       const o = cellAt(e.clientX, e.clientY) ?? c
-      if (e.button || o.mode !== 'live' || o.kind === 'more') return
+      // One gesture at a time: a second finger or pointer never takes over a drag.
+      if (e.button || drag || o.mode !== 'live' || o.kind === 'more') return
       e.preventDefault(); clearTimeout(hover); hideTip()
       const p = local(e)
-      drag = { cell: o, dx: p.x - o.x, dy: p.y - o.y, trail: [{ x: e.clientX, y: e.clientY, t: now() }], started: false, last: { x: e.clientX, y: e.clientY } }
+      drag = { cell: o, dx: p.x - o.x, dy: p.y - o.y, trail: [{ x: e.clientX, y: e.clientY, t: now() }], started: false, last: { x: e.clientX, y: e.clientY },
+        origin: { x: e.clientX, y: e.clientY }, pointer: e.pointerId }
       o.tx = o.x; o.ty = o.y
       try { o.g.setPointerCapture(e.pointerId) } catch { /* Older engines: the window listeners still see the release. */ }
     })
@@ -496,9 +504,11 @@ export function createFoam(options: FoamOptions): Foam {
       }
     } else if (event.kind === 'supplement') {
       const c = byId(event.to); if (!c) return false
+      clearOffers()
       if (!c.hidden) { const v = vesicle(markPos, () => pos(c), () => { c.kick = Math.max(c.kick, .5) }, .55); v.el.setAttribute('data-small', 'true') }
     } else if (event.kind === 'create') {
       const c = byId(event.to); if (!c) return false
+      clearOffers()
       pulse = Math.max(pulse, .55)
       if (c.mode === 'bud') c.onBorn = () => light(c)
       else light(c)
@@ -518,15 +528,23 @@ export function createFoam(options: FoamOptions): Foam {
       if (c) vesicle(() => from, () => pos(c), () => light(c), .45)
     } else if (event.kind === 'correct') {
       const a = byId(event.from), b = byId(event.to); if (!b) return false
+      // A message was moved (here or in another window): what was offered for it no longer applies.
+      clearOffers()
       if (a && !a.hidden) { a.flash = 0; a.kick = .6; vesicle(() => pos(a), () => pos(b), () => light(b), .6) }
       else routeTo(b, [])
     } else if (event.kind === 'merged') {
       const a = byId(event.id), b = byId(event.into)
+      if (b && event.undo) offerUndo(event.id, b)
       if (a && a.mode === 'leave') return true
       if (a && b) fuse(a, b); else if (a) fade(a)
+    } else if (event.kind === 'mergeEnded') {
+      const a = byId(event.id), b = byId(event.into)
+      bonds = bonds.filter(x => x[0] !== a)
+      if (event.failed && b) tipAt(b, text('mergeFailed'))
     }
     return true
   }
+  function clearOffers() { for (const o of cells) if (o.offer) clearOffer(o) }
   function clearOffer(o: Cell) { o.offer = undefined; o.g.classList.remove('offer', 'pending'); if (!o.ask) o.g.classList.remove('ask') }
   function endClarify() {
     if (!clarifying) return
@@ -673,7 +691,8 @@ export function createFoam(options: FoamOptions): Foam {
       if (c.offer) items.unshift([text('menuReroute'), () => rerouteTo(c), 'menuReroute'], null)
       const extra: MenuItem[] = []
       for (const d of dupsOf(c)) extra.push([text('dupMenu', { name: (d.a === c ? d.b : d.a).title }), () => openDup(d.s.id, c), 'dupMenu'])
-      if (bonds.some(b => b[0] === c)) extra.push([text('menuCancelMerge'), () => actions.cancelMerge(id), 'menuCancelMerge'])
+      if ((model.pendingMerges ?? []).some(m => m.id === id && m.state !== 'executing'))
+        extra.push([text('menuCancelMerge'), () => void actions.cancelMerge(id).then(ok => { if (!ok) tipAt(c, text('actionFailed')) }), 'menuCancelMerge'])
       for (const m of (model.merges ?? []).filter(m => m.targetId === id).slice(0, 3)) extra.push([text('menuUnmerge', { name: m.title }), () => undoMerge(m.sourceId, c), 'menuUnmerge'])
       if (extra.length) items.push(null, ...extra)
     }
@@ -857,9 +876,13 @@ export function createFoam(options: FoamOptions): Foam {
   /** Escape, a lost pointer or the window losing focus: the cell goes back, nothing is sent. */
   function cancelDrag() {
     if (!drag) return
-    drag.cell.g.classList.remove('drag'); drag = null; hideTip(); setTarget(null)
+    const { cell, pointer } = drag
+    cell.g.classList.remove('drag'); drag = null; hideTip(); setTarget(null)
+    try { if (cell.g.hasPointerCapture(pointer)) cell.g.releasePointerCapture(pointer) } catch { /* Already released. */ }
   }
-  const blur = () => cancelDrag()
+  /** Losing the pointer (another pointer's cancel never counts), the window or the page: the drag is called off. */
+  const blur = (e?: Event) => { if (e instanceof PointerEvent && drag && e.pointerId !== drag.pointer) return; cancelDrag() }
+  const hiddenPage = () => { if (document.visibilityState !== 'visible') cancelDrag() }
   function undoMerge(sourceId: string, near: Cell) {
     hideUndo()
     void actions.unmerge(sourceId).then(ok => { if (!ok) tipAt(near, text('actionFailed')) })
@@ -1097,13 +1120,13 @@ export function createFoam(options: FoamOptions): Foam {
   const move = (e: PointerEvent) => {
     const p = local(e), r = host.getBoundingClientRect()
     ptr = e.clientX > r.left - 24 && e.clientX < r.right + 24 && e.clientY > r.top - 10 && e.clientY < r.bottom + 24 ? p : null
-    if (!drag) return
+    if (!drag || e.pointerId !== drag.pointer) return
     const c = drag.cell
     drag.last = { x: e.clientX, y: e.clientY }
     drag.trail.push({ x: e.clientX, y: e.clientY, t: now() }); if (drag.trail.length > 8) drag.trail.shift()
-    // A press becomes a drag only after a real move, so a click or a shaky press never drags.
+    // A press becomes a drag once the pointer is 5px from where it went down, however slowly it got there.
     if (!drag.started) {
-      if (Math.hypot(e.clientX - drag.trail[0].x, e.clientY - drag.trail[0].y) < 5) return
+      if (Math.hypot(e.clientX - drag.origin.x, e.clientY - drag.origin.y) < 5) return
       drag.started = true; c.g.classList.add('drag')
     }
     c.tx = p.x - drag.dx; c.ty = p.y - drag.dy
@@ -1122,15 +1145,18 @@ export function createFoam(options: FoamOptions): Foam {
     })
   }
   const up = (e: PointerEvent) => {
-    if (!drag) return
-    const c = drag.cell, trail = drag.trail, started = drag.started
+    if (!drag || e.pointerId !== drag.pointer) return
+    const c = drag.cell, trail = drag.trail, started = drag.started, resting = !!drag.rest
+    const click = !started && Math.hypot(e.clientX - drag.origin.x, e.clientY - drag.origin.y) < 5
     drag.last = { x: e.clientX, y: e.clientY }
+    trail.push({ x: e.clientX, y: e.clientY, t: now() })
     // Checked again where the pointer was let go, not where it last moved.
     const hit = started ? aim(e, c) : null
     c.g.classList.remove('drag'); drag = null; hideTip(); setTarget(null)
     if (!started) {
-      // A click on a candidate routing hesitated over moves the message there; a click on any other cell opens its details.
-      if (c.offer) rerouteTo(c); else openDetail(c, activeOrNull())
+      // A click opens the topic's details. On a candidate routing hesitated over, the details lead with moving the message here:
+      // moving it teaches routing, so it is a choice made there, never a side effect of looking.
+      if (click) openDetail(c, activeOrNull())
       return
     }
     if (hit?.kind === 'main') { if (!c.cur) actions.mount(c.id); return }
@@ -1156,9 +1182,12 @@ export function createFoam(options: FoamOptions): Foam {
     }
     // No throwing small cells in the collapsed rail: they are for watching and clicking, so a quick stray drag sets nothing aside.
     if (rail) return
-    // A throw needs speed: a slow drag past the sidebar's edge is not a throw.
-    const firstS = trail.find(s => now() - s.t < 90) ?? trail[0], lastS = trail[trail.length - 1]
-    if (!firstS || !lastS) return
+    // Resting on a cell without waiting long enough to merge: the cell just goes back.
+    if (resting) return
+    // A throw needs speed in the last moment before letting go: a pause before release, or a slow drag past the edge, is not a throw.
+    const lastS = trail[trail.length - 1], recent = trail.filter(s => lastS.t - s.t <= 100)
+    const firstS = recent[0]
+    if (!firstS || recent.length < 2) return
     const dt = Math.max(16, lastS.t - firstS.t) / 1000, vx = (lastS.x - firstS.x) / dt, vy = (lastS.y - firstS.y) / dt
     const sr = options.side()?.getBoundingClientRect()
     const out = !!sr && (e.clientX > sr.right + 6 || e.clientX < sr.left - 6)
@@ -1171,12 +1200,14 @@ export function createFoam(options: FoamOptions): Foam {
       return
     }
     const k = Math.min(1, 2600 / speed)
-    c.mode = 'fling'; c.age = 0; c.vx = vx * k; c.vy = vy * k; c.g.style.pointerEvents = 'none'
+    c.mode = 'fling'; c.age = 0; c.vx = vx * k; c.vy = vy * k; c.g.style.pointerEvents = 'none'; c.flung = true
     bonds = bonds.filter(b => b[0] !== c && b[1] !== c)
     void actions.putAside(c.id).then(ok => {
-      if (ok || c.mode !== 'fling') return
-      // TheOne said no: the topic buds back out of the mark.
-      c.mode = 'bud'; c.age = 0; c.x = L.x; c.y = L.y; c.vx = 0; c.vy = 0; c.scale = .12; c.alpha = 1; c.hidden = false; c.g.style.pointerEvents = ''
+      const waiting = c.flung
+      c.flung = false
+      if (ok || !waiting || !cells.includes(c)) return
+      // TheOne said no, however late: the topic buds back out of the mark, not set aside.
+      c.mode = 'bud'; c.age = 0; c.x = L.x; c.y = L.y; c.vx = 0; c.vy = 0; c.scale = .12; c.alpha = 1; c.hidden = false; c.away = false; c.aside = false; c.g.style.pointerEvents = ''
       pulse = Math.max(pulse, .6)
       c.onBorn = () => tipAt(c, text('actionFailed'))
     })
@@ -1184,6 +1215,8 @@ export function createFoam(options: FoamOptions): Foam {
   window.addEventListener('pointermove', move)
   window.addEventListener('pointerup', up)
   window.addEventListener('pointercancel', blur)
+  window.addEventListener('lostpointercapture', blur)
+  document.addEventListener('visibilitychange', hiddenPage)
   window.addEventListener('blur', blur)
   document.addEventListener('pointerdown', outside, true)
   document.addEventListener('keydown', keydown, true)
@@ -1336,7 +1369,8 @@ export function createFoam(options: FoamOptions): Foam {
         let r = (c.R + (running ? (.35 * Math.sin(2 * th + tt * .5 + c.phase) + .25 * Math.sin(3 * th - tt * .37 + c.phase)) * sz : 0)) * c.scale * sigh
         r *= 1 + st * (2 * along * along - 1)
         if (c.mode === 'live') for (const o of live) {
-          if (o === c) continue
+          // The cell being dragged floats over the others: it does not dent them, so the one under the pointer keeps its shape.
+          if (o === c || (drag?.started && o === drag.cell)) continue
           const ox = o.x - c.x, oy = o.y - c.y, D = Math.hypot(ox, oy)
           if (D < .01 || D > c.R + o.R + 4) continue
           const dot = (ux * ox + uy * oy) / D
@@ -1450,10 +1484,10 @@ export function createFoam(options: FoamOptions): Foam {
 
   return {
     update, event,
-    setRail(on) { rail = on; host.classList.toggle('rail', on) },
+    setRail(on) { if (on !== rail) cancelDrag(); rail = on; host.classList.toggle('rail', on) },
     destroy() {
       cancelAnimationFrame(raf); clearInterval(tipTimer)
-      window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', blur); window.removeEventListener('blur', blur)
+      window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', blur); window.removeEventListener('lostpointercapture', blur); document.removeEventListener('visibilitychange', hiddenPage); window.removeEventListener('blur', blur)
       document.removeEventListener('pointerdown', outside, true); document.removeEventListener('keydown', keydown, true)
       closeDup(false); document.removeEventListener('pointerdown', dupPointer, true); document.removeEventListener('keydown', dupKey, true)
       closeMenu(); closePop(); hideUndo(); undo.remove(); tip.remove(); svg.remove(); list.remove(); entry.remove(); host.classList.remove('theone-foam', 'rail')
