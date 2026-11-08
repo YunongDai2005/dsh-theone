@@ -201,7 +201,7 @@ export declare const zh: {
     readonly 'foam.answered': "答好了，还没在主聊天显示";
     readonly 'foam.waiting': "在等你回答";
     readonly 'foam.failed': "这次没有完成";
-    readonly 'foam.menuAnswer': "去主聊天回答";
+    readonly 'foam.menuAnswer': "打开主聊天";
     readonly 'foam.offer': "可能是这个话题 · 点开可以把消息换过来";
     readonly 'foam.rerouteBusy': "TheOne 正忙，空下来后再点一次";
     readonly 'foam.rerouteFailed': "没换成，再点一次试试";
@@ -228,6 +228,8 @@ export declare const zh: {
     readonly 'foam.menuShowNow': "打开主聊天";
     readonly 'foam.menuWorkspace': "打开话题工作区";
     readonly 'foam.menuReroute': "把刚才的消息换到这里";
+    readonly 'foam.menuMergeInto': "合并到…";
+    readonly 'foam.mergeIntoPick': "并进哪个话题";
     readonly 'foam.allTopics': "所有话题";
     readonly 'foam.allWaiting': "{n} 个在等你";
     readonly 'foam.filter': "筛选话题";

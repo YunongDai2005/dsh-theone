@@ -361,6 +361,9 @@ export function createFoam(options) {
         }
     }
     function vesicle(from, to, arrive, dur = .7, hold = 0) {
+        // Reduced motion: nothing flies; it arrives at once (held vesicles still wait where they are).
+        if (reduced() && !hold)
+            dur = .01;
         const el = document.createElementNS(NS, 'g');
         el.setAttribute('class', 'theone-vesicle');
         el.innerHTML = '<circle data-part="membrane" r="3.4"/><circle data-part="nucleus" r="1.3"/>';
@@ -470,7 +473,13 @@ export function createFoam(options) {
             if (!b)
                 return false;
             // A message was moved (here or in another window): what was offered for it no longer applies.
-            clearOffers();
+            if (event.messageId) {
+                for (const o of cells)
+                    if (o.offer?.messageId === event.messageId)
+                        clearOffer(o);
+            }
+            else
+                clearOffers();
             if (a && !a.hidden) {
                 a.flash = 0;
                 a.kick = .6;
@@ -708,14 +717,20 @@ export function createFoam(options) {
                                 null, [text('menuDelete'), () => actions.remove(id), 'menuDelete']];
         if (c.kind === 'topic') {
             // A candidate routing hesitated over: the same move a click on the cell makes, reachable without the pointer.
-            if (c.offer)
-                items.unshift([text('menuReroute'), () => rerouteTo(c), 'menuReroute'], null);
+            // Bound to the message offered when the menu or details opened: if a newer message replaced it, the item does nothing stale.
+            const mid = c.offer?.messageId;
+            if (mid)
+                items.unshift([text('menuReroute'), () => rerouteTo(c, mid), 'menuReroute'], null);
             const extra = [];
             for (const d of dupsOf(c))
                 extra.push([text('dupMenu', { name: (d.a === c ? d.b : d.a).title }), () => openDup(d.s.id, c), 'dupMenu']);
-            if ((model.pendingMerges ?? []).some(m => m.id === id && m.state !== 'executing'))
-                extra.push([text('menuCancelMerge'), () => void actions.cancelMerge(id).then(ok => { if (!ok)
+            const queued = (model.pendingMerges ?? []).find(m => m.id === id && m.state === 'queued' && m.operationId);
+            if (queued)
+                extra.push([text('menuCancelMerge'), () => void actions.cancelMerge(queued.operationId).then(ok => { if (!ok)
                         tipAt(c, text('actionFailed')); }), 'menuCancelMerge']);
+            // The same merge as dragging one cell onto another, reachable without a drag (and from the keyboard).
+            if (!rail && model.topics.length > 1 && !busyMerge(c))
+                extra.push([text('menuMergeInto'), () => openAll(activeOrNull(), c.m.getBoundingClientRect(), c.id), 'menuMergeInto']);
             for (const m of (model.merges ?? []).filter(m => m.targetId === id).slice(0, 3))
                 extra.push([text('menuUnmerge', { name: m.title }), () => undoMerge(m.sourceId, c), 'menuUnmerge']);
             if (extra.length)
@@ -740,7 +755,7 @@ export function createFoam(options) {
             row.type = 'button';
             row.setAttribute('role', 'menuitem');
             row.textContent = item[0];
-            row.onclick = () => { closeMenu(fromKeyboard); item[1](); };
+            row.onclick = () => { closeMenu(true); item[1](); };
             el.appendChild(row);
         }
         document.body.appendChild(el);
@@ -774,10 +789,20 @@ export function createFoam(options) {
             else
                 closePop(true);
         }
-        else if (pop)
+        else if (pop) {
+            e.preventDefault();
+            e.stopPropagation();
             closePop();
-        closeMenu(true);
-        cancelDrag();
+        }
+        if (menu) {
+            e.preventDefault();
+            e.stopPropagation();
+            closeMenu(true);
+        }
+        if (drag) {
+            e.preventDefault();
+            cancelDrag();
+        }
     };
     // ---- Details and the all-topics list: light popovers in the menu's style. Looking never mounts, sets aside, merges or corrects anything.
     const activeOrNull = () => { const a = document.activeElement; return a instanceof HTMLElement && a !== document.body ? a : null; };
@@ -874,7 +899,7 @@ export function createFoam(options) {
         while (items[0] === null)
             items.shift();
         const primary = !t.current;
-        const sig = [c.title, status, primary, ...items.map(item => item ? item[0] : '-')].join('\n');
+        const sig = [c.title, status, primary, c.offer?.messageId ?? '', ...items.map(item => item ? item[0] : '-')].join('\n');
         if (sig === pop.sig)
             return;
         const el = pop.el, focused = el.contains(document.activeElement) ? document.activeElement?.textContent : null;
@@ -898,17 +923,19 @@ export function createFoam(options) {
             [...el.querySelectorAll('button')].find(b => b.textContent === focused)?.focus();
     }
     /** Every topic, set-aside and folded ones too, in a stable order, filtered as one types; a row opens that topic's details. */
-    function openAll(back, at) {
+    /** `pick`: the list chooses which topic `pick` merges into (the menu's "merge into…"); a row then merges instead of opening details. */
+    function openAll(back, at, pick) {
         closeMenu();
         hideTip();
         closePop();
         const el = makePop('all', '', back);
-        el.setAttribute('aria-label', text('allTopics'));
-        pop.order = foamOrder(model.topics).map(t => t.id);
+        el.setAttribute('aria-label', pick ? text('mergeIntoPick') : text('allTopics'));
+        pop.pick = pick;
+        pop.order = foamOrder(model.topics).map(t => t.id).filter(id => id !== pick);
         const input = document.createElement('input');
         input.type = 'search';
         input.className = 'theone-foam-filter';
-        input.placeholder = text('filter');
+        input.placeholder = pick ? text('mergeIntoPick') : text('filter');
         input.setAttribute('aria-label', text('filter'));
         input.autocomplete = 'off';
         input.spellcheck = false;
@@ -925,7 +952,7 @@ export function createFoam(options) {
         rows.setAttribute('role', 'list');
         const empty = span('theone-foam-empty', text('noMatch'));
         empty.hidden = true;
-        el.append(input, rows, empty, document.createElement('hr'), popButton(text('menuWorkspace'), actions.openWorkspace));
+        el.append(input, rows, empty, ...(pick ? [] : [document.createElement('hr'), popButton(text('menuWorkspace'), actions.openWorkspace)]));
         renderAll();
         document.body.appendChild(el);
         placePop(el, at ?? (entry.hidden ? host : entry).getBoundingClientRect(), 440);
@@ -937,7 +964,7 @@ export function createFoam(options) {
         const known = new Map(model.topics.map(t => [t.id, t]));
         // The order is fixed while the list is open, so rows never move under the pointer; new topics join at the end.
         for (const t of foamOrder(model.topics))
-            if (!pop.order.includes(t.id))
+            if (!pop.order.includes(t.id) && t.id !== pop.pick)
                 pop.order.push(t.id);
         pop.order = pop.order.filter(id => known.has(id));
         const shown = foamFilter(pop.order.map(id => known.get(id)), pop.query);
@@ -960,8 +987,20 @@ export function createFoam(options) {
             b.appendChild(span('theone-foam-name', t.title));
             if (status)
                 b.appendChild(span('theone-foam-status' + (t.phase === 'waiting' ? ' need' : ''), status));
-            b.onclick = () => { const c = byId(t.id); if (c)
-                openDetail(c, null); };
+            const pick = pop.pick;
+            b.onclick = () => {
+                const c = byId(t.id);
+                if (!c)
+                    return;
+                if (!pick) {
+                    openDetail(c, null);
+                    return;
+                }
+                const from = byId(pick);
+                closePop(true);
+                if (from && from !== c)
+                    mergeInto(from, c);
+            };
             item.appendChild(b);
             rows.appendChild(item);
             if (t.id === focused)
@@ -988,6 +1027,9 @@ export function createFoam(options) {
     const blur = (e) => { if (e instanceof PointerEvent && drag && e.pointerId !== drag.pointer)
         return; cancelDrag(); };
     const hiddenPage = () => { if (document.visibilityState !== 'visible')
+        cancelDrag(); };
+    /** The sidebar or page scrolled under a drag: where it would land is no longer what the user aimed at. */
+    const scrolled = () => { if (drag?.started)
         cancelDrag(); };
     function undoMerge(sourceId, near) {
         hideUndo();
@@ -1087,6 +1129,8 @@ export function createFoam(options) {
             d.pore.style.display = '';
             const ra = a.R * a.scale, rb = b.R * b.scale, dx = b.cx - a.cx, dy = b.cy - a.cy, dist = Math.hypot(dx, dy) || .01, ux = dx / dist, uy = dy / dist;
             const gap = dist - ra - rb;
+            // Its invisible hit circle fits the gap (8px at most); squeezed tight, only the drawn ring answers and the menu is the way in.
+            d.hit.setAttribute('r', fx(Math.max(0, Math.min(8, gap / 2 - 1)) / Math.max(.7, sz)));
             let path = '', px, py;
             if (gap < Math.min(ra, rb) * 1.4) {
                 // Close together: a dotted neck outline in the crevice between them, the pore on their shared wall.
@@ -1243,6 +1287,7 @@ export function createFoam(options) {
         keyboard = true;
         if (e.key === 'Escape' && dupPanel) {
             e.preventDefault();
+            e.stopPropagation();
             closeDup();
         }
     };
@@ -1339,10 +1384,34 @@ export function createFoam(options) {
         c.ty = p.y - drag.dy;
         showAim(c);
     };
+    const busyMerge = (c) => (model.pendingMerges ?? []).some(m => m.id === c.id || m.into === c.id);
+    /** Merges one topic into another: a pending suggestion between them is answered instead; the cells are joined until TheOne confirms. */
+    function mergeInto(c, into) {
+        const dup = dupBetween(c, into);
+        if (dup) {
+            acceptDup(dup.id, dup.direction);
+            return;
+        }
+        bonds = [...bonds.filter(b => b[0] !== c && b[1] !== c), [c, into]];
+        void actions.merge(c.id, into.id).then(result => {
+            if (result === 'merged') {
+                apply({ kind: 'merged', id: c.id, into: into.id });
+                offerUndo(c.id, into);
+            }
+            else if (result === 'failed') {
+                bonds = bonds.filter(b => b[0] !== c);
+                tipAt(into, text('mergeFailed'));
+            }
+        });
+    }
     /** Moves the message routing hesitated over into this candidate; a failed try keeps the candidate. */
-    function rerouteTo(c) {
+    function rerouteTo(c, expected) {
         if (!c.offer || c.g.classList.contains('pending'))
             return;
+        if (expected && c.offer.messageId !== expected) {
+            tipAt(c, text('rerouteFailed'));
+            return;
+        }
         const { messageId } = c.offer;
         c.g.classList.add('pending');
         void actions.reroute(messageId, c.id).then(status => {
@@ -1368,6 +1437,7 @@ export function createFoam(options) {
         trail.push({ x: e.clientX, y: e.clientY, t: now() });
         // Checked again where the pointer was let go, not where it last moved.
         const hit = started ? aim(e, c) : null;
+        const over = started ? dropTarget(e, c) : null;
         c.g.classList.remove('drag');
         drag = null;
         hideTip();
@@ -1384,26 +1454,9 @@ export function createFoam(options) {
                 actions.mount(c.id);
             return;
         }
+        // Dropped on the topic TheOne thought might be the same one: that answers its suggestion, in this direction (see mergeInto).
         if (hit?.kind === 'cell') {
-            // Dropped on the topic TheOne thought might be the same one: that answers its suggestion, in this direction.
-            const dup = dupBetween(c, hit.cell);
-            if (dup) {
-                acceptDup(dup.id, dup.direction);
-                return;
-            }
-            // The two are joined by a neck until TheOne confirms; only then they fuse, otherwise the neck lets go.
-            const into = hit.cell;
-            bonds = [...bonds.filter(b => b[0] !== c && b[1] !== c), [c, into]];
-            void actions.merge(c.id, into.id).then(result => {
-                if (result === 'merged') {
-                    apply({ kind: 'merged', id: c.id, into: into.id });
-                    offerUndo(c.id, into);
-                }
-                else if (result === 'failed') {
-                    bonds = bonds.filter(b => b[0] !== c);
-                    tipAt(into, text('mergeFailed'));
-                }
-            });
+            mergeInto(c, hit.cell);
             return;
         }
         if (hit?.kind === 'session') {
@@ -1419,8 +1472,8 @@ export function createFoam(options) {
         // No throwing small cells in the collapsed rail: they are for watching and clicking, so a quick stray drag sets nothing aside.
         if (rail)
             return;
-        // Resting on a cell without waiting long enough to merge: the cell just goes back.
-        if (resting)
+        // Let go over a cell without resting long enough to merge (even if the pointer only reached it on release): the cell just goes back.
+        if (resting || over?.kind === 'cell')
             return;
         // A throw needs speed in the last moment before letting go: a pause before release, or a slow drag past the edge, is not a throw.
         const lastS = trail[trail.length - 1], recent = trail.filter(s => lastS.t - s.t <= 100);
@@ -1452,7 +1505,7 @@ export function createFoam(options) {
         void actions.putAside(c.id).then(ok => {
             const waiting = c.flung;
             c.flung = false;
-            if (ok || !waiting || !cells.includes(c))
+            if (ok || !waiting || !cells.includes(c) || c.mode === 'leave' || !model.topics.some(t => t.id === c.id))
                 return;
             // TheOne said no, however late: the topic buds back out of the mark, not set aside.
             c.mode = 'bud';
@@ -1475,6 +1528,7 @@ export function createFoam(options) {
     window.addEventListener('pointerup', up);
     window.addEventListener('pointercancel', blur);
     window.addEventListener('lostpointercapture', blur);
+    window.addEventListener('scroll', scrolled, true);
     document.addEventListener('visibilitychange', hiddenPage);
     window.addEventListener('blur', blur);
     document.addEventListener('pointerdown', outside, true);
@@ -1722,7 +1776,7 @@ export function createFoam(options) {
             let near = 0;
             if (c.mode === 'live' && c.kind === 'topic' && sz > .7) {
                 if (drag)
-                    near = drag.cell === c || (target?.kind === 'cell' && target.cell === c) ? 1 : 0;
+                    near = drag.cell === c || drag.rest?.cell === c || (target?.kind === 'cell' && target.cell === c) ? 1 : 0;
                 else if (ptr) {
                     const d = Math.hypot(ptr.x - c.cx, ptr.y - c.cy) - c.R * .4;
                     near = clamp(1 - d / 52);
@@ -1911,6 +1965,7 @@ export function createFoam(options) {
             window.removeEventListener('pointerup', up);
             window.removeEventListener('pointercancel', blur);
             window.removeEventListener('lostpointercapture', blur);
+            window.removeEventListener('scroll', scrolled, true);
             document.removeEventListener('visibilitychange', hiddenPage);
             window.removeEventListener('blur', blur);
             document.removeEventListener('pointerdown', outside, true);

@@ -52,6 +52,7 @@ export interface FoamModel {
         id: string;
         into: string;
         state?: 'queued' | 'executing';
+        operationId?: string;
     }[];
     /** Finished merges that can still be taken apart, newest first: the target cell's menu offers to undo them. */
     merges?: {
@@ -100,6 +101,7 @@ export type FoamEvent =
     kind: 'correct';
     from: string;
     to: string;
+    messageId?: string;
 }
 /** Two topics became one. `undo`: offer the undo chip (a queued merge that just finished). */
  | {
@@ -115,14 +117,14 @@ export type FoamEvent =
     into: string;
     failed: boolean;
 };
-export type FoamTextKey = 'more' | 'running' | 'queued' | 'answered' | 'asking' | 'bond' | 'waiting' | 'failed' | 'menuAnswer' | 'offer' | 'rerouteBusy' | 'rerouteFailed' | 'actionFailed' | 'mergeFailed' | 'mergeHold' | 'undo' | 'menuCancelMerge' | 'menuUnmerge' | 'dropMain' | 'dropMerge' | 'dropMergeLater' | 'dropSession' | 'busyFling' | 'currentFling' | 'menuContinue' | 'menuOpen' | 'menuAside' | 'menuDelete' | 'menuStop' | 'menuCancel' | 'menuShowNow' | 'menuWorkspace' | 'menuReroute' | 'allTopics' | 'allWaiting' | 'filter' | 'noMatch' | 'statusCurrent' | 'statusAside' | 'statusRouting' | 'statusStarting' | 'statusRunning' | 'statusRecovering' | 'statusQueued' | 'queueCapacity' | 'queueTopic' | 'queueProject' | 'statusAnswered' | 'statusQuestion' | 'statusApproval' | 'statusWaiting' | 'statusFailed' | 'dupMenu' | 'dupTip' | 'dupTitle' | 'dupInto' | 'dupNo' | 'dupLater';
+export type FoamTextKey = 'more' | 'running' | 'queued' | 'answered' | 'asking' | 'bond' | 'waiting' | 'failed' | 'menuAnswer' | 'offer' | 'rerouteBusy' | 'rerouteFailed' | 'actionFailed' | 'mergeFailed' | 'mergeHold' | 'undo' | 'menuCancelMerge' | 'menuUnmerge' | 'dropMain' | 'dropMerge' | 'dropMergeLater' | 'dropSession' | 'busyFling' | 'currentFling' | 'menuContinue' | 'menuOpen' | 'menuAside' | 'menuDelete' | 'menuStop' | 'menuCancel' | 'menuShowNow' | 'menuWorkspace' | 'menuReroute' | 'menuMergeInto' | 'mergeIntoPick' | 'allTopics' | 'allWaiting' | 'filter' | 'noMatch' | 'statusCurrent' | 'statusAside' | 'statusRouting' | 'statusStarting' | 'statusRunning' | 'statusRecovering' | 'statusQueued' | 'queueCapacity' | 'queueTopic' | 'queueProject' | 'statusAnswered' | 'statusQuestion' | 'statusApproval' | 'statusWaiting' | 'statusFailed' | 'dupMenu' | 'dupTip' | 'dupTitle' | 'dupInto' | 'dupNo' | 'dupLater';
 export interface FoamActions {
     mount(id: string): void;
     /** Merge `id` into `into`: merged now, queued until TheOne is free, or refused. */
     merge(id: string, into: string): Promise<'merged' | 'queued' | 'failed'>;
     /** Cancel a queued merge of `id`. */
     /** Cancel a queued merge of `id`; resolves to whether TheOne cancelled it. */
-    cancelMerge(id: string): Promise<boolean>;
+    cancelMerge(operationId: string): Promise<boolean>;
     /** Take a finished merge apart; resolves to whether TheOne did it. */
     unmerge(sourceId: string): Promise<boolean>;
     /**

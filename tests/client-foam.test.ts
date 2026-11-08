@@ -25,7 +25,7 @@ test('a topic keeps its short label, and merges still waiting hold their two cel
   const model = modelFromBubbles(snap)
   assert.equal(model.topics[0].label, '日本')
   assert.equal(model.topics[1].label, undefined)
-  assert.deepEqual(model.pendingMerges, [{ id: 'a', into: 'b', state: 'queued' }])
+  assert.deepEqual(model.pendingMerges, [{ id: 'a', into: 'b', state: 'queued', operationId: '1' }])
 })
 
 test('a topic shows what its work is doing: waiting on the user first, then answering, answered, queued, failed', () => {
@@ -74,7 +74,7 @@ test('routing events become cluster events; hints and bookkeeping play nothing',
     { kind: 'supplement', to: 'b' },
     { kind: 'create', to: 'c' },
     { kind: 'clarify', candidates: ['a', 'b'] },
-    { kind: 'correct', from: 'a', to: 'b' },
+    { kind: 'correct', from: 'a', to: 'b', messageId: 'm1' },
     { kind: 'merged', id: 'c', into: 'a' },
   ])
 })

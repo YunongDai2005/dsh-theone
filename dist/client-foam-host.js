@@ -61,7 +61,7 @@ export function modelFromBubbles(snapshot) {
     });
     const links = snapshot.edges.map(edge => ({ a: edge.a, b: edge.b, weight: edge.relation === 'kept_apart' ? -.3 : Math.max(0, Math.min(1, edge.strength)) }));
     // Merges waiting for TheOne to go quiet hold the two cells together by a neck.
-    const pendingMerges = (snapshot.merges ?? []).filter(merge => merge.state === 'queued' || merge.state === 'executing').map(merge => ({ id: merge.sourceId, into: merge.targetId, state: merge.state }));
+    const pendingMerges = (snapshot.merges ?? []).filter(merge => merge.state === 'queued' || merge.state === 'executing').map(merge => ({ id: merge.sourceId, into: merge.targetId, state: merge.state, operationId: merge.operationId }));
     return { topics, links, pendingMerges, suggestions: suggestionsFromBubbles(snapshot) };
 }
 /**
@@ -101,7 +101,7 @@ export function foamEventsFrom(events, snapshot) {
         else if (event.type === 'route.blocked' && event.candidateIds.length > 1)
             out.push({ kind: 'clarify', candidates: event.candidateIds });
         else if (event.type === 'route.moved')
-            out.push({ kind: 'correct', from: event.fromId, to: event.toId });
+            out.push({ kind: 'correct', from: event.fromId, to: event.toId, messageId: event.messageId });
         else if (event.type === 'topic.merged')
             out.push({ kind: 'merged', id: event.sourceId, into: event.targetId });
     }
@@ -301,9 +301,11 @@ function createWave(button, clip) {
         if (!motion.matches)
             return;
         const list = rows();
+        if (busy(list))
+            return;
         for (const el of [...state.keys()])
             release(el);
-        if (wanted !== base && !busy(list))
+        if (wanted !== base)
             apply(wanted, list, true);
     };
     document.addEventListener('pointermove', move, { passive: true });
@@ -400,10 +402,7 @@ export function mountFoamHost(options) {
                 refresh();
             }
         },
-        cancelMerge: async (id) => {
-            const op = latest?.merges.find(merge => merge.sourceId === id && merge.state === 'queued');
-            return op ? act({ action: 'cancelMerge', operationId: op.operationId }) : false;
-        },
+        cancelMerge: operationId => act({ action: 'cancelMerge', operationId }),
         unmerge: async (sourceId) => {
             const ok = await act({ action: 'unmerge', id: sourceId });
             if (ok)
@@ -528,7 +527,7 @@ export function mountFoamHost(options) {
                     for (const topic of body.snapshot.topics)
                         if (topic.openSessionId)
                             sessionOf.set(topic.id, topic.openSessionId);
-                    for (const merge of body.snapshot.merges ?? []) {
+                    for (const merge of [...body.snapshot.merges ?? [], ...body.snapshot.mergeReceipts ?? [], ...body.events.flatMap(event => event.type === 'merge.changed' ? [event] : [])]) {
                         const was = mergeStates.get(merge.operationId);
                         mergeStates.set(merge.operationId, merge.state);
                         if (was !== 'queued' && was !== 'executing')

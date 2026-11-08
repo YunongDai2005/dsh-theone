@@ -507,6 +507,7 @@ function createFoam(options) {
     }
   }
   function vesicle(from, to, arrive, dur = 0.7, hold = 0) {
+    if (reduced() && !hold) dur = 0.01;
     const el = document.createElementNS(NS, "g");
     el.setAttribute("class", "theone-vesicle");
     el.innerHTML = '<circle data-part="membrane" r="3.4"/><circle data-part="nucleus" r="1.3"/>';
@@ -596,7 +597,9 @@ function createFoam(options) {
     } else if (event2.kind === "correct") {
       const a = byId(event2.from), b = byId(event2.to);
       if (!b) return false;
-      clearOffers();
+      if (event2.messageId) {
+        for (const o of cells) if (o.offer?.messageId === event2.messageId) clearOffer(o);
+      } else clearOffers();
       if (a && !a.hidden) {
         a.flash = 0;
         a.kick = 0.6;
@@ -804,13 +807,15 @@ function createFoam(options) {
       [text("menuDelete"), () => actions.remove(id), "menuDelete"]
     ];
     if (c.kind === "topic") {
-      if (c.offer) items.unshift([text("menuReroute"), () => rerouteTo(c), "menuReroute"], null);
+      const mid = c.offer?.messageId;
+      if (mid) items.unshift([text("menuReroute"), () => rerouteTo(c, mid), "menuReroute"], null);
       const extra = [];
       for (const d of dupsOf(c)) extra.push([text("dupMenu", { name: (d.a === c ? d.b : d.a).title }), () => openDup(d.s.id, c), "dupMenu"]);
-      if ((model.pendingMerges ?? []).some((m) => m.id === id && m.state !== "executing"))
-        extra.push([text("menuCancelMerge"), () => void actions.cancelMerge(id).then((ok) => {
-          if (!ok) tipAt(c, text("actionFailed"));
-        }), "menuCancelMerge"]);
+      const queued = (model.pendingMerges ?? []).find((m) => m.id === id && m.state === "queued" && m.operationId);
+      if (queued) extra.push([text("menuCancelMerge"), () => void actions.cancelMerge(queued.operationId).then((ok) => {
+        if (!ok) tipAt(c, text("actionFailed"));
+      }), "menuCancelMerge"]);
+      if (!rail && model.topics.length > 1 && !busyMerge(c)) extra.push([text("menuMergeInto"), () => openAll(activeOrNull(), c.m.getBoundingClientRect(), c.id), "menuMergeInto"]);
       for (const m of (model.merges ?? []).filter((m2) => m2.targetId === id).slice(0, 3)) extra.push([text("menuUnmerge", { name: m.title }), () => undoMerge(m.sourceId, c), "menuUnmerge"]);
       if (extra.length) items.push(null, ...extra);
     }
@@ -834,7 +839,7 @@ function createFoam(options) {
       row.setAttribute("role", "menuitem");
       row.textContent = item[0];
       row.onclick = () => {
-        closeMenu(fromKeyboard);
+        closeMenu(true);
         item[1]();
       };
       el.appendChild(row);
@@ -861,9 +866,20 @@ function createFoam(options) {
         pop.query = "";
         renderAll();
       } else closePop(true);
-    } else if (pop) closePop();
-    closeMenu(true);
-    cancelDrag();
+    } else if (pop) {
+      e.preventDefault();
+      e.stopPropagation();
+      closePop();
+    }
+    if (menu) {
+      e.preventDefault();
+      e.stopPropagation();
+      closeMenu(true);
+    }
+    if (drag) {
+      e.preventDefault();
+      cancelDrag();
+    }
   };
   const activeOrNull = () => {
     const a = document.activeElement;
@@ -957,7 +973,7 @@ function createFoam(options) {
     const items = menuItems(c).filter((item) => item?.[2] !== "menuContinue");
     while (items[0] === null) items.shift();
     const primary = !t2.current;
-    const sig = [c.title, status, primary, ...items.map((item) => item ? item[0] : "-")].join("\n");
+    const sig = [c.title, status, primary, c.offer?.messageId ?? "", ...items.map((item) => item ? item[0] : "-")].join("\n");
     if (sig === pop.sig) return;
     const el = pop.el, focused = el.contains(document.activeElement) ? document.activeElement?.textContent : null;
     pop.sig = sig;
@@ -973,17 +989,18 @@ function createFoam(options) {
     for (const item of items) el.appendChild(item ? popButton(item[0], item[1]) : document.createElement("hr"));
     if (focused) [...el.querySelectorAll("button")].find((b) => b.textContent === focused)?.focus();
   }
-  function openAll(back, at) {
+  function openAll(back, at, pick) {
     closeMenu();
     hideTip();
     closePop();
     const el = makePop("all", "", back);
-    el.setAttribute("aria-label", text("allTopics"));
-    pop.order = foamOrder(model.topics).map((t2) => t2.id);
+    el.setAttribute("aria-label", pick ? text("mergeIntoPick") : text("allTopics"));
+    pop.pick = pick;
+    pop.order = foamOrder(model.topics).map((t2) => t2.id).filter((id) => id !== pick);
     const input = document.createElement("input");
     input.type = "search";
     input.className = "theone-foam-filter";
-    input.placeholder = text("filter");
+    input.placeholder = pick ? text("mergeIntoPick") : text("filter");
     input.setAttribute("aria-label", text("filter"));
     input.autocomplete = "off";
     input.spellcheck = false;
@@ -1004,7 +1021,7 @@ function createFoam(options) {
     rows.setAttribute("role", "list");
     const empty = span("theone-foam-empty", text("noMatch"));
     empty.hidden = true;
-    el.append(input, rows, empty, document.createElement("hr"), popButton(text("menuWorkspace"), actions.openWorkspace));
+    el.append(input, rows, empty, ...pick ? [] : [document.createElement("hr"), popButton(text("menuWorkspace"), actions.openWorkspace)]);
     renderAll();
     document.body.appendChild(el);
     placePop(el, at ?? (entry.hidden ? host : entry).getBoundingClientRect(), 440);
@@ -1013,7 +1030,7 @@ function createFoam(options) {
   function renderAll() {
     if (!pop || pop.kind !== "all") return;
     const known = new Map(model.topics.map((t2) => [t2.id, t2]));
-    for (const t2 of foamOrder(model.topics)) if (!pop.order.includes(t2.id)) pop.order.push(t2.id);
+    for (const t2 of foamOrder(model.topics)) if (!pop.order.includes(t2.id) && t2.id !== pop.pick) pop.order.push(t2.id);
     pop.order = pop.order.filter((id) => known.has(id));
     const shown = foamFilter(pop.order.map((id) => known.get(id)), pop.query);
     const sig = pop.query + "\n" + shown.map((t2) => [t2.id, t2.title, t2.current, foamStatusText(t2, text)].join("	")).join("\n");
@@ -1032,9 +1049,17 @@ function createFoam(options) {
       if (t2.current) b.setAttribute("aria-current", "true");
       b.appendChild(span("theone-foam-name", t2.title));
       if (status) b.appendChild(span("theone-foam-status" + (t2.phase === "waiting" ? " need" : ""), status));
+      const pick = pop.pick;
       b.onclick = () => {
         const c = byId(t2.id);
-        if (c) openDetail(c, null);
+        if (!c) return;
+        if (!pick) {
+          openDetail(c, null);
+          return;
+        }
+        const from = byId(pick);
+        closePop(true);
+        if (from && from !== c) mergeInto(from, c);
       };
       item.appendChild(b);
       rows.appendChild(item);
@@ -1060,6 +1085,9 @@ function createFoam(options) {
   };
   const hiddenPage = () => {
     if (document.visibilityState !== "visible") cancelDrag();
+  };
+  const scrolled = () => {
+    if (drag?.started) cancelDrag();
   };
   function undoMerge(sourceId, near) {
     hideUndo();
@@ -1159,6 +1187,7 @@ function createFoam(options) {
       d.pore.style.display = "";
       const ra = a.R * a.scale, rb = b.R * b.scale, dx = b.cx - a.cx, dy = b.cy - a.cy, dist = Math.hypot(dx, dy) || 0.01, ux = dx / dist, uy = dy / dist;
       const gap = dist - ra - rb;
+      d.hit.setAttribute("r", fx(Math.max(0, Math.min(8, gap / 2 - 1)) / Math.max(0.7, sz)));
       let path = "", px, py;
       if (gap < Math.min(ra, rb) * 1.4) {
         path = bridge(pos(a), ra, pos(b), rb, 1e6, 0.42)?.edge ?? "";
@@ -1295,6 +1324,7 @@ function createFoam(options) {
     keyboard = true;
     if (e.key === "Escape" && dupPanel) {
       e.preventDefault();
+      e.stopPropagation();
       closeDup();
     }
   };
@@ -1367,8 +1397,30 @@ function createFoam(options) {
     c.ty = p.y - drag.dy;
     showAim(c);
   };
-  function rerouteTo(c) {
+  const busyMerge = (c) => (model.pendingMerges ?? []).some((m) => m.id === c.id || m.into === c.id);
+  function mergeInto(c, into) {
+    const dup = dupBetween(c, into);
+    if (dup) {
+      acceptDup(dup.id, dup.direction);
+      return;
+    }
+    bonds = [...bonds.filter((b) => b[0] !== c && b[1] !== c), [c, into]];
+    void actions.merge(c.id, into.id).then((result) => {
+      if (result === "merged") {
+        apply2({ kind: "merged", id: c.id, into: into.id });
+        offerUndo(c.id, into);
+      } else if (result === "failed") {
+        bonds = bonds.filter((b) => b[0] !== c);
+        tipAt(into, text("mergeFailed"));
+      }
+    });
+  }
+  function rerouteTo(c, expected) {
     if (!c.offer || c.g.classList.contains("pending")) return;
+    if (expected && c.offer.messageId !== expected) {
+      tipAt(c, text("rerouteFailed"));
+      return;
+    }
     const { messageId } = c.offer;
     c.g.classList.add("pending");
     void actions.reroute(messageId, c.id).then((status) => {
@@ -1389,6 +1441,7 @@ function createFoam(options) {
     drag.last = { x: e.clientX, y: e.clientY };
     trail.push({ x: e.clientX, y: e.clientY, t: now() });
     const hit = started ? aim(e, c) : null;
+    const over = started ? dropTarget(e, c) : null;
     c.g.classList.remove("drag");
     drag = null;
     hideTip();
@@ -1402,22 +1455,7 @@ function createFoam(options) {
       return;
     }
     if (hit?.kind === "cell") {
-      const dup = dupBetween(c, hit.cell);
-      if (dup) {
-        acceptDup(dup.id, dup.direction);
-        return;
-      }
-      const into = hit.cell;
-      bonds = [...bonds.filter((b) => b[0] !== c && b[1] !== c), [c, into]];
-      void actions.merge(c.id, into.id).then((result) => {
-        if (result === "merged") {
-          apply2({ kind: "merged", id: c.id, into: into.id });
-          offerUndo(c.id, into);
-        } else if (result === "failed") {
-          bonds = bonds.filter((b) => b[0] !== c);
-          tipAt(into, text("mergeFailed"));
-        }
-      });
+      mergeInto(c, hit.cell);
       return;
     }
     if (hit?.kind === "session") {
@@ -1433,7 +1471,7 @@ function createFoam(options) {
       return;
     }
     if (rail) return;
-    if (resting) return;
+    if (resting || over?.kind === "cell") return;
     const lastS = trail[trail.length - 1], recent = trail.filter((s) => lastS.t - s.t <= 100);
     const firstS = recent[0];
     if (!firstS || recent.length < 2) return;
@@ -1461,7 +1499,7 @@ function createFoam(options) {
     void actions.putAside(c.id).then((ok) => {
       const waiting = c.flung;
       c.flung = false;
-      if (ok || !waiting || !cells.includes(c)) return;
+      if (ok || !waiting || !cells.includes(c) || c.mode === "leave" || !model.topics.some((t2) => t2.id === c.id)) return;
       c.mode = "bud";
       c.age = 0;
       c.x = L.x;
@@ -1482,6 +1520,7 @@ function createFoam(options) {
   window.addEventListener("pointerup", up);
   window.addEventListener("pointercancel", blur);
   window.addEventListener("lostpointercapture", blur);
+  window.addEventListener("scroll", scrolled, true);
   document.addEventListener("visibilitychange", hiddenPage);
   window.addEventListener("blur", blur);
   document.addEventListener("pointerdown", outside, true);
@@ -1692,7 +1731,7 @@ function createFoam(options) {
       const running = c.state === "running", tt = running ? t : 0;
       let near = 0;
       if (c.mode === "live" && c.kind === "topic" && sz > 0.7) {
-        if (drag) near = drag.cell === c || target?.kind === "cell" && target.cell === c ? 1 : 0;
+        if (drag) near = drag.cell === c || drag.rest?.cell === c || target?.kind === "cell" && target.cell === c ? 1 : 0;
         else if (ptr) {
           const d2 = Math.hypot(ptr.x - c.cx, ptr.y - c.cy) - c.R * 0.4;
           near = clamp(1 - d2 / 52);
@@ -1860,6 +1899,7 @@ function createFoam(options) {
       window.removeEventListener("pointerup", up);
       window.removeEventListener("pointercancel", blur);
       window.removeEventListener("lostpointercapture", blur);
+      window.removeEventListener("scroll", scrolled, true);
       document.removeEventListener("visibilitychange", hiddenPage);
       window.removeEventListener("blur", blur);
       document.removeEventListener("pointerdown", outside, true);
@@ -2029,7 +2069,7 @@ function modelFromBubbles(snapshot) {
     };
   });
   const links = snapshot.edges.map((edge) => ({ a: edge.a, b: edge.b, weight: edge.relation === "kept_apart" ? -0.3 : Math.max(0, Math.min(1, edge.strength)) }));
-  const pendingMerges = (snapshot.merges ?? []).filter((merge) => merge.state === "queued" || merge.state === "executing").map((merge) => ({ id: merge.sourceId, into: merge.targetId, state: merge.state }));
+  const pendingMerges = (snapshot.merges ?? []).filter((merge) => merge.state === "queued" || merge.state === "executing").map((merge) => ({ id: merge.sourceId, into: merge.targetId, state: merge.state, operationId: merge.operationId }));
   return { topics, links, pendingMerges, suggestions: suggestionsFromBubbles(snapshot) };
 }
 function suggestionsFromBubbles(snapshot) {
@@ -2054,7 +2094,7 @@ function foamEventsFrom(events, snapshot) {
       else if (items.get(event.workItemId)?.source === "steering") out.push({ kind: "supplement", to: event.contextId });
       else out.push({ kind: "route", to: event.contextId, alternates: event.alternateIds, messageId: event.messageIds[0] });
     } else if (event.type === "route.blocked" && event.candidateIds.length > 1) out.push({ kind: "clarify", candidates: event.candidateIds });
-    else if (event.type === "route.moved") out.push({ kind: "correct", from: event.fromId, to: event.toId });
+    else if (event.type === "route.moved") out.push({ kind: "correct", from: event.fromId, to: event.toId, messageId: event.messageId });
     else if (event.type === "topic.merged") out.push({ kind: "merged", id: event.sourceId, into: event.targetId });
   }
   return out;
@@ -2234,8 +2274,9 @@ function createWave(button, clip) {
   const settle = () => {
     if (!motion.matches) return;
     const list = rows();
+    if (busy(list)) return;
     for (const el of [...state.keys()]) release(el);
-    if (wanted !== base && !busy(list)) apply2(wanted, list, true);
+    if (wanted !== base) apply2(wanted, list, true);
   };
   document.addEventListener("pointermove", move, { passive: true });
   document.addEventListener("pointerdown", down, true);
@@ -2325,10 +2366,7 @@ function mountFoamHost(options) {
         refresh();
       }
     },
-    cancelMerge: async (id) => {
-      const op = latest?.merges.find((merge) => merge.sourceId === id && merge.state === "queued");
-      return op ? act({ action: "cancelMerge", operationId: op.operationId }) : false;
-    },
+    cancelMerge: (operationId) => act({ action: "cancelMerge", operationId }),
     unmerge: async (sourceId) => {
       const ok = await act({ action: "unmerge", id: sourceId });
       if (ok) await readCatalog(false);
@@ -2444,7 +2482,7 @@ function mountFoamHost(options) {
         if (body.kind === "update") {
           latest = body.snapshot;
           for (const topic of body.snapshot.topics) if (topic.openSessionId) sessionOf.set(topic.id, topic.openSessionId);
-          for (const merge of body.snapshot.merges ?? []) {
+          for (const merge of [...body.snapshot.merges ?? [], ...body.snapshot.mergeReceipts ?? [], ...body.events.flatMap((event) => event.type === "merge.changed" ? [event] : [])]) {
             const was = mergeStates.get(merge.operationId);
             mergeStates.set(merge.operationId, merge.state);
             if (was !== "queued" && was !== "executing") continue;
@@ -2979,7 +3017,7 @@ var zh = {
   "foam.answered": "\u7B54\u597D\u4E86\uFF0C\u8FD8\u6CA1\u5728\u4E3B\u804A\u5929\u663E\u793A",
   "foam.waiting": "\u5728\u7B49\u4F60\u56DE\u7B54",
   "foam.failed": "\u8FD9\u6B21\u6CA1\u6709\u5B8C\u6210",
-  "foam.menuAnswer": "\u53BB\u4E3B\u804A\u5929\u56DE\u7B54",
+  "foam.menuAnswer": "\u6253\u5F00\u4E3B\u804A\u5929",
   "foam.offer": "\u53EF\u80FD\u662F\u8FD9\u4E2A\u8BDD\u9898 \xB7 \u70B9\u5F00\u53EF\u4EE5\u628A\u6D88\u606F\u6362\u8FC7\u6765",
   "foam.rerouteBusy": "TheOne \u6B63\u5FD9\uFF0C\u7A7A\u4E0B\u6765\u540E\u518D\u70B9\u4E00\u6B21",
   "foam.rerouteFailed": "\u6CA1\u6362\u6210\uFF0C\u518D\u70B9\u4E00\u6B21\u8BD5\u8BD5",
@@ -3006,6 +3044,8 @@ var zh = {
   "foam.menuShowNow": "\u6253\u5F00\u4E3B\u804A\u5929",
   "foam.menuWorkspace": "\u6253\u5F00\u8BDD\u9898\u5DE5\u4F5C\u533A",
   "foam.menuReroute": "\u628A\u521A\u624D\u7684\u6D88\u606F\u6362\u5230\u8FD9\u91CC",
+  "foam.menuMergeInto": "\u5408\u5E76\u5230\u2026",
+  "foam.mergeIntoPick": "\u5E76\u8FDB\u54EA\u4E2A\u8BDD\u9898",
   "foam.allTopics": "\u6240\u6709\u8BDD\u9898",
   "foam.allWaiting": "{n} \u4E2A\u5728\u7B49\u4F60",
   "foam.filter": "\u7B5B\u9009\u8BDD\u9898",
@@ -3465,7 +3505,7 @@ var en = {
   "foam.answered": "Answered, not yet shown in main chat",
   "foam.waiting": "Waiting for your answer",
   "foam.failed": "Did not finish this time",
-  "foam.menuAnswer": "Answer in main chat",
+  "foam.menuAnswer": "Open main chat",
   "foam.offer": "Maybe this topic \xB7 open it to move the message here",
   "foam.rerouteBusy": "TheOne is busy; click again once it is free",
   "foam.rerouteFailed": "Did not move; click to try again",
@@ -3492,6 +3532,8 @@ var en = {
   "foam.menuShowNow": "Open main chat",
   "foam.menuWorkspace": "Open Topic workspaces",
   "foam.menuReroute": "Move the last message here",
+  "foam.menuMergeInto": "Merge into\u2026",
+  "foam.mergeIntoPick": "Merge into which topic",
   "foam.allTopics": "All topics",
   "foam.allWaiting": "{n} waiting for you",
   "foam.filter": "Filter topics",
