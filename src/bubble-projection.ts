@@ -9,6 +9,9 @@ import { normalizeTopicLabel } from './topic-label.ts'
 function bubbleLabel(topic: ContextDescriptor): string | null {
   const stored = normalizeTopicLabel(topic.label)
   if (stored) return stored
+  // A title already short enough is its own name; a term from elsewhere ("日本" for "旅游") would only confuse.
+  const own = normalizeTopicLabel(topic.title)
+  if (own) return own
   const title = topic.title.normalize('NFKC').toLowerCase()
   const candidates = [...topic.entities, ...topic.keywords].map((term, order) => {
     const label = term.normalize('NFKC').trim().replace(/ +/g, ' ')
@@ -17,7 +20,7 @@ function bubbleLabel(topic: ContextDescriptor): string | null {
       (han === size ? han >= 2 && han <= 6 : /\p{Script=Latin}/u.test(label) && han <= 6 && size + han <= 14)
     const at = title.indexOf(label.toLowerCase())
     return { label, valid, rank: at < 0 ? Infinity : at, order }
-  }).filter(item => item.valid)
+  }).filter(item => item.valid && item.rank !== Infinity)
   candidates.sort((a, b) => a.rank - b.rank || a.order - b.order)
   return candidates[0]?.label ?? null
 }

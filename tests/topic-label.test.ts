@@ -63,7 +63,7 @@ test('projection prefers a stored label and ignores malformed persisted labels w
     const db = (store as any).db
     const before = db.prepare('SELECT total_changes() AS n').get()
     assert.equal(labelOf(store), '日本游')
-    assert.equal(labelOf(store, 'invalid'), '日本')
+    assert.equal(labelOf(store, 'invalid'), '日本旅行')
     assert.deepEqual(db.prepare('SELECT total_changes() AS n').get(), before)
     assert.ok(!JSON.stringify(routingPayload({ ...input, contexts: store.contexts() })).includes('日本游'), 'display labels do not enter routing inputs')
   } finally { store.close() }
@@ -98,7 +98,7 @@ test('renaming clears the label, while editing other fields or submitting the sa
     assert.equal(labelOf(store), '日本游')
     store.editTopic('topic', { title: '东京路线' })
     assert.equal(store.contexts()[0].label, undefined)
-    assert.equal(labelOf(store), '东京')
+    assert.equal(labelOf(store), '东京路线')
   } finally { store.close() }
 })
 
@@ -107,7 +107,7 @@ test('a branch with its own title does not inherit the source label', () => {
   try {
     store.seed([topic])
     const id = store.branchTopic('topic', '东京路线', 'branch-worker')
-    assert.equal(labelOf(store, id), '东京')
+    assert.equal(labelOf(store, id), '东京路线')
     assert.equal(labelOf(store), '日本游')
   } finally { store.close() }
 })
