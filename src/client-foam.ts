@@ -114,7 +114,7 @@ export interface FoamActions {
 }
 
 export interface FoamOptions {
-  /** Absolutely positioned box right under the main card; the cells are drawn in it and may overflow upward over the card. */
+  /** Box right under the main card; resting cells keep clear of it, while messages and intentional drags can cross it. */
   host: HTMLElement
   /** The One mark in the main card: messages leave from it and answers return to it. */
   mark: () => Element | null
@@ -139,21 +139,30 @@ export interface Foam {
 }
 
 const NS = 'http://www.w3.org/2000/svg'
-const MAX_VISIBLE = 14, N = 48, GAP = 2, SOFT = 2.2, MINI = .32, MARK_R = 7.4, STRIP = 18
+const MAX_VISIBLE = 14, N = 48, GAP = 2, SOFT = 2.2, MINI = .32, MARK_R = 7.4, STRIP = 18, TOP_GAP = 8
 const fx = (v: number) => v.toFixed(2)
 const clamp = (v: number, a = 0, b = 1) => Math.max(a, Math.min(b, v))
 const ease = (v: number, target: number, rate: number, dt: number) => v + (target - v) * Math.min(1, dt * rate)
 const now = () => performance.now()
 interface Pt { x: number; y: number }
 
-function curve(p: number[][]): string {
+/** A closed smooth outline, translated as a whole to keep its Bezier control hull below `minY`. */
+export function foamContour(p: number[][], minY = -Infinity): { path: string; points: number[][]; offsetY: number } {
   const n = p.length
+  let low = Infinity
+  if (Number.isFinite(minY)) for (let i = 0; i < n; i++) {
+    const y0 = p[(i + n - 1) % n][1], y1 = p[i][1], y2 = p[(i + 1) % n][1], y3 = p[(i + 2) % n][1]
+    low = Math.min(low, y1, y1 + (y2 - y0) / 6, y2 - (y3 - y1) / 6)
+  }
+  // Round upward to the SVG coordinate precision, so rounding cannot put a control back above the boundary.
+  const offsetY = Math.ceil(Math.max(0, minY - low) * 100) / 100
+  if (offsetY) p = p.map(([x, y]) => [x, y + offsetY])
   let d = `M${fx(p[0][0])} ${fx(p[0][1])}`
   for (let i = 0; i < n; i++) {
     const p0 = p[(i + n - 1) % n], p1 = p[i], p2 = p[(i + 1) % n], p3 = p[(i + 2) % n]
     d += `C${fx(p1[0] + (p2[0] - p0[0]) / 6)} ${fx(p1[1] + (p2[1] - p0[1]) / 6)} ${fx(p2[0] - (p3[0] - p1[0]) / 6)} ${fx(p2[1] - (p3[1] - p1[1]) / 6)} ${fx(p2[0])} ${fx(p2[1])}`
   }
-  return d + 'Z'
+  return { path: d + 'Z', points: p, offsetY }
 }
 /** Smooth minimum: where two cells meet, the contact face bends into rounded corners like a bubble wall. */
 const smin = (a: number, b: number, k: number) => { const h = Math.max(k - Math.abs(a - b), 0) / k; return Math.min(a, b) - h * h * k / 4 }
@@ -218,15 +227,16 @@ export function foamLabel(name: string, radius: number): { lines: string[]; font
  * Invisible hit circles for the cells: each at least `min` (half of 24 CSS px) where there is room, never into a
  * neighbour's (the free space between two cells is split by their own sizes), never past the cluster box (so it
  * covers nothing of DSH outside it), and never smaller than `floor`, the part of the cell's own outline it must
- * keep (default its radius). Returns one radius per item.
+ * keep (default its radius). An explicit `box.top` excludes the main-card gap even when the outline floor would cross it.
+ * Returns one radius per item.
  */
-export function foamHitRadii(items: { x: number; y: number; r: number; floor?: number }[], box?: { w: number; h: number }, min = 12): number[] {
-  const floor = items.map(a => Math.max(0, a.floor ?? a.r))
+export function foamHitRadii(items: { x: number; y: number; r: number; floor?: number }[], box?: { w: number; h: number; top?: number }, min = 12): number[] {
+  const floor = items.map(a => Math.min(Math.max(0, a.floor ?? a.r), box?.top === undefined ? Infinity : Math.max(0, a.y - box.top)))
   const dist = (i: number, j: number) => Math.hypot(items[j].x - items[i].x, items[j].y - items[i].y)
   const h = items.map((a, i) => {
     let v = Math.max(a.r, min)
     for (let j = 0; j < items.length; j++) if (j !== i) v = Math.min(v, a.r + (dist(i, j) - a.r - items[j].r) / 2)
-    if (box) v = Math.min(v, a.x, box.w - a.x, a.y, box.h - a.y)
+    if (box) v = Math.min(v, a.x, box.w - a.x, a.y - (box.top ?? 0), box.h - a.y)
     return Math.max(v, floor[i])
   })
   // A circle held up by its floor may still reach into a neighbour's: both give way, each down to its own floor at most.
@@ -246,7 +256,7 @@ export function foamHitRadii(items: { x: number; y: number; r: number; floor?: n
  * down to 1px less, so it does not blink at the edge) it gets 0 (not shown), and the cells get back the room it would have taken.
  */
 export function foamPoreHits(cells: { x: number; y: number; r: number; floor?: number; reach?: number }[], pores: { x: number; y: number; shown?: boolean }[],
-  box?: { w: number; h: number }, max = 8, need = 5.5): { cells: number[]; pores: number[] } {
+  box?: { w: number; h: number; top?: number }, max = 8, need = 5.5): { cells: number[]; pores: number[] } {
   const size = (ps: typeof pores) => foamHitRadii([...cells, ...ps.map(p => ({ x: p.x, y: p.y, r: 0, floor: 0 }))], box)
   const room = (ps: typeof pores, radii: number[]) => ps.map((p, i) => {
     let r = Math.min(max, radii[cells.length + i])
@@ -1450,7 +1460,8 @@ export function createFoam(options: FoamOptions): Foam {
             const pad = c.R * .8
             if (c.x < pad) fx2 += (pad - c.x) * 30
             if (c.x > w - pad) fx2 -= (c.x - (w - pad)) * 30
-            if (c.y < pad * .7) fy2 += (pad * .7 - c.y) * 30
+            const top = c.R * c.scale + TOP_GAP + 1
+            if (c.y < top) fy2 += (top - c.y) * 30
             if (c.y > h - pad * .7) fy2 -= (c.y - (h - pad * .7)) * 30
           }
         }
@@ -1492,6 +1503,7 @@ export function createFoam(options: FoamOptions): Foam {
       } else if (c.mode === 'bud') c.scale = still ? 1 : ease(c.scale, .2 + c.age * .45, 5, dt)
       else c.scale = still ? (c.hidden ? 0 : 1) : ease(c.scale, c.hidden ? 0 : 1, c.hidden ? 5 : 2.5, dt)
       c.g.style.display = c.scale < .02 ? 'none' : ''
+      c.g.style.pointerEvents = c.mode === 'live' && !c.hidden ? '' : 'none'
       if (c.scale < .02) { c.nf.setAttribute('d', ''); c.ne.setAttribute('d', ''); continue }
       c.heat = ease(c.heat, c.state === 'running' ? 1 : 0, 1.3, dt)
       c.solid = ease(c.solid, c.state === 'queued' ? 0 : 1, 2.2, dt)
@@ -1512,7 +1524,7 @@ export function createFoam(options: FoamOptions): Foam {
       c.svx = ease(c.svx, c.vx, 8, dt); c.svy = ease(c.svy, c.vy, 8, dt)
       const speed = Math.hypot(c.svx, c.svy), st = still ? 0 : Math.min(c.mode === 'fling' ? .2 : .12, speed / 1100), ux0 = c.svx / (speed || 1), uy0 = c.svy / (speed || 1)
       const sigh = still ? 1 : 1 + .1 * Math.sin(Math.PI * (1 - c.kick)) * (c.kick > 0 ? 1 : 0)
-      const pts: number[][] = []
+      let pts: number[][] = []
       for (let i = 0; i < N; i++) {
         const th = i / N * Math.PI * 2, ux = Math.cos(th), uy = Math.sin(th), along = ux * ux0 + uy * uy0
         let r = (c.R + (running ? (.35 * Math.sin(2 * th + tt * .5 + c.phase) + .25 * Math.sin(3 * th - tt * .37 + c.phase)) * sz : 0)) * c.scale * sigh
@@ -1530,6 +1542,13 @@ export function createFoam(options: FoamOptions): Foam {
         r = Math.max(r, c.R * c.scale * .35)
         pts.push([c.x + r * ux, c.y + r * uy])
       }
+      // The soft force alone cannot stop a current/running cell crossing the card. Constrain the final deformed curve,
+      // including smoothing and 1px for the widest stroke. An intentional drag/throw is allowed to cross the card.
+      const contour = foamContour(pts, c.mode === 'fling' || (drag?.started && drag.cell === c) ? -Infinity : TOP_GAP + 1)
+      if (contour.offsetY) {
+        pts = contour.points; c.y += contour.offsetY
+        c.vy = Math.max(0, c.vy); c.svy = Math.max(0, c.svy)
+      }
       // Keep each cell's volume: squeezed cells bulge on their free side. The dragged one keeps its size.
       if (c.mode === 'live' && !c.hidden && drag?.cell !== c) {
         const area = polygonArea(pts) / Math.max(.01, (c.scale * sigh) ** 2)
@@ -1540,7 +1559,7 @@ export function createFoam(options: FoamOptions): Foam {
       gx /= N; gy /= N; c.cx = gx; c.cy = gy
       c.vin = Infinity; c.vr = 0
       for (const p of pts) { const r = Math.hypot(p[0] - gx, p[1] - gy); c.vin = Math.min(c.vin, r); c.vr = Math.max(c.vr, r) }
-      const d = curve(pts)
+      const d = contour.path
       c.b.setAttribute('d', d); c.h.setAttribute('d', d); c.m.setAttribute('d', d)
       c.b.style.fillOpacity = fx(c.solid); c.h.style.opacity = fx(Math.min(1, c.heat + c.flash))
       c.stop.setAttribute('stop-opacity', fx(.18 * (1 + 1.4 * c.flash)))
@@ -1595,7 +1614,7 @@ export function createFoam(options: FoamOptions): Foam {
     const pressable = cells.filter(c => c.mode === 'live' && !c.hidden && c.scale >= .02 && !(drag?.started && drag.cell === c))
     const porous = [...dups.values()].filter(d => d.px !== null)
     const hits = foamPoreHits(pressable.map(c => ({ x: c.cx, y: c.cy, r: c.R * c.scale, floor: c.vin, reach: c.vr })),
-      porous.map(d => ({ x: d.px!, y: d.py, shown: d.room })), { w, h })
+      porous.map(d => ({ x: d.px!, y: d.py, shown: d.room })), { w, h, top: TOP_GAP })
     for (const c of cells) {
       const i = pressable.indexOf(c), r = i < 0 ? 0 : hits.cells[i]
       if (r || c.hit) { c.hit = r; c.hc.setAttribute('cx', fx(c.cx)); c.hc.setAttribute('cy', fx(c.cy)); c.hc.setAttribute('r', fx(r)) }
@@ -1656,7 +1675,7 @@ export const foamCss = `
 .theone-foam-list{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .theone-cell{cursor:grab;pointer-events:auto}
 .theone-cell.drag{cursor:grabbing}
-.theone-cell [data-part=hit]{fill:transparent;stroke:none;pointer-events:all}
+.theone-cell [data-part=hit]{fill:transparent;stroke:none}
 .theone-cell [data-part=body]{stroke:none;fill:var(--foam-bg);transition:fill .8s ease}
 .theone-cell [data-part=membrane]{fill:none;stroke:var(--foam-idle-line);stroke-width:1.2;stroke-linejoin:round;stroke-linecap:round;transition:stroke .8s ease,stroke-width .4s ease}
 .theone-cell [data-part=nucleus]{fill:var(--foam-idle-dot);transition:fill .6s ease,stroke .6s ease}

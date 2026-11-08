@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { foamEnterActs, foamFilter, foamHitRadii, foamLabel, foamMergeReason, foamMerging, foamNearest, foamOrder, foamPlace, foamPoreHits, foamShortName, foamStatusText, type FoamTopic } from '../src/client-foam.ts'
+import { foamContour, foamEnterActs, foamFilter, foamHitRadii, foamLabel, foamMergeReason, foamMerging, foamNearest, foamOrder, foamPlace, foamPoreHits, foamShortName, foamStatusText, type FoamTopic } from '../src/client-foam.ts'
 import { foamEventsFrom, mergeOutcomes, modelFromBubbles, modelFromCatalog, settleFoamEvents, suggestionsFromBubbles } from '../src/client-foam-host.ts'
 import type { CatalogSnapshot } from '../src/catalog-types.ts'
 import type { BubbleEvent, BubbleMerge, BubbleSnapshot, BubbleTopic, BubbleWorkItem } from '../src/bubble-types.ts'
@@ -130,6 +130,31 @@ test('the directory feeds the cluster: hidden topics drop out, done and archived
   assert.deepEqual(model.links, [{ a: 'a', b: 'b', weight: .3 }, { a: 'b', b: 'd', weight: .5 }])
 })
 
+test('the rendered curve stays below the header even when smoothing rises above its vertices', () => {
+  // All vertices clear y=9, but the top Bezier bows above them; checking the vertices alone is insufficient.
+  const points = [[0, 10], [10, 10], [10, 30], [0, 30]]
+  const contour = foamContour(points, 9)
+  const coords = contour.path.match(/-?\d+(?:\.\d+)?/g)!.map(Number)
+  const ys = coords.filter((_, i) => i % 2 === 1)
+  assert.ok(Math.min(...ys) >= 9, `rendered controls cross header: ${Math.min(...ys)}`)
+  assert.ok(contour.offsetY > 0)
+  // Move the whole shape, including the centre used for labels/hits, without squashing it or mutating the input.
+  assert.deepEqual(points, [[0, 10], [10, 10], [10, 30], [0, 30]])
+  assert.deepEqual(contour.points.map(p => p[0]), [0, 10, 10, 0])
+  assert.ok(Math.abs(contour.points[2][1] - contour.points[0][1] - 20) < 1e-9)
+  assert.ok(Math.abs(contour.points[0][1] - points[0][1] - contour.offsetY) < 1e-9)
+  assert.equal(foamContour(contour.points, 9).offsetY, 0)
+})
+
+test('unconstrained dragging keeps its contour above the header and a clear contour does not move', () => {
+  const points = [[0, -30], [10, -10], [0, 10], [-10, -10]]
+  const drag = foamContour(points)
+  assert.equal(drag.offsetY, 0)
+  assert.deepEqual(drag.points, points)
+  assert.ok(drag.path.startsWith('M0.00 -30.00'))
+  assert.equal(foamContour([[0, 40], [10, 50], [0, 60], [-10, 50]], 9).offsetY, 0)
+})
+
 test('a small cell alone gets a 24px hit circle; a big one keeps its own outline', () => {
   const box = { w: 300, h: 200 }
   assert.deepEqual(foamHitRadii([{ x: 100, y: 100, r: 6 }], box), [12])
@@ -166,6 +191,16 @@ test('a hit circle never reaches past the cluster box, but never shrinks below t
   assert.deepEqual(foamHitRadii([{ x: 150, y: 9, r: 6 }], box), [9])
   assert.deepEqual(foamHitRadii([{ x: 150, y: 3, r: 6 }], box), [6])
   assert.deepEqual(foamHitRadii([{ x: 150, y: 3, r: 6, floor: 5 }], box), [5])
+})
+
+test('a header exclusion bounds even an oversized hit floor and leaves the header gap unclickable', () => {
+  const box = { w: 300, h: 100, top: 8 }
+  // A rail cell can have less room above it than the minimum touch target or its outline floor.
+  assert.deepEqual(foamHitRadii([{ x: 150, y: 14, r: 9, floor: 9 }], box), [6])
+  assert.deepEqual(foamHitRadii([{ x: 150, y: 4, r: 9, floor: 9 }], box), [0])
+  assert.deepEqual(foamHitRadii([{ x: 150, y: 50, r: 9 }], box), [12])
+  const porous = foamPoreHits([{ x: 50, y: 14, r: 9 }], [{ x: 150, y: 14 }], box)
+  assert.deepEqual(porous, { cells: [6], pores: [6] })
 })
 
 test('a press goes to the nearest centre among the circles that hold it', () => {

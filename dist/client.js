@@ -133,18 +133,26 @@ var SOFT = 2.2;
 var MINI = 0.32;
 var MARK_R = 7.4;
 var STRIP = 18;
+var TOP_GAP = 8;
 var fx = (v) => v.toFixed(2);
 var clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
 var ease = (v, target, rate, dt) => v + (target - v) * Math.min(1, dt * rate);
 var now = () => performance.now();
-function curve(p) {
+function foamContour(p, minY = -Infinity) {
   const n = p.length;
+  let low = Infinity;
+  if (Number.isFinite(minY)) for (let i = 0; i < n; i++) {
+    const y0 = p[(i + n - 1) % n][1], y1 = p[i][1], y2 = p[(i + 1) % n][1], y3 = p[(i + 2) % n][1];
+    low = Math.min(low, y1, y1 + (y2 - y0) / 6, y2 - (y3 - y1) / 6);
+  }
+  const offsetY = Math.ceil(Math.max(0, minY - low) * 100) / 100;
+  if (offsetY) p = p.map(([x, y]) => [x, y + offsetY]);
   let d = `M${fx(p[0][0])} ${fx(p[0][1])}`;
   for (let i = 0; i < n; i++) {
     const p0 = p[(i + n - 1) % n], p1 = p[i], p2 = p[(i + 1) % n], p3 = p[(i + 2) % n];
     d += `C${fx(p1[0] + (p2[0] - p0[0]) / 6)} ${fx(p1[1] + (p2[1] - p0[1]) / 6)} ${fx(p2[0] - (p3[0] - p1[0]) / 6)} ${fx(p2[1] - (p3[1] - p1[1]) / 6)} ${fx(p2[0])} ${fx(p2[1])}`;
   }
-  return d + "Z";
+  return { path: d + "Z", points: p, offsetY };
 }
 var smin = (a, b, k) => {
   const h3 = Math.max(k - Math.abs(a - b), 0) / k;
@@ -202,12 +210,12 @@ function foamLabel(name, radius) {
   return { lines: [], font: big, lh: 0 };
 }
 function foamHitRadii(items, box, min = 12) {
-  const floor = items.map((a) => Math.max(0, a.floor ?? a.r));
+  const floor = items.map((a) => Math.min(Math.max(0, a.floor ?? a.r), box?.top === void 0 ? Infinity : Math.max(0, a.y - box.top)));
   const dist = (i, j) => Math.hypot(items[j].x - items[i].x, items[j].y - items[i].y);
   const h3 = items.map((a, i) => {
     let v = Math.max(a.r, min);
     for (let j = 0; j < items.length; j++) if (j !== i) v = Math.min(v, a.r + (dist(i, j) - a.r - items[j].r) / 2);
-    if (box) v = Math.min(v, a.x, box.w - a.x, a.y, box.h - a.y);
+    if (box) v = Math.min(v, a.x, box.w - a.x, a.y - (box.top ?? 0), box.h - a.y);
     return Math.max(v, floor[i]);
   });
   for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) {
@@ -1760,7 +1768,8 @@ function createFoam(options) {
             const pad = c.R * 0.8;
             if (c.x < pad) fx2 += (pad - c.x) * 30;
             if (c.x > w - pad) fx2 -= (c.x - (w - pad)) * 30;
-            if (c.y < pad * 0.7) fy2 += (pad * 0.7 - c.y) * 30;
+            const top3 = c.R * c.scale + TOP_GAP + 1;
+            if (c.y < top3) fy2 += (top3 - c.y) * 30;
             if (c.y > h3 - pad * 0.7) fy2 -= (c.y - (h3 - pad * 0.7)) * 30;
           }
         }
@@ -1829,6 +1838,7 @@ function createFoam(options) {
       } else if (c.mode === "bud") c.scale = still ? 1 : ease(c.scale, 0.2 + c.age * 0.45, 5, dt);
       else c.scale = still ? c.hidden ? 0 : 1 : ease(c.scale, c.hidden ? 0 : 1, c.hidden ? 5 : 2.5, dt);
       c.g.style.display = c.scale < 0.02 ? "none" : "";
+      c.g.style.pointerEvents = c.mode === "live" && !c.hidden ? "" : "none";
       if (c.scale < 0.02) {
         c.nf.setAttribute("d", "");
         c.ne.setAttribute("d", "");
@@ -1855,7 +1865,7 @@ function createFoam(options) {
       c.svy = ease(c.svy, c.vy, 8, dt);
       const speed = Math.hypot(c.svx, c.svy), st = still ? 0 : Math.min(c.mode === "fling" ? 0.2 : 0.12, speed / 1100), ux0 = c.svx / (speed || 1), uy0 = c.svy / (speed || 1);
       const sigh = still ? 1 : 1 + 0.1 * Math.sin(Math.PI * (1 - c.kick)) * (c.kick > 0 ? 1 : 0);
-      const pts = [];
+      let pts = [];
       for (let i = 0; i < N; i++) {
         const th = i / N * Math.PI * 2, ux = Math.cos(th), uy = Math.sin(th), along = ux * ux0 + uy * uy0;
         let r = (c.R + (running ? (0.35 * Math.sin(2 * th + tt * 0.5 + c.phase) + 0.25 * Math.sin(3 * th - tt * 0.37 + c.phase)) * sz : 0)) * c.scale * sigh;
@@ -1870,6 +1880,13 @@ function createFoam(options) {
         }
         r = Math.max(r, c.R * c.scale * 0.35);
         pts.push([c.x + r * ux, c.y + r * uy]);
+      }
+      const contour = foamContour(pts, c.mode === "fling" || drag?.started && drag.cell === c ? -Infinity : TOP_GAP + 1);
+      if (contour.offsetY) {
+        pts = contour.points;
+        c.y += contour.offsetY;
+        c.vy = Math.max(0, c.vy);
+        c.svy = Math.max(0, c.svy);
       }
       if (c.mode === "live" && !c.hidden && drag?.cell !== c) {
         const area = polygonArea(pts) / Math.max(0.01, (c.scale * sigh) ** 2);
@@ -1891,7 +1908,7 @@ function createFoam(options) {
         c.vin = Math.min(c.vin, r);
         c.vr = Math.max(c.vr, r);
       }
-      const d = curve(pts);
+      const d = contour.path;
       c.b.setAttribute("d", d);
       c.h.setAttribute("d", d);
       c.m.setAttribute("d", d);
@@ -1953,7 +1970,7 @@ function createFoam(options) {
     const hits = foamPoreHits(
       pressable.map((c) => ({ x: c.cx, y: c.cy, r: c.R * c.scale, floor: c.vin, reach: c.vr })),
       porous.map((d) => ({ x: d.px, y: d.py, shown: d.room })),
-      { w, h: h3 }
+      { w, h: h3, top: TOP_GAP }
     );
     for (const c of cells) {
       const i = pressable.indexOf(c), r = i < 0 ? 0 : hits.cells[i];
@@ -2044,7 +2061,7 @@ var foamCss = `
 .theone-foam-list{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .theone-cell{cursor:grab;pointer-events:auto}
 .theone-cell.drag{cursor:grabbing}
-.theone-cell [data-part=hit]{fill:transparent;stroke:none;pointer-events:all}
+.theone-cell [data-part=hit]{fill:transparent;stroke:none}
 .theone-cell [data-part=body]{stroke:none;fill:var(--foam-bg);transition:fill .8s ease}
 .theone-cell [data-part=membrane]{fill:none;stroke:var(--foam-idle-line);stroke-width:1.2;stroke-linejoin:round;stroke-linecap:round;transition:stroke .8s ease,stroke-width .4s ease}
 .theone-cell [data-part=nucleus]{fill:var(--foam-idle-dot);transition:fill .6s ease,stroke .6s ease}

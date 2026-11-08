@@ -353,7 +353,8 @@ export function mountFoamHost(options: FoamHostOptions): FoamHost {
   const host = document.createElement('div')
   host.setAttribute('translate', 'no')
   document.body.appendChild(host)
-  // While the rows below hold still, the cluster is cut at the room it has (cells may still rise over the card above).
+  // Clip against the rows below while they hold still. The upper overflow is for message trails and intentional drags;
+  // createFoam keeps resting outlines and hit areas below the main card.
   const wave = createWave(button, room => { host.style.clipPath = room === null ? '' : `inset(-400px -80px ${Math.max(0, host.offsetHeight - room).toFixed(1)}px -80px)` })
   const sessionOf = new Map<string, string>()
   let latest: BubbleSnapshot | undefined
