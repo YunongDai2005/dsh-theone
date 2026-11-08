@@ -196,3 +196,161 @@ for (const preparing of [false, true]) test('withdraw or stop background prepara
     assert.equal(after.phase, 'stopped'); assert.equal(after.delivery.phase, 'discarded')
   } finally { preparation.resolve(); foreground.resolve(); await app.close(); await rm(root, { recursive: true, force: true }) }
 })
+
+for (const mode of ['rules', 'llm', 'routing'] as const) test('stopping one foreground input routes and executes the remaining queue in order: ' + mode, { timeout: 15000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'theone-stop-keep-queue-')), model = new FixtureModel()
+  const firstEntered = Promise.withResolvers<void>(), secondEntered = Promise.withResolvers<void>(), releaseSecond = Promise.withResolvers<void>()
+  const routed: string[] = []
+  let workerCalls = 0
+  model.behavior = async function* (options) {
+    if (options.system?.startsWith(ROUTING_PROMPT)) {
+      const payload = JSON.parse((options.messages[0].content as readonly { text: string }[])[0].text)
+      routed.push(payload.text)
+      if (mode === 'routing' && payload.text === 'Qwen first') {
+        firstEntered.resolve(); await waitForAbort(options.signal); options.signal!.throwIfAborted()
+      }
+      // While A replies, an undecided mid-reply classification leaves B in the host queue.
+      const contextId = payload.running?.topicId ?? (payload.text.includes('thesis') ? 'ctx_thesis' : 'ctx_qwen_9070xt')
+      yield* textResponse(JSON.stringify({ action: 'EXISTING', contextId, reason: 'fixture' })); return
+    }
+    const message = options.messages.findLast(m => m.role === 'user' && 'source' in m && m.source?.kind === 'user')!
+    const request = message.content.flatMap(b => b.type === 'text' ? [b.text] : []).join('')
+    workerCalls++
+    if (request === 'Qwen first') {
+      firstEntered.resolve(); await waitForAbort(options.signal); options.signal!.throwIfAborted()
+    }
+    if (request.endsWith('thesis second')) { secondEntered.resolve(); await releaseSecond.promise }
+    yield* textResponse('answer: ' + request)
+  }
+  const app = await harness(root, model, { routerMode: mode === 'rules' ? 'rules' : 'llm' })
+  try {
+    const stop = await api(app), first = say('Qwen first'), second = say('thesis second'), third = say('Qwen third')
+    app.gateway.followup(first); await firstEntered.promise
+    const work = app.ctx.theone.bubbleView(app.gateway.id).workItems.find(w => w.primaryMessageId === first.id)!
+    app.gateway.followup(second); app.gateway.followup(third)
+    await until(() => app.ctx.theone.bubbleView(app.gateway.id).workItems.filter(w => (w.primaryMessageId === second.id || w.primaryMessageId === third.id)).every(w => w.phase === 'queued'))
+    const before = app.ctx.theone.bubbleView(app.gateway.id)
+    const queued = before.workItems.find(w => w.primaryMessageId === second.id)!
+    assert.equal(queued.phase, 'queued'); assert.equal(queued.executionId, null)
+    if (mode !== 'llm') assert.equal(queued.contextId, null)
+    assert.deepEqual(before.gateway!.nextTurn.map(m => m.messageId), [second.id, third.id])
+    let stoppedResult: Awaited<ReturnType<typeof stop>> | undefined
+    const stopping = stop(work.id).then(result => { stoppedResult = result })
+    await until(() => !!stoppedResult)
+    await stopping
+    const result = stoppedResult!
+    assert.equal(result.status, 200); assert.equal(result.body.effect, 'stopped')
+    const after = app.ctx.theone.bubbleView(app.gateway.id)
+    assert.equal(after.workItems.find(w => w.id === work.id)!.phase, 'stopped')
+    assert.notEqual(after.workItems.find(w => w.id === queued.id)!.phase, 'stopped', 'stopping A must not withdraw queued B')
+    // The stop response must not wait for B's answer to finish.
+    await secondEntered.promise
+    releaseSecond.resolve(); await app.gateway.whenIdle()
+    const final = app.ctx.theone.bubbleView(app.gateway.id)
+    assert.equal(final.workItems.find(w => w.id === queued.id)!.phase, 'succeeded')
+    assert.equal(final.workItems.find(w => w.id === queued.id)!.delivery.phase, 'shown')
+    assert.equal(app.ctx.theone.store.route(second.id)?.decision.contextId, 'ctx_thesis')
+    assert.equal(app.ctx.theone.store.route(second.id)?.status, 'completed')
+    assert.equal(app.ctx.theone.store.topicRun(second.id)?.outcome, 'completed')
+    assert.equal(app.ctx.theone.store.route(third.id)?.status, 'completed')
+    assert.deepEqual(texts(app.gateway.session.snapshotEvents()), ['answer: thesis second', 'answer: Qwen third'])
+    const userIds = app.gateway.session.snapshotEvents().flatMap(e => e.type === 'user/message' && e.data.source.kind === 'user' ? [e.data.id] : [])
+    assert.deepEqual(userIds.filter(id => id === second.id || id === third.id), [second.id, third.id])
+    assert.equal(workerCalls, mode === 'routing' ? 2 : 3)
+    if (mode !== 'rules') assert.ok(routed.includes('thesis second'))
+  } finally { releaseSecond.resolve(); app.gateway.cancel({ kind: 'parent' }); await app.close(); await rm(root, { recursive: true, force: true }) }
+})
+
+test('foreground stop preserves a background answer still queued for delivery', { timeout: 15000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'theone-stop-queued-delivery-')), model = new FixtureModel()
+  const entered = Promise.withResolvers<void>()
+  model.behavior = async function* (options) {
+    if (options.system?.startsWith(ROUTING_PROMPT)) {
+      const payload = JSON.parse((options.messages[0].content as readonly { text: string }[])[0].text)
+      yield* textResponse(JSON.stringify({ action: 'EXISTING', contextId: payload.text.includes('thesis') ? 'ctx_thesis' : 'ctx_qwen_9070xt', reason: 'fixture' })); return
+    }
+    const descriptor = options.messages.find(m => m.role === 'user' && 'source' in m && m.source?.kind === 'theone-context') as any
+    if (descriptor.source.contextId === 'ctx_qwen_9070xt') { entered.resolve(); await waitForAbort(options.signal); options.signal!.throwIfAborted() }
+    yield* textResponse('queued background answer')
+  }
+  const app = await harness(root, model, { routerMode: 'llm' })
+  try {
+    const stop = await api(app), first = say('Qwen first'), second = say('thesis second')
+    app.gateway.followup(first); await entered.promise
+    app.gateway.followup(second)
+    await until(() => app.ctx.theone.bubbleView(app.gateway.id).workItems.some(w => w.primaryMessageId === second.id && w.phase === 'succeeded'))
+    const before = app.ctx.theone.bubbleView(app.gateway.id)
+    const firstWork = before.workItems.find(w => w.primaryMessageId === first.id)!, secondWork = before.workItems.find(w => w.primaryMessageId === second.id)!
+    assert.equal(secondWork.delivery.phase, 'waiting')
+    assert.equal((await stop(firstWork.id)).status, 200)
+    await app.gateway.whenIdle()
+    const after = app.ctx.theone.bubbleView(app.gateway.id).workItems.find(w => w.id === secondWork.id)!
+    assert.equal(after.delivery.phase, 'shown')
+    assert.equal(after.executionId, secondWork.executionId)
+    assert.equal(app.ctx.theone.store.route(second.id)?.status, 'completed')
+    assert.deepEqual(texts(app.gateway.session.snapshotEvents()), ['queued background answer'])
+  } finally { app.gateway.cancel({ kind: 'parent' }); await app.close(); await rm(root, { recursive: true, force: true }) }
+})
+
+test('queue changes during foreground stop respect explicit withdrawal and newly submitted input', { timeout: 15000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'theone-stop-queue-race-')), app = await harness(root)
+  const entered = Promise.withResolvers<void>(), aborting = Promise.withResolvers<void>(), drain = Promise.withResolvers<void>()
+  try {
+    app.model.behavior = async function* (options) {
+      const message = options.messages.findLast(m => m.role === 'user' && 'source' in m && m.source?.kind === 'user')!
+      const request = message.content.flatMap(b => b.type === 'text' ? [b.text] : []).join('')
+      if (request === 'Qwen first') {
+        entered.resolve(); await waitForAbort(options.signal); aborting.resolve(); await drain.promise; options.signal!.throwIfAborted()
+      }
+      yield* textResponse('answer: ' + request)
+    }
+    const stop = await api(app), first = say('Qwen first'), withdrawn = say('thesis withdrawn'), kept = say('thesis kept'), arrived = say('Qwen arrived')
+    app.gateway.followup(first); await entered.promise
+    app.gateway.followup(withdrawn); app.gateway.followup(kept)
+    const before = app.ctx.theone.bubbleView(app.gateway.id)
+    const firstWork = before.workItems.find(w => w.primaryMessageId === first.id)!, withdrawnWork = before.workItems.find(w => w.primaryMessageId === withdrawn.id)!
+    const stopping = stop(firstWork.id); await aborting.promise
+    const withdrawal = await stop(withdrawnWork.id)
+    assert.equal(withdrawal.status, 200); assert.equal(withdrawal.body.effect, 'withdrawn')
+    app.gateway.followup(arrived)
+    drain.resolve(); assert.equal((await stopping).status, 200); await app.gateway.whenIdle()
+    assert.equal(app.ctx.theone.store.route(withdrawn.id), undefined)
+    assert.equal(app.ctx.theone.store.route(kept.id)?.status, 'completed')
+    assert.equal(app.ctx.theone.store.route(arrived.id)?.status, 'completed')
+    assert.deepEqual(texts(app.gateway.session.snapshotEvents()), ['answer: thesis kept', 'answer: Qwen arrived'])
+    assert.equal(app.ctx.theone.bubbleView(app.gateway.id).workItems.find(w => w.id === firstWork.id)!.phase, 'stopped')
+  } finally { drain.resolve(); app.gateway.cancel({ kind: 'parent' }); await app.close(); await rm(root, { recursive: true, force: true }) }
+})
+
+test('stopping routing resumes the pending steering batch without splitting or duplicating it', { timeout: 15000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'theone-stop-next-step-')), model = new FixtureModel()
+  const entered = Promise.withResolvers<void>()
+  let workerCalls = 0
+  model.behavior = async function* (options) {
+    if (options.system?.startsWith(ROUTING_PROMPT)) {
+      const payload = JSON.parse((options.messages[0].content as readonly { text: string }[])[0].text)
+      if (payload.text === 'Qwen first') { entered.resolve(); await waitForAbort(options.signal); options.signal!.throwIfAborted() }
+      yield* textResponse(JSON.stringify({ action: 'EXISTING', contextId: 'ctx_thesis', reason: 'fixture' })); return
+    }
+    workerCalls++
+    const input = options.messages.findLast(m => m.role === 'user' && 'source' in m && m.source?.kind === 'user')!
+    yield* textResponse(input.content.flatMap(b => b.type === 'text' ? [b.text] : []).join(''))
+  }
+  const app = await harness(root, model, { routerMode: 'llm' })
+  try {
+    const stop = await api(app), first = say('Qwen first'), second = say('thesis second'), supplement = say('thesis supplement')
+    app.gateway.followup(first); await entered.promise
+    app.gateway.steer(second); app.gateway.steer(supplement)
+    const before = app.ctx.theone.bubbleView(app.gateway.id)
+    assert.deepEqual(before.gateway!.nextStep.map(m => m.messageId), [second.id, supplement.id])
+    const work = before.workItems.find(w => w.primaryMessageId === first.id)!
+    assert.equal((await stop(work.id)).status, 200); await app.gateway.whenIdle()
+    assert.deepEqual(texts(app.gateway.session.snapshotEvents()), ['thesis second\n\nthesis supplement'])
+    assert.equal(workerCalls, 1)
+    const after = app.ctx.theone.bubbleView(app.gateway.id)
+    const batch = after.workItems.find(w => w.primaryMessageId === supplement.id)!
+    assert.deepEqual(batch.messageIds, [supplement.id, second.id])
+    assert.equal(batch.phase, 'succeeded'); assert.equal(batch.delivery.phase, 'shown')
+    assert.equal(after.workItems.find(w => w.id === work.id)!.phase, 'stopped')
+  } finally { app.gateway.cancel({ kind: 'parent' }); await app.close(); await rm(root, { recursive: true, force: true }) }
+})

@@ -171,6 +171,8 @@ export default class TheOne extends Service {
     /** The API and snapshot use the same live ownership check; persisted observations cannot cancel work. */
     private workStopTarget;
     private stopWork;
+    /** Stop this turn, retaining other inputs and waking their normal DSH routing/delivery. */
+    private stopGatewayTurn;
     private topicDoneCapability;
     private bubbleTemporary;
     private workTasks;

@@ -103,12 +103,21 @@ function goalObjective(message) {
         return text;
     }
 }
-function stepInput(messages, input) {
+function stepInput(messages, input, events) {
+    // An aborted turn may have no assistant message. Its unanswered input is still in history,
+    // but is not part of the next step's batch and must not be replayed into another topic.
+    const admitted = new Set();
+    for (const event of [...events].reverse()) {
+        if (event.type === 'step/start')
+            break;
+        if (event.type === 'user/message' && event.data.source.kind === 'user')
+            admitted.add(event.data.id);
+    }
     const batch = [];
     for (const message of [...messages].reverse()) {
         if (message.role === 'assistant')
             break;
-        if (message.role === 'user' && 'source' in message && message.source?.kind === 'user')
+        if (message.role === 'user' && 'source' in message && message.source?.kind === 'user' && message.id !== undefined && admitted.has(message.id))
             batch.unshift(message);
     }
     if (batch.length < 2 || batch.at(-1).id !== input.id)
@@ -1150,10 +1159,7 @@ export default class TheOne extends Service {
         else if (run) {
             run.cancel();
             if (this.runs.get(gateway.id) === run) {
-                gateway.cancel({ kind: 'parent' });
-                this.bubbleActivity.publish([], gateway.id);
-                await run.settled;
-                await this.finishRun(gateway.id, true);
+                await this.stopGatewayTurn(gateway);
             }
             else {
                 // Stop delivering this input without dropBackground's route/history deletion.
@@ -1178,11 +1184,48 @@ export default class TheOne extends Service {
             }
         }
         else {
-            gateway.cancel({ kind: 'parent' });
-            await gateway.whenIdle();
+            await this.stopGatewayTurn(gateway);
             this.bubbleActivity.stopped(workItemId);
         }
         return { workItemId, executionId: item.executionId, effect: target.effect };
+    }
+    /** Stop this turn, retaining other inputs and waking their normal DSH routing/delivery. */
+    async stopGatewayTurn(gateway) {
+        const stopped = Promise.withResolvers();
+        // whenIdle() follows replacement turns too: a new input must not make stop wait for its reply.
+        const off = this.ctx.on('agent/status', ({ agent, status }) => {
+            if (agent === gateway && status === 'idle')
+                stopped.resolve(this.closing.get(gateway.id));
+        });
+        try {
+            gateway.cancel({ kind: 'parent' }, { keepInbox: true });
+            if (gateway.status === 'idle')
+                stopped.resolve(this.closing.get(gateway.id));
+            // turn/end owns finishRun; never finish by gateway ID after the next run can take its place.
+            await stopped.promise;
+        }
+        finally {
+            off();
+        }
+        // A waking input sent during cancellation already restarts DSH's driver.
+        if (gateway.status !== 'idle')
+            return;
+        const target = gateway.inbox.nextTurn.length ? 'next-turn' : 'next-step';
+        const message = (target === 'next-turn' ? gateway.inbox.nextTurn : gateway.inbox.nextStep).at(-1);
+        if (!message)
+            return;
+        // keepInbox preserves work but does not wake a cancelled driver. Resend the live queue tail
+        // with its original identity and position. Do not restore a snapshot: explicit withdrawals
+        // made while the old turn drained must stay withdrawn. Moving is not cancelQueued.
+        this.moving.add(message.id);
+        try {
+            gateway.inbox.remove(message.id);
+            gateway.send(message, target, true);
+        }
+        finally {
+            this.moving.delete(message.id);
+            this.bubbleActivity.publish([], gateway.id);
+        }
     }
     topicDoneCapability(contextId, items = this.bubbleActivity.snapshot(), latestRuns = this.store.latestTopicRuns()) {
         const observed = doneCapability(items.filter(item => item.contextId === contextId));
@@ -3221,7 +3264,7 @@ export default class TheOne extends Service {
                 // A goal round is main chat's: the topic gets its words as a plain input, or the topic's own goal
                 // driver, which did not queue it, would block the turn.
                 ? createUserMessage({ source: { kind: 'user' }, content: input.content })
-                : stepInput(options.messages, input));
+                : stepInput(options.messages, input, gateway.session.snapshotEvents()));
             run = await this.startRun(gateway, route, input, workerInput, started => {
                 this.runs.set(gateway.id, started);
                 started.select();
