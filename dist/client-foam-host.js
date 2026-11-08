@@ -104,6 +104,42 @@ export function foamEventsFrom(events, snapshot) {
             out.push({ kind: 'correct', from: event.fromId, to: event.toId, messageId: event.messageId });
         else if (event.type === 'topic.merged')
             out.push({ kind: 'merged', id: event.sourceId, into: event.targetId });
+        else if (event.type === 'topic.unmerged')
+            out.push({ kind: 'unmerged', id: event.sourceId, into: event.targetId });
+    }
+    return settleFoamEvents(out, snapshot);
+}
+/**
+ * One feed batch's animations checked against the state it ended in, so an older event never undoes a newer state: of the
+ * merges and undos of one source only the last plays, and only if the snapshot agrees (a merge whose source it still lists,
+ * merged then undone in the same batch, plays nothing; nor does an undo whose source is gone again).
+ */
+export function settleFoamEvents(events, snapshot) {
+    const present = new Set(snapshot.topics.map(topic => topic.id)), last = new Map();
+    events.forEach((event, i) => { if (event.kind === 'merged' || event.kind === 'unmerged')
+        last.set(event.id, i); });
+    return events.filter((event, i) => event.kind === 'merged' ? last.get(event.id) === i && !present.has(event.id)
+        : event.kind === 'unmerged' ? last.get(event.id) === i && present.has(event.id) : true);
+}
+const TERMINAL = new Set(['succeeded', 'cancelled', 'expired', 'failed']);
+/**
+ * How queued merges ended, each exactly once: `seen` keeps every operation's last state, a finished one is never overwritten
+ * by an older state read later (history replayed after a receipt), and only a merge last seen queued or executing reports its end.
+ * Pass the batch's history first and its snapshot and receipts after.
+ */
+export function mergeOutcomes(seen, merges) {
+    const out = [];
+    for (const merge of merges) {
+        const was = seen.get(merge.operationId);
+        if (was && TERMINAL.has(was))
+            continue;
+        seen.set(merge.operationId, merge.state);
+        if (was !== 'queued' && was !== 'executing')
+            continue;
+        if (merge.state === 'succeeded')
+            out.push({ kind: 'merged', id: merge.sourceId, into: merge.targetId, undo: true });
+        else if (TERMINAL.has(merge.state))
+            out.push({ kind: 'mergeEnded', id: merge.sourceId, into: merge.targetId, failed: merge.state !== 'cancelled', ...merge.error ? { error: merge.error } : {} });
     }
     return out;
 }
@@ -202,8 +238,16 @@ function createWave(button, clip) {
             return;
         }
         limit(false);
+        // Reduced motion: rows that waited (or were still moving) go straight to their place when they are free, no spring after.
+        if (motion.matches) {
+            for (const el of [...state.keys()])
+                release(el);
+            if (wanted !== base)
+                apply(wanted, list, true);
+            return;
+        }
         if (wanted !== base) {
-            apply(wanted, list, motion.matches);
+            apply(wanted, list);
             return;
         }
         while (dt > 0) {
@@ -301,8 +345,11 @@ function createWave(button, clip) {
         if (!motion.matches)
             return;
         const list = rows();
-        if (busy(list))
+        // In use: they settle the moment they are free (see step).
+        if (busy(list)) {
+            wake();
             return;
+        }
         for (const el of [...state.keys()])
             release(el);
         if (wanted !== base)
@@ -527,18 +574,13 @@ export function mountFoamHost(options) {
                     for (const topic of body.snapshot.topics)
                         if (topic.openSessionId)
                             sessionOf.set(topic.id, topic.openSessionId);
-                    for (const merge of [...body.snapshot.merges ?? [], ...body.snapshot.mergeReceipts ?? [], ...body.events.flatMap(event => event.type === 'merge.changed' ? [event] : [])]) {
-                        const was = mergeStates.get(merge.operationId);
-                        mergeStates.set(merge.operationId, merge.state);
-                        if (was !== 'queued' && was !== 'executing')
-                            continue;
-                        if (merge.state === 'succeeded') {
-                            void readCatalog(false);
-                            foam.event({ kind: 'merged', id: merge.sourceId, into: merge.targetId, undo: true });
-                        }
-                        else if (merge.state !== 'queued' && merge.state !== 'executing')
-                            foam.event({ kind: 'mergeEnded', id: merge.sourceId, into: merge.targetId, failed: merge.state !== 'cancelled' });
-                    }
+                    // History first, then the snapshot's merges and receipts: each queued merge's end is taken once, and a merge undone later in
+                    // this same batch plays nothing (its source is in the snapshot again).
+                    const ended = mergeOutcomes(mergeStates, [...body.events.flatMap(event => event.type === 'merge.changed' ? [event] : []), ...body.snapshot.merges ?? [], ...body.snapshot.mergeReceipts ?? []]);
+                    if (ended.some(event => event.kind === 'merged'))
+                        void readCatalog(false);
+                    for (const event of settleFoamEvents(ended, body.snapshot))
+                        foam.event(event);
                     show(modelFromBubbles(body.snapshot));
                     if (!body.reset)
                         for (const event of foamEventsFrom(body.events, body.snapshot))

@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { foamFilter, foamHitRadii, foamLabel, foamNearest, foamOrder, foamPlace, foamShortName, foamStatusText, type FoamTopic } from '../src/client-foam.ts'
-import { foamEventsFrom, modelFromBubbles, modelFromCatalog, suggestionsFromBubbles } from '../src/client-foam-host.ts'
+import { foamEnterActs, foamFilter, foamHitRadii, foamLabel, foamMergeReason, foamMerging, foamNearest, foamOrder, foamPlace, foamPoreHits, foamShortName, foamStatusText, type FoamTopic } from '../src/client-foam.ts'
+import { foamEventsFrom, mergeOutcomes, modelFromBubbles, modelFromCatalog, settleFoamEvents, suggestionsFromBubbles } from '../src/client-foam-host.ts'
 import type { CatalogSnapshot } from '../src/catalog-types.ts'
-import type { BubbleEvent, BubbleSnapshot, BubbleTopic, BubbleWorkItem } from '../src/bubble-types.ts'
+import type { BubbleEvent, BubbleMerge, BubbleSnapshot, BubbleTopic, BubbleWorkItem } from '../src/bubble-types.ts'
 
 const NOW = 1_800_000_000_000, DAY = 86400000
 const allowed = { allowed: true }
@@ -67,7 +67,7 @@ test('routing events become cluster events; hints and bookkeeping play nothing',
     { ...meta, seq: 5, type: 'route.hint', messageId: 'm1', suggestedId: 'b' },
     { ...meta, seq: 6, type: 'route.moved', messageId: 'm1', fromId: 'a', toId: 'b', cause: 'explicit', reexecute: false },
     { ...meta, seq: 7, type: 'work.changed', workItemId: 'w1', executionId: 'x', phase: 'running' },
-    { ...meta, seq: 8, type: 'topic.merged', sourceId: 'c', targetId: 'a' },
+    { ...meta, seq: 8, type: 'topic.merged', sourceId: 'd', targetId: 'a' },
   ]
   assert.deepEqual(foamEventsFrom(events, snap), [
     { kind: 'route', to: 'a', alternates: ['c'], messageId: 'm1' },
@@ -75,7 +75,7 @@ test('routing events become cluster events; hints and bookkeeping play nothing',
     { kind: 'create', to: 'c' },
     { kind: 'clarify', candidates: ['a', 'b'] },
     { kind: 'correct', from: 'a', to: 'b', messageId: 'm1' },
-    { kind: 'merged', id: 'c', into: 'a' },
+    { kind: 'merged', id: 'd', into: 'a' },
   ])
 })
 
@@ -287,4 +287,96 @@ test('an older back end without merge suggestions gives the cluster none', () =>
   const snap = snapshot([topic('a'), topic('b')])
   assert.deepEqual(suggestionsFromBubbles(snap), [])
   assert.deepEqual(modelFromBubbles(snap).suggestions, [])
+})
+
+test('the Enter that confirms an input method candidate never acts on a row', () => {
+  assert.equal(foamEnterActs({ key: 'Enter' }), true)
+  assert.equal(foamEnterActs({ key: 'Enter', isComposing: false, keyCode: 13 }), true)
+  assert.equal(foamEnterActs({ key: 'Enter', isComposing: true, keyCode: 13 }), false)
+  assert.equal(foamEnterActs({ key: 'Enter', keyCode: 229 }), false)
+  assert.equal(foamEnterActs({ key: 'Process', keyCode: 229 }), false)
+  assert.equal(foamEnterActs({ key: 'a' }), false)
+})
+
+test('a topic in a merge waiting to happen, as source or target, is not offered as a merge target', () => {
+  const held = foamMerging([{ id: 'b', into: 'c', state: 'queued', operationId: 'o1' }], [['d', 'e']])
+  assert.deepEqual([...held].sort(), ['b', 'c', 'd', 'e'])
+  assert.equal(held.has('a'), false)
+  assert.deepEqual([...foamMerging(undefined)], [])
+})
+
+test('a merge that did not happen says why when TheOne gave a known reason, and the generic line otherwise', () => {
+  assert.equal(foamMergeReason('MERGE_CONFLICT'), 'mergeConflict')
+  assert.equal(foamMergeReason('GATEWAY_BUSY'), 'mergeBusy')
+  assert.equal(foamMergeReason('TOPIC_BUSY'), 'mergeBusy')
+  assert.equal(foamMergeReason('MERGE_EXPIRED'), 'mergeExpired')
+  assert.equal(foamMergeReason('MERGE_FAILED'), 'mergeFailed')
+  assert.equal(foamMergeReason(), 'mergeFailed')
+})
+
+const op = (operationId: string, state: BubbleMerge['state'], error?: string) => ({ operationId, sourceId: 'a', targetId: 'b', state, ...error ? { error } : {} })
+
+test('a queued merge ends exactly once, and a history read after its receipt never takes it back', () => {
+  const seen = new Map<string, BubbleMerge['state']>()
+  assert.deepEqual(mergeOutcomes(seen, [op('1', 'queued')]), [])
+  // The receipt says succeeded; the replayed history (executing, then succeeded) comes after it in the same read.
+  assert.deepEqual(mergeOutcomes(seen, [op('1', 'succeeded'), op('1', 'executing'), op('1', 'succeeded')]), [{ kind: 'merged', id: 'a', into: 'b', undo: true }])
+  assert.equal(seen.get('1'), 'succeeded')
+  // Read again next round: nothing more.
+  assert.deepEqual(mergeOutcomes(seen, [op('1', 'executing'), op('1', 'succeeded')]), [])
+})
+
+test('a failed queued merge passes its reason on; a cancelled one is not a failure; one never seen waiting reports nothing', () => {
+  const seen = new Map<string, BubbleMerge['state']>([['2', 'executing'], ['3', 'queued']])
+  assert.deepEqual(mergeOutcomes(seen, [op('2', 'failed', 'MERGE_CONFLICT'), op('3', 'cancelled', 'MERGE_RESTARTED'), op('4', 'failed', 'GATEWAY_BUSY')]), [
+    { kind: 'mergeEnded', id: 'a', into: 'b', failed: true, error: 'MERGE_CONFLICT' },
+    { kind: 'mergeEnded', id: 'a', into: 'b', failed: false, error: 'MERGE_RESTARTED' },
+  ])
+  // Back to queued while TheOne is busy is not an end.
+  const later = new Map<string, BubbleMerge['state']>([['5', 'executing']])
+  assert.deepEqual(mergeOutcomes(later, [op('5', 'queued')]), [])
+  assert.equal(later.get('5'), 'queued')
+})
+
+test('merged and undone in one batch: the topic the latest state still has is never animated away', () => {
+  const snap = snapshot([topic('a'), topic('b')])
+  const meta = { version: 2, at: NOW, gatewayId: 'g' }
+  const events: BubbleEvent[] = [
+    { ...meta, seq: 1, type: 'topic.merged', sourceId: 'a', targetId: 'b' },
+    { ...meta, seq: 2, type: 'topic.unmerged', sourceId: 'a', targetId: 'b' },
+  ]
+  assert.deepEqual(foamEventsFrom(events, snap), [{ kind: 'unmerged', id: 'a', into: 'b' }])
+  // Undone, then merged again: only the merge plays.
+  assert.deepEqual(foamEventsFrom([...events, { ...meta, seq: 3, type: 'topic.merged', sourceId: 'a', targetId: 'b' }], snapshot([topic('b')])), [{ kind: 'merged', id: 'a', into: 'b' }])
+  // The queued merge's receipt is held to the same rule.
+  assert.deepEqual(settleFoamEvents([{ kind: 'merged', id: 'a', into: 'b', undo: true }, { kind: 'mergeEnded', id: 'c', into: 'b', failed: true }], snap),
+    [{ kind: 'mergeEnded', id: 'c', into: 'b', failed: true }])
+})
+
+test('a duplicate pore gets its own room in a wide gap, and none where it would cover a cell', () => {
+  const box = { w: 300, h: 200 }
+  // Two cells 60px apart wall to wall: the pore halfway gets its full 8px, and the cells keep clear of it.
+  const wide = foamPoreHits([{ x: 50, y: 100, r: 20 }, { x: 150, y: 100, r: 20 }], [{ x: 100, y: 100 }], box)
+  assert.equal(wide.pores[0], 8)
+  assert.ok(wide.cells.every((r, i) => r + 8 <= Math.abs([50, 150][i] - 100) + 1e-9))
+  // Tight together (2px gap): no pore, and the cells keep exactly the hit circles they would have without it.
+  const tight = [{ x: 50, y: 100, r: 20 }, { x: 92, y: 100, r: 20 }]
+  const t = foamPoreHits(tight, [{ x: 71, y: 100 }], box)
+  assert.equal(t.pores[0], 0)
+  assert.deepEqual(t.cells, foamHitRadii(tight, box))
+  // A third cell sits right where the pore would be: no pore over it.
+  const third = foamPoreHits([{ x: 50, y: 100, r: 20 }, { x: 150, y: 100, r: 20 }, { x: 100, y: 104, r: 12 }], [{ x: 100, y: 100 }], box)
+  assert.equal(third.pores[0], 0)
+  // A cell whose outline bulges past its round size (reach) keeps the pore off that bulge too.
+  const bulge = foamPoreHits([{ x: 50, y: 100, r: 20, reach: 45 }, { x: 150, y: 100, r: 20 }], [{ x: 100, y: 100 }], box)
+  assert.equal(bulge.pores[0], 0)
+})
+
+test('a pore at the edge of fitting stays shown with a little less room, so it does not blink', () => {
+  const box = { w: 300, h: 200 }, cells = [{ x: 50, y: 100, r: 20 }, { x: 110, y: 100, r: 20 }]
+  // 20px wall to wall: the pore gets half of the 10px to each wall, 5px, just under the 5.5px a new pore needs to appear.
+  const fresh = foamPoreHits(cells, [{ x: 80, y: 100 }], box)
+  const shown = foamPoreHits(cells, [{ x: 80, y: 100, shown: true }], box)
+  assert.equal(fresh.pores[0], 0)
+  assert.ok(shown.pores[0] > 0 && shown.pores[0] < 5.5, String(shown.pores[0]))
 })

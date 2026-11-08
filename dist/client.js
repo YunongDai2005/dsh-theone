@@ -219,6 +219,25 @@ function foamHitRadii(items, box, min = 12) {
   }
   return h3;
 }
+function foamPoreHits(cells, pores, box, max = 8, need = 5.5) {
+  const size = (ps) => foamHitRadii([...cells, ...ps.map((p) => ({ x: p.x, y: p.y, r: 0, floor: 0 }))], box);
+  const room = (ps, radii2) => ps.map((p, i) => {
+    let r = Math.min(max, radii2[cells.length + i]);
+    cells.forEach((c, j) => {
+      r = Math.min(r, Math.hypot(p.x - c.x, p.y - c.y) - Math.max(radii2[j], c.reach ?? c.r));
+    });
+    return r >= (p.shown ? need - 1 : need) ? r : 0;
+  });
+  let radii = size(pores), out = room(pores, radii);
+  if (out.some((r) => !r)) {
+    const kept = pores.filter((_, i) => out[i] > 0);
+    radii = size(kept);
+    const again = room(kept.map((p) => ({ ...p, shown: true })), radii);
+    let k = 0;
+    out = out.map((r) => r > 0 ? again[k++] : 0);
+  }
+  return { cells: radii.slice(0, cells.length), pores: out };
+}
 function foamNearest(p, items) {
   let best = -1, bestD = Infinity;
   items.forEach((a, i) => {
@@ -294,6 +313,24 @@ function foamFilter(topics, query) {
   const q = query.trim().toLocaleLowerCase();
   return q ? topics.filter((t) => t.title.toLocaleLowerCase().includes(q) || !!t.label?.toLocaleLowerCase().includes(q)) : [...topics];
 }
+function foamEnterActs(e) {
+  return e.key === "Enter" && !e.isComposing && e.keyCode !== 229;
+}
+function foamMerging(pending, local = []) {
+  const out = /* @__PURE__ */ new Set();
+  for (const m of pending ?? []) {
+    out.add(m.id);
+    out.add(m.into);
+  }
+  for (const [a, b] of local) {
+    out.add(a);
+    out.add(b);
+  }
+  return out;
+}
+function foamMergeReason(error) {
+  return error === "MERGE_CONFLICT" ? "mergeConflict" : error === "GATEWAY_BUSY" || error === "TOPIC_BUSY" ? "mergeBusy" : error === "MERGE_EXPIRED" ? "mergeExpired" : "mergeFailed";
+}
 function createFoam(options) {
   const { host, actions } = options;
   const motion = matchMedia("(prefers-reduced-motion: reduce)"), reduced = () => motion.matches;
@@ -341,6 +378,8 @@ function createFoam(options) {
   let clarifying = null;
   let menu = null, tipOwner = null, raf = 0, last = now(), t = 0;
   const pending = [];
+  const gone = /* @__PURE__ */ new Map();
+  let rerouteSeq = 0;
   const sizeOf = (c) => c.kind === "more" ? 16 : c.oneOff ? 21 : c.state === "running" || c.state === "done" || c.state === "wait" || c.state === "fail" || c.cur ? 29 : c.state === "queued" ? 24 : 16 + 9 * c.w;
   const named = (c) => c.kind === "more" || c.cur || c.state !== "idle" || c.ask || !!c.offer || c.mode === "bud";
   const busy = (c) => c.state === "running" || c.state === "queued" || c.state === "wait" || c.state === "done";
@@ -512,7 +551,7 @@ function createFoam(options) {
     el.setAttribute("class", "theone-vesicle");
     el.innerHTML = '<circle data-part="membrane" r="3.4"/><circle data-part="nucleus" r="1.3"/>';
     vlayer.appendChild(el);
-    const v = { el, from, to, arrive, t: 0, dur, hold, toMark: false };
+    const v = { el, from, to, arrive, t: reduced() ? 1 : 0, dur, hold, toMark: false };
     ves.push(v);
     return v;
   }
@@ -538,6 +577,17 @@ function createFoam(options) {
     c.into = void 0;
     c.g.style.pointerEvents = "none";
     bonds = bonds.filter((b) => b[0] !== c && b[1] !== c);
+  }
+  function revive(id) {
+    const c = cells.find((o) => o.kind === "topic" && o.id === id && o.mode === "leave");
+    if (!c) return void 0;
+    c.mode = "live";
+    c.into = void 0;
+    c.alpha = 1;
+    c.scale = Math.max(c.scale, reduced() ? 1 : 0.3);
+    c.g.style.pointerEvents = "";
+    c.g.style.opacity = "1";
+    return c;
   }
   function apply2(event2) {
     if (event2.kind === "route") {
@@ -611,10 +661,15 @@ function createFoam(options) {
       if (a && a.mode === "leave") return true;
       if (a && b) fuse(a, b);
       else if (a) fade(a);
+    } else if (event2.kind === "unmerged") {
+      gone.delete(event2.id);
+      const a = byId(event2.id) ?? revive(event2.id), b = byId(event2.into);
+      if (!a) return !model.topics.some((t2) => t2.id === event2.id);
+      light(a, b ? [b] : []);
     } else if (event2.kind === "mergeEnded") {
       const a = byId(event2.id), b = byId(event2.into);
       bonds = bonds.filter((x) => x[0] !== a);
-      if (event2.failed && b) tipAt(b, text("mergeFailed"));
+      if (event2.failed && b) tipAt(b, text(foamMergeReason(event2.error)));
     }
     return true;
   }
@@ -623,6 +678,7 @@ function createFoam(options) {
   }
   function clearOffer(o) {
     o.offer = void 0;
+    o.reroute = void 0;
     o.g.classList.remove("offer", "pending");
     if (!o.ask) o.g.classList.remove("ask");
   }
@@ -636,11 +692,13 @@ function createFoam(options) {
   }
   function update(next) {
     model = next;
-    const seen = /* @__PURE__ */ new Set();
+    const seen = /* @__PURE__ */ new Set(), T = now();
+    for (const [id, until] of gone) if (T > until || !model.topics.some((t2) => t2.id === id)) gone.delete(id);
     for (const topic of model.topics) {
       seen.add(topic.id);
       let c = byId(topic.id);
-      if (!c) c = makeCell(topic.id, topic.title, !first);
+      if (!c && gone.has(topic.id)) continue;
+      if (!c) c = revive(topic.id) ?? makeCell(topic.id, topic.title, !first && !reduced());
       const was = c.state;
       c.title = topic.title;
       c.short = topic.label;
@@ -693,10 +751,13 @@ function createFoam(options) {
   }
   function syncList() {
     const shown = topics().filter((c) => !c.aside || busy(c));
+    let lost = false;
     for (const [id, el] of keys) if (!shown.some((c) => c.id === id)) {
+      lost ||= el === document.activeElement;
       el.parentElement?.remove();
       keys.delete(id);
     }
+    if (lost && !entry.hidden) entry.focus();
     for (const c of shown) {
       let el = keys.get(c.id);
       if (!el) {
@@ -738,6 +799,7 @@ function createFoam(options) {
   }
   function event(e) {
     if (!apply2(e)) pending.push(e);
+    if (pop?.kind === "detail") renderDetail();
   }
   function text(key, vars) {
     return actions.text(key, vars);
@@ -788,14 +850,14 @@ function createFoam(options) {
     if (!had || !was) return;
     was.unkeys();
     if (!restore) return;
-    const back = restore === true && was.back?.isConnected ? was.back : null;
-    const prev = was.prev instanceof HTMLElement && was.prev.isConnected && was.prev !== document.body && !had.contains(was.prev) && !(restore === "gone" && was.prev === keys.get(was.cell.id)) ? was.prev : null;
-    const to = back ?? prev;
+    const usable = (el) => el instanceof HTMLElement && el.isConnected && el !== document.body && !had.contains(el) && !el.closest("[hidden]");
+    const alive = was.cell.kind === "topic" && !!byId(was.cell.id);
+    const row = alive && restore === true ? keys.get(was.cell.id) : void 0;
+    const to = [restore === true ? was.back : null, restore === "gone" && was.prev === keys.get(was.cell.id) ? null : was.prev, row, entry].find(usable);
     if (to) to.focus();
-    else if (restore === "gone" && !entry.hidden) entry.focus();
     else if (had.contains(document.activeElement)) document.activeElement.blur();
   }
-  function menuItems(c) {
+  function menuItems(c, mid = c.offer?.messageId) {
     const id = c.id;
     const items = c.kind === "more" ? [[text("menuWorkspace"), actions.openWorkspace, "menuWorkspace"]] : c.state === "running" ? [[text("menuOpen"), () => actions.open(id), "menuOpen"], null, [text("menuStop"), () => actions.stop(id), "menuStop"]] : c.state === "queued" ? [[text("menuOpen"), () => actions.open(id), "menuOpen"], [text("menuCancel"), () => actions.cancelQueued(id), "menuCancel"]] : c.state === "done" ? [[text("menuShowNow"), () => actions.showAnswer(id), "menuShowNow"], [text("menuOpen"), () => actions.open(id), "menuOpen"]] : c.state === "wait" ? [[text("menuAnswer"), () => actions.answer(id), "menuAnswer"], [text("menuOpen"), () => actions.open(id), "menuOpen"]] : [
       [text("menuContinue"), () => actions.mount(id), "menuContinue"],
@@ -807,15 +869,14 @@ function createFoam(options) {
       [text("menuDelete"), () => actions.remove(id), "menuDelete"]
     ];
     if (c.kind === "topic") {
-      const mid = c.offer?.messageId;
-      if (mid) items.unshift([text("menuReroute"), () => rerouteTo(c, mid), "menuReroute"], null);
+      if (mid && c.offer?.messageId === mid) items.unshift([text("menuReroute"), () => rerouteTo(c, mid), "menuReroute"], null);
       const extra = [];
       for (const d of dupsOf(c)) extra.push([text("dupMenu", { name: (d.a === c ? d.b : d.a).title }), () => openDup(d.s.id, c), "dupMenu"]);
       const queued = (model.pendingMerges ?? []).find((m) => m.id === id && m.state === "queued" && m.operationId);
       if (queued) extra.push([text("menuCancelMerge"), () => void actions.cancelMerge(queued.operationId).then((ok) => {
         if (!ok) tipAt(c, text("actionFailed"));
       }), "menuCancelMerge"]);
-      if (!rail && model.topics.length > 1 && !busyMerge(c)) extra.push([text("menuMergeInto"), () => openAll(activeOrNull(), c.m.getBoundingClientRect(), c.id), "menuMergeInto"]);
+      if (!rail && model.topics.length > 1 && !merging().has(c.id)) extra.push([text("menuMergeInto"), () => openAll(activeOrNull(), c.m.getBoundingClientRect(), c.id), "menuMergeInto"]);
       for (const m of (model.merges ?? []).filter((m2) => m2.targetId === id).slice(0, 3)) extra.push([text("menuUnmerge", { name: m.title }), () => undoMerge(m.sourceId, c), "menuUnmerge"]);
       if (extra.length) items.push(null, ...extra);
     }
@@ -856,7 +917,7 @@ function createFoam(options) {
     if (pop && !pop.el.contains(at) && !(pop.kind === "all" && entry.contains(at))) closePop();
   };
   const keydown = (e) => {
-    if (e.key !== "Escape") return;
+    if (e.key !== "Escape" || e.isComposing) return;
     if (pop?.el.contains(e.target)) {
       e.preventDefault();
       e.stopPropagation();
@@ -912,8 +973,8 @@ function createFoam(options) {
     el.style.top = Math.max(8, Math.min(top, innerHeight - b.height - 8)) + "px";
   }
   function popNav(e) {
-    if (!pop) return;
-    const all = [...pop.el.querySelectorAll("input, button")].filter((x) => !x.closest("[hidden]"));
+    if (!pop || e.isComposing || e.keyCode === 229) return;
+    const all = [...pop.el.querySelectorAll("input, button:not([disabled])")].filter((x) => !x.closest("[hidden]"));
     const i = all.indexOf(document.activeElement), inInput = document.activeElement instanceof HTMLInputElement;
     const next = e.key === "ArrowDown" ? (i + 1) % all.length : e.key === "ArrowUp" ? i <= 0 ? all.length - 1 : i - 1 : e.key === "Home" && !inInput ? 0 : e.key === "End" && !inInput ? all.length - 1 : -1;
     if (next < 0 || !all.length) return;
@@ -955,6 +1016,7 @@ function createFoam(options) {
     const keep = pop?.kind === "all" ? pop.back ?? entry : back;
     closePop();
     const el = makePop("detail", c.id, keep);
+    pop.mid = c.offer?.messageId;
     renderDetail();
     if (pop?.el !== el) return;
     document.body.appendChild(el);
@@ -970,10 +1032,10 @@ function createFoam(options) {
       return;
     }
     const status = foamStatusText(t2, text);
-    const items = menuItems(c).filter((item) => item?.[2] !== "menuContinue");
+    const items = menuItems(c, pop.mid).filter((item) => item?.[2] !== "menuContinue");
     while (items[0] === null) items.shift();
     const primary = !t2.current;
-    const sig = [c.title, status, primary, c.offer?.messageId ?? "", ...items.map((item) => item ? item[0] : "-")].join("\n");
+    const sig = [c.title, status, primary, pop.mid && c.offer?.messageId === pop.mid ? pop.mid : "", ...items.map((item) => item ? item[0] : "-")].join("\n");
     if (sig === pop.sig) return;
     const el = pop.el, focused = el.contains(document.activeElement) ? document.activeElement?.textContent : null;
     pop.sig = sig;
@@ -1011,9 +1073,9 @@ function createFoam(options) {
       }
     });
     input.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
+      if (foamEnterActs(e)) {
         e.preventDefault();
-        el.querySelector(".theone-foam-row")?.click();
+        el.querySelector(".theone-foam-row:not([disabled])")?.click();
       }
     });
     const rows = document.createElement("div");
@@ -1023,6 +1085,7 @@ function createFoam(options) {
     empty.hidden = true;
     el.append(input, rows, empty, ...pick ? [] : [document.createElement("hr"), popButton(text("menuWorkspace"), actions.openWorkspace)]);
     renderAll();
+    if (pop?.el !== el) return;
     document.body.appendChild(el);
     placePop(el, at ?? (entry.hidden ? host : entry).getBoundingClientRect(), 440);
     input.focus();
@@ -1030,25 +1093,32 @@ function createFoam(options) {
   function renderAll() {
     if (!pop || pop.kind !== "all") return;
     const known = new Map(model.topics.map((t2) => [t2.id, t2]));
+    if (pop.pick && (!byId(pop.pick) || merging().has(pop.pick))) {
+      closePop(false, true);
+      return;
+    }
     for (const t2 of foamOrder(model.topics)) if (!pop.order.includes(t2.id) && t2.id !== pop.pick) pop.order.push(t2.id);
     pop.order = pop.order.filter((id) => known.has(id));
     const shown = foamFilter(pop.order.map((id) => known.get(id)), pop.query);
-    const sig = pop.query + "\n" + shown.map((t2) => [t2.id, t2.title, t2.current, foamStatusText(t2, text)].join("	")).join("\n");
+    const held = pop.pick ? merging() : /* @__PURE__ */ new Set();
+    const sig = pop.query + "\n" + shown.map((t2) => [t2.id, t2.title, t2.current, foamStatusText(t2, text), held.has(t2.id)].join("	")).join("\n");
     if (sig === pop.sig) return;
     pop.sig = sig;
     const el = pop.el, rows = el.querySelector(".theone-foam-rows"), empty = el.querySelector(".theone-foam-empty");
     const focused = document.activeElement?.closest?.(".theone-foam-row")?.getAttribute("data-id");
     rows.textContent = "";
     for (const t2 of shown) {
-      const item = document.createElement("div"), b = document.createElement("button"), status = foamStatusText(t2, text);
+      const item = document.createElement("div"), b = document.createElement("button"), blocked = held.has(t2.id);
+      const status = blocked ? text("pickMerging") : foamStatusText(t2, text);
       item.setAttribute("role", "listitem");
       b.type = "button";
       b.className = "theone-foam-row";
       b.setAttribute("data-id", t2.id);
-      b.setAttribute("aria-haspopup", "dialog");
+      if (!pop.pick) b.setAttribute("aria-haspopup", "dialog");
+      if (blocked) b.disabled = true;
       if (t2.current) b.setAttribute("aria-current", "true");
       b.appendChild(span("theone-foam-name", t2.title));
-      if (status) b.appendChild(span("theone-foam-status" + (t2.phase === "waiting" ? " need" : ""), status));
+      if (status) b.appendChild(span("theone-foam-status" + (t2.phase === "waiting" && !blocked ? " need" : ""), status));
       const pick = pop.pick;
       b.onclick = () => {
         const c = byId(t2.id);
@@ -1059,7 +1129,13 @@ function createFoam(options) {
         }
         const from = byId(pick);
         closePop(true);
-        if (from && from !== c) mergeInto(from, c);
+        if (!from || from === c) return;
+        const busyNow = merging();
+        if (busyNow.has(from.id) || busyNow.has(c.id)) {
+          tipAt(c, text("mergeConflict"));
+          return;
+        }
+        mergeInto(from, c);
       };
       item.appendChild(b);
       rows.appendChild(item);
@@ -1092,7 +1168,8 @@ function createFoam(options) {
   function undoMerge(sourceId, near) {
     hideUndo();
     void actions.unmerge(sourceId).then((ok) => {
-      if (!ok) tipAt(near, text("actionFailed"));
+      if (ok) gone.delete(sourceId);
+      else if (cells.includes(near)) tipAt(near, text("actionFailed"));
     });
   }
   function offerUndo(sourceId, near) {
@@ -1150,7 +1227,7 @@ function createFoam(options) {
         pore.addEventListener("pointerleave", () => {
           if (!tipOwner) tip2.classList.remove("on");
         });
-        d = { s, a, b, thread, pore, hit: pore.firstChild, alpha: 0 };
+        d = { s, a, b, thread, pore, hit: pore.firstChild, alpha: 0, px: null, py: 0, room: false };
         dups.set(id, d);
       }
       d.s = s;
@@ -1178,16 +1255,14 @@ function createFoam(options) {
       const { a, b } = d;
       const show = !answering.has(d.s.id) && sz > 0.7 && [a, b].every((c) => cells.includes(c) && c.mode === "live" && !c.hidden && c.scale > 0.5) && !(drag?.started && (drag.cell === a || drag.cell === b));
       d.alpha = reduced() ? show ? 1 : 0 : ease(d.alpha, show ? 1 : 0, show ? 1.4 : 6, dt);
-      d.hit.style.pointerEvents = drag || !show ? "none" : "";
+      d.px = null;
       if (d.alpha < 0.02) {
         d.thread.setAttribute("d", "");
         d.pore.style.display = "none";
         continue;
       }
-      d.pore.style.display = "";
       const ra = a.R * a.scale, rb = b.R * b.scale, dx = b.cx - a.cx, dy = b.cy - a.cy, dist = Math.hypot(dx, dy) || 0.01, ux = dx / dist, uy = dy / dist;
       const gap = dist - ra - rb;
-      d.hit.setAttribute("r", fx(Math.max(0, Math.min(8, gap / 2 - 1)) / Math.max(0.7, sz)));
       let path = "", px, py;
       if (gap < Math.min(ra, rb) * 1.4) {
         path = bridge(pos(a), ra, pos(b), rb, 1e6, 0.42)?.edge ?? "";
@@ -1208,7 +1283,19 @@ function createFoam(options) {
       d.pore.setAttribute("transform", `translate(${fx(px)} ${fx(py)}) scale(${fx(Math.max(0.7, sz))})`);
       d.pore.style.opacity = fx(o);
       d.pore.classList.toggle("open", open);
+      d.px = px;
+      d.py = py;
+      d.hit.style.pointerEvents = drag || !show ? "none" : "";
     }
+  }
+  function placePores(list2, radii) {
+    const scale = Math.max(0.7, sz);
+    list2.forEach((d, i) => {
+      d.room = radii[i] > 0;
+      d.pore.style.display = d.room ? "" : "none";
+      d.hit.setAttribute("r", fx(radii[i] / scale));
+    });
+    for (const d of dups.values()) if (d.px === null) d.room = false;
   }
   function openDup(id, from) {
     const d = dups.get(id);
@@ -1291,6 +1378,7 @@ function createFoam(options) {
     if (c && into && !c.hidden && !into.hidden) bonds = [...bonds.filter((b) => b[0] !== c && b[1] !== c), [c, into]];
     void actions.answerSuggestion(id, "accept", direction).then((result) => {
       if (result === "merged" && c && into) {
+        gone.set(c.id, now() + 8e3);
         apply2({ kind: "merged", id: c.id, into: into.id });
         offerUndo(c.id, into);
       } else if (result === "failed") {
@@ -1397,7 +1485,7 @@ function createFoam(options) {
     c.ty = p.y - drag.dy;
     showAim(c);
   };
-  const busyMerge = (c) => (model.pendingMerges ?? []).some((m) => m.id === c.id || m.into === c.id);
+  const merging = () => foamMerging(model.pendingMerges, bonds.map((b) => [b[0].id, b[1].id]));
   function mergeInto(c, into) {
     const dup = dupBetween(c, into);
     if (dup) {
@@ -1407,6 +1495,7 @@ function createFoam(options) {
     bonds = [...bonds.filter((b) => b[0] !== c && b[1] !== c), [c, into]];
     void actions.merge(c.id, into.id).then((result) => {
       if (result === "merged") {
+        gone.set(c.id, now() + 8e3);
         apply2({ kind: "merged", id: c.id, into: into.id });
         offerUndo(c.id, into);
       } else if (result === "failed") {
@@ -1415,22 +1504,28 @@ function createFoam(options) {
       }
     });
   }
-  function rerouteTo(c, expected) {
-    if (!c.offer || c.g.classList.contains("pending")) return;
-    if (expected && c.offer.messageId !== expected) {
+  function rerouteTo(c, messageId) {
+    if (c.offer?.messageId !== messageId) {
       tipAt(c, text("rerouteFailed"));
       return;
     }
-    const { messageId } = c.offer;
+    if (c.reroute?.messageId === messageId) return;
+    const req = ++rerouteSeq;
+    c.reroute = { messageId, req };
     c.g.classList.add("pending");
     void actions.reroute(messageId, c.id).then((status) => {
-      c.g.classList.remove("pending");
+      const latest = c.reroute?.req === req;
+      if (latest) {
+        c.reroute = void 0;
+        c.g.classList.remove("pending");
+      }
       if (status >= 200 && status < 300) {
         for (const o of cells) if (o.offer?.messageId === messageId) clearOffer(o);
         light(c);
         return;
       }
-      if (c.offer) c.offer.until = Math.max(c.offer.until, now() + 3e4);
+      if (!latest || c.offer?.messageId !== messageId) return;
+      c.offer.until = Math.max(c.offer.until, now() + 3e4);
       tipAt(c, text(status === 409 ? "rerouteBusy" : "rerouteFailed"));
     });
   }
@@ -1525,11 +1620,16 @@ function createFoam(options) {
   window.addEventListener("blur", blur);
   document.addEventListener("pointerdown", outside, true);
   document.addEventListener("keydown", keydown, true);
+  const motionChanged = () => {
+    if (motion.matches) for (const v of ves) v.t = Math.max(v.t, 1);
+  };
+  motion.addEventListener("change", motionChanged);
   function step(dt) {
     const T = now();
     options.place?.();
     if (drag?.started && drag.rest && target?.kind !== "cell") showAim(drag.cell);
-    sz = ease(sz, rail ? MINI : 1, 4, dt);
+    const still = reduced();
+    sz = still ? rail ? MINI : 1 : ease(sz, rail ? MINI : 1, 4, dt);
     const words = clamp((sz - 0.72) / 0.28);
     const all = topics().filter((c) => c.mode !== "fling");
     const prio = (c) => (c.cur || c.state !== "idle" || c.ask || c.mode === "bud" ? 10 : 0) + c.w;
@@ -1595,90 +1695,101 @@ function createFoam(options) {
     const w = fr.width, h3 = Math.max(height - strip, 8), cx = w / 2, cy = Math.max(14, h3 / 2);
     if (mr) L = { x: mr.left + mr.width / 2 - fr.left, y: mr.top + mr.height / 2 - fr.top };
     const markR = MARK_R + pulse * pulse * 0.8;
-    const shiftX = x1 > x0 ? (cx - (x0 + x1) / 2) * 3 : 0, shiftY = bottom > top ? (cy - (top + bottom) / 2) * 2 : 0;
-    for (const c of cells) {
-      let fx2 = 0, fy2 = 0, damp = 0.06;
-      c.age += dt;
-      if (c.mode === "bud") {
-        const dx = cx - L.x, dy = cy - L.y, d = Math.hypot(dx, dy) || 1;
-        const reach = markR + sizeOf(c) * sz * c.scale * 0.95 + c.age * 9 * sz;
-        fx2 = (L.x + dx / d * reach - c.x) * 90;
-        fy2 = (L.y + dy / d * reach - c.y) * 90;
-        damp = 2e-3;
-        if (c.age > 0.8) {
-          c.mode = "live";
-          c.hidden = false;
-          c.away = false;
-          c.vx += dx / d * 120;
-          c.vy += dy / d * 120;
-          c.onBorn?.();
-          c.onBorn = void 0;
-        }
-      } else if (c.mode === "leave") {
-        if (c.into && cells.includes(c.into)) {
-          fx2 = (c.into.cx - c.x) * 40;
-          fy2 = (c.into.cy - c.y) * 40;
-          damp = 3e-3;
-        }
-      } else if (c.mode === "fling") {
-        damp = 0.35;
-      } else if (c.hidden) {
-        fx2 = (cx - c.x) * 4;
-        fy2 = (cy - c.y) * 4;
-      } else {
-        const act = c.cur || c.state !== "idle" ? 1 : c.w;
-        const ox = cx - c.x, oy = (cy - c.y) * 1.8, od = Math.hypot(ox, oy) || 1, pull = Math.min(od, 30 * sz) * 1.6;
-        fx2 += ox / od * pull + shiftX;
-        fy2 += oy / od * pull + shiftY - (28 * (act - 0.45) + (c.cur ? 45 : 0)) * sz;
-        const wob = (c.state === "running" ? 14 : c.state === "idle" ? 3 + 4 * c.w : 5) * sz;
-        fx2 += wob * Math.sin(t * 0.31 + c.phase) + wob * 0.5 * Math.sin(t * 0.83 + c.phase * 2);
-        fy2 += wob * Math.cos(t * 0.27 + c.phase * 1.4);
-        for (const o of live) {
-          if (o === c) continue;
-          const dx = o.x - c.x, dy = o.y - c.y, d = Math.hypot(dx, dy) || 0.01, rest = (c.R + o.R) * 0.93, lw = linkW(c, o);
-          const f = d < rest ? -(rest - d) * 40 : d < rest * 1.5 ? (d - rest) * Math.max(4, 11 + 12 * lw) : lw > 0 && d < rest * 3.2 ? (d - rest) * 6 * lw : 0;
-          fx2 += dx / d * f;
-          fy2 += dy / d * f;
-        }
-        if (ptr && !drag) {
-          const dx = ptr.x - c.x, dy = ptr.y - c.y, d = Math.hypot(dx, dy) || 1, reach = 80 * sz;
-          if (d < reach) {
-            const f = (c.state === "running" ? 16 : 6) * (1 - d / reach);
+    const forces = (dt2) => {
+      let top2 = Infinity, bottom2 = -Infinity, x02 = Infinity, x12 = -Infinity;
+      for (const c of live) if (drag?.cell !== c) {
+        top2 = Math.min(top2, c.y - c.R);
+        bottom2 = Math.max(bottom2, c.y + c.R);
+        x02 = Math.min(x02, c.x - c.R);
+        x12 = Math.max(x12, c.x + c.R);
+      }
+      const shiftX = x12 > x02 ? (cx - (x02 + x12) / 2) * 3 : 0, shiftY = bottom2 > top2 ? (cy - (top2 + bottom2) / 2) * 2 : 0;
+      for (const c of cells) {
+        let fx2 = 0, fy2 = 0, damp = 0.06;
+        c.age += dt2;
+        if (c.mode === "bud") {
+          const dx = cx - L.x, dy = cy - L.y, d = Math.hypot(dx, dy) || 1;
+          const reach = markR + sizeOf(c) * sz * c.scale * 0.95 + c.age * 9 * sz;
+          fx2 = (L.x + dx / d * reach - c.x) * 90;
+          fy2 = (L.y + dy / d * reach - c.y) * 90;
+          damp = 2e-3;
+          if (c.age > 0.8) {
+            c.mode = "live";
+            c.hidden = false;
+            c.away = false;
+            c.vx += dx / d * 120;
+            c.vy += dy / d * 120;
+            c.onBorn?.();
+            c.onBorn = void 0;
+          }
+        } else if (c.mode === "leave") {
+          if (c.into && cells.includes(c.into)) {
+            fx2 = (c.into.cx - c.x) * 40;
+            fy2 = (c.into.cy - c.y) * 40;
+            damp = 3e-3;
+          }
+        } else if (c.mode === "fling") {
+          damp = 0.35;
+        } else if (c.hidden) {
+          fx2 = (cx - c.x) * 4;
+          fy2 = (cy - c.y) * 4;
+        } else {
+          const act = c.cur || c.state !== "idle" ? 1 : c.w;
+          const ox = cx - c.x, oy = (cy - c.y) * 1.8, od = Math.hypot(ox, oy) || 1, pull = Math.min(od, 30 * sz) * 1.6;
+          fx2 += ox / od * pull + shiftX;
+          fy2 += oy / od * pull + shiftY - (28 * (act - 0.45) + (c.cur ? 45 : 0)) * sz;
+          const wob = (c.state === "running" ? 14 : c.state === "idle" ? 3 + 4 * c.w : 5) * sz;
+          fx2 += wob * Math.sin(t * 0.31 + c.phase) + wob * 0.5 * Math.sin(t * 0.83 + c.phase * 2);
+          fy2 += wob * Math.cos(t * 0.27 + c.phase * 1.4);
+          for (const o of live) {
+            if (o === c) continue;
+            const dx = o.x - c.x, dy = o.y - c.y, d = Math.hypot(dx, dy) || 0.01, rest = (c.R + o.R) * 0.93, lw = linkW(c, o);
+            const f = d < rest ? -(rest - d) * 40 : d < rest * 1.5 ? (d - rest) * Math.max(4, 11 + 12 * lw) : lw > 0 && d < rest * 3.2 ? (d - rest) * 6 * lw : 0;
             fx2 += dx / d * f;
             fy2 += dy / d * f;
           }
+          if (ptr && !drag && !still) {
+            const dx = ptr.x - c.x, dy = ptr.y - c.y, d = Math.hypot(dx, dy) || 1, reach = 80 * sz;
+            if (d < reach) {
+              const f = (c.state === "running" ? 16 : 6) * (1 - d / reach);
+              fx2 += dx / d * f;
+              fy2 += dy / d * f;
+            }
+          }
+          if (drag?.cell !== c) {
+            const pad = c.R * 0.8;
+            if (c.x < pad) fx2 += (pad - c.x) * 30;
+            if (c.x > w - pad) fx2 -= (c.x - (w - pad)) * 30;
+            if (c.y < pad * 0.7) fy2 += (pad * 0.7 - c.y) * 30;
+            if (c.y > h3 - pad * 0.7) fy2 -= (c.y - (h3 - pad * 0.7)) * 30;
+          }
         }
-        if (drag?.cell !== c) {
-          const pad = c.R * 0.8;
-          if (c.x < pad) fx2 += (pad - c.x) * 30;
-          if (c.x > w - pad) fx2 -= (c.x - (w - pad)) * 30;
-          if (c.y < pad * 0.7) fy2 += (pad * 0.7 - c.y) * 30;
-          if (c.y > h3 - pad * 0.7) fy2 -= (c.y - (h3 - pad * 0.7)) * 30;
+        if (drag?.cell === c) {
+          fx2 += (c.tx - c.x) * 70;
+          fy2 += (c.ty - c.y) * 70;
+        } else if (drag?.started && c.mode === "live" && !c.hidden) {
+          c.vx = c.vy = 0;
+          continue;
         }
+        c.vx = (c.vx + fx2 * dt2) * Math.pow(damp, dt2);
+        c.vy = (c.vy + fy2 * dt2) * Math.pow(damp, dt2);
+        c.x += c.vx * dt2;
+        c.y += c.vy * dt2;
       }
-      if (drag?.cell === c) {
-        fx2 += (c.tx - c.x) * 70;
-        fy2 += (c.ty - c.y) * 70;
-      } else if (drag?.started && c.mode === "live" && !c.hidden) {
-        c.vx = c.vy = 0;
-        continue;
+      for (const [c, o] of bonds) {
+        const dx = o.x - c.x, dy = o.y - c.y, d = Math.hypot(dx, dy) || 1, f = (d - (c.R + o.R) * 0.9) * 10 * dt2;
+        c.vx += dx / d * f;
+        c.vy += dy / d * f;
+        o.vx -= dx / d * f;
+        o.vy -= dy / d * f;
       }
-      c.vx = (c.vx + fx2 * dt) * Math.pow(damp, dt);
-      c.vy = (c.vy + fy2 * dt) * Math.pow(damp, dt);
-      c.x += c.vx * dt;
-      c.y += c.vy * dt;
-    }
-    for (const [c, o] of bonds) {
-      const dx = o.x - c.x, dy = o.y - c.y, d = Math.hypot(dx, dy) || 1, f = (d - (c.R + o.R) * 0.9) * 10 * dt;
-      c.vx += dx / d * f;
-      c.vy += dy / d * f;
-      o.vx -= dx / d * f;
-      o.vy -= dy / d * f;
-    }
+    };
+    for (let i = still ? 24 : 1; i > 0; i--) forces(dt);
     for (const c of [...cells]) {
       if (c.mode === "leave") {
         const o = c.into, alive = !!o && cells.includes(o);
-        if (alive) {
+        if (still) c.alpha = 0;
+        else if (alive) {
           const d2 = Math.hypot(c.x - o.cx, c.y - o.cy);
           c.scale = ease(c.scale, clamp((d2 - o.R * 0.3) / 50, 0.08, 1), 6, dt);
           if (d2 < o.R * 0.45 || c.age > 3) c.alpha = ease(c.alpha, 0, 14, dt);
@@ -1715,8 +1826,8 @@ function createFoam(options) {
           more.kick = 1;
           continue;
         }
-      } else if (c.mode === "bud") c.scale = ease(c.scale, 0.2 + c.age * 0.45, 5, dt);
-      else c.scale = ease(c.scale, c.hidden ? 0 : 1, c.hidden ? 5 : 2.5, dt);
+      } else if (c.mode === "bud") c.scale = still ? 1 : ease(c.scale, 0.2 + c.age * 0.45, 5, dt);
+      else c.scale = still ? c.hidden ? 0 : 1 : ease(c.scale, c.hidden ? 0 : 1, c.hidden ? 5 : 2.5, dt);
       c.g.style.display = c.scale < 0.02 ? "none" : "";
       if (c.scale < 0.02) {
         c.nf.setAttribute("d", "");
@@ -1739,11 +1850,11 @@ function createFoam(options) {
         }
       }
       c.reveal = ease(c.reveal, near, near > c.reveal ? 9 : 4, dt);
-      const r0 = sizeOf(c) * sz * (1 + (named(c) ? 0.04 : 0.2) * c.reveal);
+      const r0 = sizeOf(c) * sz * (1 + (still ? 0 : (named(c) ? 0.04 : 0.2) * c.reveal));
       c.svx = ease(c.svx, c.vx, 8, dt);
       c.svy = ease(c.svy, c.vy, 8, dt);
-      const speed = Math.hypot(c.svx, c.svy), st = Math.min(c.mode === "fling" ? 0.2 : 0.12, speed / 1100), ux0 = c.svx / (speed || 1), uy0 = c.svy / (speed || 1);
-      const sigh = 1 + 0.1 * Math.sin(Math.PI * (1 - c.kick)) * (c.kick > 0 ? 1 : 0);
+      const speed = Math.hypot(c.svx, c.svy), st = still ? 0 : Math.min(c.mode === "fling" ? 0.2 : 0.12, speed / 1100), ux0 = c.svx / (speed || 1), uy0 = c.svy / (speed || 1);
+      const sigh = still ? 1 : 1 + 0.1 * Math.sin(Math.PI * (1 - c.kick)) * (c.kick > 0 ? 1 : 0);
       const pts = [];
       for (let i = 0; i < N; i++) {
         const th = i / N * Math.PI * 2, ux = Math.cos(th), uy = Math.sin(th), along = ux * ux0 + uy * uy0;
@@ -1762,8 +1873,8 @@ function createFoam(options) {
       }
       if (c.mode === "live" && !c.hidden && drag?.cell !== c) {
         const area = polygonArea(pts) / Math.max(0.01, (c.scale * sigh) ** 2);
-        c.R = Math.min(ease(c.R, r0 * Math.sqrt(Math.PI * r0 * r0 / Math.max(area, 1)), 2, dt), r0 * 1.2);
-      } else c.R = ease(c.R, r0, 4, dt);
+        c.R = Math.min(ease(c.R, r0 * Math.sqrt(Math.PI * r0 * r0 / Math.max(area, 1)), still ? 15 : 2, dt), r0 * 1.2);
+      } else c.R = still ? r0 : ease(c.R, r0, 4, dt);
       let gx = 0, gy = 0;
       for (const p of pts) {
         gx += p[0];
@@ -1838,9 +1949,14 @@ function createFoam(options) {
     }
     drawDups(dt);
     const pressable = cells.filter((c) => c.mode === "live" && !c.hidden && c.scale >= 0.02 && !(drag?.started && drag.cell === c));
-    const radii = foamHitRadii(pressable.map((c) => ({ x: c.cx, y: c.cy, r: c.R * c.scale, floor: c.vin })), { w, h: h3 });
+    const porous = [...dups.values()].filter((d) => d.px !== null);
+    const hits = foamPoreHits(
+      pressable.map((c) => ({ x: c.cx, y: c.cy, r: c.R * c.scale, floor: c.vin, reach: c.vr })),
+      porous.map((d) => ({ x: d.px, y: d.py, shown: d.room })),
+      { w, h: h3 }
+    );
     for (const c of cells) {
-      const i = pressable.indexOf(c), r = i < 0 ? 0 : radii[i];
+      const i = pressable.indexOf(c), r = i < 0 ? 0 : hits.cells[i];
       if (r || c.hit) {
         c.hit = r;
         c.hc.setAttribute("cx", fx(c.cx));
@@ -1848,6 +1964,7 @@ function createFoam(options) {
         c.hc.setAttribute("r", fx(r));
       }
     }
+    placePores(porous, hits.pores);
     if (menuOf && menuOf.cell.kind === "topic" && (menuOf.cell.mode === "leave" || !cells.includes(menuOf.cell))) closeMenu("gone");
     for (const v of [...ves]) {
       v.t += dt / v.dur;
@@ -1904,6 +2021,7 @@ function createFoam(options) {
       window.removeEventListener("blur", blur);
       document.removeEventListener("pointerdown", outside, true);
       document.removeEventListener("keydown", keydown, true);
+      motion.removeEventListener("change", motionChanged);
       closeDup(false);
       document.removeEventListener("pointerdown", dupPointer, true);
       document.removeEventListener("keydown", dupKey, true);
@@ -1985,6 +2103,7 @@ html[data-theone-foam] button:has(.theone-workspace-entry){display:none}
 .theone-foam-menu{position:fixed;z-index:1000;box-sizing:border-box;min-width:168px;max-width:min(320px,calc(100vw - 16px));max-height:calc(100vh - 16px);overflow-y:auto;overscroll-behavior:contain;padding:4px;border:.5px solid var(--dsw-alias-border-l2,#8885);border-radius:var(--dsw-radius-lg,12px);background:var(--dsw-specific-menu,var(--dsw-alias-bg-layer-2,#fff));backdrop-filter:blur(24px) saturate(1.4);box-shadow:var(--dsw-elevation-prominent,0 8px 30px #0003);color:var(--dsw-alias-label-primary)}
 .theone-foam-menu button{display:flex;width:100%;min-height:34px;align-items:center;padding:7px 12px;line-height:1.4;white-space:normal;overflow-wrap:anywhere;border:0;border-radius:var(--dsw-radius-md,8px);background:none;color:inherit;font:inherit;font-size:13.5px;cursor:pointer;text-align:left}
 .theone-foam-menu button:hover,.theone-foam-menu button:focus-visible{background:var(--dsw-alias-interactive-bg-hover,#0000000a);outline:none}
+.theone-foam-menu button:disabled{cursor:default;background:none;color:var(--dsw-alias-label-secondary,#8a8a86)}
 .theone-foam-menu hr{border:0;border-top:.5px solid var(--dsw-alias-border-l2,#8885);margin:4px 2px}
 .theone-foam-all{position:absolute;right:6px;bottom:0;display:flex;align-items:center;gap:2px;height:18px;min-width:24px;padding:0 4px;border:0;border-radius:6px;background:none;color:var(--foam-idle-line);font:inherit;font-size:10.5px;line-height:1;font-variant-numeric:tabular-nums;cursor:pointer;pointer-events:auto;transition:color .3s ease}
 .theone-foam-all[hidden]{display:none}
@@ -2096,6 +2215,27 @@ function foamEventsFrom(events, snapshot) {
     } else if (event.type === "route.blocked" && event.candidateIds.length > 1) out.push({ kind: "clarify", candidates: event.candidateIds });
     else if (event.type === "route.moved") out.push({ kind: "correct", from: event.fromId, to: event.toId, messageId: event.messageId });
     else if (event.type === "topic.merged") out.push({ kind: "merged", id: event.sourceId, into: event.targetId });
+    else if (event.type === "topic.unmerged") out.push({ kind: "unmerged", id: event.sourceId, into: event.targetId });
+  }
+  return settleFoamEvents(out, snapshot);
+}
+function settleFoamEvents(events, snapshot) {
+  const present = new Set(snapshot.topics.map((topic) => topic.id)), last = /* @__PURE__ */ new Map();
+  events.forEach((event, i) => {
+    if (event.kind === "merged" || event.kind === "unmerged") last.set(event.id, i);
+  });
+  return events.filter((event, i) => event.kind === "merged" ? last.get(event.id) === i && !present.has(event.id) : event.kind === "unmerged" ? last.get(event.id) === i && present.has(event.id) : true);
+}
+var TERMINAL = /* @__PURE__ */ new Set(["succeeded", "cancelled", "expired", "failed"]);
+function mergeOutcomes(seen, merges) {
+  const out = [];
+  for (const merge of merges) {
+    const was = seen.get(merge.operationId);
+    if (was && TERMINAL.has(was)) continue;
+    seen.set(merge.operationId, merge.state);
+    if (was !== "queued" && was !== "executing") continue;
+    if (merge.state === "succeeded") out.push({ kind: "merged", id: merge.sourceId, into: merge.targetId, undo: true });
+    else if (TERMINAL.has(merge.state)) out.push({ kind: "mergeEnded", id: merge.sourceId, into: merge.targetId, failed: merge.state !== "cancelled", ...merge.error ? { error: merge.error } : {} });
   }
   return out;
 }
@@ -2182,8 +2322,13 @@ function createWave(button, clip) {
       return;
     }
     limit(false);
+    if (motion.matches) {
+      for (const el of [...state.keys()]) release(el);
+      if (wanted !== base) apply2(wanted, list, true);
+      return;
+    }
     if (wanted !== base) {
-      apply2(wanted, list, motion.matches);
+      apply2(wanted, list);
       return;
     }
     while (dt > 0) {
@@ -2274,7 +2419,10 @@ function createWave(button, clip) {
   const settle = () => {
     if (!motion.matches) return;
     const list = rows();
-    if (busy(list)) return;
+    if (busy(list)) {
+      wake();
+      return;
+    }
     for (const el of [...state.keys()]) release(el);
     if (wanted !== base) apply2(wanted, list, true);
   };
@@ -2482,15 +2630,9 @@ function mountFoamHost(options) {
         if (body.kind === "update") {
           latest = body.snapshot;
           for (const topic of body.snapshot.topics) if (topic.openSessionId) sessionOf.set(topic.id, topic.openSessionId);
-          for (const merge of [...body.snapshot.merges ?? [], ...body.snapshot.mergeReceipts ?? [], ...body.events.flatMap((event) => event.type === "merge.changed" ? [event] : [])]) {
-            const was = mergeStates.get(merge.operationId);
-            mergeStates.set(merge.operationId, merge.state);
-            if (was !== "queued" && was !== "executing") continue;
-            if (merge.state === "succeeded") {
-              void readCatalog(false);
-              foam.event({ kind: "merged", id: merge.sourceId, into: merge.targetId, undo: true });
-            } else if (merge.state !== "queued" && merge.state !== "executing") foam.event({ kind: "mergeEnded", id: merge.sourceId, into: merge.targetId, failed: merge.state !== "cancelled" });
-          }
+          const ended = mergeOutcomes(mergeStates, [...body.events.flatMap((event) => event.type === "merge.changed" ? [event] : []), ...body.snapshot.merges ?? [], ...body.snapshot.mergeReceipts ?? []]);
+          if (ended.some((event) => event.kind === "merged")) void readCatalog(false);
+          for (const event of settleFoamEvents(ended, body.snapshot)) foam.event(event);
           show(modelFromBubbles(body.snapshot));
           if (!body.reset) for (const event of foamEventsFrom(body.events, body.snapshot)) foam.event(event);
           cursor = body.snapshot.cursor;
@@ -3023,6 +3165,10 @@ var zh = {
   "foam.rerouteFailed": "\u6CA1\u6362\u6210\uFF0C\u518D\u70B9\u4E00\u6B21\u8BD5\u8BD5",
   "foam.actionFailed": "\u6CA1\u505A\u6210\uFF0C\u7A0D\u540E\u518D\u8BD5",
   "foam.mergeFailed": "\u8FD9\u6B21\u6CA1\u5408\u5E76\u6210",
+  "foam.mergeConflict": "\u548C\u53E6\u4E00\u4E2A\u5408\u5E76\u51B2\u7A81",
+  "foam.mergeBusy": "TheOne \u6B63\u5FD9\uFF0C\u6CA1\u5408\u5E76\u6210",
+  "foam.mergeExpired": "\u7B49\u5F97\u592A\u4E45\uFF0C\u6CA1\u5408\u5E76\u6210",
+  "foam.pickMerging": "\u6B63\u5728\u5408\u5E76",
   "foam.mergeHold": "\u505C\u4F4F\uFF0C\u5C31\u5E76\u8FDB\u300C{name}\u300D",
   "foam.undo": "\u64A4\u9500\u5408\u5E76",
   "foam.menuCancelMerge": "\u53D6\u6D88\u5408\u5E76",
@@ -3511,6 +3657,10 @@ var en = {
   "foam.rerouteFailed": "Did not move; click to try again",
   "foam.actionFailed": "Could not do that; try again later",
   "foam.mergeFailed": "Did not merge this time",
+  "foam.mergeConflict": "Conflicts with another merge",
+  "foam.mergeBusy": "TheOne is busy; did not merge",
+  "foam.mergeExpired": "Waited too long; did not merge",
+  "foam.pickMerging": "Already merging",
   "foam.mergeHold": 'Hold here to merge into "{name}"',
   "foam.undo": "Undo merge",
   "foam.menuCancelMerge": "Cancel merge",

@@ -69,11 +69,13 @@ export type FoamEvent =
   | { kind: 'correct'; from: string; to: string; messageId?: string }
   /** Two topics became one. `undo`: offer the undo chip (a queued merge that just finished). */
   | { kind: 'merged'; id: string; into: string; undo?: boolean }
-  /** A queued merge ended without merging (cancelled, expired or failed). */
-  | { kind: 'mergeEnded'; id: string; into: string; failed: boolean }
+  /** A merge was taken apart: the source is a topic of its own again. */
+  | { kind: 'unmerged'; id: string; into: string }
+  /** A queued merge ended without merging (cancelled, expired or failed); `error` is TheOne's code when it gave one. */
+  | { kind: 'mergeEnded'; id: string; into: string; failed: boolean; error?: string }
 
 export type FoamTextKey =
-  | 'more' | 'running' | 'queued' | 'answered' | 'asking' | 'bond' | 'waiting' | 'failed' | 'menuAnswer' | 'offer' | 'rerouteBusy' | 'rerouteFailed' | 'actionFailed' | 'mergeFailed' | 'mergeHold' | 'undo' | 'menuCancelMerge' | 'menuUnmerge'
+  | 'more' | 'running' | 'queued' | 'answered' | 'asking' | 'bond' | 'waiting' | 'failed' | 'menuAnswer' | 'offer' | 'rerouteBusy' | 'rerouteFailed' | 'actionFailed' | 'mergeFailed' | 'mergeConflict' | 'mergeBusy' | 'mergeExpired' | 'pickMerging' | 'mergeHold' | 'undo' | 'menuCancelMerge' | 'menuUnmerge'
   | 'dropMain' | 'dropMerge' | 'dropMergeLater' | 'dropSession' | 'busyFling' | 'currentFling'
   | 'menuContinue' | 'menuOpen' | 'menuAside' | 'menuDelete' | 'menuStop' | 'menuCancel' | 'menuShowNow' | 'menuWorkspace' | 'menuReroute' | 'menuMergeInto' | 'mergeIntoPick'
   | 'allTopics' | 'allWaiting' | 'filter' | 'noMatch'
@@ -237,6 +239,31 @@ export function foamHitRadii(items: { x: number; y: number; r: number; floor?: n
   return h
 }
 
+/**
+ * Hit circles for the cells and the duplicate pores, shared out together: a pore is a point with no outline of its own, so the
+ * room around it is split with the cells (see `foamHitRadii`). A pore gets at most `max`, never over any cell's outline (`reach`,
+ * its farthest edge) or hit circle, a third cell's included; when that leaves it under `need` (a pore that was shown keeps it
+ * down to 1px less, so it does not blink at the edge) it gets 0 (not shown), and the cells get back the room it would have taken.
+ */
+export function foamPoreHits(cells: { x: number; y: number; r: number; floor?: number; reach?: number }[], pores: { x: number; y: number; shown?: boolean }[],
+  box?: { w: number; h: number }, max = 8, need = 5.5): { cells: number[]; pores: number[] } {
+  const size = (ps: typeof pores) => foamHitRadii([...cells, ...ps.map(p => ({ x: p.x, y: p.y, r: 0, floor: 0 }))], box)
+  const room = (ps: typeof pores, radii: number[]) => ps.map((p, i) => {
+    let r = Math.min(max, radii[cells.length + i])
+    cells.forEach((c, j) => { r = Math.min(r, Math.hypot(p.x - c.x, p.y - c.y) - Math.max(radii[j], c.reach ?? c.r)) })
+    return r >= (p.shown ? need - 1 : need) ? r : 0
+  })
+  let radii = size(pores), out = room(pores, radii)
+  if (out.some(r => !r)) {
+    const kept = pores.filter((_, i) => out[i] > 0)
+    radii = size(kept)
+    const again = room(kept.map(p => ({ ...p, shown: true })), radii)
+    let k = 0
+    out = out.map(r => r > 0 ? again[k++] : 0)
+  }
+  return { cells: radii.slice(0, cells.length), pores: out }
+}
+
 /** Which item a point means: among those whose circle holds it, the one with the nearest centre; -1 for none. */
 export function foamNearest(p: { x: number; y: number }, items: { x: number; y: number; r: number }[]): number {
   let best = -1, bestD = Infinity
@@ -328,6 +355,24 @@ export function foamFilter<T extends Pick<FoamTopic, 'title' | 'label'>>(topics:
   return q ? topics.filter(t => t.title.toLocaleLowerCase().includes(q) || !!t.label?.toLocaleLowerCase().includes(q)) : [...topics]
 }
 
+/** Whether an Enter in a text field means "do it": never while an input method is still composing (its Enter confirms the text). */
+export function foamEnterActs(e: { key: string; isComposing?: boolean; keyCode?: number }): boolean {
+  return e.key === 'Enter' && !e.isComposing && e.keyCode !== 229
+}
+
+/** Topics already in a merge waiting to happen, as source or target (TheOne's pending merges and ones just asked for here). */
+export function foamMerging(pending: FoamModel['pendingMerges'], local: Iterable<readonly [string, string]> = []): Set<string> {
+  const out = new Set<string>()
+  for (const m of pending ?? []) { out.add(m.id); out.add(m.into) }
+  for (const [a, b] of local) { out.add(a); out.add(b) }
+  return out
+}
+
+/** The short reason a merge did not happen, from TheOne's error code; the generic one for anything else. */
+export function foamMergeReason(error?: string): FoamTextKey {
+  return error === 'MERGE_CONFLICT' ? 'mergeConflict' : error === 'GATEWAY_BUSY' || error === 'TOPIC_BUSY' ? 'mergeBusy' : error === 'MERGE_EXPIRED' ? 'mergeExpired' : 'mergeFailed'
+}
+
 type CellState = 'idle' | 'running' | 'queued' | 'done' | 'wait' | 'fail'
 interface Cell {
   id: string; kind: 'topic' | 'more'; title: string; short?: string; state: CellState; cur: boolean; ask: boolean; aside: boolean; oneOff: boolean
@@ -338,6 +383,8 @@ interface Cell {
   x: number; y: number; vx: number; vy: number; svx: number; svy: number; tx: number; ty: number; R: number; scale: number; alpha: number
   heat: number; solid: number; kick: number; flash: number; reveal: number; want: number; nx: number; ny: number; cx: number; cy: number
   offer?: { messageId: string; until: number }
+  /** A move of `messageId` here is on its way; only the answer to request `req` ends it. */
+  reroute?: { messageId: string; req: number }
   /** Thrown aside and TheOne has not answered yet: a refusal brings it back even after the throw animation ended. */
   flung?: boolean
   phase: number; shownKey: string; full: boolean; lay: { lines: string[]; font: number; lh: number }; showing: boolean
@@ -371,7 +418,8 @@ export function createFoam(options: FoamOptions): Foam {
   const entryCount = entry.lastChild as HTMLSpanElement
   host.appendChild(entry)
   /** The open details of one topic, or the all-topics list; `back` gets focus again when it closes. The list keeps the order it opened with. */
-  let pop: { el: HTMLDivElement; kind: 'detail' | 'all'; id: string; back: HTMLElement | null; sig: string; order: string[]; query: string; pick?: string } | null = null
+  /** `mid`: details are bound to the message offered when they opened, so moving it never silently means a newer message. */
+  let pop: { el: HTMLDivElement; kind: 'detail' | 'all'; id: string; back: HTMLElement | null; sig: string; order: string[]; query: string; pick?: string; mid?: string } | null = null
 
   const cells: Cell[] = [], ves: Vesicle[] = []
   let links = new Map<string, number>(), bonds: [Cell, Cell][] = []
@@ -386,6 +434,9 @@ export function createFoam(options: FoamOptions): Foam {
   let clarifying: { cells: Cell[]; ves?: Vesicle } | null = null
   let menu: HTMLDivElement | null = null, tipOwner: Cell | null = null, raf = 0, last = now(), t = 0
   const pending: FoamEvent[] = []
+  /** Merged here a moment ago (TheOne said 200): a snapshot from before may still list the source, so it is not brought back until then. */
+  const gone = new Map<string, number>()
+  let rerouteSeq = 0
 
   const sizeOf = (c: Cell) => c.kind === 'more' ? 16 : c.oneOff ? 21 : c.state === 'running' || c.state === 'done' || c.state === 'wait' || c.state === 'fail' || c.cur ? 29 : c.state === 'queued' ? 24 : 16 + 9 * c.w
   /** At rest only the topics doing something carry a name; the rest are plain cells until the pointer comes near. */
@@ -464,12 +515,12 @@ export function createFoam(options: FoamOptions): Foam {
     for (const o of related) { o.flash = Math.max(o.flash, .45); o.kick = Math.max(o.kick, .5) }
   }
   function vesicle(from: () => Pt, to: () => Pt, arrive: () => void, dur = .7, hold: Vesicle['hold'] = 0): Vesicle {
-    // Reduced motion: nothing flies; it arrives at once (held vesicles still wait where they are).
+    // Reduced motion: nothing flies; it arrives at once, and a held one appears where it waits.
     if (reduced() && !hold) dur = .01
     const el = document.createElementNS(NS, 'g')
     el.setAttribute('class', 'theone-vesicle'); el.innerHTML = '<circle data-part="membrane" r="3.4"/><circle data-part="nucleus" r="1.3"/>'
     vlayer.appendChild(el)
-    const v: Vesicle = { el, from, to, arrive, t: 0, dur, hold, toMark: false }
+    const v: Vesicle = { el, from, to, arrive, t: reduced() ? 1 : 0, dur, hold, toMark: false }
     ves.push(v)
     return v
   }
@@ -488,6 +539,13 @@ export function createFoam(options: FoamOptions): Foam {
     if (c.mode === 'leave') return
     c.mode = 'leave'; c.into = undefined; c.g.style.pointerEvents = 'none'
     bonds = bonds.filter(b => b[0] !== c && b[1] !== c)
+  }
+  /** A topic still on its way out (fusing or fading) is in TheOne's state again: it stays, where it is, instead of a second cell budding. */
+  function revive(id: string): Cell | undefined {
+    const c = cells.find(o => o.kind === 'topic' && o.id === id && o.mode === 'leave')
+    if (!c) return undefined
+    c.mode = 'live'; c.into = undefined; c.alpha = 1; c.scale = Math.max(c.scale, reduced() ? 1 : .3); c.g.style.pointerEvents = ''; c.g.style.opacity = '1'
+    return c
   }
 
   function apply(event: FoamEvent): boolean {
@@ -539,15 +597,21 @@ export function createFoam(options: FoamOptions): Foam {
       if (b && event.undo) offerUndo(event.id, b)
       if (a && a.mode === 'leave') return true
       if (a && b) fuse(a, b); else if (a) fade(a)
+    } else if (event.kind === 'unmerged') {
+      // Taken apart (here, from the undo, or in another window): a source still on its way out comes back.
+      gone.delete(event.id)
+      const a = byId(event.id) ?? revive(event.id), b = byId(event.into)
+      if (!a) return !model.topics.some(t => t.id === event.id)
+      light(a, b ? [b] : [])
     } else if (event.kind === 'mergeEnded') {
       const a = byId(event.id), b = byId(event.into)
       bonds = bonds.filter(x => x[0] !== a)
-      if (event.failed && b) tipAt(b, text('mergeFailed'))
+      if (event.failed && b) tipAt(b, text(foamMergeReason(event.error)))
     }
     return true
   }
   function clearOffers() { for (const o of cells) if (o.offer) clearOffer(o) }
-  function clearOffer(o: Cell) { o.offer = undefined; o.g.classList.remove('offer', 'pending'); if (!o.ask) o.g.classList.remove('ask') }
+  function clearOffer(o: Cell) { o.offer = undefined; o.reroute = undefined; o.g.classList.remove('offer', 'pending'); if (!o.ask) o.g.classList.remove('ask') }
   function endClarify() {
     if (!clarifying) return
     for (const c of clarifying.cells) { c.ask = false; c.g.classList.remove('ask') }
@@ -556,11 +620,14 @@ export function createFoam(options: FoamOptions): Foam {
 
   function update(next: FoamModel) {
     model = next
-    const seen = new Set<string>()
+    const seen = new Set<string>(), T = now()
+    for (const [id, until] of gone) if (T > until || !model.topics.some(t => t.id === id)) gone.delete(id)
     for (const topic of model.topics) {
       seen.add(topic.id)
       let c = byId(topic.id)
-      if (!c) c = makeCell(topic.id, topic.title, !first)
+      // Merged here a moment ago and this state predates it: the source keeps fusing.
+      if (!c && gone.has(topic.id)) continue
+      if (!c) c = revive(topic.id) ?? makeCell(topic.id, topic.title, !first && !reduced())
       const was = c.state
       c.title = topic.title; c.short = topic.label; c.w = clamp(topic.weight); c.group = topic.group; c.aside = !!topic.aside; c.oneOff = !!topic.oneOff; c.startedAt = topic.startedAt
       c.ask = c.ask || !!topic.asking; c.g.classList.toggle('ask', c.ask)
@@ -594,7 +661,10 @@ export function createFoam(options: FoamOptions): Foam {
   }
   function syncList() {
     const shown = topics().filter(c => !c.aside || busy(c))
-    for (const [id, el] of keys) if (!shown.some(c => c.id === id)) { el.parentElement?.remove(); keys.delete(id) }
+    let lost = false
+    for (const [id, el] of keys) if (!shown.some(c => c.id === id)) { lost ||= el === document.activeElement; el.parentElement?.remove(); keys.delete(id) }
+    // Focus was on a topic that just went away (set aside, merged, removed): it lands on the all-topics entry, not on the page.
+    if (lost && !entry.hidden) entry.focus()
     for (const c of shown) {
       let el = keys.get(c.id)
       if (!el) {
@@ -625,7 +695,11 @@ export function createFoam(options: FoamOptions): Foam {
     entryCount.textContent = waiting ? String(waiting) : ''
     entry.setAttribute('aria-label', entryLabel())
   }
-  function event(e: FoamEvent) { if (!apply(e)) pending.push(e) }
+  function event(e: FoamEvent) {
+    if (!apply(e)) pending.push(e)
+    // A newer message may have replaced the one the open details were for: its move-here item goes away at once.
+    if (pop?.kind === 'detail') renderDetail()
+  }
 
   function text(key: FoamTextKey, vars?: Record<string, string | number>) { return actions.text(key, vars) }
   function tipText(c: Cell): string {
@@ -667,18 +741,19 @@ export function createFoam(options: FoamOptions): Foam {
     if (!had || !was) return
     was.unkeys()
     if (!restore) return
-    const back = restore === true && was.back?.isConnected ? was.back : null
-    const prev = was.prev instanceof HTMLElement && was.prev.isConnected && was.prev !== document.body && !had.contains(was.prev)
-      && !(restore === 'gone' && was.prev === keys.get(was.cell.id)) ? was.prev : null
-    const to = back ?? prev
+    const usable = (el: Element | null | undefined): el is HTMLElement => el instanceof HTMLElement && el.isConnected && el !== document.body && !had.contains(el) && !el.closest('[hidden]')
+    const alive = was.cell.kind === 'topic' && !!byId(was.cell.id)
+    const row = alive && restore === true ? keys.get(was.cell.id) : undefined
+    // Where it came from, if that is still there; else the topic's own row in the keyboard list; else the all-topics entry.
+    // Its topic went away: never that topic's row, never a neighbour.
+    const to = [restore === true ? was.back : null, restore === 'gone' && was.prev === keys.get(was.cell.id) ? null : was.prev, row, entry].find(usable)
     if (to) to.focus()
-    // Its topic went away: focus lands on the all-topics entry, never on a neighbour.
-    else if (restore === 'gone' && !entry.hidden) entry.focus()
     else if (had.contains(document.activeElement)) (document.activeElement as HTMLElement).blur()
   }
   /** A cell's actions, for its right-click menu and its details alike; null is a separator. The key names the item. */
   type MenuItem = [label: string, run: () => void, key: FoamTextKey] | null
-  function menuItems(c: Cell): MenuItem[] {
+  /** `mid`: the message the menu or details were opened for; the move-here item exists only while that same message is still offered. */
+  function menuItems(c: Cell, mid = c.offer?.messageId): MenuItem[] {
     const id = c.id
     const items: MenuItem[] = c.kind === 'more' ? [[text('menuWorkspace'), actions.openWorkspace, 'menuWorkspace']]
       : c.state === 'running' ? [[text('menuOpen'), () => actions.open(id), 'menuOpen'], null, [text('menuStop'), () => actions.stop(id), 'menuStop']]
@@ -690,15 +765,14 @@ export function createFoam(options: FoamOptions): Foam {
         null, [text('menuDelete'), () => actions.remove(id), 'menuDelete']]
     if (c.kind === 'topic') {
       // A candidate routing hesitated over: the same move a click on the cell makes, reachable without the pointer.
-      // Bound to the message offered when the menu or details opened: if a newer message replaced it, the item does nothing stale.
-      const mid = c.offer?.messageId
-      if (mid) items.unshift([text('menuReroute'), () => rerouteTo(c, mid), 'menuReroute'], null)
+      // Bound to the message offered when the menu or details opened: once a newer message replaced it, the item is gone, never retargeted.
+      if (mid && c.offer?.messageId === mid) items.unshift([text('menuReroute'), () => rerouteTo(c, mid), 'menuReroute'], null)
       const extra: MenuItem[] = []
       for (const d of dupsOf(c)) extra.push([text('dupMenu', { name: (d.a === c ? d.b : d.a).title }), () => openDup(d.s.id, c), 'dupMenu'])
       const queued = (model.pendingMerges ?? []).find(m => m.id === id && m.state === 'queued' && m.operationId)
       if (queued) extra.push([text('menuCancelMerge'), () => void actions.cancelMerge(queued.operationId!).then(ok => { if (!ok) tipAt(c, text('actionFailed')) }), 'menuCancelMerge'])
       // The same merge as dragging one cell onto another, reachable without a drag (and from the keyboard).
-      if (!rail && model.topics.length > 1 && !busyMerge(c)) extra.push([text('menuMergeInto'), () => openAll(activeOrNull(), c.m.getBoundingClientRect(), c.id), 'menuMergeInto'])
+      if (!rail && model.topics.length > 1 && !merging().has(c.id)) extra.push([text('menuMergeInto'), () => openAll(activeOrNull(), c.m.getBoundingClientRect(), c.id), 'menuMergeInto'])
       for (const m of (model.merges ?? []).filter(m => m.targetId === id).slice(0, 3)) extra.push([text('menuUnmerge', { name: m.title }), () => undoMerge(m.sourceId, c), 'menuUnmerge'])
       if (extra.length) items.push(null, ...extra)
     }
@@ -731,7 +805,8 @@ export function createFoam(options: FoamOptions): Foam {
     if (pop && !pop.el.contains(at) && !(pop.kind === 'all' && entry.contains(at))) closePop()
   }
   const keydown = (e: KeyboardEvent) => {
-    if (e.key !== 'Escape') return
+    // Escape while an input method is composing only cancels the composition.
+    if (e.key !== 'Escape' || e.isComposing) return
     if (pop?.el.contains(e.target as Node)) {
       e.preventDefault(); e.stopPropagation()
       // Escape in a filled filter clears it first; the next one closes the list.
@@ -767,8 +842,9 @@ export function createFoam(options: FoamOptions): Foam {
   }
   /** Arrow keys walk the popover's controls (wrapping), Home and End jump; Tab out of it closes it. */
   function popNav(e: KeyboardEvent) {
-    if (!pop) return
-    const all = [...pop.el.querySelectorAll<HTMLElement>('input, button')].filter(x => !x.closest('[hidden]'))
+    // Arrow keys while an input method is composing belong to its candidate list.
+    if (!pop || e.isComposing || e.keyCode === 229) return
+    const all = [...pop.el.querySelectorAll<HTMLElement>('input, button:not([disabled])')].filter(x => !x.closest('[hidden]'))
     const i = all.indexOf(document.activeElement as HTMLElement), inInput = document.activeElement instanceof HTMLInputElement
     const next = e.key === 'ArrowDown' ? (i + 1) % all.length : e.key === 'ArrowUp' ? (i <= 0 ? all.length - 1 : i - 1)
       : e.key === 'Home' && !inInput ? 0 : e.key === 'End' && !inInput ? all.length - 1 : -1
@@ -799,6 +875,7 @@ export function createFoam(options: FoamOptions): Foam {
     const keep = pop?.kind === 'all' ? pop.back ?? entry : back
     closePop()
     const el = makePop('detail', c.id, keep)
+    pop!.mid = c.offer?.messageId
     renderDetail()
     if (pop?.el !== el) return
     document.body.appendChild(el)
@@ -813,10 +890,10 @@ export function createFoam(options: FoamOptions): Foam {
     // The topic went away (merged, deleted) while open: close, and focus lands on the all-topics entry, never on a neighbour.
     if (!c || !t) { closePop(false, true); return }
     const status = foamStatusText(t, text)
-    const items = menuItems(c).filter(item => item?.[2] !== 'menuContinue')
+    const items = menuItems(c, pop.mid).filter(item => item?.[2] !== 'menuContinue')
     while (items[0] === null) items.shift()
     const primary = !t.current
-    const sig = [c.title, status, primary, c.offer?.messageId ?? '', ...items.map(item => item ? item[0] : '-')].join('\n')
+    const sig = [c.title, status, primary, pop.mid && c.offer?.messageId === pop.mid ? pop.mid : '', ...items.map(item => item ? item[0] : '-')].join('\n')
     if (sig === pop.sig) return
     const el = pop.el, focused = el.contains(document.activeElement) ? document.activeElement?.textContent : null
     pop.sig = sig; el.textContent = ''
@@ -845,13 +922,15 @@ export function createFoam(options: FoamOptions): Foam {
     input.type = 'search'; input.className = 'theone-foam-filter'; input.placeholder = pick ? text('mergeIntoPick') : text('filter'); input.setAttribute('aria-label', text('filter'))
     input.autocomplete = 'off'; input.spellcheck = false
     input.addEventListener('input', () => { if (pop?.el === el) { pop.query = input.value; renderAll() } })
-    input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); el.querySelector<HTMLButtonElement>('.theone-foam-row')?.click() } })
+    // Enter acts on the first row, but never the Enter that confirms an input method's candidate.
+    input.addEventListener('keydown', e => { if (foamEnterActs(e)) { e.preventDefault(); el.querySelector<HTMLButtonElement>('.theone-foam-row:not([disabled])')?.click() } })
     const rows = document.createElement('div')
     rows.className = 'theone-foam-rows'; rows.setAttribute('role', 'list')
     const empty = span('theone-foam-empty', text('noMatch'))
     empty.hidden = true
     el.append(input, rows, empty, ...(pick ? [] : [document.createElement('hr'), popButton(text('menuWorkspace'), actions.openWorkspace)]))
     renderAll()
+    if (pop?.el !== el) return
     document.body.appendChild(el)
     placePop(el, at ?? (entry.hidden ? host : entry).getBoundingClientRect(), 440)
     input.focus()
@@ -859,30 +938,41 @@ export function createFoam(options: FoamOptions): Foam {
   function renderAll() {
     if (!pop || pop.kind !== 'all') return
     const known = new Map(model.topics.map(t => [t.id, t]))
+    // Choosing where a topic goes that is gone, or is now in another merge itself: nothing left to choose.
+    if (pop.pick && (!byId(pop.pick) || merging().has(pop.pick))) { closePop(false, true); return }
     // The order is fixed while the list is open, so rows never move under the pointer; new topics join at the end.
     for (const t of foamOrder(model.topics)) if (!pop.order.includes(t.id) && t.id !== pop.pick) pop.order.push(t.id)
     pop.order = pop.order.filter(id => known.has(id))
     const shown = foamFilter(pop.order.map(id => known.get(id)!), pop.query)
-    const sig = pop.query + '\n' + shown.map(t => [t.id, t.title, t.current, foamStatusText(t, text)].join('\t')).join('\n')
+    // Picking a merge target: a topic already in a merge waiting to happen is shown, but cannot be picked.
+    const held = pop.pick ? merging() : new Set<string>()
+    const sig = pop.query + '\n' + shown.map(t => [t.id, t.title, t.current, foamStatusText(t, text), held.has(t.id)].join('\t')).join('\n')
     if (sig === pop.sig) return
     pop.sig = sig
     const el = pop.el, rows = el.querySelector('.theone-foam-rows')!, empty = el.querySelector<HTMLElement>('.theone-foam-empty')!
     const focused = (document.activeElement as HTMLElement | null)?.closest?.('.theone-foam-row')?.getAttribute('data-id')
     rows.textContent = ''
     for (const t of shown) {
-      const item = document.createElement('div'), b = document.createElement('button'), status = foamStatusText(t, text)
+      const item = document.createElement('div'), b = document.createElement('button'), blocked = held.has(t.id)
+      const status = blocked ? text('pickMerging') : foamStatusText(t, text)
       item.setAttribute('role', 'listitem')
-      b.type = 'button'; b.className = 'theone-foam-row'; b.setAttribute('data-id', t.id); b.setAttribute('aria-haspopup', 'dialog')
+      b.type = 'button'; b.className = 'theone-foam-row'; b.setAttribute('data-id', t.id)
+      if (!pop.pick) b.setAttribute('aria-haspopup', 'dialog')
+      if (blocked) b.disabled = true
       if (t.current) b.setAttribute('aria-current', 'true')
       b.appendChild(span('theone-foam-name', t.title))
-      if (status) b.appendChild(span('theone-foam-status' + (t.phase === 'waiting' ? ' need' : ''), status))
+      if (status) b.appendChild(span('theone-foam-status' + (t.phase === 'waiting' && !blocked ? ' need' : ''), status))
       const pick = pop.pick
       b.onclick = () => {
         const c = byId(t.id); if (!c) return
         if (!pick) { openDetail(c, null); return }
         const from = byId(pick)
         closePop(true)
-        if (from && from !== c) mergeInto(from, c)
+        if (!from || from === c) return
+        // Checked again now: either end may have joined another merge since the list was drawn.
+        const busyNow = merging()
+        if (busyNow.has(from.id) || busyNow.has(c.id)) { tipAt(c, text('mergeConflict')); return }
+        mergeInto(from, c)
       }
       item.appendChild(b); rows.appendChild(item)
       if (t.id === focused) b.focus()
@@ -903,7 +993,7 @@ export function createFoam(options: FoamOptions): Foam {
   const scrolled = () => { if (drag?.started) cancelDrag() }
   function undoMerge(sourceId: string, near: Cell) {
     hideUndo()
-    void actions.unmerge(sourceId).then(ok => { if (!ok) tipAt(near, text('actionFailed')) })
+    void actions.unmerge(sourceId).then(ok => { if (ok) gone.delete(sourceId); else if (cells.includes(near)) tipAt(near, text('actionFailed')) })
   }
   /** Right after a merge: a small "undo" under the merged cell for a few seconds; the cell's menu keeps the undo after it fades. */
   function offerUndo(sourceId: string, near: Cell) {
@@ -925,7 +1015,8 @@ export function createFoam(options: FoamOptions): Foam {
    * quiet dotted thread between the two cells with a small pore to click. It never pulls them together. Only
    * "not the same" declines; Esc, clicking elsewhere, moving away or setting a cell aside leave it pending.
    */
-  interface Dup { s: FoamSuggestion; a: Cell; b: Cell; thread: SVGPathElement; pore: SVGGElement; hit: SVGCircleElement; alpha: number }
+  /** `px`/`py`: where the pore sits this frame (null when not drawn); `room`: its hit area fits between the cells, else the pore is not shown. */
+  interface Dup { s: FoamSuggestion; a: Cell; b: Cell; thread: SVGPathElement; pore: SVGGElement; hit: SVGCircleElement; alpha: number; px: number | null; py: number; room: boolean }
   const dups = new Map<string, Dup>()
   /** Answered here and waiting for TheOne's next state: the thread is not drawn meanwhile. */
   const answering = new Set<string>()
@@ -949,7 +1040,7 @@ export function createFoam(options: FoamOptions): Foam {
         pore.addEventListener('click', () => { if (dupPanel?.id === id) closeDup(); else openDup(id) })
         pore.addEventListener('pointerenter', () => { if (drag) return; placeTip(pore.getBoundingClientRect(), text('dupTitle')) })
         pore.addEventListener('pointerleave', () => { if (!tipOwner) tip.classList.remove('on') })
-        d = { s, a, b, thread, pore, hit: pore.firstChild as SVGCircleElement, alpha: 0 }
+        d = { s, a, b, thread, pore, hit: pore.firstChild as SVGCircleElement, alpha: 0, px: null, py: 0, room: false }
         dups.set(id, d)
       }
       d.s = s; d.a = a; d.b = b
@@ -973,13 +1064,11 @@ export function createFoam(options: FoamOptions): Foam {
       const show = !answering.has(d.s.id) && sz > .7 && [a, b].every(c => cells.includes(c) && c.mode === 'live' && !c.hidden && c.scale > .5)
         && !(drag?.started && (drag.cell === a || drag.cell === b))
       d.alpha = reduced() ? (show ? 1 : 0) : ease(d.alpha, show ? 1 : 0, show ? 1.4 : 6, dt)
-      d.hit.style.pointerEvents = drag || !show ? 'none' : ''
+      d.px = null
       if (d.alpha < .02) { d.thread.setAttribute('d', ''); d.pore.style.display = 'none'; continue }
-      d.pore.style.display = ''
       const ra = a.R * a.scale, rb = b.R * b.scale, dx = b.cx - a.cx, dy = b.cy - a.cy, dist = Math.hypot(dx, dy) || .01, ux = dx / dist, uy = dy / dist
       const gap = dist - ra - rb
-      // Its invisible hit circle fits the gap (8px at most); squeezed tight, only the drawn ring answers and the menu is the way in.
-      d.hit.setAttribute('r', fx(Math.max(0, Math.min(8, gap / 2 - 1)) / Math.max(.7, sz)))
+      // The pore's hit area is shared out with the cells' afterwards (see step); it is shown only where that leaves it room.
       let path = '', px: number, py: number
       if (gap < Math.min(ra, rb) * 1.4) {
         // Close together: a dotted neck outline in the crevice between them, the pore on their shared wall.
@@ -997,7 +1086,22 @@ export function createFoam(options: FoamOptions): Foam {
       const o = d.alpha * (open ? 1 : .8 + .2 * Math.sin(t * 1.2 + a.phase))
       d.thread.setAttribute('d', path); d.thread.style.opacity = fx(o * .85); d.thread.classList.toggle('open', open)
       d.pore.setAttribute('transform', `translate(${fx(px)} ${fx(py)}) scale(${fx(Math.max(.7, sz))})`); d.pore.style.opacity = fx(o); d.pore.classList.toggle('open', open)
+      d.px = px; d.py = py
+      d.hit.style.pointerEvents = drag || !show ? 'none' : ''
     }
+  }
+  /**
+   * The pores' hit circles, shared out with the cells' (`foamPoreHits`). With too little room a pore is not drawn at all, so
+   * nothing looks clickable that is not; the cells' menus and details still lead to the suggestion.
+   */
+  function placePores(list: Dup[], radii: number[]) {
+    const scale = Math.max(.7, sz)
+    list.forEach((d, i) => {
+      d.room = radii[i] > 0
+      d.pore.style.display = d.room ? '' : 'none'
+      d.hit.setAttribute('r', fx(radii[i] / scale))
+    })
+    for (const d of dups.values()) if (d.px === null) d.room = false
   }
   /** The small panel for one possible duplicate, near the pair: both full names, which one to keep, not the same, later. */
   function openDup(id: string, from?: Cell) {
@@ -1062,7 +1166,7 @@ export function createFoam(options: FoamOptions): Foam {
     // Same as a merge by hand: a neck until TheOne confirms, then the two fuse and "undo" is offered; queued keeps the neck.
     if (c && into && !c.hidden && !into.hidden) bonds = [...bonds.filter(b => b[0] !== c && b[1] !== c), [c, into]]
     void actions.answerSuggestion(id, 'accept', direction).then(result => {
-      if (result === 'merged' && c && into) { apply({ kind: 'merged', id: c.id, into: into.id }); offerUndo(c.id, into) }
+      if (result === 'merged' && c && into) { gone.set(c.id, now() + 8000); apply({ kind: 'merged', id: c.id, into: into.id }); offerUndo(c.id, into) }
       else if (result === 'failed') { answering.delete(id); if (c) bonds = bonds.filter(b => b[0] !== c); tipAt(near, text('mergeFailed')) }
     })
   }
@@ -1152,27 +1256,34 @@ export function createFoam(options: FoamOptions): Foam {
     c.tx = p.x - drag.dx; c.ty = p.y - drag.dy
     showAim(c)
   }
-  const busyMerge = (c: Cell) => (model.pendingMerges ?? []).some(m => m.id === c.id || m.into === c.id)
+  /** Topics in a merge waiting to happen, TheOne's or one just asked for here (its neck): neither end takes part in another merge. */
+  const merging = () => foamMerging(model.pendingMerges, bonds.map(b => [b[0].id, b[1].id] as const))
   /** Merges one topic into another: a pending suggestion between them is answered instead; the cells are joined until TheOne confirms. */
   function mergeInto(c: Cell, into: Cell) {
     const dup = dupBetween(c, into)
     if (dup) { acceptDup(dup.id, dup.direction); return }
     bonds = [...bonds.filter(b => b[0] !== c && b[1] !== c), [c, into]]
     void actions.merge(c.id, into.id).then(result => {
-      if (result === 'merged') { apply({ kind: 'merged', id: c.id, into: into.id }); offerUndo(c.id, into) }
+      if (result === 'merged') { gone.set(c.id, now() + 8000); apply({ kind: 'merged', id: c.id, into: into.id }); offerUndo(c.id, into) }
       else if (result === 'failed') { bonds = bonds.filter(b => b[0] !== c); tipAt(into, text('mergeFailed')) }
     })
   }
   /** Moves the message routing hesitated over into this candidate; a failed try keeps the candidate. */
-  function rerouteTo(c: Cell, expected?: string) {
-    if (!c.offer || c.g.classList.contains('pending')) return
-    if (expected && c.offer.messageId !== expected) { tipAt(c, text('rerouteFailed')); return }
-    const { messageId } = c.offer
+  /** Moves `messageId` (the message offered when the menu or details opened) into this candidate; a failed try keeps the candidate. */
+  function rerouteTo(c: Cell, messageId: string) {
+    // A newer message took its place: this never moves the newer one instead.
+    if (c.offer?.messageId !== messageId) { tipAt(c, text('rerouteFailed')); return }
+    if (c.reroute?.messageId === messageId) return
+    const req = ++rerouteSeq
+    c.reroute = { messageId, req }
     c.g.classList.add('pending')
     void actions.reroute(messageId, c.id).then(status => {
-      c.g.classList.remove('pending')
+      // Only the answer to the latest request ends its waiting; a late answer for an older message changes nothing newer.
+      const latest = c.reroute?.req === req
+      if (latest) { c.reroute = undefined; c.g.classList.remove('pending') }
       if (status >= 200 && status < 300) { for (const o of cells) if (o.offer?.messageId === messageId) clearOffer(o); light(c); return }
-      if (c.offer) c.offer.until = Math.max(c.offer.until, now() + 30000)
+      if (!latest || c.offer?.messageId !== messageId) return
+      c.offer.until = Math.max(c.offer.until, now() + 30000)
       tipAt(c, text(status === 409 ? 'rerouteBusy' : 'rerouteFailed'))
     })
   }
@@ -1243,12 +1354,17 @@ export function createFoam(options: FoamOptions): Foam {
   window.addEventListener('blur', blur)
   document.addEventListener('pointerdown', outside, true)
   document.addEventListener('keydown', keydown, true)
+  // Reduced motion switched on: whatever is flying lands now (a held one appears where it waits); the next frame settles the rest.
+  const motionChanged = () => { if (motion.matches) for (const v of ves) v.t = Math.max(v.t, 1) }
+  motion.addEventListener('change', motionChanged)
 
   function step(dt: number) {
     const T = now()
     options.place?.()
     if (drag?.started && drag.rest && target?.kind !== 'cell') showAim(drag.cell)
-    sz = ease(sz, rail ? MINI : 1, 4, dt)
+    // Reduced motion: sizes, places and the box's height go straight to where they settle; nothing springs or grows on screen.
+    const still = reduced()
+    sz = still ? (rail ? MINI : 1) : ease(sz, rail ? MINI : 1, 4, dt)
     const words = clamp((sz - .72) / .28)
 
     // Which topics show: past the limit the least used fold into "+N", set-aside topics always fold, the collapsed rail shows only active ones.
@@ -1291,64 +1407,73 @@ export function createFoam(options: FoamOptions): Foam {
     const w = fr.width, h = Math.max(height - strip, 8), cx = w / 2, cy = Math.max(14, h / 2)
     if (mr) L = { x: mr.left + mr.width / 2 - fr.left, y: mr.top + mr.height / 2 - fr.top }
     const markR = MARK_R + pulse * pulse * .8
-    const shiftX = x1 > x0 ? (cx - (x0 + x1) / 2) * 3 : 0, shiftY = bottom > top ? (cy - (top + bottom) / 2) * 2 : 0
 
     // Forces: an oval pull to the middle, recent topics rise toward the card, related topics stick together, pressure where cells touch, slow wander.
-    for (const c of cells) {
-      let fx2 = 0, fy2 = 0, damp = .06
-      c.age += dt
-      if (c.mode === 'bud') {
-        const dx = cx - L.x, dy = cy - L.y, d = Math.hypot(dx, dy) || 1
-        const reach = markR + sizeOf(c) * sz * c.scale * .95 + c.age * 9 * sz
-        fx2 = (L.x + dx / d * reach - c.x) * 90; fy2 = (L.y + dy / d * reach - c.y) * 90; damp = .002
-        if (c.age > .8) { c.mode = 'live'; c.hidden = false; c.away = false; c.vx += dx / d * 120; c.vy += dy / d * 120; c.onBorn?.(); c.onBorn = undefined }
-      } else if (c.mode === 'leave') {
-        if (c.into && cells.includes(c.into)) { fx2 = (c.into.cx - c.x) * 40; fy2 = (c.into.cy - c.y) * 40; damp = .003 }
-      } else if (c.mode === 'fling') {
-        damp = .35
-      } else if (c.hidden) {
-        fx2 = (cx - c.x) * 4; fy2 = (cy - c.y) * 4
-      } else {
-        const act = c.cur || c.state !== 'idle' ? 1 : c.w
-        const ox = cx - c.x, oy = (cy - c.y) * 1.8, od = Math.hypot(ox, oy) || 1, pull = Math.min(od, 30 * sz) * 1.6
-        // The topic main chat is in rises closest to the card it belongs to.
-        fx2 += ox / od * pull + shiftX; fy2 += oy / od * pull + shiftY - (28 * (act - .45) + (c.cur ? 45 : 0)) * sz
-        const wob = (c.state === 'running' ? 14 : c.state === 'idle' ? 3 + 4 * c.w : 5) * sz
-        fx2 += wob * Math.sin(t * .31 + c.phase) + wob * .5 * Math.sin(t * .83 + c.phase * 2)
-        fy2 += wob * Math.cos(t * .27 + c.phase * 1.4)
-        for (const o of live) {
-          if (o === c) continue
-          const dx = o.x - c.x, dy = o.y - c.y, d = Math.hypot(dx, dy) || .01, rest = (c.R + o.R) * .93, lw = linkW(c, o)
-          const f = d < rest ? -(rest - d) * 40 : d < rest * 1.5 ? (d - rest) * Math.max(4, 11 + 12 * lw) : lw > 0 && d < rest * 3.2 ? (d - rest) * 6 * lw : 0
-          fx2 += dx / d * f; fy2 += dy / d * f
+    const forces = (dt: number) => {
+      let top = Infinity, bottom = -Infinity, x0 = Infinity, x1 = -Infinity
+      for (const c of live) if (drag?.cell !== c) { top = Math.min(top, c.y - c.R); bottom = Math.max(bottom, c.y + c.R); x0 = Math.min(x0, c.x - c.R); x1 = Math.max(x1, c.x + c.R) }
+      const shiftX = x1 > x0 ? (cx - (x0 + x1) / 2) * 3 : 0, shiftY = bottom > top ? (cy - (top + bottom) / 2) * 2 : 0
+      for (const c of cells) {
+        let fx2 = 0, fy2 = 0, damp = .06
+        c.age += dt
+        if (c.mode === 'bud') {
+          const dx = cx - L.x, dy = cy - L.y, d = Math.hypot(dx, dy) || 1
+          const reach = markR + sizeOf(c) * sz * c.scale * .95 + c.age * 9 * sz
+          fx2 = (L.x + dx / d * reach - c.x) * 90; fy2 = (L.y + dy / d * reach - c.y) * 90; damp = .002
+          if (c.age > .8) { c.mode = 'live'; c.hidden = false; c.away = false; c.vx += dx / d * 120; c.vy += dy / d * 120; c.onBorn?.(); c.onBorn = undefined }
+        } else if (c.mode === 'leave') {
+          if (c.into && cells.includes(c.into)) { fx2 = (c.into.cx - c.x) * 40; fy2 = (c.into.cy - c.y) * 40; damp = .003 }
+        } else if (c.mode === 'fling') {
+          damp = .35
+        } else if (c.hidden) {
+          fx2 = (cx - c.x) * 4; fy2 = (cy - c.y) * 4
+        } else {
+          const act = c.cur || c.state !== 'idle' ? 1 : c.w
+          const ox = cx - c.x, oy = (cy - c.y) * 1.8, od = Math.hypot(ox, oy) || 1, pull = Math.min(od, 30 * sz) * 1.6
+          // The topic main chat is in rises closest to the card it belongs to.
+          fx2 += ox / od * pull + shiftX; fy2 += oy / od * pull + shiftY - (28 * (act - .45) + (c.cur ? 45 : 0)) * sz
+          const wob = (c.state === 'running' ? 14 : c.state === 'idle' ? 3 + 4 * c.w : 5) * sz
+          fx2 += wob * Math.sin(t * .31 + c.phase) + wob * .5 * Math.sin(t * .83 + c.phase * 2)
+          fy2 += wob * Math.cos(t * .27 + c.phase * 1.4)
+          for (const o of live) {
+            if (o === c) continue
+            const dx = o.x - c.x, dy = o.y - c.y, d = Math.hypot(dx, dy) || .01, rest = (c.R + o.R) * .93, lw = linkW(c, o)
+            const f = d < rest ? -(rest - d) * 40 : d < rest * 1.5 ? (d - rest) * Math.max(4, 11 + 12 * lw) : lw > 0 && d < rest * 3.2 ? (d - rest) * 6 * lw : 0
+            fx2 += dx / d * f; fy2 += dy / d * f
+          }
+          // Cells lean toward the pointer, except with reduced motion.
+          if (ptr && !drag && !still) {
+            const dx = ptr.x - c.x, dy = ptr.y - c.y, d = Math.hypot(dx, dy) || 1, reach = 80 * sz
+            if (d < reach) { const f = (c.state === 'running' ? 16 : 6) * (1 - d / reach); fx2 += dx / d * f; fy2 += dy / d * f }
+          }
+          if (drag?.cell !== c) {
+            const pad = c.R * .8
+            if (c.x < pad) fx2 += (pad - c.x) * 30
+            if (c.x > w - pad) fx2 -= (c.x - (w - pad)) * 30
+            if (c.y < pad * .7) fy2 += (pad * .7 - c.y) * 30
+            if (c.y > h - pad * .7) fy2 -= (c.y - (h - pad * .7)) * 30
+          }
         }
-        if (ptr && !drag) {
-          const dx = ptr.x - c.x, dy = ptr.y - c.y, d = Math.hypot(dx, dy) || 1, reach = 80 * sz
-          if (d < reach) { const f = (c.state === 'running' ? 16 : 6) * (1 - d / reach); fx2 += dx / d * f; fy2 += dy / d * f }
-        }
-        if (drag?.cell !== c) {
-          const pad = c.R * .8
-          if (c.x < pad) fx2 += (pad - c.x) * 30
-          if (c.x > w - pad) fx2 -= (c.x - (w - pad)) * 30
-          if (c.y < pad * .7) fy2 += (pad * .7 - c.y) * 30
-          if (c.y > h - pad * .7) fy2 -= (c.y - (h - pad * .7)) * 30
-        }
+        if (drag?.cell === c) { fx2 += (c.tx - c.x) * 70; fy2 += (c.ty - c.y) * 70 }
+        // While a cell is being dragged the others hold their places, so the one under the pointer stays there to be dropped on.
+        else if (drag?.started && c.mode === 'live' && !c.hidden) { c.vx = c.vy = 0; continue }
+        c.vx = (c.vx + fx2 * dt) * Math.pow(damp, dt); c.vy = (c.vy + fy2 * dt) * Math.pow(damp, dt)
+        c.x += c.vx * dt; c.y += c.vy * dt
       }
-      if (drag?.cell === c) { fx2 += (c.tx - c.x) * 70; fy2 += (c.ty - c.y) * 70 }
-      // While a cell is being dragged the others hold their places, so the one under the pointer stays there to be dropped on.
-      else if (drag?.started && c.mode === 'live' && !c.hidden) { c.vx = c.vy = 0; continue }
-      c.vx = (c.vx + fx2 * dt) * Math.pow(damp, dt); c.vy = (c.vy + fy2 * dt) * Math.pow(damp, dt)
-      c.x += c.vx * dt; c.y += c.vy * dt
+      for (const [c, o] of bonds) {
+        const dx = o.x - c.x, dy = o.y - c.y, d = Math.hypot(dx, dy) || 1, f = (d - (c.R + o.R) * .9) * 10 * dt
+        c.vx += dx / d * f; c.vy += dy / d * f; o.vx -= dx / d * f; o.vy -= dy / d * f
+      }
     }
-    for (const [c, o] of bonds) {
-      const dx = o.x - c.x, dy = o.y - c.y, d = Math.hypot(dx, dy) || 1, f = (d - (c.R + o.R) * .9) * 10 * dt
-      c.vx += dx / d * f; c.vy += dy / d * f; o.vx -= dx / d * f; o.vy -= dy / d * f
-    }
+    // Reduced motion: the same forces run ahead within this frame, so the cells are where they settle instead of drifting there.
+    for (let i = still ? 24 : 1; i > 0; i--) forces(dt)
 
     for (const c of [...cells]) {
       if (c.mode === 'leave') {
         const o = c.into, alive = !!o && cells.includes(o)
-        if (alive) {
+        // Reduced motion: a merged or removed topic is simply gone, it does not travel into the other.
+        if (still) c.alpha = 0
+        else if (alive) {
           const d = Math.hypot(c.x - o!.cx, c.y - o!.cy)
           c.scale = ease(c.scale, clamp((d - o!.R * .3) / 50, .08, 1), 6, dt)
           if (d < o!.R * .45 || c.age > 3) c.alpha = ease(c.alpha, 0, 14, dt)
@@ -1364,8 +1489,8 @@ export function createFoam(options: FoamOptions): Foam {
         const outBy = sr ? Math.max(gx0 - sr.right, sr.left - gx0, gy0 - sr.bottom, sr.top - gy0, 0) : 0
         c.alpha = clamp(1 - outBy / 90)
         if (c.alpha < .03 || c.age > 1.4) { c.mode = 'live'; c.aside = true; c.hidden = true; c.away = true; c.alpha = 1; c.scale = 0; c.vx = c.vy = 0; c.x = cx; c.y = cy; c.g.style.pointerEvents = ''; more.kick = 1; continue }
-      } else if (c.mode === 'bud') c.scale = ease(c.scale, .2 + c.age * .45, 5, dt)
-      else c.scale = ease(c.scale, c.hidden ? 0 : 1, c.hidden ? 5 : 2.5, dt)
+      } else if (c.mode === 'bud') c.scale = still ? 1 : ease(c.scale, .2 + c.age * .45, 5, dt)
+      else c.scale = still ? (c.hidden ? 0 : 1) : ease(c.scale, c.hidden ? 0 : 1, c.hidden ? 5 : 2.5, dt)
       c.g.style.display = c.scale < .02 ? 'none' : ''
       if (c.scale < .02) { c.nf.setAttribute('d', ''); c.ne.setAttribute('d', ''); continue }
       c.heat = ease(c.heat, c.state === 'running' ? 1 : 0, 1.3, dt)
@@ -1382,10 +1507,11 @@ export function createFoam(options: FoamOptions): Foam {
         else if (ptr) { const d = Math.hypot(ptr.x - c.cx, ptr.y - c.cy) - c.R * .4; near = clamp(1 - d / 52); near = near * near * (3 - 2 * near) }
       }
       c.reveal = ease(c.reveal, near, near > c.reveal ? 9 : 4, dt)
-      const r0 = sizeOf(c) * sz * (1 + (named(c) ? .04 : .2) * c.reveal)
+      // Reduced motion: no swelling under the pointer, no stretching with speed and no breath when something arrives.
+      const r0 = sizeOf(c) * sz * (1 + (still ? 0 : (named(c) ? .04 : .2) * c.reveal))
       c.svx = ease(c.svx, c.vx, 8, dt); c.svy = ease(c.svy, c.vy, 8, dt)
-      const speed = Math.hypot(c.svx, c.svy), st = Math.min(c.mode === 'fling' ? .2 : .12, speed / 1100), ux0 = c.svx / (speed || 1), uy0 = c.svy / (speed || 1)
-      const sigh = 1 + .1 * Math.sin(Math.PI * (1 - c.kick)) * (c.kick > 0 ? 1 : 0)
+      const speed = Math.hypot(c.svx, c.svy), st = still ? 0 : Math.min(c.mode === 'fling' ? .2 : .12, speed / 1100), ux0 = c.svx / (speed || 1), uy0 = c.svy / (speed || 1)
+      const sigh = still ? 1 : 1 + .1 * Math.sin(Math.PI * (1 - c.kick)) * (c.kick > 0 ? 1 : 0)
       const pts: number[][] = []
       for (let i = 0; i < N; i++) {
         const th = i / N * Math.PI * 2, ux = Math.cos(th), uy = Math.sin(th), along = ux * ux0 + uy * uy0
@@ -1407,8 +1533,8 @@ export function createFoam(options: FoamOptions): Foam {
       // Keep each cell's volume: squeezed cells bulge on their free side. The dragged one keeps its size.
       if (c.mode === 'live' && !c.hidden && drag?.cell !== c) {
         const area = polygonArea(pts) / Math.max(.01, (c.scale * sigh) ** 2)
-        c.R = Math.min(ease(c.R, r0 * Math.sqrt(Math.PI * r0 * r0 / Math.max(area, 1)), 2, dt), r0 * 1.2)
-      } else c.R = ease(c.R, r0, 4, dt)
+        c.R = Math.min(ease(c.R, r0 * Math.sqrt(Math.PI * r0 * r0 / Math.max(area, 1)), still ? 15 : 2, dt), r0 * 1.2)
+      } else c.R = still ? r0 : ease(c.R, r0, 4, dt)
       let gx = 0, gy = 0
       for (const p of pts) { gx += p[0]; gy += p[1] }
       gx /= N; gy /= N; c.cx = gx; c.cy = gy
@@ -1465,12 +1591,16 @@ export function createFoam(options: FoamOptions): Foam {
 
     // Hit areas: small cells get a steady 24px circle to press where there is room, split fairly between neighbours and kept
     // inside the box. The cell being dragged is left out, so the ones it may land on keep theirs while it passes over them.
+    // The duplicate pores take part as points with no outline of their own, so the room around them is split with the cells.
     const pressable = cells.filter(c => c.mode === 'live' && !c.hidden && c.scale >= .02 && !(drag?.started && drag.cell === c))
-    const radii = foamHitRadii(pressable.map(c => ({ x: c.cx, y: c.cy, r: c.R * c.scale, floor: c.vin })), { w, h })
+    const porous = [...dups.values()].filter(d => d.px !== null)
+    const hits = foamPoreHits(pressable.map(c => ({ x: c.cx, y: c.cy, r: c.R * c.scale, floor: c.vin, reach: c.vr })),
+      porous.map(d => ({ x: d.px!, y: d.py, shown: d.room })), { w, h })
     for (const c of cells) {
-      const i = pressable.indexOf(c), r = i < 0 ? 0 : radii[i]
+      const i = pressable.indexOf(c), r = i < 0 ? 0 : hits.cells[i]
       if (r || c.hit) { c.hit = r; c.hc.setAttribute('cx', fx(c.cx)); c.hc.setAttribute('cy', fx(c.cy)); c.hc.setAttribute('r', fx(r)) }
     }
+    placePores(porous, hits.pores)
     // A menu whose topic went away (merged, removed) closes rather than act on a cell that is no longer there.
     if (menuOf && menuOf.cell.kind === 'topic' && (menuOf.cell.mode === 'leave' || !cells.includes(menuOf.cell))) closeMenu('gone')
 
@@ -1511,7 +1641,7 @@ export function createFoam(options: FoamOptions): Foam {
     destroy() {
       cancelAnimationFrame(raf); clearInterval(tipTimer)
       window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', blur); window.removeEventListener('lostpointercapture', blur); window.removeEventListener('scroll', scrolled, true); document.removeEventListener('visibilitychange', hiddenPage); window.removeEventListener('blur', blur)
-      document.removeEventListener('pointerdown', outside, true); document.removeEventListener('keydown', keydown, true)
+      document.removeEventListener('pointerdown', outside, true); document.removeEventListener('keydown', keydown, true); motion.removeEventListener('change', motionChanged)
       closeDup(false); document.removeEventListener('pointerdown', dupPointer, true); document.removeEventListener('keydown', dupKey, true)
       closeMenu(); closePop(); hideUndo(); undo.remove(); tip.remove(); svg.remove(); list.remove(); entry.remove(); host.classList.remove('theone-foam', 'rail')
     },
@@ -1585,6 +1715,7 @@ html[data-theone-foam] button:has(.theone-workspace-entry){display:none}
 .theone-foam-menu{position:fixed;z-index:1000;box-sizing:border-box;min-width:168px;max-width:min(320px,calc(100vw - 16px));max-height:calc(100vh - 16px);overflow-y:auto;overscroll-behavior:contain;padding:4px;border:.5px solid var(--dsw-alias-border-l2,#8885);border-radius:var(--dsw-radius-lg,12px);background:var(--dsw-specific-menu,var(--dsw-alias-bg-layer-2,#fff));backdrop-filter:blur(24px) saturate(1.4);box-shadow:var(--dsw-elevation-prominent,0 8px 30px #0003);color:var(--dsw-alias-label-primary)}
 .theone-foam-menu button{display:flex;width:100%;min-height:34px;align-items:center;padding:7px 12px;line-height:1.4;white-space:normal;overflow-wrap:anywhere;border:0;border-radius:var(--dsw-radius-md,8px);background:none;color:inherit;font:inherit;font-size:13.5px;cursor:pointer;text-align:left}
 .theone-foam-menu button:hover,.theone-foam-menu button:focus-visible{background:var(--dsw-alias-interactive-bg-hover,#0000000a);outline:none}
+.theone-foam-menu button:disabled{cursor:default;background:none;color:var(--dsw-alias-label-secondary,#8a8a86)}
 .theone-foam-menu hr{border:0;border-top:.5px solid var(--dsw-alias-border-l2,#8885);margin:4px 2px}
 .theone-foam-all{position:absolute;right:6px;bottom:0;display:flex;align-items:center;gap:2px;height:18px;min-width:24px;padding:0 4px;border:0;border-radius:6px;background:none;color:var(--foam-idle-line);font:inherit;font-size:10.5px;line-height:1;font-variant-numeric:tabular-nums;cursor:pointer;pointer-events:auto;transition:color .3s ease}
 .theone-foam-all[hidden]{display:none}

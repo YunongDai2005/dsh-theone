@@ -207,6 +207,10 @@ export declare const zh: {
     readonly 'foam.rerouteFailed': "没换成，再点一次试试";
     readonly 'foam.actionFailed': "没做成，稍后再试";
     readonly 'foam.mergeFailed': "这次没合并成";
+    readonly 'foam.mergeConflict': "和另一个合并冲突";
+    readonly 'foam.mergeBusy': "TheOne 正忙，没合并成";
+    readonly 'foam.mergeExpired': "等得太久，没合并成";
+    readonly 'foam.pickMerging': "正在合并";
     readonly 'foam.mergeHold': "停住，就并进「{name}」";
     readonly 'foam.undo': "撤销合并";
     readonly 'foam.menuCancelMerge': "取消合并";
