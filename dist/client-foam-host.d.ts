@@ -5,7 +5,7 @@
  */
 import { type FoamEvent, type FoamModel, type FoamPhase, type FoamTextKey, type FoamTopic } from './client-foam.ts';
 import type { CatalogSnapshot } from './catalog-types.ts';
-import type { BubbleEvent, BubbleSnapshot, BubbleWorkItem } from './bubble-types.ts';
+import type { BubbleEvent, BubbleMerge, BubbleSnapshot, BubbleWorkItem } from './bubble-types.ts';
 /**
  * The finer status behind a phase, for the topic's details: which of routing/starting/answering/recovering, whether it waits
  * on a question or an approval, and why it is queued. Only what the work items say; nothing is guessed.
@@ -20,6 +20,18 @@ export declare function modelFromBubbles(snapshot: BubbleSnapshot): FoamModel;
 export declare function suggestionsFromBubbles(snapshot: BubbleSnapshot): NonNullable<FoamModel['suggestions']>;
 /** What each routing event looks like on the cluster. Hints and bookkeeping events play nothing. */
 export declare function foamEventsFrom(events: BubbleEvent[], snapshot: BubbleSnapshot): FoamEvent[];
+/**
+ * One feed batch's animations checked against the state it ended in, so an older event never undoes a newer state: of the
+ * merges and undos of one source only the last plays, and only if the snapshot agrees (a merge whose source it still lists,
+ * merged then undone in the same batch, plays nothing; nor does an undo whose source is gone again).
+ */
+export declare function settleFoamEvents(events: FoamEvent[], snapshot: Pick<BubbleSnapshot, 'topics'>): FoamEvent[];
+/**
+ * How queued merges ended, each exactly once: `seen` keeps every operation's last state, a finished one is never overwritten
+ * by an older state read later (history replayed after a receipt), and only a merge last seen queued or executing reports its end.
+ * Pass the batch's history first and its snapshot and receipts after.
+ */
+export declare function mergeOutcomes(seen: Map<string, BubbleMerge['state']>, merges: Iterable<Pick<BubbleMerge, 'operationId' | 'sourceId' | 'targetId' | 'state' | 'error'>>): FoamEvent[];
 export interface FoamHostOptions {
     /** The sidebar card (DSH's panel row button that holds TheOne's entry). */
     button: HTMLElement;
