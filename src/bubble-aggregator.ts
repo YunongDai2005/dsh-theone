@@ -4,16 +4,26 @@ import type { BubbleCursor, BubbleEvent, BubbleEventData, BubbleReadQuery, Bubbl
 interface Head {
   view: BubbleView; encoded: string; cursor: BubbleCursor; events: BubbleEvent[]; floor: number
   knownTopics: Set<string>; removedTopics: Set<string>; unavailable: Set<string>
+  lastReadAt: number
+}
+export interface BubblePublication {
+  project: (id: string | null) => BubbleView
+  unavailableIds: ReadonlySet<string>; topicIds: readonly string[]
 }
 interface BubbleAggregatorOptions {
   capacity?: number; maxWaiters?: number
   unavailableIds?: () => ReadonlySet<string>
   topicIds?: () => readonly string[]
+  prepare?: () => BubblePublication
+  /** Legacy standalone publishers keep synchronous transition observation. The service opts in. */
+  defer?: boolean
 }
 
-/** Single synchronous publisher: snapshot and event watermark always describe the same committed cut. */
+const HEAD_IDLE_MS = 5 * 60 * 1000
+interface PendingPublication { events: BubbleEventData[]; gatewayId: string | null }
+
+/** Flush commits all heads before notifying: snapshot and watermark describe the same cut. */
 export class BubbleAggregator {
-  private epoch = randomUUID()
   private readonly heads = new Map<string | null, Head>()
   private readonly listeners = new Set<() => void>()
   private readonly capacity: number
@@ -21,6 +31,10 @@ export class BubbleAggregator {
   private readonly lifetime = new AbortController()
   private readonly waiters = new Set<() => void>()
   private readonly maxWaiters: number
+  private readonly waiterScopes = new Map<string | null, number>()
+  private pending: PendingPublication[] = []
+  private topicBoundary = 0
+  private scheduled = false
   get pendingRequests(): number { return this.waiters.size }
   constructor(private readonly gatewayKey: string, private readonly project: (id: string | null) => BubbleView,
     private readonly gatewayIds: () => string[], private readonly options: BubbleAggregatorOptions = {}) {
@@ -28,18 +42,51 @@ export class BubbleAggregator {
     setMaxListeners(this.maxWaiters + 1, this.lifetime.signal)
     this.capacity = Math.max(1, options.capacity ?? 512)
     this.publish()
+    this.flush()
   }
   subscribe(listener: () => void): () => void { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
-  publish(events: BubbleEventData[] = [], gatewayId: string | null = null): void {
+  publish(events: BubbleEventData[] = [], gatewayId: string | null = null, synchronous = false): void {
     if (this.closed) return
+    // A mutation boundary follows any earlier activity events, rather than reordering its topic diff ahead of them.
+    if (synchronous) this.topicBoundary = this.pending.length
+    this.pending.push({ events: structuredClone(events), gatewayId })
+    if (synchronous || !this.options.defer) { this.flush(); return }
+    if (this.scheduled) return
+    this.scheduled = true
+    queueMicrotask(() => {
+      this.scheduled = false
+      // Keep a failed batch pending. A synchronous reader sees the error; the next publish retries.
+      try { this.flush() } catch { /* A read-side observer cannot fail a committed write. */ }
+    })
+  }
+  /** Also used at mutation boundaries where intermediate topic transitions must remain observable. */
+  flush(requested?: string | null): void {
+    if (this.closed) return
+    if (!this.pending.length && (requested === undefined || this.heads.has(requested))) return
+    const ids = this.gatewayIds(), latest = ids.at(-1) ?? null, now = Date.now()
+    this.prune(latest, now)
+    const refreshing = this.pending.length > 0
+    const needed = refreshing ? new Set<string | null>([null, latest, ...this.heads.keys()]) : new Set<string | null>()
+    if (requested !== undefined) needed.add(requested)
+    const shared = this.options.prepare?.() ?? { project: this.project,
+      unavailableIds: this.options.unavailableIds?.() ?? new Set<string>(), topicIds: this.options.topicIds?.() ?? [] }
+    const unavailable = new Set(shared.unavailableIds), topicIds = shared.topicIds
+    const unavailableKey = [...unavailable].sort()
+    // Prepare every scope before modifying a head, so projection failures cannot expose a partial cut.
+    const projections = [...needed].map(id => {
+      const view = shared.project(id)
+      return { id, view, encoded: JSON.stringify([view, unavailableKey]) }
+    })
+    const pending = this.pending, topicBoundary = this.topicBoundary
+    this.pending = []; this.topicBoundary = 0
     let changed = false
-    const unavailable = new Set(this.options.unavailableIds?.() ?? []), topicIds = this.options.topicIds?.() ?? []
-    for (const id of [null, ...this.gatewayIds()]) {
-      const view = this.project(id), encoded = JSON.stringify([view, [...unavailable].sort()])
+    for (const { id, view, encoded } of projections) {
       let head = this.heads.get(id)
       if (!head) {
         const suffix = createHash('sha256').update(JSON.stringify([this.gatewayKey, id])).digest('hex').slice(0, 16)
-        this.heads.set(id, head = { view, encoded, cursor: { epoch: this.epoch + ':' + suffix, version: 0, seq: 0 }, events: [], floor: 0, knownTopics: new Set([...topicIds, ...view.topics.map(topic => topic.id)]), removedTopics: new Set(), unavailable })
+        this.heads.set(id, head = { view, encoded, cursor: { epoch: randomUUID() + ':' + suffix, version: 0, seq: 0 }, events: [], floor: 0,
+          knownTopics: new Set([...topicIds, ...view.topics.map(topic => topic.id)]), removedTopics: new Set(), unavailable,
+          lastReadAt: id === requested ? now : -Infinity })
         changed = true
         continue
       }
@@ -48,10 +95,11 @@ export class BubbleAggregator {
       for (const hiddenId of unavailable) head.removedTopics.delete(hiddenId)
       for (const topic of view.topics) head.removedTopics.delete(topic.id)
       for (const topicId of topicIds) head.knownTopics.add(topicId)
-      const batch = [...topicEvents, ...(gatewayId === null || gatewayId === id ? events : [])]
+      const scoped = (parts: PendingPublication[]) => parts.flatMap(part => part.gatewayId === null || part.gatewayId === id ? part.events : [])
+      const batch = [...scoped(pending.slice(0, topicBoundary)), ...topicEvents, ...scoped(pending.slice(topicBoundary))]
       if (head.encoded === encoded && !batch.length) continue
       if (head.cursor.version >= Number.MAX_SAFE_INTEGER - 1 || head.cursor.seq >= Number.MAX_SAFE_INTEGER - batch.length - 1) {
-        this.epoch = randomUUID(); this.heads.clear(); this.publish(); return
+        this.heads.clear(); this.pending = [{ events: [], gatewayId: null }]; this.flush(requested); return
       }
       const cursor = { ...head.cursor, version: head.cursor.version + 1 }
       const appended: BubbleEvent[] = batch.map(event => ({ ...structuredClone(event), version: cursor.version, seq: ++cursor.seq, at: Date.now(), gatewayId: id }))
@@ -65,15 +113,29 @@ export class BubbleAggregator {
     }
     if (changed) for (const listener of this.listeners) listener()
   }
+  private prune(latest: string | null, now: number): void {
+    for (const [id, head] of this.heads) if (id !== null && id !== latest && !this.waiterScopes.has(id) && now - head.lastReadAt >= HEAD_IDLE_MS)
+      this.heads.delete(id)
+  }
   read(query: BubbleReadQuery = {}): BubbleReadResponse {
+    return this.readScope(query)
+  }
+  private readScope(query: BubbleReadQuery, fixedId?: string | null): BubbleReadResponse {
     if (this.closed) throw new Error('BUBBLES_CLOSED')
-    const id = query.gatewayId ?? this.gatewayIds().at(-1) ?? null
-    const head = this.heads.get(id)
-    if (!head) throw new Error('UNKNOWN_GATEWAY')
+    const ids = this.gatewayIds(), latest = ids.at(-1) ?? null
+    const id = fixedId !== undefined ? fixedId : query.gatewayId ?? latest
+    if (id !== null && !ids.includes(id)) throw new Error('UNKNOWN_GATEWAY')
+    this.prune(latest, Date.now())
+    const existing = this.heads.get(id)
+    if (existing) existing.lastReadAt = Date.now()
+    this.flush(id)
+    if (this.closed) throw new Error('BUBBLES_CLOSED')
+    const head = this.heads.get(id)!
+    head.lastReadAt = Date.now()
     let resetReason: Extract<BubbleReadResponse, { kind: 'update' }>['resetReason']
     if (!query.epoch || query.since === undefined || query.after === undefined) resetReason = 'initial'
     else if (query.gatewayKey !== undefined && query.gatewayKey !== this.gatewayKey) resetReason = 'scope_changed'
-    else if (query.epoch !== head.cursor.epoch) resetReason = query.epoch.split(':')[0] === this.epoch ? 'scope_changed' : 'epoch_changed'
+    else if (query.epoch !== head.cursor.epoch) resetReason = [...this.heads.values()].some(other => other.cursor.epoch === query.epoch) ? 'scope_changed' : 'epoch_changed'
     else if (query.since > head.cursor.version || query.after > head.cursor.seq) resetReason = 'cursor_ahead'
     else if (query.after < head.floor) resetReason = 'events_expired'
     if (!resetReason && query.since === head.cursor.version && query.after === head.cursor.seq)
@@ -104,29 +166,32 @@ export class BubbleAggregator {
     if (first.kind === 'update' || !query.waitMs) return first
     if (this.pendingRequests >= this.maxWaiters) throw new Error('TOO_MANY_WAITERS')
     // Freeze the scope of this request even if another gateway becomes the default while it waits.
-    const fixed = { ...query, ...(first.scope.gatewayId ? { gatewayId: first.scope.gatewayId } : {}) }
+    const fixedId = first.scope.gatewayId
     return new Promise<BubbleReadResponse>((resolve, reject) => {
       let settled = false, timer: ReturnType<typeof setTimeout> | undefined, off = () => {}
       const finish = (result?: BubbleReadResponse, error?: Error) => {
         if (settled) return
         settled = true; clearTimeout(timer); off(); this.waiters.delete(closed)
+        const remaining = this.waiterScopes.get(fixedId)! - 1
+        if (remaining) this.waiterScopes.set(fixedId, remaining); else this.waiterScopes.delete(fixedId)
         signal?.removeEventListener('abort', aborted); this.lifetime.signal.removeEventListener('abort', closed)
         if (error) reject(error); else resolve(result!)
       }
       const check = () => {
-        try { const latest = this.read(fixed); if (latest.kind === 'update') finish(latest) }
+        try { const latest = this.readScope(query, fixedId); if (latest.kind === 'update') finish(latest) }
         catch (error) { finish(undefined, error as Error) }
       }
       const aborted = () => finish(undefined, new Error('REQUEST_ABORTED'))
       const closed = () => finish(undefined, new Error('BUBBLES_CLOSED'))
       this.waiters.add(closed)
+      this.waiterScopes.set(fixedId, (this.waiterScopes.get(fixedId) ?? 0) + 1)
       off = this.subscribe(check)
       // subscribe may synchronously publish; detach the returned listener even in that case.
       if (settled) { off(); return }
       signal?.addEventListener('abort', aborted, { once: true })
       this.lifetime.signal.addEventListener('abort', closed, { once: true })
       timer = setTimeout(() => {
-        try { finish(this.read(fixed)) } catch (error) { finish(undefined, error as Error) }
+        try { finish(this.readScope(query, fixedId)) } catch (error) { finish(undefined, error as Error) }
       }, Math.min(query.waitMs!, 25000))
       if (signal?.aborted) aborted()
       else if (this.closed) closed()
@@ -135,9 +200,9 @@ export class BubbleAggregator {
   }
   close(): void {
     if (this.closed) return
-    this.closed = true; this.lifetime.abort()
+    this.closed = true; this.pending = []; this.lifetime.abort()
     for (const finish of this.waiters) finish()
-    this.listeners.clear()
+    this.listeners.clear(); this.heads.clear()
   }
   private topicEvents(before: BubbleView, after: BubbleView, known: Set<string>): BubbleEventData[] {
     const old = new Map(before.topics.map(topic => [topic.id, topic])), next = new Map(after.topics.map(topic => [topic.id, topic]))

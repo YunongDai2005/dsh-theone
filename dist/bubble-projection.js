@@ -29,24 +29,43 @@ export function doneCapability(work) {
         return { allowed: false, reason: 'pending_delivery' };
     return { allowed: true };
 }
-/** Synchronous, read-only and body-free. Never calls briefing, recovery, indexing, a Worker or a model. */
-export function projectBubbles(store, input) {
-    const now = input.now ?? Date.now(), scope = { ...input.scope };
-    const suggestions = store.mergeSuggestions().filter(s => s.state === 'pending' && s.scope.gatewayKey === scope.gatewayKey && s.scope.gatewayId === scope.gatewayId);
+/** Facts belong to one publication, never to a cross-request cache. */
+export function readBubbleProjection(store, gatewayKey, input = {}) {
+    const now = input.now ?? Date.now();
     const contexts = store.contexts(), hidden = store.hiddenReasons(), privateIds = store.privateIds();
-    const unavailable = store.unreachable();
-    const current = store.current(scope.gatewayKey) ?? null;
-    const usage = new Map(store.contextUsage(scope.gatewayKey, now).map(row => [row.contextId, row]));
+    const unavailable = new Set([...hidden].filter(([, reason]) => reason === 'orphaned' || reason === 'excluded').map(([id]) => id));
+    const current = store.current(gatewayKey) ?? null;
+    const usage = new Map(store.contextUsage(gatewayKey, now).map(row => [row.contextId, row]));
     const latest = store.latestTopicRuns(), declared = store.declaredTopics();
-    const timeline = store.routeTimeline(scope.gatewayKey), dormancy = learnDormancy(timeline);
+    const timeline = store.routeTimeline(gatewayKey), dormancy = learnDormancy(timeline);
     const lastAt = new Map(timeline.map(row => [row.contextId, row.at]));
     const groups = new Map(store.groups().flatMap(group => group.contextIds.map(id => [id, group.id])));
+    const suggestions = store.mergeSuggestions();
+    const routes = new Map([...latest.values()].map(run => [run.messageId, store.route(run.messageId)]));
+    const labels = new Map(contexts.map(context => [context.id, bubbleLabel(context)]));
+    const openSessions = new Map(contexts.map(context => {
+        const sources = store.sources(context.id).filter(id => id !== context.workingSessionId);
+        sources.sort((a, b) => (input.sessionCreatedAt?.get(b) ?? 0) - (input.sessionCreatedAt?.get(a) ?? 0) || (a < b ? -1 : a > b ? 1 : 0));
+        return [context.id, sources[0] ?? context.workingSessionId];
+    }));
+    const links = new Map(store.links(undefined, now).map(link => [JSON.stringify([link.a, link.b]), link]));
+    const origins = store.origins();
+    const edges = bubbleEdges(contexts, privateIds, groups, links, origins, input.linkScope ?? 'auto');
+    return { now, contexts, hidden, privateIds, unavailable, current, usage, latest, declared, dormancy, lastAt, groups,
+        suggestions, routes, labels, openSessions, edges };
+}
+/** Synchronous, read-only and body-free. Never calls briefing, recovery, indexing, a Worker or a model. */
+export function projectBubbles(store, input) {
+    const scope = { ...input.scope };
+    const shared = input.shared ?? readBubbleProjection(store, scope.gatewayKey, input);
+    const { now, contexts, hidden, privateIds, unavailable, current, usage, latest, declared, dormancy, lastAt, groups } = shared;
+    const suggestions = shared.suggestions.filter(s => s.state === 'pending' && s.scope.gatewayKey === scope.gatewayKey && s.scope.gatewayId === scope.gatewayId);
     const workItems = structuredClone((input.workItems ?? []).filter(item => item.gatewayId === scope.gatewayId));
     // A disk record proves a past run, not a live Worker or a delivery acknowledgement.
     for (const run of latest.values()) {
         if (workItems.some(item => item.messageIds.includes(run.messageId)))
             continue;
-        if (store.route(run.messageId)?.gatewayId !== scope.gatewayId)
+        if (shared.routes.get(run.messageId)?.gatewayId !== scope.gatewayId)
             continue;
         workItems.push({ id: 'record:' + run.messageId, gatewayId: scope.gatewayId, primaryMessageId: run.messageId,
             messageIds: [run.messageId], batchId: null, source: 'unknown', contextId: run.contextId, executionId: null, lane: null,
@@ -71,14 +90,12 @@ export function projectBubbles(store, input) {
         const lifecycle = topicStatus({ latest: effectiveRun, declaredDoneAt: declared.get(context.id)?.at,
             dormant: activityLabel(lastAt.get(context.id), dormancy.perTopic.get(context.id) ?? dormancy.global, now).dormant,
             asking: ownWork.some(item => item.phase === 'waiting_user') });
-        const sources = store.sources(context.id).filter(id => id !== context.workingSessionId);
-        sources.sort((a, b) => (input.sessionCreatedAt?.get(b) ?? 0) - (input.sessionCreatedAt?.get(a) ?? 0) || (a < b ? -1 : a > b ? 1 : 0));
-        const openSessionId = sources[0] ?? context.workingSessionId;
+        const openSessionId = shared.openSessions.get(context.id);
         const used = usage.get(context.id);
         const queueMerge = input.merges?.some(op => op.sourceId === context.id || op.targetId === context.id)
             ? { allowed: false, reason: 'topic_busy' } : { allowed: true };
         const idle = input.busy ? { allowed: false, reason: 'gateway_busy' } : { allowed: true };
-        return { id: context.id, title: context.title, label: bubbleLabel(context), openSessionId, topicRevision: null, current: context.id === current, lifecycle,
+        return { id: context.id, title: context.title, label: shared.labels.get(context.id), openSessionId, topicRevision: null, current: context.id === current, lifecycle,
             declaredDoneAt: declared.get(context.id)?.at ?? null, effectiveDone: lifecycle === 'done', archived: hidden.get(context.id) === 'archived',
             private: privateIds.has(context.id), groupId: groups.get(context.id) ?? null, project: null,
             usage: { completedCalls: used?.completedCalls ?? 0, recentCalls: used?.recentCalls ?? 0, lastUsedAt: used?.lastUsedAt ?? null },
@@ -103,10 +120,21 @@ export function projectBubbles(store, input) {
             if (item.contextId && !visible.has(item.contextId))
                 item.contextId = null;
     }
+    const edges = shared.edges.filter(edge => visible.has(edge.a) && visible.has(edge.b));
+    const selected = new Set();
+    for (const topic of topics)
+        for (const edge of edges.filter(edge => edge.a === topic.id || edge.b === topic.id)
+            .sort((a, b) => b.strength - a.strength || a.a.localeCompare(b.a) || a.b.localeCompare(b.b)).slice(0, 4))
+            selected.add(edge);
+    return { scope, topics, workItems, gateway, edges: structuredClone(edges.filter(edge => selected.has(edge)).slice(0, 256)), merges: structuredClone((input.merges ?? []).filter(op => visible.has(op.sourceId) && visible.has(op.targetId))),
+        mergeSuggestions: suggestions.filter(s => s.pair.every(id => visible.has(id))),
+        mergeReceipts: structuredClone((input.mergeReceipts ?? []).filter(op => !['queued', 'executing'].includes(op.state) &&
+            !unavailable.has(op.sourceId) && !unavailable.has(op.targetId))),
+        health: input.health ?? { catalog: 'unknown', router: 'unknown' } };
+}
+/** Pair scores are independent of gateway visibility; select the bounded visible graph later. */
+function bubbleEdges(available, privateIds, groups, links, origins, linkScope) {
     const edges = [];
-    const links = new Map(store.links(undefined, now).map(link => [JSON.stringify([link.a, link.b]), link]));
-    const origins = store.origins(), linkScope = input.linkScope ?? 'auto';
-    const available = contexts.filter(context => visible.has(context.id));
     if (linkScope !== 'off')
         for (let i = 0; i < available.length; i++)
             for (let j = i + 1; j < available.length; j++) {
@@ -148,14 +176,5 @@ export function projectBubbles(store, input) {
                     edges.push({ a: a.id, b: b.id, relation: 'related',
                         strength: Math.round(Math.min(1, score) * 20) / 20, manual: link?.manual ?? 0, reasons });
             }
-    const selected = new Set();
-    for (const topic of topics)
-        for (const edge of edges.filter(edge => edge.a === topic.id || edge.b === topic.id)
-            .sort((a, b) => b.strength - a.strength || a.a.localeCompare(b.a) || a.b.localeCompare(b.b)).slice(0, 4))
-            selected.add(edge);
-    return { scope, topics, workItems, gateway, edges: edges.filter(edge => selected.has(edge)).slice(0, 256), merges: structuredClone((input.merges ?? []).filter(op => visible.has(op.sourceId) && visible.has(op.targetId))),
-        mergeSuggestions: suggestions.filter(s => s.pair.every(id => visible.has(id))),
-        mergeReceipts: structuredClone((input.mergeReceipts ?? []).filter(op => !['queued', 'executing'].includes(op.state) &&
-            !unavailable.has(op.sourceId) && !unavailable.has(op.targetId))),
-        health: input.health ?? { catalog: 'unknown', router: 'unknown' } };
+    return edges;
 }

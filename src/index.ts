@@ -63,7 +63,8 @@ import type { WorkJob, WorkNotice } from './work-store.ts'
 import type { WorkScope, WorkOutcome } from './work-scheduler.ts'
 import { BubbleAggregator, parseBubbleQuery } from './bubble-aggregator.ts'
 import { BubbleActivity } from './bubble-activity.ts'
-import { doneCapability, projectBubbles } from './bubble-projection.ts'
+import { doneCapability, projectBubbles, readBubbleProjection } from './bubble-projection.ts'
+import type { BubbleProjectionData } from './bubble-projection.ts'
 import type { BubbleView, BubbleWorkItem, Capability, BubbleMerge, BubbleMergeSuggestion } from './bubble-types.ts'
 import { TopicMaintenance } from './topic-maintenance.ts'
 import { TopicMergeQueue } from './topic-merge-queue.ts'
@@ -367,6 +368,7 @@ export default class TheOne extends Service {
   shadowError?: string
   readonly bubbles: BubbleAggregator
   readonly bubbleActivity = new BubbleActivity()
+  private bubbleActivityNeedsSync = false
   private readonly bubbleSessionDates = new Map<string, number>()
   private readonly bubbleSessionsReady: Promise<void>
   private readonly bubbleSessionsAbort = new AbortController()
@@ -533,7 +535,10 @@ export default class TheOne extends Service {
     // Repair the narrow crash window between the durable queue receipt and suggestion acknowledgement.
     for (const op of this.mergeQueue.receipts()) this.mergeOperationChanged(op)
     this.syncMergeSuggestions()
-    this.bubbles = new BubbleAggregator(config.gatewayKey, id => this.bubbleView(id), () => { const latest = this.store.latestGateway(config.gatewayKey); return [...this.store.gatewayIds(config.gatewayKey).filter(id => id !== latest), ...(latest ? [latest] : [])] }, { unavailableIds: () => this.store.unreachable(), topicIds: () => this.store.contexts().map(topic => topic.id) })
+    this.bubbles = new BubbleAggregator(config.gatewayKey, id => this.bubbleView(id), () => {
+      const latest = this.store.latestGateway(config.gatewayKey)
+      return [...this.store.gatewayIds(config.gatewayKey).filter(id => id !== latest), ...(latest ? [latest] : [])]
+    }, { defer: true, prepare: () => this.prepareBubblePublication() })
     // Header metadata only: no session replay, indexing or recovery on the observation path.
     this.bubbleSessionsReady = this.ctx.sessionQuery.listSessions(this.bubbleSessionsAbort.signal).then(records => {
       if (this.stopping) return
@@ -545,7 +550,7 @@ export default class TheOne extends Service {
       this.bubbles.publish()
     })
     if (this.catalog) this.catalog.onStatusChange = () => this.bubbles.publish()
-    ctx.effect(() => this.bubbleActivity.subscribe((events, id) => this.bubbles.publish(events, id)))
+    ctx.effect(() => this.bubbleActivity.subscribe((events, id) => this.bubbles.publish(events, id, this.bubbleActivityNeedsSync)))
     ctx.effect(() => this.store.subscribe(change => {
       this.syncMergeSuggestions()
       if (['applyCard', 'editTopic', 'updateSummary', 'seed', 'moveTopic', 'mergeTopics', 'unmergeTopic', 'deleteTopic', 'replaceHidden'].includes(change.kind)) {
@@ -557,7 +562,8 @@ export default class TheOne extends Service {
         const suggestion = change.result as BubbleMergeSuggestion
         this.bubbles.publish([suggestion.state === 'pending' ? { type: 'mergeSuggestion.appeared', suggestion }
           : { type: 'mergeSuggestion.ended', suggestionId: suggestion.suggestionId, state: suggestion.state,
-            ...(suggestion.operationId ? { operationId: suggestion.operationId } : {}), ...(suggestion.reason ? { reason: suggestion.reason } : {}) }], suggestion.scope.gatewayId)
+            ...(suggestion.operationId ? { operationId: suggestion.operationId } : {}), ...(suggestion.reason ? { reason: suggestion.reason } : {}) }], suggestion.scope.gatewayId, true)
+        return
       }
       if (change.kind === 'uncorrectRoute' && change.result) {
         const original = this.store.route(String(change.args[0]))?.decision.contextId
@@ -565,7 +571,13 @@ export default class TheOne extends Service {
       }
       if (change.kind === 'mergeTopics') events.push({ type: 'topic.merged', sourceId: String(change.args[0]), targetId: String(change.args[1]) })
       if (change.kind === 'unmergeTopic') events.push({ type: 'topic.unmerged', sourceId: String(change.args[0]), targetId: String(change.result) })
-      this.bubbles.publish(events)
+      // These writes can remove/restore, edit, mount or reopen a topic within one synchronous turn.
+      // Preserve those intermediate transitions; ordinary observations/links/status writes coalesce.
+      const synchronous = ['seed', 'createTopic', 'branchTopic', 'importTopics', 'repairCatalogOrphans', 'plan', 'mount',
+        'editTopic', 'setPrivate', 'moveTopic', 'mergeTopics', 'unmergeTopic', 'deleteTopic', 'replaceHidden',
+        'declareTopic', 'startTopicRun', 'endTopicRun', 'recoverTopicRun', 'dropTopicRun', 'interruptTopicRuns',
+        'claim', 'forget', 'finish', 'moveRoute', 'withLearning', 'reassignLearning', 'settleLearning', 'confirmLearning', 'correctRoute', 'uncorrectRoute'].includes(change.kind)
+      this.bubbles.publish(events, null, synchronous)
     }))
     const bubbleTimer = setInterval(() => this.bubbles.publish(), 60000)
     bubbleTimer.unref()
@@ -1062,16 +1074,28 @@ export default class TheOne extends Service {
 
   /** Reads in-memory observations and store facts without loading sessions or starting work. */
   bubbleView(gatewayId: string | null | undefined = this.store.latestGateway(this.config.gatewayKey)): BubbleView {
-    const agent = gatewayId ? this.ctx.agents.get(SessionId(gatewayId)) : undefined
-    const workItems = this.bubbleActivity.snapshot().map(item => ({ ...item, stop: this.workStopTarget(item).capability })), latestRuns = this.store.latestTopicRuns()
-    const doneCapabilities = new Map(this.store.contexts().map(topic => [topic.id, this.topicDoneCapability(topic.id, workItems, latestRuns)]))
+    this.bubbles?.flush()
+    return this.prepareBubblePublication().project(gatewayId ?? null)
+  }
+
+  private prepareBubblePublication(): import('./bubble-aggregator.ts').BubblePublication {
+    const shared = readBubbleProjection(this.store, this.config.gatewayKey, { linkScope: this.config.linkScope, sessionCreatedAt: this.bubbleSessionDates })
+    // Activity alone can restore/hide archived topics or reopen a declared topic. These transitions
+    // need synchronous observation too. The relevant store writes synchronously refresh this flag.
+    this.bubbleActivityNeedsSync = shared.declared.size > 0 || [...shared.hidden.values()].includes('archived')
+    const workItems = this.bubbleActivity.snapshot().map(item => ({ ...item, stop: this.workStopTarget(item).capability }))
+    const doneCapabilities = new Map(shared.contexts.map(topic => [topic.id, this.topicDoneCapability(topic.id, workItems, shared.latest, shared.routes)]))
     const catalog = this.catalog?.statusSnapshot()
-    return projectBubbles(this.store, { scope: { gatewayKey: this.config.gatewayKey, gatewayId: gatewayId ?? null },
-      workItems, doneCapabilities, sessionCreatedAt: this.bubbleSessionDates, merges: this.mergeQueue?.active(), mergeReceipts: this.mergeQueue?.receipts(), busy: this.busy || this.maintenance.isBusy(), linkScope: this.config.linkScope,
-      gateway: agent ? this.bubbleActivity.gateway(agent, this.store.current(this.config.gatewayKey) ?? null) : null,
+    const input = { shared, workItems, doneCapabilities, merges: this.mergeQueue?.active(), mergeReceipts: this.mergeQueue?.receipts(),
+      busy: this.busy || this.maintenance.isBusy(),
       health: { catalog: !catalog ? 'unavailable' : catalog.consent !== 'granted' ? 'consent_required'
         : catalog.running ? 'indexing' : catalog.searchUnavailable ? 'unavailable' : 'ready',
-        router: this.router ? 'unknown' : 'rules' } })
+        router: this.router ? 'unknown' : 'rules' } as BubbleView['health'] }
+    return { unavailableIds: shared.unavailable, topicIds: shared.contexts.map(topic => topic.id), project: gatewayId => {
+      const agent = gatewayId ? this.ctx.agents.get(SessionId(gatewayId)) : undefined
+      return projectBubbles(this.store, { ...input, scope: { gatewayKey: this.config.gatewayKey, gatewayId },
+        gateway: agent ? this.bubbleActivity.gateway(agent, shared.current) : null })
+    } }
   }
 
   /** The API and snapshot use the same live ownership check; persisted observations cannot cancel work. */
@@ -1159,13 +1183,13 @@ export default class TheOne extends Service {
     } finally { this.moving.delete(message.id); this.bubbleActivity.publish([], gateway.id) }
   }
 
-  private topicDoneCapability(contextId: string, items = this.bubbleActivity.snapshot(), latestRuns = this.store.latestTopicRuns()): Capability {
+  private topicDoneCapability(contextId: string, items = this.bubbleActivity.snapshot(), latestRuns = this.store.latestTopicRuns(), routes?: BubbleProjectionData['routes']): Capability {
     const observed = doneCapability(items.filter(item => item.contextId === contextId))
     if (!observed.allowed) return observed
     const record = latestRuns.get(contextId)
     if (record && !items.some(item => item.contextId === contextId && item.messageIds.includes(record.messageId))) {
       if (record.outcome === 'running') return { allowed: false, reason: 'topic_busy' }
-      if (this.store.route(record.messageId)?.status === 'running') return { allowed: false, reason: 'pending_delivery' }
+      if ((routes ? routes.get(record.messageId) : this.store.route(record.messageId))?.status === 'running') return { allowed: false, reason: 'pending_delivery' }
     }
     const worker = this.workers.get(contextId)?.agent
     if ([...this.starting.values()].includes(contextId) || worker && (this.asking.has(worker.id) || worker.status !== 'idle' || worker.inbox.nextTurn.length || worker.inbox.nextStep.length))

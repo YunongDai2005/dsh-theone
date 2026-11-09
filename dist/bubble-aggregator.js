@@ -1,12 +1,12 @@
 import { setMaxListeners } from 'node:events';
 import { createHash, randomUUID } from 'node:crypto';
-/** Single synchronous publisher: snapshot and event watermark always describe the same committed cut. */
+const HEAD_IDLE_MS = 5 * 60 * 1000;
+/** Flush commits all heads before notifying: snapshot and watermark describe the same cut. */
 export class BubbleAggregator {
     gatewayKey;
     project;
     gatewayIds;
     options;
-    epoch = randomUUID();
     heads = new Map();
     listeners = new Set();
     capacity;
@@ -14,6 +14,10 @@ export class BubbleAggregator {
     lifetime = new AbortController();
     waiters = new Set();
     maxWaiters;
+    waiterScopes = new Map();
+    pending = [];
+    topicBoundary = 0;
+    scheduled = false;
     get pendingRequests() { return this.waiters.size; }
     constructor(gatewayKey, project, gatewayIds, options = {}) {
         this.gatewayKey = gatewayKey;
@@ -24,19 +28,64 @@ export class BubbleAggregator {
         setMaxListeners(this.maxWaiters + 1, this.lifetime.signal);
         this.capacity = Math.max(1, options.capacity ?? 512);
         this.publish();
+        this.flush();
     }
     subscribe(listener) { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; }
-    publish(events = [], gatewayId = null) {
+    publish(events = [], gatewayId = null, synchronous = false) {
         if (this.closed)
             return;
+        // A mutation boundary follows any earlier activity events, rather than reordering its topic diff ahead of them.
+        if (synchronous)
+            this.topicBoundary = this.pending.length;
+        this.pending.push({ events: structuredClone(events), gatewayId });
+        if (synchronous || !this.options.defer) {
+            this.flush();
+            return;
+        }
+        if (this.scheduled)
+            return;
+        this.scheduled = true;
+        queueMicrotask(() => {
+            this.scheduled = false;
+            // Keep a failed batch pending. A synchronous reader sees the error; the next publish retries.
+            try {
+                this.flush();
+            }
+            catch { /* A read-side observer cannot fail a committed write. */ }
+        });
+    }
+    /** Also used at mutation boundaries where intermediate topic transitions must remain observable. */
+    flush(requested) {
+        if (this.closed)
+            return;
+        if (!this.pending.length && (requested === undefined || this.heads.has(requested)))
+            return;
+        const ids = this.gatewayIds(), latest = ids.at(-1) ?? null, now = Date.now();
+        this.prune(latest, now);
+        const refreshing = this.pending.length > 0;
+        const needed = refreshing ? new Set([null, latest, ...this.heads.keys()]) : new Set();
+        if (requested !== undefined)
+            needed.add(requested);
+        const shared = this.options.prepare?.() ?? { project: this.project,
+            unavailableIds: this.options.unavailableIds?.() ?? new Set(), topicIds: this.options.topicIds?.() ?? [] };
+        const unavailable = new Set(shared.unavailableIds), topicIds = shared.topicIds;
+        const unavailableKey = [...unavailable].sort();
+        // Prepare every scope before modifying a head, so projection failures cannot expose a partial cut.
+        const projections = [...needed].map(id => {
+            const view = shared.project(id);
+            return { id, view, encoded: JSON.stringify([view, unavailableKey]) };
+        });
+        const pending = this.pending, topicBoundary = this.topicBoundary;
+        this.pending = [];
+        this.topicBoundary = 0;
         let changed = false;
-        const unavailable = new Set(this.options.unavailableIds?.() ?? []), topicIds = this.options.topicIds?.() ?? [];
-        for (const id of [null, ...this.gatewayIds()]) {
-            const view = this.project(id), encoded = JSON.stringify([view, [...unavailable].sort()]);
+        for (const { id, view, encoded } of projections) {
             let head = this.heads.get(id);
             if (!head) {
                 const suffix = createHash('sha256').update(JSON.stringify([this.gatewayKey, id])).digest('hex').slice(0, 16);
-                this.heads.set(id, head = { view, encoded, cursor: { epoch: this.epoch + ':' + suffix, version: 0, seq: 0 }, events: [], floor: 0, knownTopics: new Set([...topicIds, ...view.topics.map(topic => topic.id)]), removedTopics: new Set(), unavailable });
+                this.heads.set(id, head = { view, encoded, cursor: { epoch: randomUUID() + ':' + suffix, version: 0, seq: 0 }, events: [], floor: 0,
+                    knownTopics: new Set([...topicIds, ...view.topics.map(topic => topic.id)]), removedTopics: new Set(), unavailable,
+                    lastReadAt: id === requested ? now : -Infinity });
                 changed = true;
                 continue;
             }
@@ -50,13 +99,14 @@ export class BubbleAggregator {
                 head.removedTopics.delete(topic.id);
             for (const topicId of topicIds)
                 head.knownTopics.add(topicId);
-            const batch = [...topicEvents, ...(gatewayId === null || gatewayId === id ? events : [])];
+            const scoped = (parts) => parts.flatMap(part => part.gatewayId === null || part.gatewayId === id ? part.events : []);
+            const batch = [...scoped(pending.slice(0, topicBoundary)), ...topicEvents, ...scoped(pending.slice(topicBoundary))];
             if (head.encoded === encoded && !batch.length)
                 continue;
             if (head.cursor.version >= Number.MAX_SAFE_INTEGER - 1 || head.cursor.seq >= Number.MAX_SAFE_INTEGER - batch.length - 1) {
-                this.epoch = randomUUID();
                 this.heads.clear();
-                this.publish();
+                this.pending = [{ events: [], gatewayId: null }];
+                this.flush(requested);
                 return;
             }
             const cursor = { ...head.cursor, version: head.cursor.version + 1 };
@@ -76,20 +126,37 @@ export class BubbleAggregator {
             for (const listener of this.listeners)
                 listener();
     }
+    prune(latest, now) {
+        for (const [id, head] of this.heads)
+            if (id !== null && id !== latest && !this.waiterScopes.has(id) && now - head.lastReadAt >= HEAD_IDLE_MS)
+                this.heads.delete(id);
+    }
     read(query = {}) {
+        return this.readScope(query);
+    }
+    readScope(query, fixedId) {
         if (this.closed)
             throw new Error('BUBBLES_CLOSED');
-        const id = query.gatewayId ?? this.gatewayIds().at(-1) ?? null;
-        const head = this.heads.get(id);
-        if (!head)
+        const ids = this.gatewayIds(), latest = ids.at(-1) ?? null;
+        const id = fixedId !== undefined ? fixedId : query.gatewayId ?? latest;
+        if (id !== null && !ids.includes(id))
             throw new Error('UNKNOWN_GATEWAY');
+        this.prune(latest, Date.now());
+        const existing = this.heads.get(id);
+        if (existing)
+            existing.lastReadAt = Date.now();
+        this.flush(id);
+        if (this.closed)
+            throw new Error('BUBBLES_CLOSED');
+        const head = this.heads.get(id);
+        head.lastReadAt = Date.now();
         let resetReason;
         if (!query.epoch || query.since === undefined || query.after === undefined)
             resetReason = 'initial';
         else if (query.gatewayKey !== undefined && query.gatewayKey !== this.gatewayKey)
             resetReason = 'scope_changed';
         else if (query.epoch !== head.cursor.epoch)
-            resetReason = query.epoch.split(':')[0] === this.epoch ? 'scope_changed' : 'epoch_changed';
+            resetReason = [...this.heads.values()].some(other => other.cursor.epoch === query.epoch) ? 'scope_changed' : 'epoch_changed';
         else if (query.since > head.cursor.version || query.after > head.cursor.seq)
             resetReason = 'cursor_ahead';
         else if (query.after < head.floor)
@@ -129,7 +196,7 @@ export class BubbleAggregator {
         if (this.pendingRequests >= this.maxWaiters)
             throw new Error('TOO_MANY_WAITERS');
         // Freeze the scope of this request even if another gateway becomes the default while it waits.
-        const fixed = { ...query, ...(first.scope.gatewayId ? { gatewayId: first.scope.gatewayId } : {}) };
+        const fixedId = first.scope.gatewayId;
         return new Promise((resolve, reject) => {
             let settled = false, timer, off = () => { };
             const finish = (result, error) => {
@@ -139,6 +206,11 @@ export class BubbleAggregator {
                 clearTimeout(timer);
                 off();
                 this.waiters.delete(closed);
+                const remaining = this.waiterScopes.get(fixedId) - 1;
+                if (remaining)
+                    this.waiterScopes.set(fixedId, remaining);
+                else
+                    this.waiterScopes.delete(fixedId);
                 signal?.removeEventListener('abort', aborted);
                 this.lifetime.signal.removeEventListener('abort', closed);
                 if (error)
@@ -148,7 +220,7 @@ export class BubbleAggregator {
             };
             const check = () => {
                 try {
-                    const latest = this.read(fixed);
+                    const latest = this.readScope(query, fixedId);
                     if (latest.kind === 'update')
                         finish(latest);
                 }
@@ -159,6 +231,7 @@ export class BubbleAggregator {
             const aborted = () => finish(undefined, new Error('REQUEST_ABORTED'));
             const closed = () => finish(undefined, new Error('BUBBLES_CLOSED'));
             this.waiters.add(closed);
+            this.waiterScopes.set(fixedId, (this.waiterScopes.get(fixedId) ?? 0) + 1);
             off = this.subscribe(check);
             // subscribe may synchronously publish; detach the returned listener even in that case.
             if (settled) {
@@ -169,7 +242,7 @@ export class BubbleAggregator {
             this.lifetime.signal.addEventListener('abort', closed, { once: true });
             timer = setTimeout(() => {
                 try {
-                    finish(this.read(fixed));
+                    finish(this.readScope(query, fixedId));
                 }
                 catch (error) {
                     finish(undefined, error);
@@ -187,10 +260,12 @@ export class BubbleAggregator {
         if (this.closed)
             return;
         this.closed = true;
+        this.pending = [];
         this.lifetime.abort();
         for (const finish of this.waiters)
             finish();
         this.listeners.clear();
+        this.heads.clear();
     }
     topicEvents(before, after, known) {
         const old = new Map(before.topics.map(topic => [topic.id, topic])), next = new Map(after.topics.map(topic => [topic.id, topic]));
