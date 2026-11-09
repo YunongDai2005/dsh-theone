@@ -4063,7 +4063,7 @@ var en = {
   "route.reason.router-fallback": "Classifier unavailable; routed by rules"
 };
 
-// ../dsh-theone/node_modules/qrcode-generator/dist/qrcode.mjs
+// node_modules/qrcode-generator/dist/qrcode.mjs
 var qrcode = function(typeNumber, errorCorrectionLevel) {
   const PAD0 = 236;
   const PAD1 = 17;
