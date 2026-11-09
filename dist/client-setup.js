@@ -30,16 +30,39 @@ const icons = {
 const arrow = '<svg viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M3 7h8m-3-3 3 3-3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const cell = (size) => `<svg class="theone-setup-cell" width="${size}" height="${size}" viewBox="0 0 20 20" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><circle fill="currentColor"/></svg>`;
 const notices = ['switch', 'all', 'hidden'];
-/** What changed in this version, shown to people who update; each line is a picture, a name and one sentence. */
-const news = [
-    // Three cells clinging together, the biggest one in use.
-    { key: 'cluster', svg: '<svg viewBox="0 0 20 20" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="7.2" cy="8" r="4.6"/><circle cx="13.6" cy="7.4" r="3.4"/><circle cx="11.6" cy="14.2" r="3.6"/></g><circle cx="7.2" cy="8" r="1.5" fill="currentColor"/><circle cx="13.6" cy="7.4" r="1" fill="currentColor"/><circle cx="11.6" cy="14.2" r="1" fill="currentColor"/></svg>' },
-    // A small vesicle arcing from the mark into a topic.
-    { key: 'route', svg: '<svg viewBox="0 0 20 20" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="5" cy="6" r="3"/><circle cx="14.2" cy="13.6" r="4.2"/><path d="M7.6 7.8c2.6.4 4 1.6 4.6 3.4" stroke-dasharray="1.4 2" stroke-linecap="round"/></g><circle cx="5" cy="6" r="1" fill="currentColor"/><circle cx="14.2" cy="13.6" r="1.4" fill="currentColor"/></svg>' },
-    // A speech bubble with nothing but the conversation in it.
-    { key: 'quiet', svg: '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 4.6h12a1.6 1.6 0 0 1 1.6 1.6v6.6a1.6 1.6 0 0 1-1.6 1.6H9l-3.4 2.8v-2.8H4a1.6 1.6 0 0 1-1.6-1.6V6.2A1.6 1.6 0 0 1 4 4.6Z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M6 8.4h8M6 11h5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>' },
-];
-export async function openSetup({ t, cellFrame, signal, onClose }) {
+/** The main-chat card the topic cells hang under, drawn small at the top of a picture. */
+const card = (glow = '') => `<g class="theone-setup-a" ${glow}><rect x="44" y="2" width="132" height="24" rx="8" fill="none" stroke="currentColor" stroke-width="1.6" opacity=".5"/>${ring(58, 14, 5.5)}<rect x="70" y="10.5" width="44" height="7" rx="3.5" fill="currentColor" opacity=".25"/></g>`;
+/** A soft halo behind a busy cell. */
+const halo = (x, y, r, delay = 0) => `<circle class="theone-setup-a theone-setup-halo" cx="${x}" cy="${y}" r="${r}" fill="currentColor" style="animation:theone-setup-glow 2.8s ${delay}s ease-in-out infinite;opacity:.08"/>`;
+/**
+ * What changed in this version, one page each in the setup's own picture language: the line-drawn cell, the accent colour,
+ * slow movement that stops for reduced motion. Updating users see these after a short opening page; new users meet them
+ * between the welcome and the questions, as the tour of how TheOne looks now.
+ */
+const newsPictures = {
+    // Topics as cells clinging under the main-chat card: recent ones bigger, a busy one glowing.
+    cluster: () => `<svg viewBox="0 0 220 110">${card()}${halo(126, 52, 17)}
+    <g class="theone-setup-a" style="animation:theone-setup-pulse 3.2s ease-in-out infinite">${ring(100, 67, 17)}</g>
+    ${ring(126, 52, 12)}<g opacity=".6">${ring(114, 92, 11)}${ring(76, 80, 10)}</g><g opacity=".4">${ring(137, 73, 8)}${ring(76, 56, 7.5)}</g></svg>`,
+    // A message leaves the mark as a vesicle and lands in its topic; another candidate stays lit.
+    route: () => `<svg viewBox="0 0 220 110"><g class="theone-setup-a" style="animation:theone-setup-send 3.2s ease-in-out infinite">${ring(34, 56, 15)}</g>
+    <path d="M50 48C80 18 112 18 137 37" fill="none" stroke="currentColor" stroke-width="1.4" stroke-dasharray="1.5 4.5" stroke-linecap="round" opacity=".35"/>
+    ${halo(150, 38, 19, 2.2)}<g class="theone-setup-a" style="animation:theone-setup-catch 3.2s ease-in-out infinite">${ring(150, 38, 13)}</g>
+    <circle class="theone-setup-a" cx="151" cy="64" r="17" fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="2 3.5" style="animation:theone-setup-blink 3.2s ease-in-out infinite;opacity:0"/>
+    <g opacity=".7">${ring(151, 64, 12)}</g><g opacity=".45">${ring(173, 49, 10)}${ring(129, 58, 8)}</g>
+    <circle class="theone-setup-a theone-setup-ghost" cx="50" cy="48" r="4.5" fill="currentColor" style="animation:theone-setup-fly 3.2s ease-in-out infinite;opacity:0"/></svg>`,
+    // A cell lifted into the card (carry on there), another thrown out to the side (set aside for now).
+    drag: () => `<svg viewBox="0 0 220 110">${card('style="animation:theone-setup-take 4.4s ease-in-out infinite"')}
+    <g opacity=".6">${ring(90, 74, 13)}${ring(115, 66, 11)}${ring(103, 96, 9.5)}</g>
+    <g class="theone-setup-a" style="animation:theone-setup-lift 4.4s ease-in-out infinite">${ring(126, 88, 10)}</g>
+    <g class="theone-setup-a" style="animation:theone-setup-toss 4.4s ease-in infinite">${ring(136, 63, 8.5)}</g></svg>`,
+    // Main chat holds only the conversation; what each topic is doing lives on its cell beside it.
+    quiet: () => `<svg viewBox="0 0 220 110">${halo(30, 40, 15, .4)}${ring(30, 40, 10)}<g opacity=".5">${ring(46, 64, 8)}${ring(26, 72, 7)}</g>
+    <path d="M64 6v98" stroke="currentColor" stroke-width="1.2" opacity=".2"/>
+    ${[[128, 10, 76, 18, 9], [80, 40, 112, 8, 4], [80, 54, 84, 8, 4], [140, 74, 64, 18, 9], [80, 100, 96, 8, 4]].map(([x, y, w, h, r], i) => `<rect class="theone-setup-a" x="${x}" y="${y}" width="${w}" height="${h}" rx="${r}" fill="currentColor" style="animation:theone-setup-type 5.2s ${i * 0.45}s ease-out infinite;opacity:0;fill-opacity:${h > 10 ? .28 : .2}"/>`).join('')}</svg>`,
+};
+const news = Object.keys(newsPictures);
+export async function openSetup({ t, cellFrame, signal, onClose, newsOnly = false }) {
     const read = async (path) => {
         try {
             const response = await fetch(path, { signal, cache: 'no-store' });
@@ -49,7 +72,8 @@ export async function openSetup({ t, cellFrame, signal, onClose }) {
             return undefined;
         }
     };
-    const [catalog, settings] = await Promise.all([
+    // The news alone asks nothing, so it reads nothing either.
+    const [catalog, settings] = newsOnly ? [undefined, undefined] : await Promise.all([
         read('/api/theone/catalog'), read('/api/theone/settings')
     ]);
     if (signal.aborted)
@@ -79,37 +103,59 @@ export async function openSetup({ t, cellFrame, signal, onClose }) {
     <div class="theone-setup-options" role="radiogroup" aria-labelledby="theone-setup-q${index}" style="grid-template-columns:repeat(${q.options.length},minmax(0,1fr))">${q.options.map((option, i) => `<button type="button" class="theone-setup-option" role="radio" data-question="${index}" data-option="${i}" aria-checked="${q.pick === i}"><svg viewBox="0 0 36 24" aria-hidden="true">${icons[option.icon]}</svg>${escape(option.label)}</button>`).join('')}</div>
     <p class="theone-setup-hint" data-hint="${index}" aria-live="polite">${hint(q.options[q.pick])}</p>
     <div class="theone-setup-space"></div>${dots(index)}<button type="button" class="theone-setup-go" data-next>${escape(t('setup.continue'))}${arrow}</button>`;
-    // One flow for everyone, new or updating: welcome, what changed, the questions, done.
-    const pages = [
-        `<div class="theone-setup-hero theone-setup-hero-cell">${cell(92)}</div>
+    /** One change per page, in the same frame as a question: picture, name, a sentence or two, its own row of dots. */
+    const newsDots = (at) => `<div class="theone-setup-dots" aria-hidden="true">${news.map((_, i) => `<i data-on="${i === at}"></i>`).join('')}</div>`;
+    const newsPage = (key, index, button) => `<div class="theone-setup-hero theone-setup-hero-big">${newsPictures[key]()}</div>
+    <h2 class="theone-setup-title">${escape(t(`setup.new.${key}`))}</h2><p class="theone-setup-body">${escape(t(`setup.new.${key}Hint`))}</p>
+    <div class="theone-setup-space"></div>${newsDots(index)}${button}`;
+    const next = (label) => `<button type="button" class="theone-setup-go" data-next>${escape(label)}${arrow}</button>`;
+    const tour = news.map((key, i) => ({ kind: 'news', step: i, html: newsPage(key, i, newsOnly && i === news.length - 1
+            ? `<button type="button" class="theone-setup-go" data-done>${escape(t('setup.finish'))}${arrow}</button>` : next(t('setup.continue'))) }));
+    // Someone who has been through the setup sees only what changed after an update that brings news: an opening page they
+    // can put off, then the changes, the last one closing. Everyone else gets the one flow: welcome, the questions first
+    // (so setting up never waits behind a tour), then the changes as the tour of how TheOne looks, then done.
+    const pages = newsOnly ? [
+        { kind: 'open', html: `<div class="theone-setup-hero theone-setup-hero-cell theone-setup-hero-news">${cell(80)}<span class="theone-setup-badge">${escape(t('setup.newBadge'))}</span></div>
+     <h2 class="theone-setup-title">${escape(t('setup.newTitle'))}</h2><p class="theone-setup-body">${multiline(t('setup.newBody'))}</p><div class="theone-setup-space"></div>
+     ${next(t('setup.newGo'))}<button type="button" class="theone-setup-later" data-later>${escape(t('setup.newSkip'))}</button>` },
+        ...tour
+    ] : [
+        { kind: 'open', html: `<div class="theone-setup-hero theone-setup-hero-cell">${cell(92)}</div>
      <h2 class="theone-setup-title theone-setup-welcome">${escape(t('setup.welcome'))} <span class="theone-setup-brand"><span>The</span>One</span></h2>
      <p class="theone-setup-body">${multiline(t('setup.welcomeBody'))}</p><div class="theone-setup-space"></div>
-     <button type="button" class="theone-setup-go" data-next>${escape(t('setup.start'))}${arrow}</button><button type="button" class="theone-setup-later" data-later>${escape(t('setup.later'))}</button>`,
-        `<div class="theone-setup-hero theone-setup-hero-cell theone-setup-hero-news">${cell(64)}<span class="theone-setup-badge">${escape(t('setup.newBadge'))}</span></div><h2 class="theone-setup-title">${escape(t('setup.newTitle'))}</h2>
-     <ul class="theone-setup-news">${news.map(item => `<li><span class="theone-setup-news-icon">${item.svg}</span><span><b>${escape(t(`setup.new.${item.key}`))}</b><small>${escape(t(`setup.new.${item.key}Hint`))}</small></span></li>`).join('')}</ul>
-     <div class="theone-setup-space"></div><button type="button" class="theone-setup-go" data-next>${escape(t('setup.continue'))}${arrow}</button>`,
-        ...questions.map(question),
-        `<div class="theone-setup-hero theone-setup-hero-cell">${cell(92)}</div><h2 class="theone-setup-title">${escape(t('setup.doneTitle'))}</h2>
+     <button type="button" class="theone-setup-go" data-next>${escape(t('setup.start'))}${arrow}</button><button type="button" class="theone-setup-later" data-later>${escape(t('setup.later'))}</button>` },
+        ...questions.map((q, i) => ({ kind: 'question', step: i, html: question(q, i) })),
+        ...tour,
+        { kind: 'done', html: `<div class="theone-setup-hero theone-setup-hero-cell">${cell(92)}</div><h2 class="theone-setup-title">${escape(t('setup.doneTitle'))}</h2>
      <p class="theone-setup-body">${multiline(t('setup.doneBody'))}</p><p class="theone-setup-hint" data-status>${escape(t('setup.apps'))}</p><div class="theone-setup-space"></div>
-     <button type="button" class="theone-setup-go" data-finish>${escape(t('setup.finish'))}${arrow}</button>`
+     <button type="button" class="theone-setup-go" data-finish>${escape(t('setup.finish'))}${arrow}</button>` }
     ];
     const overlay = document.createElement('div');
     overlay.className = 'theone-setup';
     overlay.setAttribute('role', 'dialog');
     overlay.setAttribute('aria-modal', 'true');
-    overlay.setAttribute('aria-label', t('setup.label'));
+    overlay.setAttribute('aria-label', t(newsOnly ? 'setup.newsLabel' : 'setup.label'));
     overlay.setAttribute('translate', 'no');
-    overlay.innerHTML = `<button type="button" class="theone-setup-back" data-back hidden>‹ ${escape(t('setup.back'))}</button>
-    <div class="theone-setup-track">${pages.map(page => `<section class="theone-setup-page"><div class="theone-setup-column">${page}</div></section>`).join('')}</div>`;
+    overlay.innerHTML = `<button type="button" class="theone-setup-back" data-back hidden>‹ ${escape(t('setup.back'))}</button><p class="theone-setup-sr" aria-live="polite"></p>
+    <div class="theone-setup-track">${pages.map(page => `<section class="theone-setup-page"><div class="theone-setup-column">${page.html}</div></section>`).join('')}</div>`;
     const track = overlay.querySelector('.theone-setup-track'), back = overlay.querySelector('[data-back]');
-    const sections = [...overlay.querySelectorAll('.theone-setup-page')];
-    let at = 0;
+    const sections = [...overlay.querySelectorAll('.theone-setup-page')], status = overlay.querySelector('.theone-setup-sr');
+    // Reaching the last change counts as having seen what is new, however the flow is left afterwards.
+    let at = 0, sawNews = false;
     const go = (index) => {
         at = index;
+        const page = pages[index];
+        if (page.kind === 'news' && page.step === news.length - 1)
+            sawNews = true;
         track.style.transform = `translateX(${-100 * index}%)`;
         sections.forEach((section, i) => { section.inert = i !== index; });
-        back.hidden = index === 0 || index === pages.length - 1;
+        // The closing page of the full flow has nothing to go back to; the last change of the news alone still can.
+        back.hidden = index === 0 || page.kind === 'done';
         sections[index].querySelector('.theone-setup-go')?.focus({ preventScroll: true });
+        // Focus lands on the button, so the page's title and where it stands are read out on their own.
+        const title = sections[index].querySelector('.theone-setup-title')?.textContent ?? '';
+        const where = page.kind === 'news' ? t('setup.progressNews') : page.kind === 'question' ? t('setup.progressSetup') : '';
+        status.textContent = [title, where.replace('{n}', String((page.step ?? 0) + 1)).replace('{total}', String(page.kind === 'news' ? news.length : questions.length))].filter(Boolean).join(' · ');
     };
     // The welcome and closing cells breathe; everything else moves by CSS and stops for reduced motion.
     const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -128,21 +174,41 @@ export async function openSetup({ t, cellFrame, signal, onClose }) {
         let time = 0, last = performance.now();
         frame = requestAnimationFrame(function step(now) { time += Math.min(0.05, (now - last) / 1000) * 0.7; last = now; paint(time); frame = requestAnimationFrame(step); });
     }
+    // A modal flow: what is behind it is out of reach while it is open, and focus goes back where it was afterwards.
+    const before = document.activeElement;
+    const behind = [...document.body.children].filter((el) => el instanceof HTMLElement && el !== overlay && !el.inert);
     let closed = false;
-    const close = () => {
+    /** `finished`: the last button was pressed (answers saved, or the last change seen), not put off or abandoned. */
+    const close = (finished = false) => {
         if (closed)
             return;
         closed = true;
         cancelAnimationFrame(frame);
         document.removeEventListener('keydown', keydown, true);
+        for (const el of behind)
+            el.inert = false;
         overlay.remove();
-        onClose();
+        if (before?.isConnected)
+            before.focus({ preventScroll: true });
+        onClose({ finished, sawNews });
     };
-    const keydown = (event) => { if (event.key === 'Escape') {
+    const keydown = (event) => {
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            close();
+            return;
+        }
+        // Tab stays within the page in view (and Back), wrapping at either end.
+        if (event.key !== 'Tab')
+            return;
+        const stops = [...(back.hidden ? [] : [back]), ...sections[at].querySelectorAll('button:not([disabled])')];
+        if (!stops.length)
+            return;
+        const index = stops.indexOf(document.activeElement);
         event.preventDefault();
-        close();
-    } };
-    signal.addEventListener('abort', close, { once: true });
+        stops[index < 0 ? (event.shiftKey ? stops.length - 1 : 0) : (index + (event.shiftKey ? stops.length - 1 : 1)) % stops.length].focus();
+    };
+    signal.addEventListener('abort', () => close(), { once: true });
     /** Applies the answers through the same endpoints the settings page and the topic workspace use. */
     const finish = async (button) => {
         button.disabled = true;
@@ -181,7 +247,7 @@ export async function openSetup({ t, cellFrame, signal, onClose }) {
             button.setAttribute('data-later', '');
             return;
         }
-        close();
+        close(true);
     };
     overlay.addEventListener('click', event => {
         const button = event.target.closest('button');
@@ -204,6 +270,8 @@ export async function openSetup({ t, cellFrame, signal, onClose }) {
             go(at - 1);
         else if ('later' in button.dataset)
             close();
+        else if ('done' in button.dataset)
+            close(true);
         else if ('finish' in button.dataset)
             void finish(button);
     });
@@ -220,6 +288,8 @@ export async function openSetup({ t, cellFrame, signal, onClose }) {
     });
     document.addEventListener('keydown', keydown, true);
     document.body.append(overlay);
+    for (const el of behind)
+        el.inert = true;
     go(0);
 }
 /** Restrained like DSH's own pages; TheOne's tint, hairline and one small glow on the main button. */
@@ -238,16 +308,11 @@ export const setupCss = `
 .theone-setup-hero{flex:none;width:100%;height:150px;display:flex;align-items:center;justify-content:center;color:var(--s-ac)}
 .theone-setup-hero>svg{width:220px;height:110px;overflow:visible}
 .theone-setup-hero-cell svg{overflow:visible}
+.theone-setup-hero-big{height:210px}.theone-setup-hero-big>svg{width:330px;height:165px}
 .theone-setup-hero-news{flex-direction:column;gap:16px}
 .theone-setup-badge{font-size:12px;line-height:18px;color:var(--s-ac);background:var(--s-tint);box-shadow:inset 0 0 0 .5px var(--s-line);border-radius:6px;padding:2px 9px;margin-bottom:14px}
 .theone-setup-title{font-size:26px;font-weight:500;letter-spacing:-.6px;line-height:1.3;margin:8px 0 8px;text-wrap:balance;text-align:center;color:var(--s-tx)}
 .theone-setup-welcome{font-size:30px}
-.theone-setup-news{list-style:none;margin:14px 0 0;padding:0;width:100%;display:flex;flex-direction:column;gap:18px}
-.theone-setup-news li{display:flex;gap:14px;align-items:flex-start}
-.theone-setup-news-icon{flex:none;width:40px;height:40px;border-radius:10px;background:var(--s-tint);box-shadow:inset 0 0 0 .5px var(--s-line);color:var(--s-ac);display:grid;place-items:center}
-.theone-setup-news-icon svg{width:22px;height:22px;overflow:visible}
-.theone-setup-news b{display:block;font-size:14px;line-height:20px;font-weight:500;color:var(--s-tx)}
-.theone-setup-news small{display:block;font-size:13px;line-height:1.6;color:var(--s-cap);margin-top:2px}
 .theone-setup-brand{color:var(--s-ac)}.theone-setup-brand span{font-weight:400;font-size:.78em;color:var(--s-mu);margin-right:1px}
 .theone-setup-body{font-size:14px;line-height:1.7;color:var(--s-mu);text-align:center;margin:0 0 22px;text-wrap:pretty}
 .theone-setup-options{display:grid;gap:10px;width:100%}
@@ -275,5 +340,16 @@ export const setupCss = `
 @keyframes theone-setup-slide{0%{opacity:0;transform:translateX(-10px)}12%,82%{opacity:1;transform:none}94%,100%{opacity:0}}
 @keyframes theone-setup-pop{0%,20%{opacity:0;transform:scale(.4)}32%,85%{opacity:1;transform:scale(1)}95%,100%{opacity:0}}
 @keyframes theone-setup-type{0%{opacity:0;transform:translateY(5px)}10%,88%{opacity:1;transform:none}98%,100%{opacity:0}}
-@media(prefers-reduced-motion:reduce){.theone-setup,.theone-setup-track{animation:none;transition:none}.theone-setup-a{animation:none!important;opacity:1!important}}
+/* The "what is new" pictures: a vesicle flying from the mark into its topic (the curve sampled), the topic catching it, a candidate left lit, a cell lifted into the card, one thrown aside. */
+@keyframes theone-setup-fly{0%{opacity:0;transform:translate(0,0) scale(.6)}8%{opacity:1;transform:translate(4px,-4px) scale(1)}25%{transform:translate(22.7px,-17.1px)}40%{transform:translate(45.4px,-24.3px)}55%{transform:translate(67.1px,-22.8px)}68%{opacity:.9;transform:translate(87px,-14px) scale(.5)}74%,100%{opacity:0;transform:translate(87px,-14px) scale(.3)}}
+@keyframes theone-setup-send{0%,100%{transform:scale(1)}6%{transform:scale(1.1)}16%{transform:scale(1)}}
+@keyframes theone-setup-catch{0%,64%{transform:scale(1)}72%{transform:scale(1.13)}84%,100%{transform:scale(1)}}
+@keyframes theone-setup-blink{0%,30%{opacity:0}42%,80%{opacity:.55}92%,100%{opacity:0}}
+@keyframes theone-setup-glow{0%,100%{opacity:.05}50%{opacity:.2}}
+@keyframes theone-setup-lift{0%,8%{opacity:1;transform:none}40%{opacity:1;transform:translate(-30px,-66px) scale(.75)}48%,100%{opacity:0;transform:translate(-30px,-70px) scale(.5)}}
+@keyframes theone-setup-take{0%,36%{transform:none}44%{transform:scale(1.04)}54%,100%{transform:none}}
+@keyframes theone-setup-toss{0%,58%{opacity:1;transform:none}82%{opacity:0;transform:translate(64px,-14px) rotate(25deg) scale(.8)}100%{opacity:0;transform:translate(64px,-14px) scale(.8)}}
+@media(prefers-reduced-motion:reduce){.theone-setup,.theone-setup-track{animation:none;transition:none}.theone-setup-a{animation:none!important;opacity:1!important}
+  .theone-setup-a.theone-setup-halo{opacity:.12!important}.theone-setup-a.theone-setup-ghost{opacity:0!important}}
+.theone-setup-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 `;

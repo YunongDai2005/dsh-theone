@@ -167,6 +167,11 @@ const ONBOARDING_NOTICE = 'theone-onboarding';
 /** The full-window setup; a new id shows it (with what changed) again to everyone after a release that needs it. */
 const SETUP_NOTICE = 'theone-setup-1';
 /**
+ * The setup's "what's new" page, named after what it describes: someone who already went through the setup sees only
+ * that page once after updating; the full setup includes it, so finishing that retires this too. New news, new id.
+ */
+const NEWS_NOTICE = 'theone-news-cluster';
+/**
  * The first words of a new main chat, in the interface language: a welcome, what main chat is for, and
  * that TheOne is still being tested. Sorting earlier chats, the user group and the author's links are
  * offered by the getting-started card under it.
@@ -1644,8 +1649,9 @@ export default class TheOne extends Service {
                     const dismissed = this.store.dismissedNotices();
                     // The getting-started card is TheOne's own, so it shows even with the maintainer's notices turned off.
                     const onboarding = !dismissed.has(ONBOARDING_NOTICE);
-                    // The full-window setup opens once for everyone, new or updating, until finished or put off.
-                    const own = { onboarding, setup: !dismissed.has(SETUP_NOTICE) };
+                    // The full-window setup opens once for everyone, new or updating, until finished or put off; after it, a release
+                    // with news shows only its "what's new" page, once.
+                    const own = { onboarding, setup: !dismissed.has(SETUP_NOTICE), news: !dismissed.has(NEWS_NOTICE) };
                     if (this.config.notices === false)
                         return Response.json({ notices: [], ...own }, { headers: { 'cache-control': 'no-store' } });
                     return Response.json({ notices: (await this.noticeBoard.notices()).filter(notice => !dismissed.has(notice.id)), ...own }, { headers: { 'cache-control': 'no-store' } });

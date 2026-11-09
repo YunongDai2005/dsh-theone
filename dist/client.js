@@ -1524,8 +1524,8 @@ function createFoam(options) {
     for (const el of document.elementsFromPoint(e.clientX, e.clientY)) {
       if (c.g.contains(el)) continue;
       const mark = options.mark();
-      const card = mark?.closest("button");
-      if (card?.contains(el)) return { kind: "main" };
+      const card2 = mark?.closest("button");
+      if (card2?.contains(el)) return { kind: "main" };
       const g = el.closest(".theone-cell"), o = g && (cellAt(e.clientX, e.clientY, c, true) ?? cells.find((x) => x.g === g && x.mode === "live" && x.kind === "topic"));
       if (o && o !== c) {
         if (rail) continue;
@@ -2837,15 +2837,32 @@ var icons = {
 var arrow = '<svg viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M3 7h8m-3-3 3 3-3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 var cell = (size) => `<svg class="theone-setup-cell" width="${size}" height="${size}" viewBox="0 0 20 20" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><circle fill="currentColor"/></svg>`;
 var notices = ["switch", "all", "hidden"];
-var news = [
-  // Three cells clinging together, the biggest one in use.
-  { key: "cluster", svg: '<svg viewBox="0 0 20 20" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="7.2" cy="8" r="4.6"/><circle cx="13.6" cy="7.4" r="3.4"/><circle cx="11.6" cy="14.2" r="3.6"/></g><circle cx="7.2" cy="8" r="1.5" fill="currentColor"/><circle cx="13.6" cy="7.4" r="1" fill="currentColor"/><circle cx="11.6" cy="14.2" r="1" fill="currentColor"/></svg>' },
-  // A small vesicle arcing from the mark into a topic.
-  { key: "route", svg: '<svg viewBox="0 0 20 20" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="5" cy="6" r="3"/><circle cx="14.2" cy="13.6" r="4.2"/><path d="M7.6 7.8c2.6.4 4 1.6 4.6 3.4" stroke-dasharray="1.4 2" stroke-linecap="round"/></g><circle cx="5" cy="6" r="1" fill="currentColor"/><circle cx="14.2" cy="13.6" r="1.4" fill="currentColor"/></svg>' },
-  // A speech bubble with nothing but the conversation in it.
-  { key: "quiet", svg: '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 4.6h12a1.6 1.6 0 0 1 1.6 1.6v6.6a1.6 1.6 0 0 1-1.6 1.6H9l-3.4 2.8v-2.8H4a1.6 1.6 0 0 1-1.6-1.6V6.2A1.6 1.6 0 0 1 4 4.6Z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M6 8.4h8M6 11h5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>' }
-];
-async function openSetup({ t, cellFrame, signal, onClose }) {
+var card = (glow = "") => `<g class="theone-setup-a" ${glow}><rect x="44" y="2" width="132" height="24" rx="8" fill="none" stroke="currentColor" stroke-width="1.6" opacity=".5"/>${ring(58, 14, 5.5)}<rect x="70" y="10.5" width="44" height="7" rx="3.5" fill="currentColor" opacity=".25"/></g>`;
+var halo = (x, y, r, delay = 0) => `<circle class="theone-setup-a theone-setup-halo" cx="${x}" cy="${y}" r="${r}" fill="currentColor" style="animation:theone-setup-glow 2.8s ${delay}s ease-in-out infinite;opacity:.08"/>`;
+var newsPictures = {
+  // Topics as cells clinging under the main-chat card: recent ones bigger, a busy one glowing.
+  cluster: () => `<svg viewBox="0 0 220 110">${card()}${halo(126, 52, 17)}
+    <g class="theone-setup-a" style="animation:theone-setup-pulse 3.2s ease-in-out infinite">${ring(100, 67, 17)}</g>
+    ${ring(126, 52, 12)}<g opacity=".6">${ring(114, 92, 11)}${ring(76, 80, 10)}</g><g opacity=".4">${ring(137, 73, 8)}${ring(76, 56, 7.5)}</g></svg>`,
+  // A message leaves the mark as a vesicle and lands in its topic; another candidate stays lit.
+  route: () => `<svg viewBox="0 0 220 110"><g class="theone-setup-a" style="animation:theone-setup-send 3.2s ease-in-out infinite">${ring(34, 56, 15)}</g>
+    <path d="M50 48C80 18 112 18 137 37" fill="none" stroke="currentColor" stroke-width="1.4" stroke-dasharray="1.5 4.5" stroke-linecap="round" opacity=".35"/>
+    ${halo(150, 38, 19, 2.2)}<g class="theone-setup-a" style="animation:theone-setup-catch 3.2s ease-in-out infinite">${ring(150, 38, 13)}</g>
+    <circle class="theone-setup-a" cx="151" cy="64" r="17" fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="2 3.5" style="animation:theone-setup-blink 3.2s ease-in-out infinite;opacity:0"/>
+    <g opacity=".7">${ring(151, 64, 12)}</g><g opacity=".45">${ring(173, 49, 10)}${ring(129, 58, 8)}</g>
+    <circle class="theone-setup-a theone-setup-ghost" cx="50" cy="48" r="4.5" fill="currentColor" style="animation:theone-setup-fly 3.2s ease-in-out infinite;opacity:0"/></svg>`,
+  // A cell lifted into the card (carry on there), another thrown out to the side (set aside for now).
+  drag: () => `<svg viewBox="0 0 220 110">${card('style="animation:theone-setup-take 4.4s ease-in-out infinite"')}
+    <g opacity=".6">${ring(90, 74, 13)}${ring(115, 66, 11)}${ring(103, 96, 9.5)}</g>
+    <g class="theone-setup-a" style="animation:theone-setup-lift 4.4s ease-in-out infinite">${ring(126, 88, 10)}</g>
+    <g class="theone-setup-a" style="animation:theone-setup-toss 4.4s ease-in infinite">${ring(136, 63, 8.5)}</g></svg>`,
+  // Main chat holds only the conversation; what each topic is doing lives on its cell beside it.
+  quiet: () => `<svg viewBox="0 0 220 110">${halo(30, 40, 15, 0.4)}${ring(30, 40, 10)}<g opacity=".5">${ring(46, 64, 8)}${ring(26, 72, 7)}</g>
+    <path d="M64 6v98" stroke="currentColor" stroke-width="1.2" opacity=".2"/>
+    ${[[128, 10, 76, 18, 9], [80, 40, 112, 8, 4], [80, 54, 84, 8, 4], [140, 74, 64, 18, 9], [80, 100, 96, 8, 4]].map(([x, y, w, h3, r], i) => `<rect class="theone-setup-a" x="${x}" y="${y}" width="${w}" height="${h3}" rx="${r}" fill="currentColor" style="animation:theone-setup-type 5.2s ${i * 0.45}s ease-out infinite;opacity:0;fill-opacity:${h3 > 10 ? 0.28 : 0.2}"/>`).join("")}</svg>`
+};
+var news = Object.keys(newsPictures);
+async function openSetup({ t, cellFrame, signal, onClose, newsOnly = false }) {
   const read = async (path) => {
     try {
       const response = await fetch(path, { signal, cache: "no-store" });
@@ -2854,7 +2871,7 @@ async function openSetup({ t, cellFrame, signal, onClose }) {
       return void 0;
     }
   };
-  const [catalog, settings] = await Promise.all([
+  const [catalog, settings] = newsOnly ? [void 0, void 0] : await Promise.all([
     read("/api/theone/catalog"),
     read("/api/theone/settings")
   ]);
@@ -2882,38 +2899,52 @@ async function openSetup({ t, cellFrame, signal, onClose }) {
     <div class="theone-setup-options" role="radiogroup" aria-labelledby="theone-setup-q${index}" style="grid-template-columns:repeat(${q.options.length},minmax(0,1fr))">${q.options.map((option, i) => `<button type="button" class="theone-setup-option" role="radio" data-question="${index}" data-option="${i}" aria-checked="${q.pick === i}"><svg viewBox="0 0 36 24" aria-hidden="true">${icons[option.icon]}</svg>${escape(option.label)}</button>`).join("")}</div>
     <p class="theone-setup-hint" data-hint="${index}" aria-live="polite">${hint(q.options[q.pick])}</p>
     <div class="theone-setup-space"></div>${dots(index)}<button type="button" class="theone-setup-go" data-next>${escape(t("setup.continue"))}${arrow}</button>`;
-  const pages = [
-    `<div class="theone-setup-hero theone-setup-hero-cell">${cell(92)}</div>
+  const newsDots = (at2) => `<div class="theone-setup-dots" aria-hidden="true">${news.map((_, i) => `<i data-on="${i === at2}"></i>`).join("")}</div>`;
+  const newsPage = (key, index, button) => `<div class="theone-setup-hero theone-setup-hero-big">${newsPictures[key]()}</div>
+    <h2 class="theone-setup-title">${escape(t(`setup.new.${key}`))}</h2><p class="theone-setup-body">${escape(t(`setup.new.${key}Hint`))}</p>
+    <div class="theone-setup-space"></div>${newsDots(index)}${button}`;
+  const next = (label) => `<button type="button" class="theone-setup-go" data-next>${escape(label)}${arrow}</button>`;
+  const tour = news.map((key, i) => ({ kind: "news", step: i, html: newsPage(key, i, newsOnly && i === news.length - 1 ? `<button type="button" class="theone-setup-go" data-done>${escape(t("setup.finish"))}${arrow}</button>` : next(t("setup.continue"))) }));
+  const pages = newsOnly ? [
+    { kind: "open", html: `<div class="theone-setup-hero theone-setup-hero-cell theone-setup-hero-news">${cell(80)}<span class="theone-setup-badge">${escape(t("setup.newBadge"))}</span></div>
+     <h2 class="theone-setup-title">${escape(t("setup.newTitle"))}</h2><p class="theone-setup-body">${multiline(t("setup.newBody"))}</p><div class="theone-setup-space"></div>
+     ${next(t("setup.newGo"))}<button type="button" class="theone-setup-later" data-later>${escape(t("setup.newSkip"))}</button>` },
+    ...tour
+  ] : [
+    { kind: "open", html: `<div class="theone-setup-hero theone-setup-hero-cell">${cell(92)}</div>
      <h2 class="theone-setup-title theone-setup-welcome">${escape(t("setup.welcome"))} <span class="theone-setup-brand"><span>The</span>One</span></h2>
      <p class="theone-setup-body">${multiline(t("setup.welcomeBody"))}</p><div class="theone-setup-space"></div>
-     <button type="button" class="theone-setup-go" data-next>${escape(t("setup.start"))}${arrow}</button><button type="button" class="theone-setup-later" data-later>${escape(t("setup.later"))}</button>`,
-    `<div class="theone-setup-hero theone-setup-hero-cell theone-setup-hero-news">${cell(64)}<span class="theone-setup-badge">${escape(t("setup.newBadge"))}</span></div><h2 class="theone-setup-title">${escape(t("setup.newTitle"))}</h2>
-     <ul class="theone-setup-news">${news.map((item) => `<li><span class="theone-setup-news-icon">${item.svg}</span><span><b>${escape(t(`setup.new.${item.key}`))}</b><small>${escape(t(`setup.new.${item.key}Hint`))}</small></span></li>`).join("")}</ul>
-     <div class="theone-setup-space"></div><button type="button" class="theone-setup-go" data-next>${escape(t("setup.continue"))}${arrow}</button>`,
-    ...questions.map(question),
-    `<div class="theone-setup-hero theone-setup-hero-cell">${cell(92)}</div><h2 class="theone-setup-title">${escape(t("setup.doneTitle"))}</h2>
+     <button type="button" class="theone-setup-go" data-next>${escape(t("setup.start"))}${arrow}</button><button type="button" class="theone-setup-later" data-later>${escape(t("setup.later"))}</button>` },
+    ...questions.map((q, i) => ({ kind: "question", step: i, html: question(q, i) })),
+    ...tour,
+    { kind: "done", html: `<div class="theone-setup-hero theone-setup-hero-cell">${cell(92)}</div><h2 class="theone-setup-title">${escape(t("setup.doneTitle"))}</h2>
      <p class="theone-setup-body">${multiline(t("setup.doneBody"))}</p><p class="theone-setup-hint" data-status>${escape(t("setup.apps"))}</p><div class="theone-setup-space"></div>
-     <button type="button" class="theone-setup-go" data-finish>${escape(t("setup.finish"))}${arrow}</button>`
+     <button type="button" class="theone-setup-go" data-finish>${escape(t("setup.finish"))}${arrow}</button>` }
   ];
   const overlay = document.createElement("div");
   overlay.className = "theone-setup";
   overlay.setAttribute("role", "dialog");
   overlay.setAttribute("aria-modal", "true");
-  overlay.setAttribute("aria-label", t("setup.label"));
+  overlay.setAttribute("aria-label", t(newsOnly ? "setup.newsLabel" : "setup.label"));
   overlay.setAttribute("translate", "no");
-  overlay.innerHTML = `<button type="button" class="theone-setup-back" data-back hidden>\u2039 ${escape(t("setup.back"))}</button>
-    <div class="theone-setup-track">${pages.map((page) => `<section class="theone-setup-page"><div class="theone-setup-column">${page}</div></section>`).join("")}</div>`;
+  overlay.innerHTML = `<button type="button" class="theone-setup-back" data-back hidden>\u2039 ${escape(t("setup.back"))}</button><p class="theone-setup-sr" aria-live="polite"></p>
+    <div class="theone-setup-track">${pages.map((page) => `<section class="theone-setup-page"><div class="theone-setup-column">${page.html}</div></section>`).join("")}</div>`;
   const track = overlay.querySelector(".theone-setup-track"), back = overlay.querySelector("[data-back]");
-  const sections = [...overlay.querySelectorAll(".theone-setup-page")];
-  let at = 0;
+  const sections = [...overlay.querySelectorAll(".theone-setup-page")], status = overlay.querySelector(".theone-setup-sr");
+  let at = 0, sawNews = false;
   const go = (index) => {
     at = index;
+    const page = pages[index];
+    if (page.kind === "news" && page.step === news.length - 1) sawNews = true;
     track.style.transform = `translateX(${-100 * index}%)`;
     sections.forEach((section, i) => {
       section.inert = i !== index;
     });
-    back.hidden = index === 0 || index === pages.length - 1;
+    back.hidden = index === 0 || page.kind === "done";
     sections[index].querySelector(".theone-setup-go")?.focus({ preventScroll: true });
+    const title = sections[index].querySelector(".theone-setup-title")?.textContent ?? "";
+    const where = page.kind === "news" ? t("setup.progressNews") : page.kind === "question" ? t("setup.progressSetup") : "";
+    status.textContent = [title, where.replace("{n}", String((page.step ?? 0) + 1)).replace("{total}", String(page.kind === "news" ? news.length : questions.length))].filter(Boolean).join(" \xB7 ");
   };
   const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
   let frame = 0;
@@ -2936,22 +2967,33 @@ async function openSetup({ t, cellFrame, signal, onClose }) {
       frame = requestAnimationFrame(step);
     });
   }
+  const before = document.activeElement;
+  const behind = [...document.body.children].filter((el) => el instanceof HTMLElement && el !== overlay && !el.inert);
   let closed = false;
-  const close = () => {
+  const close = (finished = false) => {
     if (closed) return;
     closed = true;
     cancelAnimationFrame(frame);
     document.removeEventListener("keydown", keydown, true);
+    for (const el of behind) el.inert = false;
     overlay.remove();
-    onClose();
+    if (before?.isConnected) before.focus({ preventScroll: true });
+    onClose({ finished, sawNews });
   };
   const keydown = (event) => {
     if (event.key === "Escape") {
       event.preventDefault();
       close();
+      return;
     }
+    if (event.key !== "Tab") return;
+    const stops = [...back.hidden ? [] : [back], ...sections[at].querySelectorAll("button:not([disabled])")];
+    if (!stops.length) return;
+    const index = stops.indexOf(document.activeElement);
+    event.preventDefault();
+    stops[index < 0 ? event.shiftKey ? stops.length - 1 : 0 : (index + (event.shiftKey ? stops.length - 1 : 1)) % stops.length].focus();
   };
-  signal.addEventListener("abort", close, { once: true });
+  signal.addEventListener("abort", () => close(), { once: true });
   const finish = async (button) => {
     button.disabled = true;
     let failed = false;
@@ -2989,7 +3031,7 @@ async function openSetup({ t, cellFrame, signal, onClose }) {
       button.setAttribute("data-later", "");
       return;
     }
-    close();
+    close(true);
   };
   overlay.addEventListener("click", (event) => {
     const button = event.target.closest("button");
@@ -3007,6 +3049,7 @@ async function openSetup({ t, cellFrame, signal, onClose }) {
     } else if ("next" in button.dataset) go(at + 1);
     else if ("back" in button.dataset) go(at - 1);
     else if ("later" in button.dataset) close();
+    else if ("done" in button.dataset) close(true);
     else if ("finish" in button.dataset) void finish(button);
   });
   overlay.addEventListener("keydown", (event) => {
@@ -3014,12 +3057,13 @@ async function openSetup({ t, cellFrame, signal, onClose }) {
     if (!radio || !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
     event.preventDefault();
     const radios = [...radio.parentElement.querySelectorAll("[role=radio]")];
-    const next = radios[(radios.indexOf(radio) + (event.key === "ArrowLeft" || event.key === "ArrowUp" ? radios.length - 1 : 1)) % radios.length];
-    next.focus();
-    next.click();
+    const next2 = radios[(radios.indexOf(radio) + (event.key === "ArrowLeft" || event.key === "ArrowUp" ? radios.length - 1 : 1)) % radios.length];
+    next2.focus();
+    next2.click();
   });
   document.addEventListener("keydown", keydown, true);
   document.body.append(overlay);
+  for (const el of behind) el.inert = true;
   go(0);
 }
 var setupCss = `
@@ -3037,16 +3081,11 @@ var setupCss = `
 .theone-setup-hero{flex:none;width:100%;height:150px;display:flex;align-items:center;justify-content:center;color:var(--s-ac)}
 .theone-setup-hero>svg{width:220px;height:110px;overflow:visible}
 .theone-setup-hero-cell svg{overflow:visible}
+.theone-setup-hero-big{height:210px}.theone-setup-hero-big>svg{width:330px;height:165px}
 .theone-setup-hero-news{flex-direction:column;gap:16px}
 .theone-setup-badge{font-size:12px;line-height:18px;color:var(--s-ac);background:var(--s-tint);box-shadow:inset 0 0 0 .5px var(--s-line);border-radius:6px;padding:2px 9px;margin-bottom:14px}
 .theone-setup-title{font-size:26px;font-weight:500;letter-spacing:-.6px;line-height:1.3;margin:8px 0 8px;text-wrap:balance;text-align:center;color:var(--s-tx)}
 .theone-setup-welcome{font-size:30px}
-.theone-setup-news{list-style:none;margin:14px 0 0;padding:0;width:100%;display:flex;flex-direction:column;gap:18px}
-.theone-setup-news li{display:flex;gap:14px;align-items:flex-start}
-.theone-setup-news-icon{flex:none;width:40px;height:40px;border-radius:10px;background:var(--s-tint);box-shadow:inset 0 0 0 .5px var(--s-line);color:var(--s-ac);display:grid;place-items:center}
-.theone-setup-news-icon svg{width:22px;height:22px;overflow:visible}
-.theone-setup-news b{display:block;font-size:14px;line-height:20px;font-weight:500;color:var(--s-tx)}
-.theone-setup-news small{display:block;font-size:13px;line-height:1.6;color:var(--s-cap);margin-top:2px}
 .theone-setup-brand{color:var(--s-ac)}.theone-setup-brand span{font-weight:400;font-size:.78em;color:var(--s-mu);margin-right:1px}
 .theone-setup-body{font-size:14px;line-height:1.7;color:var(--s-mu);text-align:center;margin:0 0 22px;text-wrap:pretty}
 .theone-setup-options{display:grid;gap:10px;width:100%}
@@ -3074,7 +3113,18 @@ var setupCss = `
 @keyframes theone-setup-slide{0%{opacity:0;transform:translateX(-10px)}12%,82%{opacity:1;transform:none}94%,100%{opacity:0}}
 @keyframes theone-setup-pop{0%,20%{opacity:0;transform:scale(.4)}32%,85%{opacity:1;transform:scale(1)}95%,100%{opacity:0}}
 @keyframes theone-setup-type{0%{opacity:0;transform:translateY(5px)}10%,88%{opacity:1;transform:none}98%,100%{opacity:0}}
-@media(prefers-reduced-motion:reduce){.theone-setup,.theone-setup-track{animation:none;transition:none}.theone-setup-a{animation:none!important;opacity:1!important}}
+/* The "what is new" pictures: a vesicle flying from the mark into its topic (the curve sampled), the topic catching it, a candidate left lit, a cell lifted into the card, one thrown aside. */
+@keyframes theone-setup-fly{0%{opacity:0;transform:translate(0,0) scale(.6)}8%{opacity:1;transform:translate(4px,-4px) scale(1)}25%{transform:translate(22.7px,-17.1px)}40%{transform:translate(45.4px,-24.3px)}55%{transform:translate(67.1px,-22.8px)}68%{opacity:.9;transform:translate(87px,-14px) scale(.5)}74%,100%{opacity:0;transform:translate(87px,-14px) scale(.3)}}
+@keyframes theone-setup-send{0%,100%{transform:scale(1)}6%{transform:scale(1.1)}16%{transform:scale(1)}}
+@keyframes theone-setup-catch{0%,64%{transform:scale(1)}72%{transform:scale(1.13)}84%,100%{transform:scale(1)}}
+@keyframes theone-setup-blink{0%,30%{opacity:0}42%,80%{opacity:.55}92%,100%{opacity:0}}
+@keyframes theone-setup-glow{0%,100%{opacity:.05}50%{opacity:.2}}
+@keyframes theone-setup-lift{0%,8%{opacity:1;transform:none}40%{opacity:1;transform:translate(-30px,-66px) scale(.75)}48%,100%{opacity:0;transform:translate(-30px,-70px) scale(.5)}}
+@keyframes theone-setup-take{0%,36%{transform:none}44%{transform:scale(1.04)}54%,100%{transform:none}}
+@keyframes theone-setup-toss{0%,58%{opacity:1;transform:none}82%{opacity:0;transform:translate(64px,-14px) rotate(25deg) scale(.8)}100%{opacity:0;transform:translate(64px,-14px) scale(.8)}}
+@media(prefers-reduced-motion:reduce){.theone-setup,.theone-setup-track{animation:none;transition:none}.theone-setup-a{animation:none!important;opacity:1!important}
+  .theone-setup-a.theone-setup-halo{opacity:.12!important}.theone-setup-a.theone-setup-ghost{opacity:0!important}}
+.theone-setup-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 `;
 
 // src/client-locales.ts
@@ -3503,12 +3553,20 @@ var zh = {
   "setup.tagNoneHint": "\u5BF9\u8BDD\u754C\u9762\u4FDD\u6301\u7B80\u6D01\uFF0CTheOne \u5728\u540E\u53F0\u5B89\u9759\u5730\u6574\u7406\u3002",
   "setup.newBadge": "\u65B0\u7248\u672C",
   "setup.newTitle": "TheOne \u6709\u54EA\u4E9B\u65B0\u53D8\u5316",
+  "setup.newBody": "\u8BDD\u9898\u53D8\u6210\u4E86\u4E3B\u804A\u5929\u4E0B\u9762\u7684\u4E00\u56E2\u7EC6\u80DE\u3002\n\u82B1\u534A\u5206\u949F\u770B\u770B\u600E\u4E48\u7528\u3002",
+  "setup.newGo": "\u770B\u770B",
+  "setup.newsLabel": "TheOne \u65B0\u7248\u672C\u4ECB\u7ECD",
+  "setup.progressNews": "\u529F\u80FD\u4ECB\u7ECD {n}/{total}",
+  "setup.progressSetup": "\u8BBE\u7F6E {n}/{total}",
+  "setup.newSkip": "\u4EE5\u540E\u518D\u8BF4",
   "setup.new.cluster": "\u8BDD\u9898\u90FD\u5728\u4E3B\u804A\u5929\u4E0B\u9762",
-  "setup.new.clusterHint": "\u6BCF\u4E2A\u8BDD\u9898\u662F\u4E00\u9897\u7EC6\u80DE\uFF0C\u6324\u5728\u4E3B\u804A\u5929\u4E0B\u9762\uFF1B\u6700\u8FD1\u7528\u8FC7\u7684\u66F4\u5927\uFF0C\u6B63\u5728\u505A\u4E8B\u7684\u4F1A\u53D1\u5149\u3002",
+  "setup.new.clusterHint": "\u6BCF\u4E2A\u8BDD\u9898\u662F\u4E00\u9897\u7EC6\u80DE\uFF0C\u6324\u5728\u4E3B\u804A\u5929\u5361\u7247\u4E0B\u9762\u3002\u6700\u8FD1\u7528\u8FC7\u7684\u66F4\u5927\uFF0C\u6B63\u5728\u505A\u4E8B\u7684\u4F1A\u53D1\u5149\uFF1B\u70B9\u4E00\u4E0B\u5C31\u80FD\u770B\u5B83\u5728\u505A\u4EC0\u4E48\u3002",
   "setup.new.route": "\u8BF4\u4E00\u53E5\u8BDD\uFF0C\u770B\u5B83\u53BB\u4E86\u54EA",
-  "setup.new.routeHint": "\u6BCF\u53E5\u8BDD\u4F1A\u98DE\u8FDB\u5BF9\u5E94\u7684\u8BDD\u9898\uFF1B\u62FF\u4E0D\u51C6\u65F6\uFF0C\u70B9\u5F00\u4EAE\u7740\u7684\u53E6\u4E00\u4E2A\u8BDD\u9898\u5C31\u80FD\u6362\u8FC7\u53BB\u3002",
+  "setup.new.routeHint": "\u6BCF\u53E5\u8BDD\u4F1A\u98DE\u8FDB\u5BF9\u5E94\u7684\u8BDD\u9898\uFF0C\u65B0\u7684\u4E8B\u4F1A\u4ECE\u4E3B\u804A\u5929\u91CC\u5206\u51FA\u4E00\u4E2A\u65B0\u8BDD\u9898\u3002\u62FF\u4E0D\u51C6\u65F6\uFF0C\u5019\u9009\u8BDD\u9898\u4F1A\u4EAE\u7740\uFF1B\u70B9\u5F00\u5B83\uFF0C\u5728\u8BE6\u60C5\u91CC\u5C31\u80FD\u628A\u6D88\u606F\u6362\u8FC7\u53BB\u3002",
+  "setup.new.drag": "\u62D6\u4E00\u4E0B\u5C31\u80FD\u6574\u7406",
+  "setup.new.dragHint": "\u628A\u7EC6\u80DE\u62D6\u5230\u4E3B\u804A\u5929\u5361\u7247\u4E0A\uFF0C\u5C31\u63A5\u7740\u804A\u5B83\uFF1B\u62D6\u5230\u53E6\u4E00\u9897\u4E0A\u505C\u4E00\u4E0B\u518D\u677E\u624B\uFF0C\u5C31\u5408\u5E76\uFF0C\u53EF\u4EE5\u64A4\u9500\uFF1B\u7529\u51FA\u4FA7\u8FB9\u680F\uFF0C\u5C31\u5148\u653E\u4E00\u8FB9\u3002",
   "setup.new.quiet": "\u804A\u5929\u91CC\u53EA\u6709\u5BF9\u8BDD",
-  "setup.new.quietHint": "\u5206\u5230\u54EA\u4E2A\u8BDD\u9898\u3001\u6B63\u5728\u505A\u4EC0\u4E48\uFF0C\u90FD\u5728\u4FA7\u680F\u7684\u7EC6\u80DE\u4E0A\u770B\uFF0C\u4E0D\u518D\u5199\u8FDB\u4E3B\u804A\u5929\u3002",
+  "setup.new.quietHint": "\u5206\u5230\u54EA\u4E2A\u8BDD\u9898\u3001\u6B63\u5728\u505A\u4EC0\u4E48\uFF0C\u90FD\u5728\u7EC6\u80DE\u4E0A\u770B\u3002\u4E3B\u804A\u5929\u91CC\u8981\u4E0D\u8981\u63D0\u793A\u8BDD\u9898\u5207\u6362\uFF0C\u7531\u8BBE\u7F6E\u91CC\u7684\u300C\u8BDD\u9898\u63D0\u793A\u300D\u51B3\u5B9A\u3002",
   "setup.doneTitle": "\u4E00\u5207\u5C31\u7EEA",
   "setup.doneBody": "\u73B0\u5728\uFF0C\u76F4\u63A5\u8BF4\u51FA\u4F60\u60F3\u505A\u7684\u4E8B\u5427\u3002\n\u4EE5\u4E0A\u8BBE\u7F6E\u968F\u65F6\u53EF\u4EE5\u5728 TheOne \u8BBE\u7F6E\u4E2D\u66F4\u6539\u3002",
   "setup.apps": "\u8FD8\u53EF\u4EE5\u5728 TheOne \u8BBE\u7F6E\u91CC\u8FDE\u63A5\u5FAE\u4FE1\u3001Telegram \u6216 iMessage\u3002",
@@ -3995,12 +4053,20 @@ var en = {
   "setup.tagNoneHint": "The conversation stays clean while TheOne organizes quietly in the background.",
   "setup.newBadge": "New version",
   "setup.newTitle": "What's new in TheOne",
+  "setup.newBody": "Your topics are now a cluster of cells under main chat.\nTake half a minute to see how it works.",
+  "setup.newGo": "Show me",
+  "setup.newsLabel": "What's new in TheOne",
+  "setup.progressNews": "Tour {n} of {total}",
+  "setup.progressSetup": "Setup {n} of {total}",
+  "setup.newSkip": "Later",
   "setup.new.cluster": "Every topic under main chat",
-  "setup.new.clusterHint": "Each topic is a cell clinging under main chat; recent ones are bigger, busy ones glow.",
+  "setup.new.clusterHint": "Each topic is a cell clinging under the main-chat card. Recent ones are bigger, busy ones glow; click one to see what it is doing.",
   "setup.new.route": "See where each message goes",
-  "setup.new.routeHint": "Each message flies into its topic; when TheOne was unsure, open the other lit topic to move it there.",
+  "setup.new.routeHint": "Each message flies into its topic, and something new buds off main chat as a new topic. When TheOne was unsure, the other candidates stay lit; open one and move the message there from its details.",
+  "setup.new.drag": "Drag to organise",
+  "setup.new.dragHint": "Drag a cell onto the main-chat card to carry on with it; hold it on another for a moment and let go to merge them, with undo; throw it out of the sidebar to set it aside.",
   "setup.new.quiet": "Only the conversation in chat",
-  "setup.new.quietHint": "Which topic a message went to and what is running show on the cells, not in main chat.",
+  "setup.new.quietHint": "Which topic a message went to and what is running show on the cells. Whether main chat also notes topic switches is up to Topic notices in the settings.",
   "setup.doneTitle": "You're all set",
   "setup.doneBody": "Now just say what you want to do.\nYou can change these any time in TheOne settings.",
   "setup.apps": "You can also connect WeChat, Telegram or iMessage in TheOne settings.",
@@ -5861,6 +5927,8 @@ var workCss = `.theone-tasks{padding:24px;max-width:900px;margin:auto;overflow:a
 var QQ_GROUP = "1080980184";
 var ONBOARDING = "theone-onboarding";
 var SETUP = "theone-setup-1";
+var NEWS = "theone-news-cluster";
+var NEWS_LATER = "dsh-theone-news-later";
 var SETTINGS_REVISION = "dsh-theone-settings-revision";
 var FIRST_TURN = 1;
 var FEEDBACK_EMAIL = "theone@yulid.org";
@@ -6048,14 +6116,14 @@ function apply(ctx) {
     const backdrop = document.createElement("div");
     backdrop.className = "theone-dialog-backdrop";
     backdrop.setAttribute("translate", "no");
-    const card = document.createElement("div");
-    card.className = "theone-dialog";
-    card.setAttribute("role", "dialog");
-    card.setAttribute("aria-modal", "true");
+    const card2 = document.createElement("div");
+    card2.className = "theone-dialog";
+    card2.setAttribute("role", "dialog");
+    card2.setAttribute("aria-modal", "true");
     const title = document.createElement("h2");
     title.id = "theone-dialog-title";
     title.textContent = t("age.title");
-    card.setAttribute("aria-labelledby", title.id);
+    card2.setAttribute("aria-labelledby", title.id);
     const paragraph = (text, className) => {
       const p = document.createElement("p");
       p.textContent = text;
@@ -6063,8 +6131,8 @@ function apply(ctx) {
       return p;
     };
     const version = status.waiting?.version ?? status.latest ?? "";
-    card.append(title, paragraph(t("age.why", { version })), paragraph(t(status.canExempt ? "age.allowHow" : "age.cannot")));
-    if (status.waiting) card.append(paragraph(t("age.readyAt", { time: new Date(status.waiting.readyAt).toLocaleString(localeSnapshot().active, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) }), "theone-dialog-note"));
+    card2.append(title, paragraph(t("age.why", { version })), paragraph(t(status.canExempt ? "age.allowHow" : "age.cannot")));
+    if (status.waiting) card2.append(paragraph(t("age.readyAt", { time: new Date(status.waiting.readyAt).toLocaleString(localeSnapshot().active, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) }), "theone-dialog-note"));
     const footer = document.createElement("div");
     footer.className = "theone-dialog-actions";
     const button = (text, primary, act) => {
@@ -6092,8 +6160,8 @@ function apply(ctx) {
       setUpdate({ ...status, state: "installing", error: void 0 });
       void readUpdate("POST", { allowFresh: true });
     }) : void 0;
-    card.append(footer);
-    backdrop.append(card);
+    card2.append(footer);
+    backdrop.append(card2);
     backdrop.addEventListener("pointerdown", (event) => {
       if (event.target === backdrop) close();
     });
@@ -6106,14 +6174,14 @@ function apply(ctx) {
     const backdrop = document.createElement("div");
     backdrop.className = "theone-dialog-backdrop";
     backdrop.setAttribute("translate", "no");
-    const card = document.createElement("div");
-    card.className = "theone-dialog theone-feedback";
-    card.setAttribute("role", "dialog");
-    card.setAttribute("aria-modal", "true");
+    const card2 = document.createElement("div");
+    card2.className = "theone-dialog theone-feedback";
+    card2.setAttribute("role", "dialog");
+    card2.setAttribute("aria-modal", "true");
     const title = document.createElement("h2");
     title.id = "theone-feedback-title";
     title.textContent = t(messageId ? "feedback.titleMessage" : "feedback.title");
-    card.setAttribute("aria-labelledby", title.id);
+    card2.setAttribute("aria-labelledby", title.id);
     const intro = document.createElement("p");
     intro.textContent = t("feedback.intro");
     const description = document.createElement("textarea");
@@ -6245,8 +6313,8 @@ function apply(ctx) {
     include.addEventListener("change", () => {
       void load();
     });
-    card.append(title, intro, description, contact, ...messageId ? [includeLabel] : [], preview, privacy, status, footer);
-    backdrop.append(card);
+    card2.append(title, intro, description, contact, ...messageId ? [includeLabel] : [], preview, privacy, status, footer);
+    backdrop.append(card2);
     backdrop.addEventListener("pointerdown", (event) => {
       if (event.target === backdrop && !description.value.trim()) close();
     });
@@ -6848,14 +6916,14 @@ function apply(ctx) {
     const backdrop = document.createElement("div");
     backdrop.className = "theone-dialog-backdrop";
     backdrop.setAttribute("translate", "no");
-    const card = document.createElement("div");
-    card.className = "theone-dialog";
-    card.setAttribute("role", "dialog");
-    card.setAttribute("aria-modal", "true");
+    const card2 = document.createElement("div");
+    card2.className = "theone-dialog";
+    card2.setAttribute("role", "dialog");
+    card2.setAttribute("aria-modal", "true");
     const title = document.createElement("h2");
     title.id = "theone-notice-title";
     title.textContent = localized(notice.title);
-    card.setAttribute("aria-labelledby", title.id);
+    card2.setAttribute("aria-labelledby", title.id);
     const body = document.createElement("p");
     body.className = "theone-dialog-body";
     body.textContent = localized(notice.body);
@@ -6888,8 +6956,8 @@ function apply(ctx) {
     ok.textContent = t("notice.ok");
     ok.addEventListener("click", close);
     footer.append(ok);
-    card.append(title, body, footer);
-    backdrop.append(card);
+    card2.append(title, body, footer);
+    backdrop.append(card2);
     document.addEventListener("keydown", keydown, true);
     document.body.append(backdrop);
     ok.focus();
@@ -6908,14 +6976,35 @@ function apply(ctx) {
           t: (key) => t(key),
           cellFrame,
           signal: lifetime.signal,
-          onClose: () => {
+          onClose: ({ sawNews }) => {
             dismissNotice(SETUP);
+            if (sawNews) dismissNotice(NEWS);
             if (onboarding) {
               onboarding = false;
               dismissNotice(ONBOARDING);
             }
           }
         });
+        return;
+      }
+      if (value.news === true && !setupShown) {
+        setupShown = true;
+        void openSetup({ t: (key) => t(key), cellFrame, signal: lifetime.signal, newsOnly: true, onClose: ({ finished, sawNews }) => {
+          let putOffBefore = false;
+          try {
+            putOffBefore = localStorage.getItem(NEWS_LATER) === NEWS;
+          } catch {
+          }
+          if (finished || sawNews || putOffBefore) {
+            dismissNotice(NEWS);
+            return;
+          }
+          try {
+            localStorage.setItem(NEWS_LATER, NEWS);
+          } catch {
+            dismissNotice(NEWS);
+          }
+        } });
         return;
       }
       const important = notices2.find((notice) => notice.level === "important" && !shownDialogs.has(notice.id));

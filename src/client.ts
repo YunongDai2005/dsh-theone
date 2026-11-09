@@ -18,6 +18,10 @@ const QQ_GROUP = '1080980184'
 const ONBOARDING = 'theone-onboarding'
 /** Finishing or putting off the full-window setup is remembered the same way; the id matches index.ts. */
 const SETUP = 'theone-setup-1'
+/** The setup's "what's new" pages on their own, for someone who has been through it; the id matches index.ts. */
+const NEWS = 'theone-news-cluster'
+/** Remembers in this window that the news was put off once (its id), so it comes back one more time, not forever. */
+const NEWS_LATER = 'dsh-theone-news-later'
 const SETTINGS_REVISION = 'dsh-theone-settings-revision'
 /** Main chat's first turn is TheOne's greeting; the getting-started card follows it. */
 const FIRST_TURN = 1
@@ -794,14 +798,28 @@ export function apply(ctx: Context) {
     try {
       const response = await fetch('/api/theone/notices', { signal: lifetime.signal, cache: 'no-store' })
       if (!response.ok) return
-      const value = (await response.json()) as { notices: Notice[]; onboarding?: boolean; setup?: boolean }
+      const value = (await response.json()) as { notices: Notice[]; onboarding?: boolean; setup?: boolean; news?: boolean }
       onboarding = value.onboarding === true
       setNotices(value.notices)
-      // The full-window setup comes first and supersedes the getting-started card; notices wait for the next read.
+      // The full-window setup comes first and supersedes the getting-started card; notices wait for the next read. Its
+      // tour shows what changed too, so the news is retired only if that tour was reached; put off at the welcome, the
+      // news alone comes next time.
       if (value.setup === true && !setupShown) {
         setupShown = true
         void openSetup({ t: key => t(key as TheOneLocaleKey), cellFrame, signal: lifetime.signal,
-          onClose: () => { dismissNotice(SETUP); if (onboarding) { onboarding = false; dismissNotice(ONBOARDING) } } })
+          onClose: ({ sawNews }) => { dismissNotice(SETUP); if (sawNews) dismissNotice(NEWS); if (onboarding) { onboarding = false; dismissNotice(ONBOARDING) } } })
+        return
+      }
+      // Someone who has been through the setup sees only what changed after an update that brings news. Seen to the end
+      // retires it; put off ("later", Escape) it comes back at the next start, once, then retires either way.
+      if (value.news === true && !setupShown) {
+        setupShown = true
+        void openSetup({ t: key => t(key as TheOneLocaleKey), cellFrame, signal: lifetime.signal, newsOnly: true, onClose: ({ finished, sawNews }) => {
+          let putOffBefore = false
+          try { putOffBefore = localStorage.getItem(NEWS_LATER) === NEWS } catch { /* No storage: treat as the first time. */ }
+          if (finished || sawNews || putOffBefore) { dismissNotice(NEWS); return }
+          try { localStorage.setItem(NEWS_LATER, NEWS) } catch { dismissNotice(NEWS) }
+        } })
         return
       }
       const important = notices.find(notice => notice.level === 'important' && !shownDialogs.has(notice.id))

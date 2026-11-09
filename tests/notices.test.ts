@@ -84,12 +84,12 @@ test('the getting-started card shows until closed, also with notices turned off'
     const connection = new HostConnectionService(app.ctx, [], undefined as never)
     const handler = peered(connection)
     await new Promise<void>(resolve => setImmediate(resolve))
-    const read = async (init?: RequestInit) => (await (await handler.fetch(new Request('http://dsh.internal/api/theone/notices', init))).json()) as { notices: { id: string }[]; onboarding: boolean; setup: boolean }
+    const read = async (init?: RequestInit) => (await (await handler.fetch(new Request('http://dsh.internal/api/theone/notices', init))).json()) as { notices: { id: string }[]; onboarding: boolean; setup: boolean; news: boolean }
     assert.equal((await read()).onboarding, true)
     const initial = await app.ctx.theone.settingsSnapshot()
     await handler.fetch(new Request('http://dsh.internal/api/theone/settings', { method: 'PUT', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ values: { ...initial.savedValues, notices: false }, revision: initial.revision }) }))
-    assert.deepEqual(await read(), { notices: [], onboarding: true, setup: true })
+    assert.deepEqual(await read(), { notices: [], onboarding: true, setup: true, news: true })
     const closed = await read({ method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ dismiss: 'theone-onboarding' }) })
     assert.equal(closed.onboarding, false)
     assert.equal((await read()).onboarding, false)
@@ -97,5 +97,9 @@ test('the getting-started card shows until closed, also with notices turned off'
     assert.equal((await read()).setup, true)
     const setupDone = await read({ method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ dismiss: 'theone-setup-1' }) })
     assert.equal(setupDone.setup, false)
+    // Someone who went through the setup before this release still has the news to see: only its pages, once.
+    assert.equal(setupDone.news, true)
+    const newsSeen = await read({ method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ dismiss: 'theone-news-cluster' }) })
+    assert.deepEqual([newsSeen.setup, newsSeen.news], [false, false])
   } finally { await app.close(); await rm(root, { recursive: true, force: true }) }
 })
