@@ -13,6 +13,7 @@ import { mergeSettled, routingSummary, type Settled, type TopicCard } from './to
 import { mergeSimilarity } from './routing-policy.ts'
 import { MERGE_VET_LIMITS, mergeVetTopic, type MergeVetRecord, type MergeVetTopic } from './merge-vetting.ts'
 import type { BubbleMergeSuggestion, BubbleScope } from './bubble-types.ts'
+import { CATALOG_ORPHAN_REPAIR, catalogOrphans, catalogOrphanRepairs, type CatalogOrphanRepair } from './catalog-repair.ts'
 
 /** A write to a topic's facts, after its evidence was checked against the session. */
 export interface FactWrite {
@@ -680,7 +681,24 @@ export class ContextStore {
   importTopics(sessionId: string, cwd: string | undefined, parts: HistoryPart[], topics: ExtractedTopic[]): void {
     this.db.exec('SAVEPOINT store_write')
     try {
-      for (const topic of topics) {
+      // Resolve every turn before mutating ownership. A null answer is no instruction to move an
+      // already catalogued turn, even when one model topic spans several existing owners.
+      const resolved = topics.flatMap(topic => {
+        if (topic.contextId !== null) {
+          this.context(topic.contextId)
+          return [topic]
+        }
+        // A new topic with no turns yet (e.g. from a summary alone) has no owner to resolve: keep it as is.
+        if (!topic.turns.length) return [topic]
+        const byOwner = new Map<string | null, number[]>()
+        for (const seq of topic.turns) {
+          const owner = this.indexedTurn(sessionId, seq)?.contextId ?? null
+          byOwner.set(owner, [...byOwner.get(owner) ?? [], seq])
+        }
+        return [...byOwner].map(([contextId, turns]) => ({ ...topic, contextId, turns }))
+      })
+      const displaced = new Map<string, string>()
+      for (const topic of resolved) {
         const id = topic.contextId ?? randomUUID()
         const existing = this.contexts().find(context => context.id === id)
         // The Worker's own progress note and DSH compaction summary outrank a catalog re-extraction, which only
@@ -709,12 +727,37 @@ export class ContextStore {
           const old = this.db.prepare('SELECT * FROM history_turns WHERE session_id = ? AND user_seq = ?').get(sessionId, seq)
           if (old) this.db.prepare('DELETE FROM context_source_ranges WHERE context_id = ? AND session_id = ? AND start_seq = ? AND end_seq = ?')
             .run(String(old.context_id), sessionId, seq, Number(old.end_seq))
+          if (old && old.context_id !== id) displaced.set(String(old.context_id), id)
           this.addSource(id, sessionId, { startSeq: seq, endSeq: part.endSeq })
           this.db.prepare('INSERT OR REPLACE INTO history_turns VALUES (?, ?, ?, ?, ?)').run(sessionId, seq, part.endSeq, part.fingerprint, id)
         }
       }
+      // Only topics actually emptied by this batch are eligible. Resolve the recipient from the
+      // final ownership, since another output topic may have moved that recipient's turns again.
+      if (displaced.size) for (const orphan of catalogOrphans(this.db)) {
+        if (!displaced.has(orphan.sourceId)) continue
+        let targetId = displaced.get(orphan.sourceId)!
+        const visited = new Set([orphan.sourceId])
+        while (displaced.has(targetId) && !this.sources(targetId).length && !visited.has(targetId)) {
+          visited.add(targetId); targetId = displaced.get(targetId)!
+        }
+        if (!visited.has(targetId) && this.sources(targetId).length)
+          this.mergeTopicsRecorded(orphan.sourceId, targetId, Date.now(), false)
+      }
       this.db.exec('RELEASE store_write')
     } catch (error) { this.rollbackWrite(); throw error }
+  }
+
+  /** Called after the catalog observes current session headers, so an unindexed Worker is protected.
+   * The marker and merges commit together. Undo uses the ordinary merge UI and is never reapplied. */
+  @publishes
+  repairCatalogOrphans(): CatalogOrphanRepair[] {
+    return this.inTransaction(() => {
+      if (!this.markOnce(CATALOG_ORPHAN_REPAIR)) return []
+      const repairs = catalogOrphanRepairs(this.db)
+      for (const repair of repairs) this.mergeTopicsRecorded(repair.sourceId, repair.targetId, Date.now(), false)
+      return repairs
+    })
   }
 
   private catalogDescriptor(id: string, descriptor: ContextDescriptor): void {
@@ -1306,13 +1349,17 @@ export class ContextStore {
    */
   @publishes
   mergeTopics(sourceId: string, targetId: string, now = Date.now()): void {
+    this.mergeTopicsRecorded(sourceId, targetId, now, true)
+  }
+
+  private mergeTopicsRecorded(sourceId: string, targetId: string, now: number, includeWorker: boolean): void {
     const sources = this.learningJournal.dependencies(`topic:${sourceId}`)
     const projection = this.learningSnapshot(`topic:${sourceId}`)
     this.withLearning(sources, () => this.learningJournal.record(`topic:${targetId}`, 'mergeLearning', [targetId, sourceId, projection],
-      () => this.mergeTopicsValue(sourceId, targetId, now), undefined))
+      () => this.mergeTopicsValue(sourceId, targetId, now, includeWorker), undefined))
   }
 
-  private mergeTopicsValue(sourceId: string, targetId: string, now = Date.now()): void {
+  private mergeTopicsValue(sourceId: string, targetId: string, now: number, includeWorker: boolean): void {
     if (sourceId === targetId) throw new Error('Cannot merge a topic into itself')
     const source = this.context(sourceId), target = this.context(targetId)
     const journal: MergeJournal = { at: now, moved: {}, added: {}, purged: {}, terms: { entities: [], keywords: [] }, corrected: [], facts: [], removedDependencies: [], links: [] }
@@ -1338,11 +1385,15 @@ export class ContextStore {
       this.writeDescriptor({ ...target, entities, keywords })
       copy('context_source_ranges', 'INSERT OR IGNORE INTO context_source_ranges SELECT ?, session_id, start_seq, end_seq FROM context_source_ranges WHERE context_id = ?', targetId, sourceId)
       // The source's own Worker conversation is now reviewed history of the target, not a new catalog source.
-      journal.index = { sessionId: source.workingSessionId, row: this.db.prepare('SELECT * FROM history_index WHERE session_id = ?').get(source.workingSessionId) ?? null }
-      this.markIndex(source.workingSessionId, Number.MAX_SAFE_INTEGER, 'excluded')
-      const ranges = new Set(rowids('context_source_ranges', 'context_id = ?', targetId))
-      this.db.prepare('INSERT OR IGNORE INTO context_source_ranges VALUES (?, ?, ?, ?)').run(targetId, source.workingSessionId, WHOLE_SESSION.startSeq, WHOLE_SESSION.endSeq)
-      journal.added.context_source_ranges.push(...rowids('context_source_ranges', 'context_id = ?', targetId).filter(id => !ranges.has(id)))
+      // A retired catalog-only row has no Worker conversation. Do not manufacture a source or
+      // excluded index sentinel: either would distort archive/orphan reconciliation of the target.
+      if (includeWorker) {
+        journal.index = { sessionId: source.workingSessionId, row: this.db.prepare('SELECT * FROM history_index WHERE session_id = ?').get(source.workingSessionId) ?? null }
+        this.markIndex(source.workingSessionId, Number.MAX_SAFE_INTEGER, 'excluded')
+        const ranges = new Set(rowids('context_source_ranges', 'context_id = ?', targetId))
+        this.db.prepare('INSERT OR IGNORE INTO context_source_ranges VALUES (?, ?, ?, ?)').run(targetId, source.workingSessionId, WHOLE_SESSION.startSeq, WHOLE_SESSION.endSeq)
+        journal.added.context_source_ranges.push(...rowids('context_source_ranges', 'context_id = ?', targetId).filter(id => !ranges.has(id)))
+      }
       for (const table of ['history_turns', 'context_state_updates', 'topic_runs', 'correction_terms']) move(table)
       move('context_summary_updates', true)
       this.db.prepare('UPDATE gateway_state SET context_id = ? WHERE context_id = ?').run(targetId, sourceId)
@@ -1896,18 +1947,20 @@ export class ContextStore {
   @publishes
   reassignLearning(messageId: string, contextId: string): void {
     this.inTransaction(() => {
+      const before = new Map(this.db.prepare('SELECT DISTINCT session_id FROM learning_turns').all()
+        .map(row => [String(row.session_id), JSON.stringify(this.excludedRanges(String(row.session_id)))]))
       this.learningJournal.move(messageId, contextId)
       this.reconcileLearningFacts()
       this.rebuildDependencies()
-      for (const row of this.db.prepare('SELECT DISTINCT session_id FROM learning_turns').all()) {
-        const sessionId = String(row.session_id)
+      for (const [sessionId, previous] of before) {
         const excluded = this.excludedRanges(sessionId)
-        if (!excluded.length) continue
+        let removed = 0
         for (const range of excluded) {
-          this.db.prepare('DELETE FROM history_turns WHERE session_id=? AND user_seq BETWEEN ? AND ?').run(sessionId, range.startSeq, range.endSeq)
-          this.db.prepare('DELETE FROM context_source_ranges WHERE session_id=? AND start_seq BETWEEN ? AND ?').run(sessionId, range.startSeq, range.endSeq)
+          removed += Number(this.db.prepare('DELETE FROM history_turns WHERE session_id=? AND user_seq BETWEEN ? AND ?').run(sessionId, range.startSeq, range.endSeq).changes)
+          removed += Number(this.db.prepare('DELETE FROM context_source_ranges WHERE session_id=? AND start_seq BETWEEN ? AND ?').run(sessionId, range.startSeq, range.endSeq).changes)
         }
-        this.db.prepare("UPDATE history_index SET through_seq=-1 WHERE session_id=? AND status='ready'").run(sessionId)
+        if (removed || previous !== JSON.stringify(excluded))
+          this.db.prepare("UPDATE history_index SET through_seq=-1 WHERE session_id=? AND status='ready'").run(sessionId)
       }
     })
   }

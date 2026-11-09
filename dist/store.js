@@ -42,6 +42,7 @@ import { LearningJournal, uniqueSources } from "./learning-journal.js";
 import { mergeSettled, routingSummary } from "./topic-memory.js";
 import { mergeSimilarity } from "./routing-policy.js";
 import { MERGE_VET_LIMITS, mergeVetTopic } from "./merge-vetting.js";
+import { CATALOG_ORPHAN_REPAIR, catalogOrphans, catalogOrphanRepairs } from "./catalog-repair.js";
 /** Terms learned from corrections fade by half every 30 days unless they are confirmed again. */
 export const TERM_HALF_LIFE_MS = 30 * 86400000;
 /** A whole session attached by hand counts as reviewed from its first event to its last. */
@@ -82,6 +83,7 @@ let ContextStore = (() => {
     let _rememberCatalogSessions_decorators;
     let _markIndex_decorators;
     let _importTopics_decorators;
+    let _repairCatalogOrphans_decorators;
     let _mount_decorators;
     let _updateState_decorators;
     let _updateSummary_decorators;
@@ -149,6 +151,7 @@ let ContextStore = (() => {
             _rememberCatalogSessions_decorators = [publishes];
             _markIndex_decorators = [publishes];
             _importTopics_decorators = [publishes];
+            _repairCatalogOrphans_decorators = [publishes];
             _mount_decorators = [publishes];
             _updateState_decorators = [publishes];
             _updateSummary_decorators = [publishes];
@@ -213,6 +216,7 @@ let ContextStore = (() => {
             __esDecorate(this, null, _rememberCatalogSessions_decorators, { kind: "method", name: "rememberCatalogSessions", static: false, private: false, access: { has: obj => "rememberCatalogSessions" in obj, get: obj => obj.rememberCatalogSessions }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _markIndex_decorators, { kind: "method", name: "markIndex", static: false, private: false, access: { has: obj => "markIndex" in obj, get: obj => obj.markIndex }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _importTopics_decorators, { kind: "method", name: "importTopics", static: false, private: false, access: { has: obj => "importTopics" in obj, get: obj => obj.importTopics }, metadata: _metadata }, null, _instanceExtraInitializers);
+            __esDecorate(this, null, _repairCatalogOrphans_decorators, { kind: "method", name: "repairCatalogOrphans", static: false, private: false, access: { has: obj => "repairCatalogOrphans" in obj, get: obj => obj.repairCatalogOrphans }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _mount_decorators, { kind: "method", name: "mount", static: false, private: false, access: { has: obj => "mount" in obj, get: obj => obj.mount }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _updateState_decorators, { kind: "method", name: "updateState", static: false, private: false, access: { has: obj => "updateState" in obj, get: obj => obj.updateState }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _updateSummary_decorators, { kind: "method", name: "updateSummary", static: false, private: false, access: { has: obj => "updateSummary" in obj, get: obj => obj.updateSummary }, metadata: _metadata }, null, _instanceExtraInitializers);
@@ -836,7 +840,25 @@ let ContextStore = (() => {
         importTopics(sessionId, cwd, parts, topics) {
             this.db.exec('SAVEPOINT store_write');
             try {
-                for (const topic of topics) {
+                // Resolve every turn before mutating ownership. A null answer is no instruction to move an
+                // already catalogued turn, even when one model topic spans several existing owners.
+                const resolved = topics.flatMap(topic => {
+                    if (topic.contextId !== null) {
+                        this.context(topic.contextId);
+                        return [topic];
+                    }
+                    // A new topic with no turns yet (e.g. from a summary alone) has no owner to resolve: keep it as is.
+                    if (!topic.turns.length)
+                        return [topic];
+                    const byOwner = new Map();
+                    for (const seq of topic.turns) {
+                        const owner = this.indexedTurn(sessionId, seq)?.contextId ?? null;
+                        byOwner.set(owner, [...byOwner.get(owner) ?? [], seq]);
+                    }
+                    return [...byOwner].map(([contextId, turns]) => ({ ...topic, contextId, turns }));
+                });
+                const displaced = new Map();
+                for (const topic of resolved) {
                     const id = topic.contextId ?? randomUUID();
                     const existing = this.contexts().find(context => context.id === id);
                     // The Worker's own progress note and DSH compaction summary outrank a catalog re-extraction, which only
@@ -867,16 +889,45 @@ let ContextStore = (() => {
                         if (old)
                             this.db.prepare('DELETE FROM context_source_ranges WHERE context_id = ? AND session_id = ? AND start_seq = ? AND end_seq = ?')
                                 .run(String(old.context_id), sessionId, seq, Number(old.end_seq));
+                        if (old && old.context_id !== id)
+                            displaced.set(String(old.context_id), id);
                         this.addSource(id, sessionId, { startSeq: seq, endSeq: part.endSeq });
                         this.db.prepare('INSERT OR REPLACE INTO history_turns VALUES (?, ?, ?, ?, ?)').run(sessionId, seq, part.endSeq, part.fingerprint, id);
                     }
                 }
+                // Only topics actually emptied by this batch are eligible. Resolve the recipient from the
+                // final ownership, since another output topic may have moved that recipient's turns again.
+                if (displaced.size)
+                    for (const orphan of catalogOrphans(this.db)) {
+                        if (!displaced.has(orphan.sourceId))
+                            continue;
+                        let targetId = displaced.get(orphan.sourceId);
+                        const visited = new Set([orphan.sourceId]);
+                        while (displaced.has(targetId) && !this.sources(targetId).length && !visited.has(targetId)) {
+                            visited.add(targetId);
+                            targetId = displaced.get(targetId);
+                        }
+                        if (!visited.has(targetId) && this.sources(targetId).length)
+                            this.mergeTopicsRecorded(orphan.sourceId, targetId, Date.now(), false);
+                    }
                 this.db.exec('RELEASE store_write');
             }
             catch (error) {
                 this.rollbackWrite();
                 throw error;
             }
+        }
+        /** Called after the catalog observes current session headers, so an unindexed Worker is protected.
+         * The marker and merges commit together. Undo uses the ordinary merge UI and is never reapplied. */
+        repairCatalogOrphans() {
+            return this.inTransaction(() => {
+                if (!this.markOnce(CATALOG_ORPHAN_REPAIR))
+                    return [];
+                const repairs = catalogOrphanRepairs(this.db);
+                for (const repair of repairs)
+                    this.mergeTopicsRecorded(repair.sourceId, repair.targetId, Date.now(), false);
+                return repairs;
+            });
         }
         catalogDescriptor(id, descriptor) {
             this.learningJournal.record(`topic:${id}`, 'catalogDescriptor', [id, descriptor], () => {
@@ -1442,11 +1493,14 @@ let ContextStore = (() => {
          * directory, but everything the merge did is written down so `unmergeTopic` can take it apart.
          */
         mergeTopics(sourceId, targetId, now = Date.now()) {
+            this.mergeTopicsRecorded(sourceId, targetId, now, true);
+        }
+        mergeTopicsRecorded(sourceId, targetId, now, includeWorker) {
             const sources = this.learningJournal.dependencies(`topic:${sourceId}`);
             const projection = this.learningSnapshot(`topic:${sourceId}`);
-            this.withLearning(sources, () => this.learningJournal.record(`topic:${targetId}`, 'mergeLearning', [targetId, sourceId, projection], () => this.mergeTopicsValue(sourceId, targetId, now), undefined));
+            this.withLearning(sources, () => this.learningJournal.record(`topic:${targetId}`, 'mergeLearning', [targetId, sourceId, projection], () => this.mergeTopicsValue(sourceId, targetId, now, includeWorker), undefined));
         }
-        mergeTopicsValue(sourceId, targetId, now = Date.now()) {
+        mergeTopicsValue(sourceId, targetId, now, includeWorker) {
             if (sourceId === targetId)
                 throw new Error('Cannot merge a topic into itself');
             const source = this.context(sourceId), target = this.context(targetId);
@@ -1474,11 +1528,15 @@ let ContextStore = (() => {
                 this.writeDescriptor({ ...target, entities, keywords });
                 copy('context_source_ranges', 'INSERT OR IGNORE INTO context_source_ranges SELECT ?, session_id, start_seq, end_seq FROM context_source_ranges WHERE context_id = ?', targetId, sourceId);
                 // The source's own Worker conversation is now reviewed history of the target, not a new catalog source.
-                journal.index = { sessionId: source.workingSessionId, row: this.db.prepare('SELECT * FROM history_index WHERE session_id = ?').get(source.workingSessionId) ?? null };
-                this.markIndex(source.workingSessionId, Number.MAX_SAFE_INTEGER, 'excluded');
-                const ranges = new Set(rowids('context_source_ranges', 'context_id = ?', targetId));
-                this.db.prepare('INSERT OR IGNORE INTO context_source_ranges VALUES (?, ?, ?, ?)').run(targetId, source.workingSessionId, WHOLE_SESSION.startSeq, WHOLE_SESSION.endSeq);
-                journal.added.context_source_ranges.push(...rowids('context_source_ranges', 'context_id = ?', targetId).filter(id => !ranges.has(id)));
+                // A retired catalog-only row has no Worker conversation. Do not manufacture a source or
+                // excluded index sentinel: either would distort archive/orphan reconciliation of the target.
+                if (includeWorker) {
+                    journal.index = { sessionId: source.workingSessionId, row: this.db.prepare('SELECT * FROM history_index WHERE session_id = ?').get(source.workingSessionId) ?? null };
+                    this.markIndex(source.workingSessionId, Number.MAX_SAFE_INTEGER, 'excluded');
+                    const ranges = new Set(rowids('context_source_ranges', 'context_id = ?', targetId));
+                    this.db.prepare('INSERT OR IGNORE INTO context_source_ranges VALUES (?, ?, ?, ?)').run(targetId, source.workingSessionId, WHOLE_SESSION.startSeq, WHOLE_SESSION.endSeq);
+                    journal.added.context_source_ranges.push(...rowids('context_source_ranges', 'context_id = ?', targetId).filter(id => !ranges.has(id)));
+                }
                 for (const table of ['history_turns', 'context_state_updates', 'topic_runs', 'correction_terms'])
                     move(table);
                 move('context_summary_updates', true);
@@ -2024,19 +2082,20 @@ let ContextStore = (() => {
         withLearning(sources, work) { return this.learningJournal.using(sources, work); }
         reassignLearning(messageId, contextId) {
             this.inTransaction(() => {
+                const before = new Map(this.db.prepare('SELECT DISTINCT session_id FROM learning_turns').all()
+                    .map(row => [String(row.session_id), JSON.stringify(this.excludedRanges(String(row.session_id)))]));
                 this.learningJournal.move(messageId, contextId);
                 this.reconcileLearningFacts();
                 this.rebuildDependencies();
-                for (const row of this.db.prepare('SELECT DISTINCT session_id FROM learning_turns').all()) {
-                    const sessionId = String(row.session_id);
+                for (const [sessionId, previous] of before) {
                     const excluded = this.excludedRanges(sessionId);
-                    if (!excluded.length)
-                        continue;
+                    let removed = 0;
                     for (const range of excluded) {
-                        this.db.prepare('DELETE FROM history_turns WHERE session_id=? AND user_seq BETWEEN ? AND ?').run(sessionId, range.startSeq, range.endSeq);
-                        this.db.prepare('DELETE FROM context_source_ranges WHERE session_id=? AND start_seq BETWEEN ? AND ?').run(sessionId, range.startSeq, range.endSeq);
+                        removed += Number(this.db.prepare('DELETE FROM history_turns WHERE session_id=? AND user_seq BETWEEN ? AND ?').run(sessionId, range.startSeq, range.endSeq).changes);
+                        removed += Number(this.db.prepare('DELETE FROM context_source_ranges WHERE session_id=? AND start_seq BETWEEN ? AND ?').run(sessionId, range.startSeq, range.endSeq).changes);
                     }
-                    this.db.prepare("UPDATE history_index SET through_seq=-1 WHERE session_id=? AND status='ready'").run(sessionId);
+                    if (removed || previous !== JSON.stringify(excluded))
+                        this.db.prepare("UPDATE history_index SET through_seq=-1 WHERE session_id=? AND status='ready'").run(sessionId);
                 }
             });
         }

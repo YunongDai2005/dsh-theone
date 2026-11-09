@@ -74,6 +74,72 @@ async function source(app: Awaited<ReturnType<typeof harness>>, root: string, ..
   return handle.agent
 }
 
+test('changed turn ranges can trigger re-extraction, but null keeps the archived owner and unchanged fingerprints make no model call', { timeout: 30000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'theone-catalog-null-'))
+  const model = fixture(), base = model.behavior!
+  const payloads: { contexts: { id: string }[]; turns: { seq: number; contextId?: string | null }[] }[] = []
+  model.behavior = async function* (options) {
+    if (options.system !== CATALOG_PROMPT) { yield* base(options); return }
+    const payload = JSON.parse(options.messages[0].content.filter(b => b.type === 'text').map(b => b.text).join(''))
+    payloads.push(payload)
+    yield* textResponse(JSON.stringify({ topics: [{ contextId: null, title: '女孩', summary: '意图待澄清', entities: [], keywords: [],
+      lastState: '待澄清', turns: payload.turns.map((t: { seq: number }) => t.seq), groupId: null, groupTitle: '待归类', groupSummary: '' }] }))
+  }
+  const app = await harness(root, model)
+  const store = app.ctx.theone.store
+  const catalog = new HistoryCatalog(app.ctx, store, () => ({ provider: 'fixture', model: 'fixture' }))
+  try {
+    const old = await source(app, root, '女孩')
+    await catalog.refresh()
+    const seq = payloads[0].turns[0].seq, id = store.indexedTurn(old.id, seq)!.contextId
+    const count = store.contexts().length
+    for (let i = 0; i < 3; i++) {
+      store.replaceHidden([{ id, reason: 'archived' }])
+      // A title event extends the last turn's range/fingerprint even without another user message.
+      old.session.append('session/title', { title: `标题${i}`, messageSeqs: [], source: { kind: 'user' } })
+      await catalog.refresh()
+      assert.equal(payloads.length, i + 2)
+      assert.ok(payloads.at(-1)!.contexts.some(c => c.id === id), 'hidden owners are still offered to the catalog model')
+      assert.equal(payloads.at(-1)!.turns[0].contextId, id, 'the model sees which turn already belongs to which topic')
+      assert.equal(store.indexedTurn(old.id, seq)?.contextId, id)
+      assert.equal(store.contexts().length, count)
+    }
+    store.markIndex(old.id, -1, 'ready')
+    await catalog.refresh()
+    assert.equal(payloads.length, 4, 'resetting through_seq alone must not re-extract unchanged turns')
+    assert.equal(store.indexState(old.id)?.throughSeq, old.session.snapshotEvents().at(-1)!.seq)
+  } finally { await catalog.close(); await app.close(); await rm(root, { recursive: true, force: true }) }
+})
+
+test('catalog refresh repairs legacy duplicates after observing live Worker sessions', { timeout: 30000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'theone-catalog-auto-repair-'))
+  const app = await harness(root, fixture())
+  const store = app.ctx.theone.store
+  const catalog = new HistoryCatalog(app.ctx, store, () => ({ provider: 'fixture', model: 'fixture' }))
+  try {
+    const old = await source(app, root, '女孩')
+    const { parts } = historyParts(old.session.snapshotEvents())
+    store.importTopics(old.id, root, parts, [{ contextId: null, title: '女孩', summary: '待澄清', entities: [], keywords: [],
+      lastState: '待澄清', turns: parts.map(p => p.seq), groupId: null, groupTitle: '待归类', groupSummary: '' }])
+    const owner = store.indexedTurn(old.id, parts[0].seq)!.contextId
+    store.markIndex(old.id, old.session.snapshotEvents().at(-1)!.seq, 'ready')
+    const db = (store as unknown as { db: import('node:sqlite').DatabaseSync }).db
+    for (const id of ['empty-duplicate', 'live-worker']) {
+      store.seed([{ id, title: id, summary: '待澄清', entities: [], keywords: [], lastState: '' }])
+      db.prepare('INSERT INTO context_origins VALUES (?, ?, ?)').run(id, old.id, root)
+    }
+    const worker = store.contexts().find(c => c.id === 'live-worker')!.workingSessionId
+    await app.ctx.agents.create({ sessionId: SessionId(worker), meta: { cwd: root }, agentOptions: { provider: 'fixture', model: 'fixture' } })
+    await catalog.refresh()
+    assert.ok(!store.contexts().some(c => c.id === 'empty-duplicate'))
+    assert.ok(store.contexts().some(c => c.id === 'live-worker'))
+    assert.deepEqual(store.merges().map(m => [m.sourceId, m.targetId]), [['empty-duplicate', owner]])
+    store.unmergeTopic('empty-duplicate')
+    await catalog.refresh()
+    assert.ok(store.contexts().some(c => c.id === 'empty-duplicate'), 'refresh respects an undone repair')
+  } finally { await catalog.close(); await app.close(); await rm(root, { recursive: true, force: true }) }
+})
+
 test('catalog incrementally indexes DSH histories, splits mixed sessions and groups related independent topics', { timeout: 60000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'theone-catalog-'))
   const model = fixture()

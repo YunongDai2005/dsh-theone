@@ -6,6 +6,7 @@ import { LearningJournal, type LearningSource } from './learning-journal.ts';
 import { type Settled, type TopicCard } from './topic-memory.ts';
 import { type MergeVetRecord, type MergeVetTopic } from './merge-vetting.ts';
 import type { BubbleMergeSuggestion, BubbleScope } from './bubble-types.ts';
+import { type CatalogOrphanRepair } from './catalog-repair.ts';
 /** A write to a topic's facts, after its evidence was checked against the session. */
 export interface FactWrite {
     factId?: string;
@@ -167,6 +168,9 @@ export declare class ContextStore {
     } | undefined;
     /** One validated batch commits descriptors, groups and exact source ranges atomically. */
     importTopics(sessionId: string, cwd: string | undefined, parts: HistoryPart[], topics: ExtractedTopic[]): void;
+    /** Called after the catalog observes current session headers, so an unindexed Worker is protected.
+     * The marker and merges commit together. Undo uses the ordinary merge UI and is never reapplied. */
+    repairCatalogOrphans(): CatalogOrphanRepair[];
     private catalogDescriptor;
     mount(gatewayKey: string, contextId: string): void;
     contextsForSessions(sessionIds: string[]): string[];
@@ -316,6 +320,7 @@ export declare class ContextStore {
      * directory, but everything the merge did is written down so `unmergeTopic` can take it apart.
      */
     mergeTopics(sourceId: string, targetId: string, now?: number): void;
+    private mergeTopicsRecorded;
     private mergeTopicsValue;
     private mergeLink;
     /** Topics merged into others that can still be taken apart, newest first. */
