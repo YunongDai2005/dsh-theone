@@ -194,18 +194,52 @@ function foamShortName(title, label) {
   return head ?? title.trim();
 }
 function foamLabel(name, radius) {
-  const chars = [...name], big = radius >= 25 ? 10.5 : 9.5, small = radius >= 25 ? 9.5 : 8.8;
+  const chars = [...name.trim()], big = radius >= 25 ? 10.5 : 9.5, small = radius >= 25 ? 9.5 : 8.8;
   const width = (s) => s.reduce((w, ch) => w + (/[⺀-￿]/.test(ch) ? 1 : 0.6), 0);
+  const open = `(\\[{<"'\u201C\u2018\u300C\u300E\uFF08\u300A\u3008\u3010\u3014\uFF3B\uFF5B`, close = `,.;:!?)\\]}>"'\u201D\u2019\u300D\u300F\uFF0C\u3002\u3001\uFF1B\uFF1A\uFF01\uFF1F\uFF09\u300B\u3009\u3011\u3015\uFF3D\uFF5D\u2026`;
+  const piece = new RegExp(`(\\s*)([${open}]*(?:[\\p{Script=Latin}\\p{Nd}][\\p{Script=Latin}\\p{M}\\p{Nd}'\u2019.\\-+&_]*|[^\\s${open}])[${close}]*|[${open}]+)`, "gu");
+  const raw = [...name.trim().matchAll(piece)].map((m) => ({ text: m[2], gap: m[1].length > 0 }));
+  const opening = new RegExp(`^[${open}\\s]+$`), bare = (t) => !/[\p{L}\p{N}]/u.test(t.text);
+  const tokens = [];
+  for (const t of raw) {
+    const last = tokens[tokens.length - 1];
+    if (last && opening.test(last.text) && !(bare(t) && !opening.test(t.text))) {
+      last.text += (t.gap ? " " : "") + t.text;
+      continue;
+    }
+    if (last && bare(t) && !opening.test(t.text)) {
+      last.text += (t.gap ? " " : "") + t.text;
+      continue;
+    }
+    tokens.push({ ...t });
+  }
+  const lineOf = (ts) => ts.map((t, i) => (i && t.gap ? " " : "") + t.text).join("");
+  const balance = (n) => {
+    let best = [], bestW = Infinity;
+    const cut = (from, left, acc) => {
+      if (left === 1) {
+        const all = [...acc, lineOf(tokens.slice(from))], w = Math.max(...all.map((l) => width([...l])));
+        if (w <= bestW + 1e-9) {
+          best = all;
+          bestW = w;
+        }
+        return;
+      }
+      for (let k = from + 1; k <= tokens.length - left + 1; k++) cut(k, left - 1, [...acc, lineOf(tokens.slice(from, k))]);
+    };
+    cut(0, n, []);
+    return best;
+  };
   const tries = [[1, big], [1, small], [2, big], [2, small], [3, small]];
   for (const [lines, font] of tries) {
     if (lines === 1 && font === small && width(chars) > 3 && radius < 25) continue;
-    if (lines === 2 && (chars.length < 4 || width(chars) > 8)) continue;
-    if (lines === 3 && (radius < 25 || chars.length < 7 || width(chars) > 9)) continue;
-    const lh = font * 1.18, per = Math.ceil(chars.length / lines);
-    const parts = Array.from({ length: lines }, (_, i) => chars.slice(i * per, (i + 1) * per)).filter((p) => p.length);
-    const widest = Math.max(...parts.map(width)) * font;
+    if (lines === 2 && (chars.length < 4 || width(chars) > 8 || tokens.length < 2)) continue;
+    if (lines === 3 && (radius < 25 || chars.length < 7 || width(chars) > 9 || tokens.length < 3)) continue;
+    const lh = font * 1.18;
+    const parts = balance(lines);
+    const widest = Math.max(...parts.map((p) => width([...p]))) * font;
     if (widest > 2 * radius * (lines === 1 ? 0.8 : lines === 2 ? 0.74 : 0.7) - 4 || (lines === 3 ? 6 : 9) + parts.length * lh > 2 * radius * 0.86) continue;
-    return { lines: parts.map((p) => p.join("")), font, lh };
+    return { lines: parts, font, lh };
   }
   return { lines: [], font: big, lh: 0 };
 }
@@ -262,6 +296,26 @@ function foamPoreHits(cells, pores, box, max = 8, need = 5.5) {
     out = out.map((r) => r > 0 ? again[k++] : 0);
   }
   return { cells: radii.slice(0, cells.length), pores: out };
+}
+function foamNotches(a, b, clear = 12) {
+  const dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) || 0.01, ux = dx / d, uy = dy / d;
+  const gap = (d - a.reach - b.reach) / 2, mx = a.x + ux * (a.reach + gap), my = a.y + uy * (a.reach + gap);
+  const t = Math.max(0, ...[a, b].map((c) => Math.sqrt(Math.max(0, (c.reach + clear) ** 2 - (c.reach + gap) ** 2))));
+  return { contact: { x: mx, y: my }, sides: [1, -1].map((s) => ({ x: mx - uy * t * s, y: my + ux * t * s })) };
+}
+function foamPoreSpot(spots, prev, cells, box, locked = false, shown = true, need = 5.5, max = 8) {
+  const room = (p) => Math.min(
+    max,
+    ...cells.map((c) => (Math.hypot(p.x - c.x, p.y - c.y) - c.reach) / 2),
+    ...box ? [p.x, box.w - p.x, p.y - (box.top ?? 0), box.h - p.y] : []
+  );
+  const rooms = spots.map(room);
+  if (prev >= 0 && prev < spots.length && (locked || rooms[prev] >= (shown ? need - 1 : need))) return prev;
+  let best = 0;
+  rooms.forEach((r, i) => {
+    if (r > rooms[best] + 1e-9) best = i;
+  });
+  return best;
 }
 function foamNearest(p, items) {
   let best = -1, bestD = Infinity;
@@ -1253,13 +1307,17 @@ function createFoam(options) {
           else openDup(id);
         });
         pore.addEventListener("pointerenter", () => {
+          const it = dups.get(id);
+          if (it) it.hover = true;
           if (drag) return;
           placeTip(pore.getBoundingClientRect(), text("dupTitle"));
         });
         pore.addEventListener("pointerleave", () => {
+          const it = dups.get(id);
+          if (it) it.hover = false;
           if (!tipOwner) tip2.classList.remove("on");
         });
-        d = { s, a, b, thread, pore, hit: pore.firstChild, alpha: 0, px: null, py: 0, room: false };
+        d = { s, a, b, thread, pore, hit: pore.firstChild, alpha: 0, px: null, py: 0, room: false, spot: -1, hover: false, path: "", stalk: "" };
         dups.set(id, d);
       }
       d.s = s;
@@ -1282,7 +1340,8 @@ function createFoam(options) {
     }
     return void 0;
   }
-  function drawDups(dt) {
+  function drawDups(dt, box) {
+    let outlines = null;
     for (const d of dups.values()) {
       const { a, b } = d;
       const show = !answering.has(d.s.id) && sz > 0.7 && [a, b].every((c) => cells.includes(c) && c.mode === "live" && !c.hidden && c.scale > 0.5) && !(drag?.started && (drag.cell === a || drag.cell === b));
@@ -1291,25 +1350,35 @@ function createFoam(options) {
       if (d.alpha < 0.02) {
         d.thread.setAttribute("d", "");
         d.pore.style.display = "none";
+        d.spot = -1;
         continue;
       }
+      outlines ??= cells.filter((c) => c.mode === "live" && !c.hidden && c.scale > 0.02).map((c) => ({ c, x: c.cx, y: c.cy, reach: Math.max(c.vr, c.R * c.scale) }));
       const ra = a.R * a.scale, rb = b.R * b.scale, dx = b.cx - a.cx, dy = b.cy - a.cy, dist = Math.hypot(dx, dy) || 0.01, ux = dx / dist, uy = dy / dist;
       const gap = dist - ra - rb;
-      let path = "", px, py;
-      if (gap < Math.min(ra, rb) * 1.4) {
+      const open = dupPanel?.id === d.s.id;
+      let path = "", spots, from = null;
+      const was = d.spot >= 0 ? Math.floor(d.spot / 10) : 0, edge = Math.min(ra, rb) * 1.4;
+      const close = was && (open || d.hover) ? was === 1 : gap < edge + (was === 1 ? 4 : was === 2 ? -4 : 0);
+      if (close) {
         path = bridge(pos(a), ra, pos(b), rb, 1e6, 0.42)?.edge ?? "";
-        px = (a.cx + ux * ra + b.cx - ux * rb) / 2;
-        py = (a.cy + uy * ra + b.cy - uy * rb) / 2;
+        const n = foamNotches({ x: a.cx, y: a.cy, reach: Math.max(a.vr, ra) }, { x: b.cx, y: b.cy, reach: Math.max(b.vr, rb) });
+        spots = n.sides;
+        from = n.contact;
       } else {
         const sx = a.cx + ux * (ra + 2), sy = a.cy + uy * (ra + 2), ex = b.cx - ux * (rb + 2), ey = b.cy - uy * (rb + 2);
         const mx = (sx + ex) / 2 - uy * gap * 0.12, my = (sy + ey) / 2 + ux * gap * 0.12;
         path = `M${fx(sx)} ${fx(sy)}Q${fx(mx)} ${fx(my)} ${fx(ex)} ${fx(ey)}`;
-        px = 0.25 * sx + 0.5 * mx + 0.25 * ex;
-        py = 0.25 * sy + 0.5 * my + 0.25 * ey;
+        spots = [0.5, 0.38, 0.62, 0.26, 0.74].map((k) => ({ x: (1 - k) ** 2 * sx + 2 * k * (1 - k) * mx + k * k * ex, y: (1 - k) ** 2 * sy + 2 * k * (1 - k) * my + k * k * ey }));
       }
-      const open = dupPanel?.id === d.s.id;
+      const kind = close ? 1 : 2;
+      const pick = foamPoreSpot(spots, was === kind ? d.spot % 10 : -1, outlines, box, open || d.hover, d.room);
+      d.spot = kind * 10 + pick;
+      const px = spots[pick].x, py = spots[pick].y;
+      d.path = path;
+      d.stalk = from ? `M${fx(from.x)} ${fx(from.y)}L${fx(px)} ${fx(py)}` : "";
       const o = d.alpha * (open ? 1 : 0.8 + 0.2 * Math.sin(t * 1.2 + a.phase));
-      d.thread.setAttribute("d", path);
+      d.thread.setAttribute("d", path + (d.room ? d.stalk : ""));
       d.thread.style.opacity = fx(o * 0.85);
       d.thread.classList.toggle("open", open);
       d.pore.setAttribute("transform", `translate(${fx(px)} ${fx(py)}) scale(${fx(Math.max(0.7, sz))})`);
@@ -1325,6 +1394,7 @@ function createFoam(options) {
     list2.forEach((d, i) => {
       d.room = radii[i] > 0;
       d.pore.style.display = d.room ? "" : "none";
+      d.thread.setAttribute("d", d.path + (d.room ? d.stalk : ""));
       d.hit.setAttribute("r", fx(radii[i] / scale));
     });
     for (const d of dups.values()) if (d.px === null) d.room = false;
@@ -1997,7 +2067,7 @@ function createFoam(options) {
       if (neck) c.nf.style.fill = other?.state === "done" ? "var(--foam-done)" : other && other.state === "idle" && !other.cur ? "var(--foam-bg)" : "var(--foam-tint)";
       c.neck.style.opacity = fx(c.alpha);
     }
-    drawDups(dt);
+    drawDups(dt, { w, h: h3, top: TOP_GAP });
     const pressable = cells.filter((c) => c.mode === "live" && !c.hidden && c.scale >= 0.02 && !(drag?.started && drag.cell === c));
     const porous = [...dups.values()].filter((d) => d.px !== null);
     const hits = foamPoreHits(
@@ -3436,7 +3506,7 @@ var zh = {
   "setup.new.cluster": "\u8BDD\u9898\u90FD\u5728\u4E3B\u804A\u5929\u4E0B\u9762",
   "setup.new.clusterHint": "\u6BCF\u4E2A\u8BDD\u9898\u662F\u4E00\u9897\u7EC6\u80DE\uFF0C\u6324\u5728\u4E3B\u804A\u5929\u4E0B\u9762\uFF1B\u6700\u8FD1\u7528\u8FC7\u7684\u66F4\u5927\uFF0C\u6B63\u5728\u505A\u4E8B\u7684\u4F1A\u53D1\u5149\u3002",
   "setup.new.route": "\u8BF4\u4E00\u53E5\u8BDD\uFF0C\u770B\u5B83\u53BB\u4E86\u54EA",
-  "setup.new.routeHint": "\u6BCF\u53E5\u8BDD\u4F1A\u98DE\u8FDB\u5BF9\u5E94\u7684\u8BDD\u9898\uFF1B\u62FF\u4E0D\u51C6\u65F6\uFF0C\u70B9\u4EAE\u7740\u7684\u53E6\u4E00\u4E2A\u8BDD\u9898\u5C31\u80FD\u6362\u8FC7\u53BB\u3002",
+  "setup.new.routeHint": "\u6BCF\u53E5\u8BDD\u4F1A\u98DE\u8FDB\u5BF9\u5E94\u7684\u8BDD\u9898\uFF1B\u62FF\u4E0D\u51C6\u65F6\uFF0C\u70B9\u5F00\u4EAE\u7740\u7684\u53E6\u4E00\u4E2A\u8BDD\u9898\u5C31\u80FD\u6362\u8FC7\u53BB\u3002",
   "setup.new.quiet": "\u804A\u5929\u91CC\u53EA\u6709\u5BF9\u8BDD",
   "setup.new.quietHint": "\u5206\u5230\u54EA\u4E2A\u8BDD\u9898\u3001\u6B63\u5728\u505A\u4EC0\u4E48\uFF0C\u90FD\u5728\u4FA7\u680F\u7684\u7EC6\u80DE\u4E0A\u770B\uFF0C\u4E0D\u518D\u5199\u8FDB\u4E3B\u804A\u5929\u3002",
   "setup.doneTitle": "\u4E00\u5207\u5C31\u7EEA",
@@ -3928,7 +3998,7 @@ var en = {
   "setup.new.cluster": "Every topic under main chat",
   "setup.new.clusterHint": "Each topic is a cell clinging under main chat; recent ones are bigger, busy ones glow.",
   "setup.new.route": "See where each message goes",
-  "setup.new.routeHint": "Each message flies into its topic; when TheOne was unsure, click the other lit topic to move it.",
+  "setup.new.routeHint": "Each message flies into its topic; when TheOne was unsure, open the other lit topic to move it there.",
   "setup.new.quiet": "Only the conversation in chat",
   "setup.new.quietHint": "Which topic a message went to and what is running show on the cells, not in main chat.",
   "setup.doneTitle": "You're all set",

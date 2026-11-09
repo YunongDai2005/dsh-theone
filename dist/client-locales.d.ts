@@ -426,7 +426,7 @@ export declare const zh: {
     readonly 'setup.new.cluster': "话题都在主聊天下面";
     readonly 'setup.new.clusterHint': "每个话题是一颗细胞，挤在主聊天下面；最近用过的更大，正在做事的会发光。";
     readonly 'setup.new.route': "说一句话，看它去了哪";
-    readonly 'setup.new.routeHint': "每句话会飞进对应的话题；拿不准时，点亮着的另一个话题就能换过去。";
+    readonly 'setup.new.routeHint': "每句话会飞进对应的话题；拿不准时，点开亮着的另一个话题就能换过去。";
     readonly 'setup.new.quiet': "聊天里只有对话";
     readonly 'setup.new.quietHint': "分到哪个话题、正在做什么，都在侧栏的细胞上看，不再写进主聊天。";
     readonly 'setup.doneTitle': "一切就绪";
