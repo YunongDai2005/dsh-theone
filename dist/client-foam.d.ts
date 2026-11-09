@@ -198,6 +198,20 @@ export declare function foamLabel(name: string, radius: number): {
     lh: number;
 };
 /**
+ * The cell the pointer is reading, by the same hit circles a press uses (`r`): the cell it is on (nearest centre
+ * where circles meet, as for a press), else the nearest outline within `reach` px, else none (-1). The cell read
+ * before (`prev`) keeps the name while the pointer stays within `keep` px of it and is not clearly inside another,
+ * so a slow pointer on a shared edge does not swap names back and forth.
+ */
+export declare function foamFocus(items: readonly {
+    x: number;
+    y: number;
+    r: number;
+}[], ptr: {
+    x: number;
+    y: number;
+} | null | undefined, prev?: number, keep?: number, reach?: number): number;
+/**
  * Invisible hit circles for the cells: each at least `min` (half of 24 CSS px) where there is room, never into a
  * neighbour's (the free space between two cells is split by their own sizes), never past the cluster box (so it
  * covers nothing of DSH outside it), and never smaller than `floor`, the part of the cell's own outline it must

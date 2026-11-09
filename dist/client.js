@@ -209,6 +209,23 @@ function foamLabel(name, radius) {
   }
   return { lines: [], font: big, lh: 0 };
 }
+var NEIGHBOUR_NAME = 0.3;
+function foamFocus(items, ptr, prev = -1, keep = 3, reach = 8) {
+  if (!ptr) return -1;
+  const at = (i) => Math.hypot(ptr.x - items[i].x, ptr.y - items[i].y);
+  const hit = foamNearest(ptr, items);
+  if (prev >= 0 && prev < items.length && at(prev) <= items[prev].r + keep && (hit < 0 || hit === prev || at(hit) > items[hit].r - keep)) return prev;
+  if (hit >= 0) return hit;
+  let best = -1, gap = reach;
+  items.forEach((c, i) => {
+    const g = at(i) - c.r;
+    if (g < gap) {
+      gap = g;
+      best = i;
+    }
+  });
+  return best;
+}
 function foamHitRadii(items, box, min = 12) {
   const floor = items.map((a) => Math.min(Math.max(0, a.floor ?? a.r), box?.top === void 0 ? Infinity : Math.max(0, a.y - box.top)));
   const dist = (i, j) => Math.hypot(items[j].x - items[i].x, items[j].y - items[i].y);
@@ -406,6 +423,24 @@ function createFoam(options) {
     const i = foamNearest({ x: x - r.left, y: y - r.top }, list2.map((o) => ({ x: o.cx, y: o.cy, r: Math.max(o.hit, o.vr) })));
     return i < 0 ? void 0 : list2[i];
   }
+  let reading, tipWait = 0;
+  function read(e) {
+    let next;
+    if (e && !drag) {
+      const r = host.getBoundingClientRect();
+      const list2 = cells.filter((o) => o.mode === "live" && !o.hidden && o.scale >= 0.02);
+      next = list2[foamFocus(list2.map((o) => ({ x: o.cx, y: o.cy, r: Math.max(o.hit, o.vr) })), { x: e.clientX - r.left, y: e.clientY - r.top }, reading ? list2.indexOf(reading) : -1)];
+    }
+    if (next !== reading) {
+      reading = next;
+      clearTimeout(tipWait);
+      if (tipOwner && tipOwner !== next && !drag) hideTip();
+      if (next) tipWait = window.setTimeout(() => {
+        if (!drag && reading === next) showTip(next);
+      }, 420);
+    }
+    return reading;
+  }
   function makeCell(id, title, spawn) {
     const gid = `theone-foam-${uid++}`;
     const gr = document.createElementNS(NS, "radialGradient");
@@ -472,6 +507,7 @@ function createFoam(options) {
       flash: 0,
       reveal: 0,
       want: 0,
+      focus: 1,
       nx: 0,
       ny: 0,
       cx: 0,
@@ -483,12 +519,11 @@ function createFoam(options) {
       showing: false
     };
     g.insertBefore(hc, g.firstChild);
-    let hover = 0;
     g.addEventListener("pointerdown", (e) => {
-      const o = cellAt(e.clientX, e.clientY) ?? c;
+      const o = read(e) ?? cellAt(e.clientX, e.clientY) ?? c;
       if (e.button || drag || o.mode !== "live" || o.kind === "more") return;
       e.preventDefault();
-      clearTimeout(hover);
+      clearTimeout(tipWait);
       hideTip();
       const p = local(e);
       drag = {
@@ -512,22 +547,11 @@ function createFoam(options) {
       const at = cellAt(e.clientX, e.clientY) ?? c;
       if (at.kind === "more" && !drag) openAll(activeOrNull(), at.m.getBoundingClientRect());
     });
-    g.addEventListener("pointerenter", () => {
-      if (drag) return;
-      clearTimeout(hover);
-      hover = window.setTimeout(() => {
-        if (!drag) showTip(c);
-      }, 420);
-    });
-    g.addEventListener("pointerleave", () => {
-      clearTimeout(hover);
-      if (tipOwner === c) hideTip();
-    });
     g.addEventListener("contextmenu", (e) => {
       e.preventDefault();
-      clearTimeout(hover);
+      clearTimeout(tipWait);
       hideTip();
-      openMenu(e.clientX, e.clientY, cellAt(e.clientX, e.clientY) ?? c);
+      openMenu(e.clientX, e.clientY, read(e) ?? cellAt(e.clientX, e.clientY) ?? c);
     });
     cells.push(c);
     return c;
@@ -1479,6 +1503,7 @@ function createFoam(options) {
   const move = (e) => {
     const p = local(e), r = host.getBoundingClientRect();
     ptr = e.clientX > r.left - 24 && e.clientX < r.right + 24 && e.clientY > r.top - 10 && e.clientY < r.bottom + 24 ? p : null;
+    read(ptr && e);
     if (!drag || e.pointerId !== drag.pointer) return;
     const c = drag.cell;
     drag.last = { x: e.clientX, y: e.clientY };
@@ -1620,6 +1645,11 @@ function createFoam(options) {
     });
   };
   window.addEventListener("pointermove", move);
+  const away = () => {
+    ptr = null;
+    read(null);
+  };
+  document.documentElement.addEventListener("pointerleave", away);
   window.addEventListener("pointerup", up);
   window.addEventListener("pointercancel", blur);
   window.addEventListener("lostpointercapture", blur);
@@ -1939,7 +1969,10 @@ function createFoam(options) {
         c.label.setAttribute("font-size", String(lay.font));
       }
       c.want = ease(c.want, named(c) ? 1 : 0, 2.5, dt);
-      const vis = words * clamp((c.scale - 0.6) / 0.4) * (lay.lines.length ? 1 : 0) * Math.max(c.want, c.reveal);
+      const lit = drag ? c === drag.cell || c === drag.rest?.cell || target?.kind === "cell" && target.cell === c : ptr ? c === reading : void 0;
+      const focusTo = lit === void 0 ? c.reveal < 0.01 ? 1 : c.focus : lit ? 1 : NEIGHBOUR_NAME;
+      c.focus = ease(c.focus, focusTo, focusTo > c.focus ? 14 : 8, dt);
+      const vis = words * clamp((c.scale - 0.6) / 0.4) * (lay.lines.length ? 1 : 0) * Math.max(c.want, c.reveal * c.focus);
       c.full = c.kind === "more" || vis > 0.5 && lay.lines.join("") === c.title;
       c.label.style.opacity = fx(vis);
       c.nx = ease(c.nx, running ? 1.4 * Math.sin(tt * 0.53 + c.phase) + 0.5 * Math.sin(tt * 1.1 + c.phase * 2) : 0, 3, dt);
@@ -2029,7 +2062,9 @@ function createFoam(options) {
     destroy() {
       cancelAnimationFrame(raf);
       clearInterval(tipTimer);
+      clearTimeout(tipWait);
       window.removeEventListener("pointermove", move);
+      document.documentElement.removeEventListener("pointerleave", away);
       window.removeEventListener("pointerup", up);
       window.removeEventListener("pointercancel", blur);
       window.removeEventListener("lostpointercapture", blur);
@@ -3958,7 +3993,7 @@ var en = {
   "route.reason.router-fallback": "Classifier unavailable; routed by rules"
 };
 
-// ../../../node_modules/qrcode-generator/dist/qrcode.mjs
+// ../dsh-theone/node_modules/qrcode-generator/dist/qrcode.mjs
 var qrcode = function(typeNumber, errorCorrectionLevel) {
   const PAD0 = 236;
   const PAD1 = 17;

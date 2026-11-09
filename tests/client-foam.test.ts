@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { foamContour, foamEnterActs, foamFilter, foamHitRadii, foamLabel, foamMergeReason, foamMerging, foamNearest, foamOrder, foamPlace, foamPoreHits, foamShortName, foamStatusText, type FoamTopic } from '../src/client-foam.ts'
+import { foamContour, foamEnterActs, foamFilter, foamFocus, foamHitRadii, foamLabel, foamMergeReason, foamMerging, foamNearest, foamOrder, foamPlace, foamPoreHits, foamShortName, foamStatusText, type FoamTopic } from '../src/client-foam.ts'
 import { foamEventsFrom, mergeOutcomes, modelFromBubbles, modelFromCatalog, settleFoamEvents, suggestionsFromBubbles } from '../src/client-foam-host.ts'
 import type { CatalogSnapshot } from '../src/catalog-types.ts'
 import type { BubbleEvent, BubbleMerge, BubbleSnapshot, BubbleTopic, BubbleWorkItem } from '../src/bubble-types.ts'
@@ -105,6 +105,25 @@ test('a full-size cell holds a four-character name on one line; a small one spli
   assert.deepEqual(foamLabel('显卡选购', 20).lines, ['显卡', '选购'])
   assert.deepEqual(foamLabel('猫粮', 18).lines, ['猫粮'])
   assert.deepEqual(foamLabel('显卡选购', 12).lines, [])
+})
+
+test('one cell is read at a time, chosen like a press and held through a shared edge', () => {
+  const cells = [{ x: 0, y: 0, r: 32 }, { x: 48.36, y: 0, r: 20 }]
+  assert.equal(foamFocus(cells, null), -1)
+  assert.equal(foamFocus(cells, { x: 5, y: 3 }), 0)
+  // Where the circles meet, the nearest centre wins, as it does for a press (foamNearest).
+  assert.equal(foamFocus(cells, { x: 29, y: 0 }), foamNearest({ x: 29, y: 0 }, cells))
+  assert.equal(foamFocus(cells, { x: 29, y: 0 }), 1)
+  // Two cells side by side: just over the shared edge the cell already read keeps its name...
+  const pair = [{ x: 0, y: 0, r: 20 }, { x: 41, y: 0, r: 20 }]
+  assert.equal(foamFocus(pair, { x: 19, y: 0 }), 0)
+  assert.equal(foamFocus(pair, { x: 19, y: 0 }, 1), 1)
+  assert.equal(foamFocus(pair, { x: 20.5, y: 0 }, 1), 1)
+  // ...and gives it up once the pointer is clearly inside the other one.
+  assert.equal(foamFocus(pair, { x: 16, y: 0 }, 1), 0)
+  // Off every cell: the nearest outline within 8px, else nothing.
+  assert.equal(foamFocus(cells, { x: 0, y: 38 }), 0)
+  assert.equal(foamFocus(cells, { x: 0, y: 45 }), -1)
 })
 
 test('the directory feeds the cluster: hidden topics drop out, done and archived ones are set aside, links are undirected', () => {

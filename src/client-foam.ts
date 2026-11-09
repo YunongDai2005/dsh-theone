@@ -223,6 +223,26 @@ export function foamLabel(name: string, radius: number): { lines: string[]; font
   return { lines: [], font: big, lh: 0 }
 }
 
+/** How strongly a neighbour of the cell being read shows its name: a hint, so one name reads at a time. */
+const NEIGHBOUR_NAME = .3
+
+/**
+ * The cell the pointer is reading, by the same hit circles a press uses (`r`): the cell it is on (nearest centre
+ * where circles meet, as for a press), else the nearest outline within `reach` px, else none (-1). The cell read
+ * before (`prev`) keeps the name while the pointer stays within `keep` px of it and is not clearly inside another,
+ * so a slow pointer on a shared edge does not swap names back and forth.
+ */
+export function foamFocus(items: readonly { x: number; y: number; r: number }[], ptr: { x: number; y: number } | null | undefined, prev = -1, keep = 3, reach = 8): number {
+  if (!ptr) return -1
+  const at = (i: number) => Math.hypot(ptr.x - items[i].x, ptr.y - items[i].y)
+  const hit = foamNearest(ptr, items as { x: number; y: number; r: number }[])
+  if (prev >= 0 && prev < items.length && at(prev) <= items[prev].r + keep && (hit < 0 || hit === prev || at(hit) > items[hit].r - keep)) return prev
+  if (hit >= 0) return hit
+  let best = -1, gap = reach
+  items.forEach((c, i) => { const g = at(i) - c.r; if (g < gap) { gap = g; best = i } })
+  return best
+}
+
 /**
  * Invisible hit circles for the cells: each at least `min` (half of 24 CSS px) where there is room, never into a
  * neighbour's (the free space between two cells is split by their own sizes), never past the cluster box (so it
@@ -391,7 +411,7 @@ interface Cell {
   neck: SVGGElement; nf: SVGPathElement; ne: SVGPathElement
   mode: 'bud' | 'live' | 'leave' | 'fling'; age: number; hidden: boolean; away: boolean; rebud: boolean; onBorn?: () => void; into?: Cell
   x: number; y: number; vx: number; vy: number; svx: number; svy: number; tx: number; ty: number; R: number; scale: number; alpha: number
-  heat: number; solid: number; kick: number; flash: number; reveal: number; want: number; nx: number; ny: number; cx: number; cy: number
+  heat: number; solid: number; kick: number; flash: number; reveal: number; want: number; focus: number; nx: number; ny: number; cx: number; cy: number
   offer?: { messageId: string; until: number }
   /** A move of `messageId` here is on its way; only the answer to request `req` ends it. */
   reroute?: { messageId: string; req: number }
@@ -465,6 +485,25 @@ export function createFoam(options: FoamOptions): Foam {
     const i = foamNearest({ x: x - r.left, y: y - r.top }, list.map(o => ({ x: o.cx, y: o.cy, r: Math.max(o.hit, o.vr) })))
     return i < 0 ? undefined : list[i]
   }
+  /**
+   * One target for reading, the hint and a press: the cell under the pointer by the press rule, held through a
+   * shared edge. A new target restarts the hint's wait; the name itself comes up at once.
+   */
+  let reading: Cell | undefined, tipWait = 0
+  function read(e: { clientX: number; clientY: number } | null): Cell | undefined {
+    let next: Cell | undefined
+    if (e && !drag) {
+      const r = host.getBoundingClientRect()
+      const list = cells.filter(o => o.mode === 'live' && !o.hidden && o.scale >= .02)
+      next = list[foamFocus(list.map(o => ({ x: o.cx, y: o.cy, r: Math.max(o.hit, o.vr) })), { x: e.clientX - r.left, y: e.clientY - r.top }, reading ? list.indexOf(reading) : -1)]
+    }
+    if (next !== reading) {
+      reading = next; clearTimeout(tipWait)
+      if (tipOwner && tipOwner !== next && !drag) hideTip()
+      if (next) tipWait = window.setTimeout(() => { if (!drag && reading === next) showTip(next) }, 420)
+    }
+    return reading
+  }
 
   function makeCell(id: string, title: string, spawn: boolean): Cell {
     const gid = `theone-foam-${uid++}`
@@ -486,17 +525,16 @@ export function createFoam(options: FoamOptions): Foam {
       n: g.children[3] as SVGCircleElement, label: g.children[4] as SVGTextElement, neck, nf: neck.children[0] as SVGPathElement, ne: neck.children[1] as SVGPathElement,
       mode: spawn ? 'bud' : 'live', age: 0, hidden: false, away: false, rebud: false,
       x: spawn ? L.x : w / 2 + (Math.random() - .5) * 90, y: spawn ? L.y : 30 + Math.random() * 100, vx: 0, vy: 0, svx: 0, svy: 0, tx: 0, ty: 0,
-      R: 20, scale: spawn ? .12 : 1, alpha: 1, heat: 0, solid: 1, kick: 0, flash: 0, reveal: 0, want: 0, nx: 0, ny: 0, cx: 0, cy: 0,
+      R: 20, scale: spawn ? .12 : 1, alpha: 1, heat: 0, solid: 1, kick: 0, flash: 0, reveal: 0, want: 0, focus: 1, nx: 0, ny: 0, cx: 0, cy: 0,
       phase: Math.random() * 6, shownKey: '', full: false, lay: { lines: [], font: 9.5, lh: 0 }, showing: false }
     // Drawn under the outline, so the outline looks the same; it only widens where a small cell can be pressed.
     g.insertBefore(hc, g.firstChild)
-    let hover = 0
     g.addEventListener('pointerdown', e => {
-      // Where hit areas and outlines meet, the press belongs to the cell whose centre is nearest.
-      const o = cellAt(e.clientX, e.clientY) ?? c
+      // Where hit areas and outlines meet, the press belongs to the cell being read: the one whose name is up.
+      const o = read(e) ?? cellAt(e.clientX, e.clientY) ?? c
       // One gesture at a time: a second finger or pointer never takes over a drag.
       if (e.button || drag || o.mode !== 'live' || o.kind === 'more') return
-      e.preventDefault(); clearTimeout(hover); hideTip()
+      e.preventDefault(); clearTimeout(tipWait); hideTip()
       const p = local(e)
       drag = { cell: o, dx: p.x - o.x, dy: p.y - o.y, trail: [{ x: e.clientX, y: e.clientY, t: now() }], started: false, last: { x: e.clientX, y: e.clientY },
         origin: { x: e.clientX, y: e.clientY }, pointer: e.pointerId }
@@ -506,9 +544,7 @@ export function createFoam(options: FoamOptions): Foam {
     // "+N" opens the full list (folded topics included); Topic workspaces stays one row away at its foot.
     g.addEventListener('click', e => { const at = cellAt(e.clientX, e.clientY) ?? c; if (at.kind === 'more' && !drag) openAll(activeOrNull(), at.m.getBoundingClientRect()) })
     // Hover only tells what the cell cannot show itself: a name that did not surface, or what a busy topic is doing.
-    g.addEventListener('pointerenter', () => { if (drag) return; clearTimeout(hover); hover = window.setTimeout(() => { if (!drag) showTip(c) }, 420) })
-    g.addEventListener('pointerleave', () => { clearTimeout(hover); if (tipOwner === c) hideTip() })
-    g.addEventListener('contextmenu', e => { e.preventDefault(); clearTimeout(hover); hideTip(); openMenu(e.clientX, e.clientY, cellAt(e.clientX, e.clientY) ?? c) })
+    g.addEventListener('contextmenu', e => { e.preventDefault(); clearTimeout(tipWait); hideTip(); openMenu(e.clientX, e.clientY, read(e) ?? cellAt(e.clientX, e.clientY) ?? c) })
     cells.push(c)
     return c
   }
@@ -1254,6 +1290,7 @@ export function createFoam(options: FoamOptions): Foam {
   const move = (e: PointerEvent) => {
     const p = local(e), r = host.getBoundingClientRect()
     ptr = e.clientX > r.left - 24 && e.clientX < r.right + 24 && e.clientY > r.top - 10 && e.clientY < r.bottom + 24 ? p : null
+    read(ptr && e)
     if (!drag || e.pointerId !== drag.pointer) return
     const c = drag.cell
     drag.last = { x: e.clientX, y: e.clientY }
@@ -1356,6 +1393,9 @@ export function createFoam(options: FoamOptions): Foam {
     })
   }
   window.addEventListener('pointermove', move)
+  // Leaving the window sends no move: let the name and the hint go as if the pointer had left the cluster.
+  const away = () => { ptr = null; read(null) }
+  document.documentElement.addEventListener('pointerleave', away)
   window.addEventListener('pointerup', up)
   window.addEventListener('pointercancel', blur)
   window.addEventListener('lostpointercapture', blur)
@@ -1581,7 +1621,12 @@ export function createFoam(options: FoamOptions): Foam {
         c.label.setAttribute('font-size', String(lay.font))
       }
       c.want = ease(c.want, named(c) ? 1 : 0, 2.5, dt)
-      const vis = words * clamp((c.scale - .6) / .4) * (lay.lines.length ? 1 : 0) * Math.max(c.want, c.reveal)
+      // One name read at a time: the cell being read (or, in a drag, the dragged cell and where it would go) in full,
+      // the others as hints. With no pointer the hints keep their level while they fade, so none flares up on the way out.
+      const lit = drag ? c === drag.cell || c === drag.rest?.cell || (target?.kind === 'cell' && target.cell === c) : ptr ? c === reading : undefined
+      const focusTo = lit === undefined ? (c.reveal < .01 ? 1 : c.focus) : lit ? 1 : NEIGHBOUR_NAME
+      c.focus = ease(c.focus, focusTo, focusTo > c.focus ? 14 : 8, dt)
+      const vis = words * clamp((c.scale - .6) / .4) * (lay.lines.length ? 1 : 0) * Math.max(c.want, c.reveal * c.focus)
       c.full = c.kind === 'more' || (vis > .5 && lay.lines.join('') === c.title)
       c.label.style.opacity = fx(vis)
       c.nx = ease(c.nx, running ? 1.4 * Math.sin(tt * .53 + c.phase) + .5 * Math.sin(tt * 1.1 + c.phase * 2) : 0, 3, dt)
@@ -1658,8 +1703,8 @@ export function createFoam(options: FoamOptions): Foam {
     update, event,
     setRail(on) { if (on !== rail) cancelDrag(); rail = on; host.classList.toggle('rail', on) },
     destroy() {
-      cancelAnimationFrame(raf); clearInterval(tipTimer)
-      window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', blur); window.removeEventListener('lostpointercapture', blur); window.removeEventListener('scroll', scrolled, true); document.removeEventListener('visibilitychange', hiddenPage); window.removeEventListener('blur', blur)
+      cancelAnimationFrame(raf); clearInterval(tipTimer); clearTimeout(tipWait)
+      window.removeEventListener('pointermove', move); document.documentElement.removeEventListener('pointerleave', away); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', blur); window.removeEventListener('lostpointercapture', blur); window.removeEventListener('scroll', scrolled, true); document.removeEventListener('visibilitychange', hiddenPage); window.removeEventListener('blur', blur)
       document.removeEventListener('pointerdown', outside, true); document.removeEventListener('keydown', keydown, true); motion.removeEventListener('change', motionChanged)
       closeDup(false); document.removeEventListener('pointerdown', dupPointer, true); document.removeEventListener('keydown', dupKey, true)
       closeMenu(); closePop(); hideUndo(); undo.remove(); tip.remove(); svg.remove(); list.remove(); entry.remove(); host.classList.remove('theone-foam', 'rail')
