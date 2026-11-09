@@ -72,25 +72,72 @@ export function foamShortName(title, label) {
     const head = title.split(/[，,。.？?！!：:；;、（）()【】[\]—\-|/]/).map(part => part.trim()).find(Boolean);
     return head ?? title.trim();
 }
-/** How a name sits in a cell: one line if it fits, else two (big cells: three) balanced lines, else no text. Never a clipped name. */
+/**
+ * How a name sits in a cell: one line if it fits, else two (big cells: three) balanced lines, else no text. Never a clipped name.
+ * A CJK name breaks between any two characters, as evenly as it can with the first line the longer (so 显卡选购 is 显卡 /
+ * 选购); a Latin word is never split, so Latin words break only between words or where they meet CJK, and one word that does
+ * not fit on a line leaves the cell without text. Punctuation stays with its neighbour: no line starts with a comma or a
+ * closing bracket, none ends with an opening one, and none holds punctuation alone.
+ */
 export function foamLabel(name, radius) {
-    const chars = [...name], big = radius >= 25 ? 10.5 : 9.5, small = radius >= 25 ? 9.5 : 8.8;
+    const chars = [...name.trim()], big = radius >= 25 ? 10.5 : 9.5, small = radius >= 25 ? 9.5 : 8.8;
     // A Latin letter takes about 0.6 of a CJK character's width.
     const width = (s) => s.reduce((w, ch) => w + (/[⺀-￿]/.test(ch) ? 1 : .6), 0);
+    // Unbreakable pieces: a Latin word (accented letters and digits included, with its inner marks) or one other character,
+    // with any opening punctuation before it and closing punctuation after it; opening punctuation with nothing after it on
+    // its side of a space is a piece of its own, so every character of the name lands in some piece. `gap`: a space came before.
+    const open = `(\\[{<"'“‘「『（《〈【〔［｛`, close = `,.;:!?)\\]}>"'”’」』，。、；：！？）》〉】〕］｝…`;
+    const piece = new RegExp(`(\\s*)([${open}]*(?:[\\p{Script=Latin}\\p{Nd}][\\p{Script=Latin}\\p{M}\\p{Nd}'’.\\-+&_]*|[^\\s${open}])[${close}]*|[${open}]+)`, 'gu');
+    const raw = [...name.trim().matchAll(piece)].map(m => ({ text: m[2], gap: m[1].length > 0 }));
+    // A piece of punctuation alone (spaces around it, as in "Hello , world" or "( beta )") never stands on a line by itself:
+    // opening marks go with the piece after them, everything else with the piece before, the space kept where it was.
+    const opening = new RegExp(`^[${open}\\s]+$`), bare = (t) => !/[\p{L}\p{N}]/u.test(t.text);
+    const tokens = [];
+    for (const t of raw) {
+        const last = tokens[tokens.length - 1];
+        if (last && opening.test(last.text) && !(bare(t) && !opening.test(t.text))) {
+            last.text += (t.gap ? ' ' : '') + t.text;
+            continue;
+        }
+        if (last && bare(t) && !opening.test(t.text)) {
+            last.text += (t.gap ? ' ' : '') + t.text;
+            continue;
+        }
+        tokens.push({ ...t });
+    }
+    const lineOf = (ts) => ts.map((t, i) => (i && t.gap ? ' ' : '') + t.text).join('');
+    /** The name over `n` lines with the narrowest widest line, breaking only between pieces; on a tie the earlier lines are the longer. */
+    const balance = (n) => {
+        let best = [], bestW = Infinity;
+        const cut = (from, left, acc) => {
+            if (left === 1) {
+                const all = [...acc, lineOf(tokens.slice(from))], w = Math.max(...all.map(l => width([...l])));
+                if (w <= bestW + 1e-9) {
+                    best = all;
+                    bestW = w;
+                }
+                return;
+            }
+            for (let k = from + 1; k <= tokens.length - left + 1; k++)
+                cut(k, left - 1, [...acc, lineOf(tokens.slice(from, k))]);
+        };
+        cut(0, n, []);
+        return best;
+    };
     const tries = [[1, big], [1, small], [2, big], [2, small], [3, small]];
     for (const [lines, font] of tries) {
         if (lines === 1 && font === small && width(chars) > 3 && radius < 25)
             continue;
-        if (lines === 2 && (chars.length < 4 || width(chars) > 8))
+        if (lines === 2 && (chars.length < 4 || width(chars) > 8 || tokens.length < 2))
             continue;
-        if (lines === 3 && (radius < 25 || chars.length < 7 || width(chars) > 9))
+        if (lines === 3 && (radius < 25 || chars.length < 7 || width(chars) > 9 || tokens.length < 3))
             continue;
-        const lh = font * 1.18, per = Math.ceil(chars.length / lines);
-        const parts = Array.from({ length: lines }, (_, i) => chars.slice(i * per, (i + 1) * per)).filter(p => p.length);
-        const widest = Math.max(...parts.map(width)) * font;
+        const lh = font * 1.18;
+        const parts = balance(lines);
+        const widest = Math.max(...parts.map(p => width([...p]))) * font;
         if (widest > 2 * radius * (lines === 1 ? .8 : lines === 2 ? .74 : .7) - 4 || (lines === 3 ? 6 : 9) + parts.length * lh > 2 * radius * .86)
             continue;
-        return { lines: parts.map(p => p.join('')), font, lh };
+        return { lines: parts, font, lh };
     }
     return { lines: [], font: big, lh: 0 };
 }
@@ -171,6 +218,36 @@ export function foamPoreHits(cells, pores, box, max = 8, need = 5.5) {
         out = out.map(r => r > 0 ? again[k++] : 0);
     }
     return { cells: radii.slice(0, cells.length), pores: out };
+}
+/**
+ * The two places the pore of two touching cells can sit: not their contact point, where no hit circle can fit, but the
+ * notches on either side where their outlines curve apart, `clear` px off both (the hit circles share that gap with the
+ * pore, so 12 px leaves it its 5.5 px). `contact` is the point between the outlines, where the pore's stalk starts.
+ */
+export function foamNotches(a, b, clear = 12) {
+    const dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) || .01, ux = dx / d, uy = dy / d;
+    const gap = (d - a.reach - b.reach) / 2, mx = a.x + ux * (a.reach + gap), my = a.y + uy * (a.reach + gap);
+    const t = Math.max(0, ...[a, b].map(c => Math.sqrt(Math.max(0, (c.reach + clear) ** 2 - (c.reach + gap) ** 2))));
+    return { contact: { x: mx, y: my }, sides: [1, -1].map(s => ({ x: mx - uy * t * s, y: my + ux * t * s })) };
+}
+/**
+ * Which candidate spot a pore takes, by the room it would get under the same sharing rule as foamPoreHits: half the gap to
+ * each cell's outline (the cell's hit circle takes the other half), the whole way to the box edges, at most `max`. The spot it
+ * had (`prev`) is kept while it still fits (a shown pore with 1 px to spare, as foamPoreHits keeps it; a hidden one only with
+ * the full room it needs to appear, so it never stays hidden where the other spot has room), and always while `locked`
+ * (pointed at, or its panel open), so a
+ * neighbour drifting by never makes it jump; otherwise the roomiest spot that fits wins, else the roomiest at all (and
+ * foamPoreHits then hides it). Returns the index into `spots`.
+ */
+export function foamPoreSpot(spots, prev, cells, box, locked = false, shown = true, need = 5.5, max = 8) {
+    const room = (p) => Math.min(max, ...cells.map(c => (Math.hypot(p.x - c.x, p.y - c.y) - c.reach) / 2), ...(box ? [p.x, box.w - p.x, p.y - (box.top ?? 0), box.h - p.y] : []));
+    const rooms = spots.map(room);
+    if (prev >= 0 && prev < spots.length && (locked || rooms[prev] >= (shown ? need - 1 : need)))
+        return prev;
+    let best = 0;
+    rooms.forEach((r, i) => { if (r > rooms[best] + 1e-9)
+        best = i; });
+    return best;
 }
 /** Which item a point means: among those whose circle holds it, the one with the nearest centre; -1 for none. */
 export function foamNearest(p, items) {
@@ -1243,11 +1320,13 @@ export function createFoam(options) {
                     closeDup();
                 else
                     openDup(id); });
-                pore.addEventListener('pointerenter', () => { if (drag)
+                pore.addEventListener('pointerenter', () => { const it = dups.get(id); if (it)
+                    it.hover = true; if (drag)
                     return; placeTip(pore.getBoundingClientRect(), text('dupTitle')); });
-                pore.addEventListener('pointerleave', () => { if (!tipOwner)
+                pore.addEventListener('pointerleave', () => { const it = dups.get(id); if (it)
+                    it.hover = false; if (!tipOwner)
                     tip.classList.remove('on'); });
-                d = { s, a, b, thread, pore, hit: pore.firstChild, alpha: 0, px: null, py: 0, room: false };
+                d = { s, a, b, thread, pore, hit: pore.firstChild, alpha: 0, px: null, py: 0, room: false, spot: -1, hover: false, path: '', stalk: '' };
                 dups.set(id, d);
             }
             d.s = s;
@@ -1277,7 +1356,9 @@ export function createFoam(options) {
         }
         return undefined;
     }
-    function drawDups(dt) {
+    function drawDups(dt, box) {
+        // Every outline a pore must keep clear of, gathered once per frame for all pairs.
+        let outlines = null;
         for (const d of dups.values()) {
             const { a, b } = d;
             const show = !answering.has(d.s.id) && sz > .7 && [a, b].every(c => cells.includes(c) && c.mode === 'live' && !c.hidden && c.scale > .5)
@@ -1287,30 +1368,48 @@ export function createFoam(options) {
             if (d.alpha < .02) {
                 d.thread.setAttribute('d', '');
                 d.pore.style.display = 'none';
+                d.spot = -1;
                 continue;
             }
+            outlines ??= cells.filter(c => c.mode === 'live' && !c.hidden && c.scale > .02).map(c => ({ c, x: c.cx, y: c.cy, reach: Math.max(c.vr, c.R * c.scale) }));
             const ra = a.R * a.scale, rb = b.R * b.scale, dx = b.cx - a.cx, dy = b.cy - a.cy, dist = Math.hypot(dx, dy) || .01, ux = dx / dist, uy = dy / dist;
             const gap = dist - ra - rb;
+            const open = dupPanel?.id === d.s.id;
             // The pore's hit area is shared out with the cells' afterwards (see step); it is shown only where that leaves it room.
-            let path = '', px, py;
-            if (gap < Math.min(ra, rb) * 1.4) {
-                // Close together: a dotted neck outline in the crevice between them, the pore on their shared wall.
+            // Candidate places, scored by that same rule; the place it had is kept while it fits, and held while pointed at or open.
+            let path = '', spots, from = null;
+            // Touching or apart, with 4 px of hysteresis so a pair hovering at the threshold does not swap between the two kinds of
+            // place, and none at all while the pore is pointed at or its panel open (the pore must not move under the pointer).
+            const was = d.spot >= 0 ? Math.floor(d.spot / 10) : 0, edge = Math.min(ra, rb) * 1.4;
+            const close = was && (open || d.hover) ? was === 1 : gap < edge + (was === 1 ? 4 : was === 2 ? -4 : 0);
+            if (close) {
+                // Close together: a dotted neck outline in the crevice between them, the pore in one of the notches where their
+                // outlines part (on their contact point no hit circle could ever fit, so the pore would never show in a packed cluster).
                 path = bridge(pos(a), ra, pos(b), rb, 1e6, .42)?.edge ?? '';
-                px = (a.cx + ux * ra + b.cx - ux * rb) / 2;
-                py = (a.cy + uy * ra + b.cy - uy * rb) / 2;
+                const n = foamNotches({ x: a.cx, y: a.cy, reach: Math.max(a.vr, ra) }, { x: b.cx, y: b.cy, reach: Math.max(b.vr, rb) });
+                spots = n.sides;
+                from = n.contact;
             }
             else {
-                // Further apart: a gently bowed dotted thread from wall to wall, the pore halfway.
+                // Further apart: a gently bowed dotted thread from wall to wall, the pore on it: halfway if that is clear, else
+                // further along, so a third cell lying over the middle of the thread does not hide it.
                 const sx = a.cx + ux * (ra + 2), sy = a.cy + uy * (ra + 2), ex = b.cx - ux * (rb + 2), ey = b.cy - uy * (rb + 2);
                 const mx = (sx + ex) / 2 - uy * gap * .12, my = (sy + ey) / 2 + ux * gap * .12;
                 path = `M${fx(sx)} ${fx(sy)}Q${fx(mx)} ${fx(my)} ${fx(ex)} ${fx(ey)}`;
-                px = .25 * sx + .5 * mx + .25 * ex;
-                py = .25 * sy + .5 * my + .25 * ey;
+                spots = [.5, .38, .62, .26, .74].map(k => ({ x: (1 - k) ** 2 * sx + 2 * k * (1 - k) * mx + k * k * ex, y: (1 - k) ** 2 * sy + 2 * k * (1 - k) * my + k * k * ey }));
             }
-            const open = dupPanel?.id === d.s.id;
+            // A different kind of place (the pair moved apart or together) starts the choice afresh.
+            const kind = close ? 1 : 2;
+            const pick = foamPoreSpot(spots, was === kind ? d.spot % 10 : -1, outlines, box, open || d.hover, d.room);
+            d.spot = kind * 10 + pick;
+            const px = spots[pick].x, py = spots[pick].y;
+            // A short dotted stalk from the contact point out to a notch, so the pore reads as belonging to the pair; it is added
+            // (placePores) only once the pore is known to show, so a hidden pore leaves no stray line.
+            d.path = path;
+            d.stalk = from ? `M${fx(from.x)} ${fx(from.y)}L${fx(px)} ${fx(py)}` : '';
             // A slow breath, not a blink; it stands still with reduced motion (t does not advance then).
             const o = d.alpha * (open ? 1 : .8 + .2 * Math.sin(t * 1.2 + a.phase));
-            d.thread.setAttribute('d', path);
+            d.thread.setAttribute('d', path + (d.room ? d.stalk : ''));
             d.thread.style.opacity = fx(o * .85);
             d.thread.classList.toggle('open', open);
             d.pore.setAttribute('transform', `translate(${fx(px)} ${fx(py)}) scale(${fx(Math.max(.7, sz))})`);
@@ -1330,6 +1429,7 @@ export function createFoam(options) {
         list.forEach((d, i) => {
             d.room = radii[i] > 0;
             d.pore.style.display = d.room ? '' : 'none';
+            d.thread.setAttribute('d', d.path + (d.room ? d.stalk : ''));
             d.hit.setAttribute('r', fx(radii[i] / scale));
         });
         for (const d of dups.values())
@@ -2135,7 +2235,7 @@ export function createFoam(options) {
                 c.nf.style.fill = other?.state === 'done' ? 'var(--foam-done)' : other && other.state === 'idle' && !other.cur ? 'var(--foam-bg)' : 'var(--foam-tint)';
             c.neck.style.opacity = fx(c.alpha);
         }
-        drawDups(dt);
+        drawDups(dt, { w, h, top: TOP_GAP });
         // Hit areas: small cells get a steady 24px circle to press where there is room, split fairly between neighbours and kept
         // inside the box. The cell being dragged is left out, so the ones it may land on keep theirs while it passes over them.
         // The duplicate pores take part as points with no outline of their own, so the room around them is split with the cells.

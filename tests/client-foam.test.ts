@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { foamContour, foamEnterActs, foamFilter, foamFocus, foamHitRadii, foamLabel, foamMergeReason, foamMerging, foamNearest, foamOrder, foamPlace, foamPoreHits, foamShortName, foamStatusText, type FoamTopic } from '../src/client-foam.ts'
+import { foamContour, foamEnterActs, foamFilter, foamFocus, foamHitRadii, foamLabel, foamMergeReason, foamMerging, foamNearest, foamNotches, foamOrder, foamPlace, foamPoreHits, foamPoreSpot, foamShortName, foamStatusText, type FoamTopic } from '../src/client-foam.ts'
 import { foamEventsFrom, mergeOutcomes, modelFromBubbles, modelFromCatalog, settleFoamEvents, suggestionsFromBubbles } from '../src/client-foam-host.ts'
 import type { CatalogSnapshot } from '../src/catalog-types.ts'
 import type { BubbleEvent, BubbleMerge, BubbleSnapshot, BubbleTopic, BubbleWorkItem } from '../src/bubble-types.ts'
@@ -83,7 +83,8 @@ test('a cell shows its whole name or none of it, never a clipped name', () => {
   const names = ['猫粮', '日语', '跑鞋', '学吉他', '显卡选购', '周末书单', '换季衣物', '面试准备材料', '一个特别特别长的话题名字', 'Budget', 'Kubernetes upgrade']
   for (const name of names) for (let radius = 12; radius <= 34; radius += 1) {
     const { lines } = foamLabel(name, radius)
-    assert.ok(lines.length === 0 || lines.join('') === name, `${name} at ${radius}: ${JSON.stringify(lines)}`)
+    // Lines put back together give the whole name (a line break may stand in for the space between two words).
+    assert.ok(lines.length === 0 || lines.join(' ').replace(/\s+/g, '') === name.replace(/\s+/g, ''), `${name} at ${radius}: ${JSON.stringify(lines)}`)
     assert.ok(!lines.join('').includes('…'))
     assert.ok(lines.length <= 2)
   }
@@ -105,6 +106,72 @@ test('a full-size cell holds a four-character name on one line; a small one spli
   assert.deepEqual(foamLabel('显卡选购', 20).lines, ['显卡', '选购'])
   assert.deepEqual(foamLabel('猫粮', 18).lines, ['猫粮'])
   assert.deepEqual(foamLabel('显卡选购', 12).lines, [])
+})
+
+test('a Latin word is never split across lines: two words break between them, one word that does not fit shows no text', () => {
+  for (const name of ['Thesis', 'Budget', 'Moving', 'Kubernetes', 'Report']) for (let radius = 10; radius <= 34; radius++) {
+    const { lines } = foamLabel(name, radius)
+    assert.ok(lines.length === 0 || (lines.length === 1 && lines[0] === name), `${name} at ${radius}: ${JSON.stringify(lines)}`)
+  }
+  for (let radius = 10; radius <= 34; radius++) {
+    const { lines } = foamLabel('Leg day', radius)
+    assert.ok([0, 1, 2].includes(lines.length) && (lines.length !== 2 || (lines[0] === 'Leg' && lines[1] === 'day')), `Leg day at ${radius}: ${JSON.stringify(lines)}`)
+  }
+  // Latin next to CJK may break where they meet, never inside the word.
+  for (let radius = 10; radius <= 34; radius++) {
+    const { lines } = foamLabel('4070显卡', radius)
+    assert.ok(lines.length < 2 || lines[0] === '4070' || lines[0] === '4070显', `4070显卡 at ${radius}: ${JSON.stringify(lines)}`)
+  }
+  // CJK names keep their character-balanced lines.
+  assert.deepEqual(foamLabel('显卡选购', 20).lines, ['显卡', '选购'])
+  // Accented letters belong to their word, and punctuation never starts a line or stands alone on one.
+  for (let radius = 10; radius <= 34; radius++) {
+    const resume = foamLabel('Résumé', radius).lines
+    assert.ok(resume.length === 0 || (resume.length === 1 && resume[0] === 'Résumé'), `Résumé at ${radius}: ${JSON.stringify(resume)}`)
+    for (const name of ['Hello,world', 'Hello , world', 'Plan (beta)', 'Plan ( beta)', 'Plan ( beta )', 'Plan ( ( beta))', '周报（草稿）', '周报（新）归档中', '【重要】周报', 'Leg day!'])
+      for (const line of foamLabel(name, radius).lines)
+        assert.ok(!/^[,.;:!?)\]）」』】，。、；：！？]/.test(line) && !/[(\[（「『【]$/.test(line) && /[\p{L}\p{N}]/u.test(line), `${name} at ${radius}: ${JSON.stringify(line)}`)
+    // An odd space inside the brackets never sends the name back to a split that cuts the word.
+    assert.ok(foamLabel('Plan ( beta)', radius).lines.every(line => !/\bb$|^eta/.test(line)), `Plan ( beta) at ${radius}`)
+  }
+})
+
+test('two touching cells offer a pore in either notch, clear of both outlines, never on the contact point', () => {
+  const box = { w: 300, h: 200 }
+  const a = { x: 100, y: 100, reach: 20 }, b = { x: 142, y: 100, reach: 20 }
+  const { contact, sides } = foamNotches(a, b)
+  assert.ok(Math.abs(contact.x - 121) < 1e-9 && contact.y === 100)
+  assert.ok(sides[0].y !== sides[1].y && sides.every(p => Math.abs(p.x - 121) < 1e-9))
+  for (const p of sides) for (const c of [a, b]) assert.ok(Math.hypot(p.x - c.x, p.y - c.y) - c.reach >= 12 - 1e-9)
+  // A notch gets its room under the hit-sharing rule; the contact point itself still never does (the existing rule stands).
+  assert.ok(foamPoreHits([{ x: a.x, y: a.y, r: 20 }, { x: b.x, y: b.y, r: 20 }], [sides[0]], box).pores[0] >= 5.5)
+  assert.equal(foamPoreHits([{ x: a.x, y: a.y, r: 20 }, { x: b.x, y: b.y, r: 20 }], [contact], box).pores[0], 0)
+})
+
+test('a pore keeps its place while it fits, takes the side that really has room, and is hidden when hemmed in', () => {
+  const box = { w: 300, h: 200, top: 8 }
+  const pair = (y: number) => [{ x: 100, y, reach: 20 }, { x: 142, y, reach: 20 }]
+  const spots = (y: number) => foamNotches(pair(y)[0], pair(y)[1]).sides
+  // A hair's shift of the pair never flips the pore to the other notch while its own still fits (it jumped ~48 px before).
+  const first = foamPoreSpot(spots(103.99), -1, pair(103.99), box)
+  assert.equal(foamPoreSpot(spots(104.01), first, pair(104.01), box), first)
+  // A third cell close above: the notch below has the room under the real sharing rule, so it wins over raw distance.
+  const above = { x: 121, y: 64, reach: 14 }
+  const cells = [...pair(100), above], s = spots(100)
+  const pick = foamPoreSpot(s, -1, cells, box)
+  assert.ok(s[pick].y > 100, JSON.stringify(s[pick]))
+  assert.ok(foamPoreHits(cells.map(c => ({ x: c.x, y: c.y, r: c.reach })), [s[pick]], box).pores[0] >= 5.5)
+  // A pore that went hidden does not cling to a spot where it could not reappear: the other notch, with room, takes it.
+  const lowAbove = { x: 121, y: 66.5, reach: 14 }, half = [...pair(100), lowAbove]
+  const up = s.findIndex(p => p.y < 100), down = 1 - up
+  assert.equal(foamPoreSpot(s, up, [...half, { x: 121, y: 136, reach: 14 }], box, false, false), foamPoreSpot(s, -1, [...half, { x: 121, y: 136, reach: 14 }], box))
+  assert.equal(foamPoreSpot(s, up, half, box, false, false), down)
+  // Pointed at or open: the place is held even once it stops fitting, so it never moves under the pointer.
+  assert.equal(foamPoreSpot(s, 1 - pick, cells, box, true), 1 - pick)
+  // Hemmed in above and below: whichever notch it takes, foamPoreHits gives it no room and it is not shown.
+  const hemmed = [...pair(100), { x: 121, y: 135, reach: 18 }, { x: 121, y: 65, reach: 18 }]
+  const q = s[foamPoreSpot(s, -1, hemmed, box)]
+  assert.equal(foamPoreHits(hemmed.map(c => ({ x: c.x, y: c.y, r: c.reach })), [q], box).pores[0], 0)
 })
 
 test('one cell is read at a time, chosen like a press and held through a shared edge', () => {

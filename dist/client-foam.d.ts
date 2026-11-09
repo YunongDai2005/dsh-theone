@@ -191,7 +191,13 @@ export declare function foamContour(p: number[][], minY?: number): {
  * punctuation ("想去日本旅游，帮我看看行程" → "想去日本旅游"). Always a whole phrase, never cut mid-word.
  */
 export declare function foamShortName(title: string, label?: string): string;
-/** How a name sits in a cell: one line if it fits, else two (big cells: three) balanced lines, else no text. Never a clipped name. */
+/**
+ * How a name sits in a cell: one line if it fits, else two (big cells: three) balanced lines, else no text. Never a clipped name.
+ * A CJK name breaks between any two characters, as evenly as it can with the first line the longer (so 显卡选购 is 显卡 /
+ * 选购); a Latin word is never split, so Latin words break only between words or where they meet CJK, and one word that does
+ * not fit on a line leaves the cell without text. Punctuation stays with its neighbour: no line starts with a comma or a
+ * closing bracket, none ends with an opening one, and none holds punctuation alone.
+ */
 export declare function foamLabel(name: string, radius: number): {
     lines: string[];
     font: number;
@@ -252,6 +258,50 @@ export declare function foamPoreHits(cells: {
     cells: number[];
     pores: number[];
 };
+/**
+ * The two places the pore of two touching cells can sit: not their contact point, where no hit circle can fit, but the
+ * notches on either side where their outlines curve apart, `clear` px off both (the hit circles share that gap with the
+ * pore, so 12 px leaves it its 5.5 px). `contact` is the point between the outlines, where the pore's stalk starts.
+ */
+export declare function foamNotches(a: {
+    x: number;
+    y: number;
+    reach: number;
+}, b: {
+    x: number;
+    y: number;
+    reach: number;
+}, clear?: number): {
+    contact: {
+        x: number;
+        y: number;
+    };
+    sides: {
+        x: number;
+        y: number;
+    }[];
+};
+/**
+ * Which candidate spot a pore takes, by the room it would get under the same sharing rule as foamPoreHits: half the gap to
+ * each cell's outline (the cell's hit circle takes the other half), the whole way to the box edges, at most `max`. The spot it
+ * had (`prev`) is kept while it still fits (a shown pore with 1 px to spare, as foamPoreHits keeps it; a hidden one only with
+ * the full room it needs to appear, so it never stays hidden where the other spot has room), and always while `locked`
+ * (pointed at, or its panel open), so a
+ * neighbour drifting by never makes it jump; otherwise the roomiest spot that fits wins, else the roomiest at all (and
+ * foamPoreHits then hides it). Returns the index into `spots`.
+ */
+export declare function foamPoreSpot(spots: readonly {
+    x: number;
+    y: number;
+}[], prev: number, cells: readonly {
+    x: number;
+    y: number;
+    reach: number;
+}[], box?: {
+    w: number;
+    h: number;
+    top?: number;
+}, locked?: boolean, shown?: boolean, need?: number, max?: number): number;
 /** Which item a point means: among those whose circle holds it, the one with the nearest centre; -1 for none. */
 export declare function foamNearest(p: {
     x: number;
