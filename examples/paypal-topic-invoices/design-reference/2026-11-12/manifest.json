@@ -1,0 +1,24 @@
+{
+  "frozen_at": "2026-11-12",
+  "frontend_file": "../../index.html",
+  "frontend_sha256": "c4bdef50513582e5ef830a7917d916af33e3c581e82697327c8cb9952f493600",
+  "theone": {
+    "version": "0.4.6",
+    "commit": "00a552bf6a5dea281543d8d89a346968c05fc692",
+    "visual_source": "https://github.com/YunongDai2005/dsh-theone/blob/v0.4.6/src/client.ts",
+    "source_blob": "e375735aa9375dd91f2606c390da8b0e53b1ef8a",
+    "dark_tokens": [
+      "#93c8f3",
+      "#1d2a37",
+      "#344d64"
+    ]
+  },
+  "paypal": {
+    "source": "https://apps.apple.com/us/app/paypal-pay-send-save/id283646709",
+    "observed_version": "10.11.0",
+    "market": "US",
+    "checked_on": "2026-11-12"
+  },
+  "reference_only": true,
+  "frontend_work_paused": true
+}

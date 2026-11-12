@@ -1,82 +1,109 @@
-# TheOne Invoice Desk — PayPal Sandbox adaptation
+# TheOne Invoice Desk — shared project billing
 
-**Submitted October 12, 2026: [TheOne Invoice Desk](https://devpost.com/software/theone-invoice-desk), PayPal AI Hackathon entry 1231924.** The submission was confirmed in the event UI and by the organizer's confirmation email. This is submission evidence, not a prize or shortlist result. One chat proposes a project and invoice line; the user reviews the project, configured Sandbox recipient and amount, then requests an **unsent PayPal Sandbox invoice draft**. Each project's draft ledger persists in a separate SQLite query scope.
+A small studio can prepare invoices together while keeping each member’s conversation context and financial permissions separate. Members propose bills in their assigned projects. Finance reviews the exact revision before the app creates an **unsent PayPal Sandbox draft**, then reads it back and checks the recipient, project, line and total.
 
-This is a standalone experiment inspired by TheOne's topic workflow, built October 11, 2026. It does not mount the original DSH workers, read DSH logs or modify the main plugin. The existing TheOne repository began September 30; this adaptation reuses its MIT repository infrastructure, not previous competition demos as PayPal evidence. Codex assisted implementation, tests and documentation. No company, revenue, customer usage, award or measured production routing accuracy is claimed.
+[PayPal AI Hackathon project](https://devpost.com/software/theone-invoice-desk) · [Studio setup and permissions](STUDIO.md) · [Current real integration receipt](evidence/studio-live-2026-11-13.json)
 
-## Source and demonstration versions
+## What the routing adds
 
-On October 30 the repository's base plugin was upgraded to TheOne **0.4.5**, using release commit `10f196d70d69dd5e44ffe8bbdac64bc70b57f0c7`. Invoice Desk remains the standalone Sandbox application described here; the merge does not add the DSH plugin's setup flow, sidebar setting or topic controls to this app. Its invoice implementation and October 11 evidence are unchanged. The existing 96-second video predates this upgrade and is not a 0.4.5 plugin demonstration. All 11 local invoice tests pass using mocked provider responses, with no new live invoice or model call.
+Mia can request a 480 EUR design invoice, record an unrelated 72 EUR expense, and return to change the original invoice to 520 EUR. Leo has his own routing state and a different project ledger. Alex, the finance reviewer, sees the authorized shared records and can approve Mia’s latest revision without becoming its owner.
 
-## Run
+The router selects a project from the signed-in member’s permitted catalog. The planner prepares a local proposal. The server independently checks customer binding, amount provenance, ownership, role, revision and approval digest. A model cannot grant access, choose an arbitrary recipient or approve a PayPal operation.
 
-Node.js **24+**, no npm dependencies or installation scripts:
+Each member has a separate SQLite conversation and pending clarification. Studio project views share authorized messages and invoices, not a combined model conversation. Studio removes cross-project reference context from invoice planning and filters teammates’ private routing traces and inaccessible historical revisions. Status answers use the authorized team ledger with separate totals for each currency.
+
+## Run the complete offline preview
+
+Requires **Node.js 24+**. The application has no npm dependencies or installation scripts.
 
 ```sh
 git clone --branch codex/hackathon-paypal-ai https://github.com/YunongDai2005/dsh-theone.git
 cd dsh-theone/examples/paypal-topic-invoices
-cp .env.example .env
-# Fill .env locally as described below.
-npm start
+npm run studio:init
+npm run studio:preview
 ```
 
-Open `http://127.0.0.1:3047`. The UI shows whether model and Sandbox credentials are configured; unavailable actions are disabled. It binds only to loopback and is a single-owner local app, not an authenticated multi-user service.
+Open `http://127.0.0.1:3074`. Initialization prints random passwords once and saves only salted hashes in ignored `.data/studio-config.private.json`. Keep the passwords private. Sign out and sign in to switch members, or use separate browser profiles for simultaneous sessions.
 
-1. Use your existing [PayPal developer account](https://developer.paypal.com/) and its **Sandbox** app credentials. Put them in `PAYPAL_SANDBOX_CLIENT_ID` and `PAYPAL_SANDBOX_CLIENT_SECRET`. Never enter Live credentials. PayPal's [OAuth flow](https://developer.paypal.com/api/rest/authentication/) obtains the access token server-side.
-2. Set `SANDBOX_RECIPIENT` to a buyer's **test email from your Sandbox dashboard**, never a real customer. Built-in `example.invalid` addresses only describe synthetic topics; replace them before live Sandbox validation. For distinct test recipients, create an ignored `topics.private.json` array of objects with `id`, `title`, `summary`, `recipient` and optional `invoice_enabled:false`, then set `THEONE_TOPICS_FILE`.
-3. Configure a trusted OpenAI-compatible model provider with `MODEL_BASE_URL`, `MODEL_API_KEY` and `MODEL_NAME`. The model receives synthetic input and topic descriptions, **not the configured recipient addresses**. For Nebius Nemotron, set `MODEL_DISABLE_THINKING=true`; omit this option for incompatible providers. Inference uses your provider quota. No paid subscription is required by this app.
-4. Keep credentials, test emails, databases and raw API evidence private. `.env`, `.data/` and the supplied private catalog filename are ignored. Use synthetic messages for demonstrations.
+| Account | Role | Projects |
+| --- | --- | --- |
+| Mia | Member | Design client, Studio expenses |
+| Leo | Member | Moving project, Studio expenses |
+| Alex | Finance | All three configured projects |
 
-The October 11 recorded demo used this non-secret model configuration, together with its separately supplied model API key:
+The preview uses real session and permission code with **scripted model responses and simulated PayPal**. Its banner identifies this. It makes no external requests. Preview records use `.data/studio-preview`; the simulated remote invoice store lasts only for that process.
+
+## Run with genuine model and PayPal Sandbox APIs
+
+```sh
+cp .env.example .env
+# Fill the configuration locally, then:
+PORT=3074 npm run studio
+```
+
+Set these values in `.env`:
 
 ```dotenv
-MODEL_BASE_URL=https://api.tokenfactory.nebius.com/v1
-MODEL_NAME=nvidia/nemotron-3-super-120b-a12b
-MODEL_DISABLE_THINKING=true
+PAYPAL_SANDBOX_CLIENT_ID=<existing Sandbox application client ID>
+PAYPAL_SANDBOX_CLIENT_SECRET=<existing Sandbox application secret>
+SANDBOX_RECIPIENT=<existing Sandbox buyer test email>
+MODEL_BASE_URL=https://opencode.ai/inference/go/openai/v1
+MODEL_NAME=deepseek-v4.1-flash
+MODEL_REASONING_STYLE=openai
+MODEL_API_KEY=<your existing provider key>
 ```
 
-These values describe the recorded integration; they do not supply credentials or establish current free inference allowance.
+The model configuration above was used in the current genuine run. Other trusted OpenAI-compatible providers can be configured separately; compatibility and available quota must be verified for that provider. The model receives synthetic messages and project context, not configured recipient addresses. No key or provider allowance is supplied by the repository.
 
-## Judge walkthrough and access
+Use **Sandbox credentials and test recipients only**. PayPal requests are fixed to `https://api-m.sandbox.paypal.com`; there is no Live-host option. The real studio stores records in `.data/studio-live`. `THEONE_STUDIO_CONFIG`, `THEONE_STUDIO_DATA` and `THEONE_TOPICS_FILE` can select private local files. Project membership must match the configured catalog. See [account provisioning and migration limits](STUDIO.md).
 
-The [competition rules](https://paypalaihackathon.devpost.com/rules) allow a locally runnable build with complete instructions. The loopback URL above is opened on the machine running the app; it is not a publicly hosted demo. Necessary Sandbox and model access must be arranged separately through the submission's testing instructions or another authorized private channel. This README does not confirm that such access has been supplied. Do not put credentials in the public repository or video.
+This is a locally runnable build, not a public hosted service. Judges can run the full offline UI and tests without credentials. To reproduce genuine inference and PayPal operations, configure their own existing provider and Sandbox access as above. The recorded run is evidence of actual integration, not a promise of public hosting or free API access.
 
-With genuine Sandbox access and confirmed free model allowance configured:
+## Judge walkthrough
 
-1. Open the local page and confirm that both credential indicators say `configured`. These indicators check configuration presence, not successful authentication or provider balance.
-2. Enter `Draft a 480 EUR invoice for the design client for website assets.` A real model response should produce a `REVIEW` card; check the project, Sandbox recipient, amount and line before proceeding. No PayPal invoice exists at this step.
-3. Select **Create reviewed Sandbox draft** once. A successful result displays `CREATED` and a Sandbox invoice ID after the app reads it back and verifies the reviewed fields. The remote invoice remains `DRAFT`; no invoice is sent or paid.
-4. Refresh or restart the app, reload the page, and check that the ledger retains the same draft. Do not create another proposal merely to check persistence. To inspect correction without another remote invoice, make a separate proposal, use **Correct project**, and leave it in `REVIEW`.
+1. Sign in as **Mia**. Request `Draft a 480 EUR invoice for the design client for website assets.` The draft belongs to Mia and has no remote invoice yet.
+2. Record `Record 72 EUR of moving expenses in Studio expenses. Do not create an invoice.` The expense becomes a note; the design draft remains 480 EUR.
+3. Request `Back to the design client. Change the 480 EUR invoice to 520 EUR.` The same proposal becomes revision 2. Mia can edit her local draft but has no PayPal creation control.
+4. Sign in as **Leo**. The design project is unavailable. Request a separate 120 EUR moving-services invoice in Moving project.
+5. Sign in as **Alex** and open **Bills**. Select Mia’s 520 EUR invoice, inspect the changes, then choose **Create Sandbox draft** once. The app verifies the remote unsent draft against the reviewed fields.
+6. Use **Update draft** to prepare 550 EUR, inspect the second review and apply it. The existing remote invoice is updated and read back; no email is sent.
+7. Ask for the design client’s invoice status. The answer reflects the shared verified 550 EUR record, even though Alex did not propose it. Sign back in as Mia to see the result and Alex’s audit entries.
 
-If required access or free allowance is unavailable, the offline tests below can still inspect the implementation, but they do not replace the working-demo requirement. The recorded October 11 run is historical evidence, not a current account-access check.
+The account and invoice inputs above are synthetic. The genuine recording uses one existing Sandbox merchant and the same test buyer for both invoice-enabled projects; it does not demonstrate routing across different merchant or buyer accounts.
 
-## Workflow
+## Verification
 
-- “Draft a 480 EUR invoice for the design client for website assets.” makes an actual model call. Strict JSON validation produces a local **REVIEW** card; no PayPal request occurs yet.
-- The review card shows the exact amount, currency, line name and recipient. “Correct project” changes the topic and configured recipient and invalidates the previous review digest.
-- “Create reviewed Sandbox draft” claims the local proposal once, obtains Sandbox OAuth, and calls [create draft invoice](https://developer.paypal.com/api/invoicing/v2/invoices-create). The app then [reads the draft](https://developer.paypal.com/api/invoicing/v2/invoices-get), checks DRAFT status and the reviewed topic reference, recipient, line and total before reporting success.
-- Reloading preserves the ledger. Replaying approval on an already verified proposal returns its existing invoice ID. Concurrent approval cannot create twice.
-- A timeout, process interruption or unexpected remote result does **not** trigger another create. An uncertain attempt with a known remote ID can be reconciled using a read only. If the ID is unknown, inspect the Sandbox dashboard using the displayed unique invoice number; there is intentionally no retry-create control.
-- Only USD/EUR/GBP and exact amounts from 0.01 to 10000.00 are supported. Household budget is a notes-only topic and cannot create customer invoices. Non-invoice chat currently returns a short model routing explanation; it is not a persistent conversational assistant or general expense ledger.
-
-There are **no send, pay, capture, payout, refund or payment-record methods**. A draft is not payable until separately sent by PayPal; this app never does that. Sandbox endpoint is fixed in code; response URLs and redirects are never followed with credentials. Host/Origin checks and a per-process browser token protect local mutations, but this is not a security audit. Restarting invalidates the browser token; reload the page.
-
-## Verification and limits
+- **108 automated tests passed** on the final source. These include 15 independent Studio security scenarios and use mocked external providers. They cover project and owner access, forged identity fields, per-member context, stale approvals, replay, remote lifecycle, history privacy, and HTTP session/CSRF/Origin protections.
+- **[14 browser checks passed](evidence/studio-ui-2026-11-13.json)** with simulated providers: member login and project isolation, shared owner labels, finance review, remote edit confirmation, polling, dark/light themes, mobile layout and keyboard focus.
+- The [current genuine Studio browser run](evidence/studio-live-2026-11-13.json) completed five model-backed turns using **10 actual OpenCode Go requests** and **6 actual PayPal Sandbox requests**. It created one unsent invoice at 520 EUR and updated that same invoice to 550 EUR with verified read-back. The other member’s 120 EUR draft remained local.
+- A separate [real Sandbox recovery run](evidence/sandbox-2026-11-12.json) passed five steps using 12 requests: create a 1.00 EUR test draft, deliberately lose its response, recover by invoice-number search, update to 1.01 EUR, read status, and verify deletion. It sent no email and made no payment.
+- Earlier [real model evaluation](LIVE-MODEL-2026-11-12.md) and [repair findings](AUDIT-REPAIRS-2026-11-12.md) remain available as dated evidence, not production accuracy estimates.
 
 ```sh
 npm test
-# Real model smoke check only, no PayPal operation:
-node --env-file=.env verify-live-model.mjs live-evidence-model.json
+npm run verify:backend -- backend-evidence.private.json
+# Optional browser regression for the original single-user UI; requires Playwright:
+npm run verify:ui
+# Explicit real Sandbox probe: creates, updates and deletes its own tiny test draft:
+npm run verify:sandbox -- .data/sandbox-verification.json
 ```
 
-The tests exercise SQLite persistence and actual local HTTP calls, but **all model/PayPal responses in tests are explicitly mocked**. Passing them does not establish cloud integration. The real model script stops on service failure and writes private evidence; three synthetic messages cannot establish general accuracy.
+`verify:backend` runs sixteen HTTP/SQLite steps with simulated providers against the original single-user app. `verify:ui` accepts `PLAYWRIGHT_MODULE` and `PLAYWRIGHT_EXECUTABLE_PATH` for an existing browser-test installation. The actual application needs neither Playwright nor an npm install.
 
-On October 11, genuine Nebius `nvidia/nemotron-3-super-120b-a12b` calls returned a design invoice proposal (480 EUR) and a clarification for an underspecified invoice request. On the third synthetic message, explicitly asking to put a moving expense in the monthly budget without creating an invoice, the model asked an unnecessary clarification instead of choosing the budget topic. All three responses passed structural validation; this is functional API evidence and a known routing limitation, not a production accuracy estimate. Earlier schema-debug calls exposed an empty explanation on an otherwise valid invoice proposal; invoice explanations may now be empty while all execution fields remain validated. Chat and clarification explanations still must be nonempty. Raw responses remain private outside Git.
+## Scope and implementation
 
-On October 11, a fresh synthetic 480 EUR design invoice was proposed through the actual Nebius model, reviewed in the browser, created through the existing PayPal Sandbox application and read back as `DRAFT`. The workflow checked its project reference, test recipient, line and total. A separate authenticated read confirmed those fields again. Replaying approval returned the same invoice ID without any remote call or additional local proposal. The demo configuration uses one existing Sandbox buyer for its invoice-enabled topics, so this check does not establish isolation between distinct buyer accounts. Sanitized evidence is in `evidence/sandbox-smoke.json`; raw responses, account identifiers and credentials remain private. No invoice was sent and no payment operation occurred.
+Studio distributes invoice preparation across members. It still has **one self-hosted workspace server and one configured Sandbox merchant**. P2P synchronization, blockchain settlement, automatic splits, payouts, remote team hosting and merchant onboarding are outside this prototype. Account administration is host-side configuration; there is no invitation or password-recovery service.
 
-The [96-second public PayPal demonstration](https://youtu.be/dtGlTcxWuwA) was included in the confirmed October 12 submission. It uses actual October 11 browser screenshots with English captions and edited holds; it is not a continuous real-time screen recording. The first example shows a verified 480 EUR remote Sandbox `DRAFT`. A separate 72 EUR proposal remains in local `REVIEW` after manual topic correction, not a second remote invoice. Both topics use the same existing Sandbox buyer. An ambiguous request is shown being clarified. The video makes no sending, payment, distinct-buyer-isolation or general-accuracy claim. The earlier Nebius video is not PayPal evidence.
+Finance controls cover unsent-draft creation, update, deletion, read-only status and separately reviewed share-link publication. Publication makes a Sandbox invoice payable through its link with recipient and merchant email notifications disabled. It does not pay the invoice. The recorded run does not publish a link. There are no payment, refund or capture operations.
 
-The submission discloses the existing TheOne base, new PayPal-specific work, model limitations and Codex assistance. Preserve the existing entry and video rather than creating a duplicate. Documentation status was reconciled with the saved confirmation on October 25; no new invoice or payment operation was run for this update.
+The application binds to loopback and checks Host, Origin, sessions and CSRF. It is not a hardened public multi-tenant service. A remote deployment would require deployment-specific authentication, transport, operations and security work. Other current limits are one invoice line, USD/EUR/GBP, exact amounts from 0.01 to 10000.00, and no taxes or customer email delivery.
 
-MIT, inherited from the repository's root LICENSE.
+The original single-user page remains available through `npm start` (default 3047) and `npm run preview` (default 3071). Studio uses its own page and authorization wrapper around the same invoice workflow. [Backend contracts](BACKEND.md), [routing adaptation](ROUTING-046.md) and [frontend merge record](FRONTEND-MERGE-2026-11-12.md) document these layers.
+
+## Project history and license
+
+The base TheOne repository began September 30, 2026. The standalone PayPal adaptation was built October 11, and the existing Devpost entry 1231924 was submitted October 12. The November 12–13 update adds the v0.4.6 routing adaptation, backend repairs, redesigned interface and Studio collaboration. It does not mount DSH workers or access original DSH conversations. The repository base remains v0.4.5; this is not a new release of the complete DSH plugin.
+
+Codex assisted implementation, review, tests, documentation and demo preparation. The current English video contains edited recordings of real browser interactions, synthetic scenarios, synthesized narration and captions. Waiting may be shortened and result frames held. No company, customer adoption, revenue, award or production accuracy is claimed.
+
+MIT, inherited from the repository’s root `LICENSE`.

@@ -1,0 +1,97 @@
+{
+  "checked_at": "2026-11-12T15:41:04.081Z",
+  "evidence_type": "real_paypal_sandbox",
+  "status": "PASSED",
+  "missing_configuration": [],
+  "steps": [
+    {
+      "step": "create_with_controlled_response_loss",
+      "passed": true
+    },
+    {
+      "step": "recover_by_real_invoice_search_and_verified_read",
+      "passed": true
+    },
+    {
+      "step": "update_remote_draft_and_verify",
+      "passed": true
+    },
+    {
+      "step": "read_remote_status",
+      "passed": true
+    },
+    {
+      "step": "delete_and_verify_404",
+      "passed": true
+    }
+  ],
+  "source_sha256": {
+    "adapters.mjs": "60ab7873f1af496ace88842d88be6ebcf49d3af1e7e3b74190582332c3d65845",
+    "workflow.mjs": "aab94ce20bde01a2555309231c63e821e53065e6dba2845a8ef66b138ea98fee",
+    "verify-sandbox.mjs": "9362ccd54860eb6b4c4d986bb9a88ead029c40e289d16f4acd1c484796b217df"
+  },
+  "calls": [
+    {
+      "path": "/v1/oauth2/token",
+      "method": "POST"
+    },
+    {
+      "path": "/v2/invoicing/invoices",
+      "method": "POST"
+    },
+    {
+      "path": "/v2/invoicing/search-invoices",
+      "method": "POST"
+    },
+    {
+      "path": "/v2/invoicing/invoices/[invoice]",
+      "method": "GET"
+    },
+    {
+      "path": "/v2/invoicing/invoices/[invoice]",
+      "method": "GET"
+    },
+    {
+      "path": "/v2/invoicing/invoices/[invoice]",
+      "method": "PUT"
+    },
+    {
+      "path": "/v2/invoicing/invoices/[invoice]",
+      "method": "GET"
+    },
+    {
+      "path": "/v2/invoicing/invoices/[invoice]",
+      "method": "GET"
+    },
+    {
+      "path": "/v2/invoicing/invoices/[invoice]",
+      "method": "GET"
+    },
+    {
+      "path": "/v2/invoicing/invoices/[invoice]",
+      "method": "DELETE"
+    },
+    {
+      "path": "/v2/invoicing/invoices/[invoice]",
+      "method": "GET"
+    },
+    {
+      "path": "/v2/invoicing/invoices/[invoice]",
+      "method": "GET"
+    }
+  ],
+  "notifications": 0,
+  "published_invoices": 0,
+  "payments": 0,
+  "cleanup": "verified_absent",
+  "scope": "One synthetic unsent invoice. No model calls in this verifier; model integration is verified separately.",
+  "amounts": [
+    "1.00 EUR created",
+    "1.01 EUR updated"
+  ],
+  "limitations": [
+    "One existing Sandbox merchant and buyer",
+    "Controlled response-loss scenario, not a real network outage",
+    "Share-link publication, invoice payment, refund and webhook flows were not exercised"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "merged_at": "2026-11-12",
+  "frontend_file": "../../index.html",
+  "frontend_sha256": "c19964a46a3ca9b74e1d3df7ea11a649cdd830b83d5f85d6962628897a37cf59",
+  "frontend_source": "TheOne-PayPal-frontend/index.html",
+  "backend_source": "Codex audit repairs in this worktree",
+  "previous_reference": "../2026-11-12/manifest.json",
+  "screenshots": [
+    "light.png",
+    "dark.png",
+    "mobile.png"
+  ],
+  "preview_port": 3071,
+  "providers_in_preview": "simulated",
+  "frontend_work_paused": false
+}

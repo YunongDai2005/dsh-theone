@@ -2,6 +2,18 @@
   "name": "theone-paypal-topic-invoices",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=24" },
-  "scripts": { "start": "node --env-file-if-exists=.env server.mjs", "test": "node --test *.test.mjs" }
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env server.mjs",
+    "test": "node --test *.test.mjs",
+    "preview": "node preview.mjs",
+    "verify:backend": "node verify-backend.mjs",
+    "verify:sandbox": "node --env-file-if-exists=.env verify-sandbox.mjs",
+    "verify:ui": "node verify-ui.mjs",
+    "studio:init": "node studio-server.mjs --init",
+    "studio": "node --env-file-if-exists=.env studio-server.mjs",
+    "studio:preview": "node studio-server.mjs --preview"
+  }
 }

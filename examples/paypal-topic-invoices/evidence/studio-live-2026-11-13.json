@@ -1,0 +1,140 @@
+{
+  "checked_at": "2026-11-12T16:15:00.737137+00:00",
+  "evidence_type": "real_model_and_paypal_sandbox_studio_browser_run",
+  "status": "PASSED",
+  "synthetic_members_and_inputs": true,
+  "model": "deepseek-v4.1-flash",
+  "provider": "OpenCode Go",
+  "model_calls": 10,
+  "paypal_requests": 6,
+  "paypal_http_results": [
+    {
+      "method": "POST",
+      "path": "/v1/oauth2/token",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/v2/invoicing/invoices",
+      "status": 201
+    },
+    {
+      "method": "GET",
+      "path": "/v2/invoicing/invoices/[invoice]",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/v2/invoicing/invoices/[invoice]",
+      "status": 200
+    },
+    {
+      "method": "PUT",
+      "path": "/v2/invoicing/invoices/[invoice]",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/v2/invoicing/invoices/[invoice]",
+      "status": 200
+    }
+  ],
+  "planning_attempts": [
+    {
+      "member": "mia",
+      "status": "SUCCEEDED",
+      "calls": 2,
+      "prompt_tokens": 2549,
+      "completion_tokens": 119,
+      "elapsed_ms": 9404
+    },
+    {
+      "member": "mia",
+      "status": "SUCCEEDED",
+      "calls": 2,
+      "prompt_tokens": 2698,
+      "completion_tokens": 120,
+      "elapsed_ms": 7194
+    },
+    {
+      "member": "mia",
+      "status": "SUCCEEDED",
+      "calls": 2,
+      "prompt_tokens": 2900,
+      "completion_tokens": 135,
+      "elapsed_ms": 5800
+    },
+    {
+      "member": "leo",
+      "status": "SUCCEEDED",
+      "calls": 2,
+      "prompt_tokens": 2547,
+      "completion_tokens": 118,
+      "elapsed_ms": 5506
+    },
+    {
+      "member": "alex",
+      "status": "SUCCEEDED",
+      "calls": 2,
+      "prompt_tokens": 2574,
+      "completion_tokens": 117,
+      "elapsed_ms": 4960
+    }
+  ],
+  "final_ledger": [
+    {
+      "owner": "mia",
+      "project": "design",
+      "state": "CREATED",
+      "revision": 3,
+      "amount": {
+        "currency_code": "EUR",
+        "value": "550.00"
+      },
+      "has_remote_id": true
+    },
+    {
+      "owner": "leo",
+      "project": "move",
+      "state": "REVIEW",
+      "revision": 1,
+      "amount": {
+        "currency_code": "EUR",
+        "value": "120.00"
+      },
+      "has_remote_id": false
+    }
+  ],
+  "checks": [
+    "Mia proposes 480 EUR design invoice; no remote creation",
+    "72 EUR studio-expense note leaves invoice unchanged",
+    "Mia revises original draft to 520 EUR",
+    "Leo cannot see design project and proposes separate 120 EUR moving invoice",
+    "Alex sees both authorized ledgers and reviews Mia revision 2",
+    "Finance creates one real unsent Sandbox draft and verifies read-back",
+    "A separate reviewed update changes the same remote draft to 550 EUR with verified read-back",
+    "Alex status query returns team total of 550 EUR from ledger",
+    "Mia signs back in and sees result and Alex audit events with no finance controls"
+  ],
+  "notifications": 0,
+  "payments": 0,
+  "published_invoices": 0,
+  "source_sha256": {
+    "studio.mjs": "fa4f0d2e66a922a43211bfbef1f7d32549b295b02bbee9ef4a3a187bd7b63f86",
+    "studio-auth.mjs": "96cb6fde1bc22ef630c63459f40c23345e55e55b94c7925fd224c668fbf2870b",
+    "studio-server.mjs": "b9652365c1978d63951163ca12364d5d84235ee88379ecabb915c3ef4a5d8557",
+    "studio.html": "4d15f5da668c85e23f836d213ff1293d4ff726e88aebdce5d5ba7c95c6c6e957",
+    "adapters.mjs": "60ab7873f1af496ace88842d88be6ebcf49d3af1e7e3b74190582332c3d65845",
+    "workflow.mjs": "aab94ce20bde01a2555309231c63e821e53065e6dba2845a8ef66b138ea98fee",
+    "routing.mjs": "60929bc06b3c26433a9218675ae95de992104e6db095444a543f005d970ce648",
+    "routing-intelligence.mjs": "f2f801fc55e329e3c8ef8364af7c799fa69d4fc00fbca9a8cd833b39e3195586",
+    "invoice-input.mjs": "cf36a5a950ebb6c692785602f8e19d0e81d8f3b46ec0c21b184cd7e755c825fd",
+    "invoice-selection.mjs": "24a43a1c68c7b946e45f5b1a9de909c55c7db93634db20fabfdd62c768680410"
+  },
+  "limitations": [
+    "Three synthetic users operated sequentially in the browser; concurrent-session isolation separately exercised by HTTP tests",
+    "Single loopback studio server and one existing Sandbox merchant/buyer",
+    "No P2P, blockchain, payout, real payment or customer email",
+    "Recorded UI footage is edited; waits may be shortened and result frames held for narration"
+  ]
+}

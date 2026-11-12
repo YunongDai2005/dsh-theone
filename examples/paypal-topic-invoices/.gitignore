@@ -3,3 +3,5 @@
 *.sqlite*
 live-evidence*.json
 topics.private.json
+# Third-party App Store screenshots are local research, not published project assets.
+/design-reference/2026-11-12/paypal-app-store/*.webp

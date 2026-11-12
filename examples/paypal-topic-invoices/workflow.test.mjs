@@ -13,7 +13,8 @@ const topics = [
   { id: 'move', title: 'Move', summary: 'Moving logistics', recipient: 'move@example.invalid' },
 ];
 const plan = { intent: 'invoice_draft', topic_id: 'design', amount: '480', currency: 'EUR', description: 'Website assets', reply: 'Review this draft.' };
-const planner = { async plan() { return { plan: structuredClone(plan), model: 'mock/offline' }; } };
+const route = topicId => ({ decision: { action: 'EXISTING', contextId: topicId, relatedIds: [], reason: 'Offline fixture' }, model: 'mock/offline' });
+const planner = { async route() { return route('design'); }, async plan() { return { plan: structuredClone(plan), model: 'mock/offline' }; } };
 function fakePayPal() {
   let payload, creates = 0, reads = 0;
   return {
@@ -23,7 +24,7 @@ function fakePayPal() {
   };
 }
 function fixture(t, paypal = fakePayPal(), customPlanner = planner, database) {
-  const app = new InvoiceWorkflow({ topics, planner: customPlanner, paypal, database });
+  const app = new InvoiceWorkflow({ topics, planner: { route: planner.route, ...customPlanner }, paypal, database });
   t.after(() => app.close()); return { app, paypal };
 }
 
@@ -40,7 +41,7 @@ test('untrusted model cannot insert API actions, recipients, topics or unsupport
 });
 test('proposing and correcting a project does not call PayPal; old review cannot create', async t => {
   const { app, paypal } = fixture(t);
-  const original = (await app.plan('Mock input')).proposal;
+  const original = (await app.plan('Draft 480 EUR for Design website assets.')).proposal;
   const corrected = app.correct(original.id, original.revision, 'move');
   assert.equal(corrected.payload.primary_recipients[0].billing_info.email_address, 'move@example.invalid');
   assert.equal(app.proposals('design').length, 0); assert.equal(app.proposals('move').length, 1);
@@ -55,7 +56,7 @@ test('concurrent/replayed approval and database restart do not duplicate a remot
   const dir = mkdtempSync(join(tmpdir(), 'theone-invoice-')); t.after(() => rmSync(dir, { recursive: true, force: true }));
   const paypal = fakePayPal(), db = join(dir, 'test.sqlite');
   let app = new InvoiceWorkflow({ topics, planner, paypal, database: db });
-  const p = (await app.plan('Mock input')).proposal;
+  const p = (await app.plan('Draft 480 EUR for Design website assets.')).proposal;
   const attempts = await Promise.allSettled([app.approve(p.id, p.digest), app.approve(p.id, p.digest)]);
   assert.equal(attempts.filter(r => r.status === 'fulfilled').length, 1); assert.equal(paypal.creates, 1);
   app.close(); app = new InvoiceWorkflow({ topics, planner, paypal, database: db }); t.after(() => app.close());
@@ -64,7 +65,7 @@ test('concurrent/replayed approval and database restart do not duplicate a remot
 test('unknown POST outcome remains uncertain and never automatically creates again', async t => {
   let creates = 0;
   const { app } = fixture(t, { async createDraft() { creates++; throw Error('mock connection lost'); } });
-  const p = (await app.plan('Mock input')).proposal;
+  const p = (await app.plan('Draft 480 EUR for Design website assets.')).proposal;
   await assert.rejects(app.approve(p.id, p.digest), /could not be verified/);
   await assert.rejects(app.approve(p.id, p.digest), /uncertain/);
   await assert.rejects(app.reconcile(p.id), /No known remote ID/);
@@ -73,7 +74,7 @@ test('unknown POST outcome remains uncertain and never automatically creates aga
 test('failed read after create preserves ID and supports read-only reconciliation', async t => {
   const paypal = fakePayPal(), read = paypal.getDraft; let failed = false;
   paypal.getDraft = async id => { if (!failed) { failed = true; throw Error('mock read timeout'); } return read(id); };
-  const { app } = fixture(t, paypal); const p = (await app.plan('Mock input')).proposal;
+  const { app } = fixture(t, paypal); const p = (await app.plan('Draft 480 EUR for Design website assets.')).proposal;
   await assert.rejects(app.approve(p.id, p.digest));
   assert.equal(app.proposals()[0].remote_id, 'INV2-MOCK-ONLY');
   assert.equal((await app.reconcile(p.id)).state, 'CREATED'); assert.equal(paypal.creates, 1);
@@ -81,17 +82,17 @@ test('failed read after create preserves ID and supports read-only reconciliatio
 test('remote recipient/amount mismatch cannot be reported as successful', async t => {
   const paypal = fakePayPal(), read = paypal.getDraft;
   paypal.getDraft = async id => ({ ...await read(id), amount: { currency_code: 'EUR', value: '481.00' } });
-  const { app } = fixture(t, paypal); const p = (await app.plan('Mock input')).proposal;
+  const { app } = fixture(t, paypal); const p = (await app.plan('Draft 480 EUR for Design website assets.')).proposal;
   await assert.rejects(app.approve(p.id, p.digest)); assert.equal(app.proposals()[0].state, 'UNCERTAIN');
 });
 test('notes-only topic refuses invoice creation and project correction', async t => {
   const catalog = [...topics, { id: 'budget', title: 'Budget', summary: 'Personal expense notes', recipient: 'none@example.invalid', invoice_enabled: false }];
   const paypal = fakePayPal(); let selected = 'budget';
-  const app = new InvoiceWorkflow({ topics: catalog, paypal, planner: { async plan() {
+  const app = new InvoiceWorkflow({ topics: catalog, paypal, planner: { async route() { return route(selected); }, async plan() {
     return { plan: { ...plan, topic_id: selected }, model: 'mock/offline' };
   } } }); t.after(() => app.close());
-  await assert.rejects(app.plan('Mock input'), /not customer invoices/);
-  selected = 'design'; const p = (await app.plan('Mock input')).proposal;
+  await assert.rejects(app.plan('Draft 480 EUR for Design website assets.'), /not customer invoices/);
+  selected = 'design'; const p = (await app.plan('Draft 480 EUR for Design website assets.')).proposal;
   assert.throws(() => app.correct(p.id, p.revision, 'budget'), /not customer invoices/);
   assert.equal(paypal.creates, 0);
 });
@@ -115,7 +116,7 @@ test('model call sends topic descriptions without configured recipient addresses
   const model = new ModelPlanner({ baseUrl: 'https://model.example.invalid/v1', apiKey: 'mock', model: 'mock/offline', fetchImpl: async (_url, options) => {
     sent = options.body; return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(plan) } }] }));
   } });
-  await model.plan('Mock input', topics); assert.ok(!sent.includes('design@example.invalid')); assert.ok(sent.includes('Website assets'));
+  await model.plan('Draft 480 EUR for Design website assets.', topics); assert.ok(!sent.includes('design@example.invalid')); assert.ok(sent.includes('Website assets'));
   assert.throws(() => new ModelPlanner({ baseUrl: 'http://model.example.invalid', apiKey: 'mock', model: 'mock' }), /HTTPS/);
 });
 test('actual local HTTP server denies foreign origins, requires session token and produces valid nonce HTML', async t => {
@@ -129,7 +130,7 @@ test('actual local HTTP server denies foreign origins, requires session token an
   assert.equal((await fetch(url + '/state')).status, 403);
   assert.equal((await fetch(url + '/state', { headers: { 'X-TheOne-Token': token, Origin: 'https://attacker.example' } })).status, 403);
   const headers = { 'X-TheOne-Token': token, 'Content-Type': 'application/json' };
-  const proposal = await (await fetch(url + '/plan', { method: 'POST', headers, body: JSON.stringify({ message: 'Mock input' }) })).json();
+  const proposal = await (await fetch(url + '/plan', { method: 'POST', headers, body: JSON.stringify({ message: 'Draft 480 EUR for Design website assets.' }) })).json();
   assert.equal(proposal.proposal.state, 'REVIEW');
   const created = await (await fetch(url + '/approve', { method: 'POST', headers, body: JSON.stringify({ id: proposal.proposal.id, digest: proposal.proposal.digest }) })).json();
   assert.equal(created.state, 'CREATED'); assert.equal(created.remote_id, 'INV2-MOCK-ONLY');

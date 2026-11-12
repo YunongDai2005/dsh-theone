@@ -1,0 +1,28 @@
+{
+  "checked_at": "2026-11-12T16:00:06.847520+00:00",
+  "frontend_sha256": "4d15f5da668c85e23f836d213ff1293d4ff726e88aebdce5d5ba7c95c6c6e957",
+  "verification": "CUA browser checks against isolated studio-preview instance, plus syntax/DOM static checks",
+  "checks": [
+    "Member login restricts project navigation to authorized projects",
+    "Member creates own draft and revises amount from 480 to 520 EUR",
+    "Member has no create/publish PayPal controls",
+    "Logout and Leo login clears Mia records and shows only move/budget",
+    "Leo creates separate 72 EUR draft with independent routing state",
+    "Finance sees both authorized member ledgers and approves Mia draft",
+    "Finance approval is attributed to Alex while proposal owner stays Mia",
+    "Simulated remote update requires review then applies 520 to 550 and reads DRAFT",
+    "Unsaved composer text survives polling and theme switch",
+    "Light and dark invoice document remain readable",
+    "1440x900 desktop and 390x844 mobile have no body horizontal overflow",
+    "Mobile invoice drawer makes background inert and traps Shift+Tab",
+    "Escape closes drawer; desktop resize clears modal/background inert state",
+    "Expense shortcut uses Studio expenses and records a note without a new invoice"
+  ],
+  "real_model_calls": 0,
+  "real_paypal_calls": 0,
+  "ui_fixture": "Synthetic Alex/Mia/Leo member accounts; passwords kept outside repository",
+  "limitations": [
+    "Session-generation race protection reviewed in code; no artificial delayed-response browser injection used.",
+    "Screenshots show the offline preview, not genuine PayPal cloud evidence."
+  ]
+}
