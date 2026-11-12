@@ -1,18 +1,37 @@
-# TheOne Invoice Desk — shared project billing
+# The One — shared work, clear ownership
 
-A small studio can prepare invoices together while keeping each member’s conversation context and financial permissions separate. Members propose bills in their assigned projects. Finance reviews the exact revision before the app creates an **unsent PayPal Sandbox draft**, then reads it back and checks the recipient, project, line and total.
+The One is an odd name for a project about letting more people keep their own records. That tension is the idea.
 
-[PayPal AI Hackathon project](https://devpost.com/software/theone-invoice-desk) · [Studio setup and permissions](STUDIO.md) · [Current real integration receipt](evidence/studio-live-2026-11-13.json)
+Mia knows what she promised the design client. Leo knows what the moving job needs. Alex is responsible for the studio’s finances. Each person should be able to record their part, in their own conversation, without handing over ownership of it. An LLM helps connect those scattered inputs to the right project. The source, owner and confirmations stay attached as the record takes shape.
 
-## What the routing adds
+“The One” is what the team can come back to: a shared account of what happened, with everyone’s part still visible. Here, we are trying that idea with something concrete: invoices.
 
-Mia can request a 480 EUR design invoice, record an unrelated 72 EUR expense, and return to change the original invoice to 520 EUR. Leo has his own routing state and a different project ledger. Alex, the finance reviewer, sees the authorized shared records and can approve Mia’s latest revision without becoming its owner.
+**TheOne Invoice Desk — Studio Edition** lets teammates prepare bills together and gives finance a clear place to review them before anything reaches PayPal.
 
-The router selects a project from the signed-in member’s permitted catalog. The planner prepares a local proposal. The server independently checks customer binding, amount provenance, ownership, role, revision and approval digest. A model cannot grant access, choose an arbitrary recipient or approve a PayPal operation.
+[PayPal AI Hackathon project](https://devpost.com/software/theone-invoice-desk) · [Studio setup and permissions](STUDIO.md) · [Real integration receipt](evidence/studio-live-2026-11-13.json)
 
-Each member has a separate SQLite conversation and pending clarification. Studio project views share authorized messages and invoices, not a combined model conversation. Studio removes cross-project reference context from invoice planning and filters teammates’ private routing traces and inaccessible historical revisions. Status answers use the authorized team ledger with separate totals for each currency.
+## A bill, a detour, and three people
 
-## Run the complete offline preview
+**Mia starts with 480 EUR for website assets.** Then she remembers 72 EUR of moving expenses and records it in Studio expenses. That becomes a note in the right project; her design invoice stays at 480 EUR. When she comes back and changes it to 520 EUR, it is still her draft, with the earlier amount there to compare.
+
+**Leo has his own work.** He prepares a 120 EUR moving-services draft in a project he can access. His conversation keeps its own context. Mia’s design project is outside his permissions.
+
+**Alex brings the bills together for review.** The shared ledger shows who prepared each one. Alex checks Mia’s exact 520 EUR revision, approves it, and creates an unsent PayPal Sandbox draft. The app reads it back to check the result. A later change to 550 EUR needs another review and updates that same PayPal draft. Mia can see the result and Alex’s actions; Alex’s approval does not make the bill his.
+
+That is the thread we want to preserve: someone records something, it finds the right project, and the team can follow what changed and who confirmed it.
+
+## What we mean by decentralized recording
+
+Decentralized recording is the direction: let people contribute from their own context, keep ownership visible, and build a shared record through explicit confirmation. The LLM helps connect the inputs; people and permission checks determine what can happen next.
+
+Today’s prototype runs on **one self-hosted workspace server and one configured PayPal Sandbox merchant**. Contribution and conversation context are distributed across members; the infrastructure remains a single workspace. This is not P2P synchronization, a blockchain, or distributed consensus.
+
+The recorded example uses synthetic studio members and test invoices, with genuine model and PayPal Sandbox requests. It sends no invoice email and makes no payment. You can also try the whole workflow offline with simulated providers.
+
+## Try the studio
+
+<details>
+<summary><strong>Run the complete offline preview</strong></summary>
 
 Requires **Node.js 24+**. The application has no npm dependencies or installation scripts.
 
@@ -33,7 +52,10 @@ Open `http://127.0.0.1:3074`. Initialization prints random passwords once and sa
 
 The preview uses real session and permission code with **scripted model responses and simulated PayPal**. Its banner identifies this. It makes no external requests. Preview records use `.data/studio-preview`; the simulated remote invoice store lasts only for that process.
 
-## Run with genuine model and PayPal Sandbox APIs
+</details>
+
+<details>
+<summary><strong>Use genuine model and PayPal Sandbox APIs</strong></summary>
 
 ```sh
 cp .env.example .env
@@ -59,7 +81,10 @@ Use **Sandbox credentials and test recipients only**. PayPal requests are fixed 
 
 This is a locally runnable build, not a public hosted service. Judges can run the full offline UI and tests without credentials. To reproduce genuine inference and PayPal operations, configure their own existing provider and Sandbox access as above. The recorded run is evidence of actual integration, not a promise of public hosting or free API access.
 
-## Judge walkthrough
+</details>
+
+<details>
+<summary><strong>Follow the seven-step judge walkthrough</strong></summary>
 
 1. Sign in as **Mia**. Request `Draft a 480 EUR invoice for the design client for website assets.` The draft belongs to Mia and has no remote invoice yet.
 2. Record `Record 72 EUR of moving expenses in Studio expenses. Do not create an invoice.` The expense becomes a note; the design draft remains 480 EUR.
@@ -71,7 +96,25 @@ This is a locally runnable build, not a public hosted service. Judges can run th
 
 The account and invoice inputs above are synthetic. The genuine recording uses one existing Sandbox merchant and the same test buyer for both invoice-enabled projects; it does not demonstrate routing across different merchant or buyer accounts.
 
-## Verification
+</details>
+
+## Implementation, evidence, and limits
+
+<details>
+<summary><strong>How routing, ownership, and permissions work</strong></summary>
+
+A small studio can prepare invoices together while keeping each member’s conversation context and financial permissions separate. Members propose bills in their assigned projects. Finance reviews the exact revision before the app creates an **unsent PayPal Sandbox draft**, then reads it back and checks the recipient, project, line and total.
+
+Mia can request a 480 EUR design invoice, record an unrelated 72 EUR expense, and return to change the original invoice to 520 EUR. Leo has his own routing state and a different project ledger. Alex, the finance reviewer, sees the authorized shared records and can approve Mia’s latest revision without becoming its owner.
+
+The router selects a project from the signed-in member’s permitted catalog. The planner prepares a local proposal. The server independently checks customer binding, amount provenance, ownership, role, revision and approval digest. A model cannot grant access, choose an arbitrary recipient or approve a PayPal operation.
+
+Each member has a separate SQLite conversation and pending clarification. Studio project views share authorized messages and invoices, not a combined model conversation. Studio removes cross-project reference context from invoice planning and filters teammates’ private routing traces and inaccessible historical revisions. Status answers use the authorized team ledger with separate totals for each currency.
+
+</details>
+
+<details>
+<summary><strong>Verification: tests, browser checks, and actual API requests</strong></summary>
 
 - **108 automated tests passed** on the final source. These include 15 independent Studio security scenarios and use mocked external providers. They cover project and owner access, forged identity fields, per-member context, stale approvals, replay, remote lifecycle, history privacy, and HTTP session/CSRF/Origin protections.
 - **[14 browser checks passed](evidence/studio-ui-2026-11-13.json)** with simulated providers: member login and project isolation, shared owner labels, finance review, remote edit confirmation, polling, dark/light themes, mobile layout and keyboard focus.
@@ -90,7 +133,10 @@ npm run verify:sandbox -- .data/sandbox-verification.json
 
 `verify:backend` runs sixteen HTTP/SQLite steps with simulated providers against the original single-user app. `verify:ui` accepts `PLAYWRIGHT_MODULE` and `PLAYWRIGHT_EXECUTABLE_PATH` for an existing browser-test installation. The actual application needs neither Playwright nor an npm install.
 
-## Scope and implementation
+</details>
+
+<details>
+<summary><strong>Current scope and implementation limits</strong></summary>
 
 Studio distributes invoice preparation across members. It still has **one self-hosted workspace server and one configured Sandbox merchant**. P2P synchronization, blockchain settlement, automatic splits, payouts, remote team hosting and merchant onboarding are outside this prototype. Account administration is host-side configuration; there is no invitation or password-recovery service.
 
@@ -100,10 +146,15 @@ The application binds to loopback and checks Host, Origin, sessions and CSRF. It
 
 The original single-user page remains available through `npm start` (default 3047) and `npm run preview` (default 3071). Studio uses its own page and authorization wrapper around the same invoice workflow. [Backend contracts](BACKEND.md), [routing adaptation](ROUTING-046.md) and [frontend merge record](FRONTEND-MERGE-2026-11-12.md) document these layers.
 
-## Project history and license
+</details>
+
+<details>
+<summary><strong>Project history, demo disclosure, and license</strong></summary>
 
 The base TheOne repository began September 30, 2026. The standalone PayPal adaptation was built October 11, and the existing Devpost entry 1231924 was submitted October 12. The November 12–13 update adds the v0.4.6 routing adaptation, backend repairs, redesigned interface and Studio collaboration. It does not mount DSH workers or access original DSH conversations. The repository base remains v0.4.5; this is not a new release of the complete DSH plugin.
 
 Codex assisted implementation, review, tests, documentation and demo preparation. The current English video contains edited recordings of real browser interactions, synthetic scenarios, synthesized narration and captions. Waiting may be shortened and result frames held. No company, customer adoption, revenue, award or production accuracy is claimed.
 
 MIT, inherited from the repository’s root `LICENSE`.
+
+</details>
