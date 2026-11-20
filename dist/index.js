@@ -808,8 +808,18 @@ export default class TheOne extends Service {
         // the executing topic's identity through the asynchronous gate, never a global
         // "current topic" (parallel calls can belong to different sessions).
         const reviewing = new AsyncLocalStorage();
-        const isWorker = (agent) => {
-            const pending = [...this.workers.values()].map(handle => handle.agent);
+        // Runtime ownership is authoritative; a supplied parentSession is not.
+        // DSH 0.2.1-rc.3 moved it from AgentRegistry.isOwnedBy() to
+        // ctx.subagents.rootOf(). This runs on every tool call in DSH, so an
+        // ownership lookup that fails only means "not a Worker", never a failed tool.
+        const ownedByWorker = (agent, workers) => {
+            const subagents = this.ctx.get('subagents');
+            if (typeof subagents?.rootOf === 'function')
+                return workers.has(subagents.rootOf(agent));
+            const registry = this.ctx.agents;
+            if (typeof registry.isOwnedBy !== 'function')
+                return false;
+            const pending = [...workers];
             const seen = new Set();
             const live = this.ctx.agents.list();
             for (let i = 0; i < pending.length; i++) {
@@ -819,12 +829,22 @@ export default class TheOne extends Service {
                 if (seen.has(owner))
                     continue;
                 seen.add(owner);
-                // Runtime ownership is authoritative; a supplied parentSession is not.
                 for (const child of live)
-                    if (!seen.has(child) && this.ctx.agents.isOwnedBy(child.id, owner))
+                    if (!seen.has(child) && registry.isOwnedBy(child.id, owner))
                         pending.push(child);
             }
             return false;
+        };
+        const isWorker = (agent) => {
+            const workers = new Set([...this.workers.values()].map(handle => handle.agent));
+            if (workers.has(agent))
+                return true;
+            try {
+                return ownedByWorker(agent, workers);
+            }
+            catch {
+                return false;
+            }
         };
         ctx.on('llm/stream', (options, next) => {
             const worker = reviewing.getStore();

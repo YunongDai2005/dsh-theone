@@ -82,6 +82,39 @@ test('nested delegated children use their own review identity, unrelated lineage
   } finally { await app.close() }
 })
 
+// DSH 0.2.1-rc.3 removed AgentRegistry.isOwnedBy(); live tree roots come from ctx.subagents.rootOf().
+for (const runtime of ['rootOf', 'rootOf throws', 'no ownership API'] as const) {
+  test(`tool calls still run on a DSH without isOwnedBy (${runtime})`, async () => {
+    const app = await setup()
+    try {
+      await ask(app.gateway, 'Qwen 那个')
+      const topic = app.ctx.theone.store.contexts().find(c => c.id === 'ctx_qwen_9070xt')!
+      const worker = app.ctx.agents.get(SessionId(topic.workingSessionId))!
+      Object.defineProperty(app.ctx.agents, 'isOwnedBy', { value: undefined, configurable: true })
+      const create = async () => (await app.ctx.agents.create({ sessionId: SessionId(randomUUID()),
+        agentOptions: { provider: 'fixture', model: 'fixture' }, meta: { cwd: app.root, parentSession: worker.id } })).agent
+      const child = await create()
+      const other = await create()
+      if (runtime !== 'no ownership API') {
+        app.ctx.provide('subagents')
+        app.ctx.set('subagents', { rootOf: (agent: unknown) => {
+          if (runtime === 'rootOf throws') throw Object.assign(new Error('not a live subagent'), { code: 'UNAUTHORIZED' })
+          return agent === child ? worker : agent
+        } })
+      }
+      for (const agent of [child, other]) app.ctx.permissionPresets.set(agent.session, 'auto')
+      const delegated = await ask(child, 'Run the probe')
+      if (runtime === 'rootOf') {
+        assert.equal(app.reviews.at(-1)?.sessionId, child.id)
+        assert.match(delegated.output, /PROBE_EXECUTED/)
+      } else assert.match(delegated.output, /MissingSessionID/)
+      const unrelated = await ask(other, 'Run the probe')
+      assert.doesNotMatch(unrelated.output, /is not a function/)
+      assert.match(unrelated.output, /MissingSessionID/)
+    } finally { await app.close() }
+  })
+}
+
 test('loading Auto during a model response preserves review and mirror ordering', async () => {
   const app = await setup()
   try {
