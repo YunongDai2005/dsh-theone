@@ -19,7 +19,7 @@ Outputs must be new files. A completed inspection exits 0; unsupported syntax, p
 
 The inspector handles literal/quoted references, a single attribute group, conditional declarations, top-level global versus file-specific attributes, opaque multiline inline files, and symbolic-link declarations. Repeated explicit target spellings are grouped with their declared prefix/mount context and dupignore provenance; no final image path or winning file is asserted.
 
-Includes and header backslash escapes/continuations stop inspection. Variables are retained without reading the environment. Host files, directory imports, filters, links and commands are never followed or executed. Unknown attribute names are retained as declarations, not validated. Limits are 1 MiB, 10,000 input lines, 2,000 records, 80 distinct declared attributes and 8,192 inherited attribute characters.
+Includes and header backslash escapes/continuations stop inspection. The `physical` attribute also stops inspection: QNX 8 documents it as not implemented, so the inspector does not classify its contents as data, script or a usable bootstrap. Variables are retained without reading the environment. Host files, directory imports, filters, links and commands are never followed or executed. Unknown attribute names are retained as declarations, not validated. Limits are 1 MiB, 10,000 input lines, 2,000 records, 80 distinct declared attributes and 8,192 inherited attribute characters.
 
 A report does not establish full grammar compliance, binary availability, image construction, bootability, deadlock diagnosis, security, performance or contest eligibility. QNX mkifs comparison has not been run; the official utility requires an appropriate license.
 

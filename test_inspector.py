@@ -37,6 +37,23 @@ class InspectionTests(unittest.TestCase):
         self.assertEqual(r["entries"][-1]["effective_declared_attributes"]["perms"]["value"], "0555")
         self.assertNotIn("uid", r["entries"][-1]["effective_declared_attributes"])
 
+    def test_unimplemented_physical_mode_stops_before_misclassifying_content(self):
+        for declaration in (
+            "[physical=raw] boot={",
+            "[physical=raw +script] boot={",
+            "[physical=raw virtual=x86_64,bios] boot={",
+            "[physical=raw]",
+        ):
+            with self.subTest(declaration=declaration):
+                r = inspect("[uid=4]\nknown=file\n" + declaration +
+                            "\n[uid=99] opaque-content\n}\nafter=file\n")
+                self.assertFalse(r["inspection_complete"])
+                self.assertEqual([e["target_expression"] for e in r["entries"]], ["known"])
+                self.assertEqual(r["diagnostics"][0]["line"], 3)
+                self.assertIn("not implemented", r["diagnostics"][0]["message"])
+                self.assertEqual(r["final_declared_attributes"]["uid"]["value"], "4")
+                self.assertNotIn("physical", r["final_declared_attributes"])
+
     def test_escaped_inline_brace_and_hash_preserved(self):
         r = inspect("f={\n\\} # data\n}\nx\n")
         self.assertTrue(r["inspection_complete"])

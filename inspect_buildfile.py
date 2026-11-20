@@ -9,7 +9,7 @@ import re
 import sys
 from pathlib import Path
 
-VERSION = "0.1.0"
+VERSION = "0.1.1"
 MAX_BYTES = 1024 * 1024
 MAX_LINES = 10000
 MAX_RECORDS = 2000
@@ -21,6 +21,7 @@ LIMITS = [
     "Attribute provenance records explicit declarations, not all mkifs defaults or side effects.",
     "Repeated targets cover literal explicit targets only; emitted paths and directory contents are unresolved.",
     "Backslash escapes/continuations outside inline data and include processing stop inspection.",
+    "The physical attribute stops inspection: QNX 8 documents it as not implemented; no boot mode is inferred.",
     "Inline contents are opaque; script/bootstrap semantics and executable availability are not validated.",
     "Inspection stops at 2,000 records, 80 distinct declared attributes, or 8,192 inherited attribute characters.",
 ]
@@ -169,6 +170,8 @@ def inspect_bytes(data: bytes, label: str = "<input>") -> dict:
             attr_text, spec = separate_attributes(line)
             changes = attributes(attr_text, number)
             effective = apply_attributes(state, changes)
+            if "physical" in effective:
+                raise Unsupported("QNX 8 documents the physical attribute as not implemented; no boot mode inferred")
             if len(report["entries"]) + len(report["directives"]) >= MAX_RECORDS:
                 raise Unsupported("Record limit reached")
             if len(effective) > MAX_ATTRIBUTES or sum(len(k) + len(str(v["value"])) for k, v in effective.items()) > MAX_STATE_CHARS:
