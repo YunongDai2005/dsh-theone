@@ -1,0 +1,24 @@
+# Original synthetic declaration example, licensed with this project under MIT.
+# Text inspection only: this is not a runnable QNX image buildfile.
+# Referenced names and script commands below are deliberately placeholders.
+[uid=7 perms=0555 prefix=demo]
+
+[perms=0444] config={
+[network]
+host=example.invalid
+# This line remains inline data.
+}
+app=missing-demo-binary
+
+[uid=0 +script] startup-script={
+[uid=99] placeholder-command
+}
+after-script=missing-second-binary
+[type=link] alias=app
+
+[+dupignore] repeated=missing-copy-a
+[-dupignore] repeated=missing-copy-b
+[prefix=other] repeated=missing-copy-c
+
+"quoted # target"="missing host file"
+$UNEXPANDED=missing-variable-input

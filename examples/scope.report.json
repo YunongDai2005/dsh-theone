@@ -1,0 +1,398 @@
+{
+  "tool": "QNX Buildfile Scope Inspector",
+  "version": "0.1.1",
+  "source": "scope.build",
+  "source_sha256": "3790cfa10ba317a0137adc75745727b3047caad639802e656c2e8547559a15b1",
+  "input_lines": 24,
+  "inspection_complete": true,
+  "qnx_validation_performed": false,
+  "limits": [
+    "Declaration inspection only; not QNX compiler validation or proof an image boots.",
+    "No host-file lookup, include loading, environment expansion, scripts, filters or commands.",
+    "Attribute provenance records explicit declarations, not all mkifs defaults or side effects.",
+    "Repeated targets cover literal explicit targets only; emitted paths and directory contents are unresolved.",
+    "Backslash escapes/continuations outside inline data and include processing stop inspection.",
+    "The physical attribute stops inspection: QNX 8 documents it as not implemented; no boot mode is inferred.",
+    "Inline contents are opaque; script/bootstrap semantics and executable availability are not validated.",
+    "Inspection stops at 2,000 records, 80 distinct declared attributes, or 8,192 inherited attribute characters."
+  ],
+  "directives": [
+    {
+      "line": 4,
+      "changes": {
+        "uid": {
+          "value": "7",
+          "line": 4,
+          "conditional": false
+        },
+        "perms": {
+          "value": "0555",
+          "line": 4,
+          "conditional": false
+        },
+        "prefix": {
+          "value": "demo",
+          "line": 4,
+          "conditional": false
+        }
+      },
+      "effective_declared_attributes": {
+        "uid": {
+          "value": "7",
+          "line": 4,
+          "conditional": false
+        },
+        "perms": {
+          "value": "0555",
+          "line": 4,
+          "conditional": false
+        },
+        "prefix": {
+          "value": "demo",
+          "line": 4,
+          "conditional": false
+        }
+      }
+    }
+  ],
+  "entries": [
+    {
+      "line": 6,
+      "end_line": 10,
+      "declaration": "config={",
+      "target_expression": "config",
+      "host_expression": null,
+      "effective_declared_attributes": {
+        "uid": {
+          "value": "7",
+          "line": 4,
+          "conditional": false
+        },
+        "perms": {
+          "value": "0444",
+          "line": 6,
+          "conditional": false
+        },
+        "prefix": {
+          "value": "demo",
+          "line": 4,
+          "conditional": false
+        }
+      },
+      "filesystem_resolution": "not performed",
+      "kind": "inline_data",
+      "inline_complete": true,
+      "inline_body_lines": 3,
+      "inline_body_sha256": "980dfdb14d2973d60a61acf05d9d3a48999cd3e986e1e40710fe09bbec4279be"
+    },
+    {
+      "line": 11,
+      "end_line": 11,
+      "declaration": "app=missing-demo-binary",
+      "target_expression": "app",
+      "host_expression": "missing-demo-binary",
+      "effective_declared_attributes": {
+        "uid": {
+          "value": "7",
+          "line": 4,
+          "conditional": false
+        },
+        "perms": {
+          "value": "0555",
+          "line": 4,
+          "conditional": false
+        },
+        "prefix": {
+          "value": "demo",
+          "line": 4,
+          "conditional": false
+        }
+      },
+      "filesystem_resolution": "not performed",
+      "kind": "external_reference"
+    },
+    {
+      "line": 13,
+      "end_line": 15,
+      "declaration": "startup-script={",
+      "target_expression": "startup-script",
+      "host_expression": null,
+      "effective_declared_attributes": {
+        "uid": {
+          "value": "0",
+          "line": 13,
+          "conditional": false
+        },
+        "perms": {
+          "value": "0555",
+          "line": 4,
+          "conditional": false
+        },
+        "prefix": {
+          "value": "demo",
+          "line": 4,
+          "conditional": false
+        },
+        "script": {
+          "value": true,
+          "line": 13,
+          "conditional": false
+        }
+      },
+      "filesystem_resolution": "not performed",
+      "kind": "inline_script",
+      "inline_complete": true,
+      "inline_body_lines": 1,
+      "inline_body_sha256": "554210cd92ea72de54321f0f4c1517df1d88d417242763d98be7eacc8e32eed5"
+    },
+    {
+      "line": 16,
+      "end_line": 16,
+      "declaration": "after-script=missing-second-binary",
+      "target_expression": "after-script",
+      "host_expression": "missing-second-binary",
+      "effective_declared_attributes": {
+        "uid": {
+          "value": "7",
+          "line": 4,
+          "conditional": false
+        },
+        "perms": {
+          "value": "0555",
+          "line": 4,
+          "conditional": false
+        },
+        "prefix": {
+          "value": "demo",
+          "line": 4,
+          "conditional": false
+        }
+      },
+      "filesystem_resolution": "not performed",
+      "kind": "external_reference"
+    },
+    {
+      "line": 17,
+      "end_line": 17,
+      "declaration": "alias=app",
+      "target_expression": "alias",
+      "host_expression": null,
+      "effective_declared_attributes": {
+        "uid": {
+          "value": "7",
+          "line": 4,
+          "conditional": false
+        },
+        "perms": {
+          "value": "0555",
+          "line": 4,
+          "conditional": false
+        },
+        "prefix": {
+          "value": "demo",
+          "line": 4,
+          "conditional": false
+        },
+        "type": {
+          "value": "link",
+          "line": 17,
+          "conditional": false
+        }
+      },
+      "filesystem_resolution": "not performed",
+      "kind": "symlink",
+      "link_expression": "app"
+    },
+    {
+      "line": 19,
+      "end_line": 19,
+      "declaration": "repeated=missing-copy-a",
+      "target_expression": "repeated",
+      "host_expression": "missing-copy-a",
+      "effective_declared_attributes": {
+        "uid": {
+          "value": "7",
+          "line": 4,
+          "conditional": false
+        },
+        "perms": {
+          "value": "0555",
+          "line": 4,
+          "conditional": false
+        },
+        "prefix": {
+          "value": "demo",
+          "line": 4,
+          "conditional": false
+        },
+        "dupignore": {
+          "value": true,
+          "line": 19,
+          "conditional": false
+        }
+      },
+      "filesystem_resolution": "not performed",
+      "kind": "external_reference"
+    },
+    {
+      "line": 20,
+      "end_line": 20,
+      "declaration": "repeated=missing-copy-b",
+      "target_expression": "repeated",
+      "host_expression": "missing-copy-b",
+      "effective_declared_attributes": {
+        "uid": {
+          "value": "7",
+          "line": 4,
+          "conditional": false
+        },
+        "perms": {
+          "value": "0555",
+          "line": 4,
+          "conditional": false
+        },
+        "prefix": {
+          "value": "demo",
+          "line": 4,
+          "conditional": false
+        },
+        "dupignore": {
+          "value": false,
+          "line": 20,
+          "conditional": false
+        }
+      },
+      "filesystem_resolution": "not performed",
+      "kind": "external_reference"
+    },
+    {
+      "line": 21,
+      "end_line": 21,
+      "declaration": "repeated=missing-copy-c",
+      "target_expression": "repeated",
+      "host_expression": "missing-copy-c",
+      "effective_declared_attributes": {
+        "uid": {
+          "value": "7",
+          "line": 4,
+          "conditional": false
+        },
+        "perms": {
+          "value": "0555",
+          "line": 4,
+          "conditional": false
+        },
+        "prefix": {
+          "value": "other",
+          "line": 21,
+          "conditional": false
+        }
+      },
+      "filesystem_resolution": "not performed",
+      "kind": "external_reference"
+    },
+    {
+      "line": 23,
+      "end_line": 23,
+      "declaration": "\"quoted # target\"=\"missing host file\"",
+      "target_expression": "quoted # target",
+      "host_expression": "missing host file",
+      "effective_declared_attributes": {
+        "uid": {
+          "value": "7",
+          "line": 4,
+          "conditional": false
+        },
+        "perms": {
+          "value": "0555",
+          "line": 4,
+          "conditional": false
+        },
+        "prefix": {
+          "value": "demo",
+          "line": 4,
+          "conditional": false
+        }
+      },
+      "filesystem_resolution": "not performed",
+      "kind": "external_reference"
+    },
+    {
+      "line": 24,
+      "end_line": 24,
+      "declaration": "$UNEXPANDED=missing-variable-input",
+      "target_expression": "$UNEXPANDED",
+      "host_expression": "missing-variable-input",
+      "effective_declared_attributes": {
+        "uid": {
+          "value": "7",
+          "line": 4,
+          "conditional": false
+        },
+        "perms": {
+          "value": "0555",
+          "line": 4,
+          "conditional": false
+        },
+        "prefix": {
+          "value": "demo",
+          "line": 4,
+          "conditional": false
+        }
+      },
+      "filesystem_resolution": "not performed",
+      "kind": "external_reference"
+    }
+  ],
+  "diagnostics": [],
+  "final_declared_attributes": {
+    "uid": {
+      "value": "7",
+      "line": 4,
+      "conditional": false
+    },
+    "perms": {
+      "value": "0555",
+      "line": 4,
+      "conditional": false
+    },
+    "prefix": {
+      "value": "demo",
+      "line": 4,
+      "conditional": false
+    }
+  },
+  "repeated_literal_targets": [
+    {
+      "target_expression": "repeated",
+      "prefix_mount_context": [
+        "demo",
+        "<implicit>"
+      ],
+      "lines": [
+        19,
+        20
+      ],
+      "dupignore_declarations": [
+        {
+          "value": true,
+          "line": 19,
+          "conditional": false
+        },
+        {
+          "value": false,
+          "line": 20,
+          "conditional": false
+        }
+      ],
+      "meaning": "Repeated declared spelling/context; no emitted-path collision or winner is asserted."
+    }
+  ],
+  "summary": {
+    "entries": 10,
+    "global_directives": 1,
+    "inline_blocks": 2,
+    "repeated_literal_groups": 1,
+    "stop_diagnostics": 0
+  }
+}

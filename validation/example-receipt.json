@@ -1,0 +1,41 @@
+{
+  "observed_at_utc": "2026-11-21T17:54:14.584105+00:00",
+  "kind": "actual_local_cli_example",
+  "input": "examples/scope.build",
+  "command": [
+    "python3",
+    "inspect_buildfile.py",
+    "examples/scope.build"
+  ],
+  "python_version": "3.11.9",
+  "exit_code": 0,
+  "stderr_bytes": 0,
+  "elapsed_seconds": 0.324724,
+  "elapsed_limit": "Single local observation; not a benchmark or performance guarantee.",
+  "source_version": "0.1.1",
+  "tested_implementation_commit": "08d71dff4c455c1f300c2f255346c542e3b20da9",
+  "unchanged_source_sha256": {
+    "inspect_buildfile.py": "73954f51030d8c1d6e35d088bf4d2e5fe68e6b2c65b30ec5ef68bdbc99d6699a",
+    "test_inspector.py": "5a1159920e35c99e3f9f413bd3af2a79d146ca46a2a3d215f548be308bf6a3ed"
+  },
+  "input_sha256": "3790cfa10ba317a0137adc75745727b3047caad639802e656c2e8547559a15b1",
+  "output": "examples/scope.report.json",
+  "output_sha256": "04faf487a629dd3ea7fcf9fddf90fb3a39ebd2114c0f575c97e86a6b44ed970f",
+  "summary": {
+    "entries": 10,
+    "global_directives": 1,
+    "inline_blocks": 2,
+    "repeated_literal_groups": 1,
+    "stop_diagnostics": 0
+  },
+  "independent_expected_checks": [
+    "Entry source lines6,11,13,16,17,19,20,21,23,24.",
+    "Config local0444 does not replace global0555 on the next file.",
+    "Script localuid0 and opaque bodyuid99 do not replace globaluid7.",
+    "Symlink references app without a host-file resolution claim.",
+    "Only repeated lines19/20 share explicit target and prefix; line21 uses another prefix.",
+    "Quoted hash remains part of target; variable expression stays literal."
+  ],
+  "scope": "New original synthetic documentation example, not an actual QNX image. Placeholder files/commands are not loaded or executed. This is one CLI run, not additional unit tests, a model call, a video or a target run. Existing19-test suite was not rerun.",
+  "html_preview": "No HTML output, browser operation or alternate route to the denied HTML preview."
+}

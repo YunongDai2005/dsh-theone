@@ -6,10 +6,25 @@ This original, AI-assisted host-tool prototype has not been registered, submitte
 
 ## Run
 
-Python 3.11 or newer, standard library only. No install or service. Run against your own buildfile (`sample.build` below is a placeholder input path):
+Python 3.11 or newer, standard library only. No install or service. Try the included original synthetic example:
 
 ```sh
-python3 inspect_buildfile.py sample.build --json new-report.json --html new-report.html
+python3 inspect_buildfile.py examples/scope.build --json new-report.json
+```
+
+The input contains placeholder paths and commands, so it is not a runnable QNX image. The inspector reads only the buildfile text. Its [actual saved output](examples/scope.report.json) contains 10 entries, 2 opaque inline blocks and 1 repeated-target group. The [example receipt](validation/example-receipt.json) records the real invocation, code/input/output hashes and independently specified expectations.
+
+| Input feature | Observed result |
+| --- | --- |
+| Config has local `perms=0444` | The next file retains global `perms=0555`. |
+| Script has local `uid=0`; its opaque body contains `uid=99` | The following file retains global `uid=7`. |
+| Three `repeated` targets, one under a different prefix | Only lines 19 and 20 are grouped; no output-image collision or winning file is inferred. |
+| Quoted `#`, a symbolic link and a variable expression | Literal text and declarations are retained without environment or file resolution. |
+
+For your own buildfile and optional HTML output, replace `your.build` with your input path. You can also run the local test suite:
+
+```sh
+python3 inspect_buildfile.py your.build --json another-report.json --html new-report.html
 python3 -m unittest -v test_inspector
 ```
 
