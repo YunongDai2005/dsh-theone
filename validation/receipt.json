@@ -1,0 +1,50 @@
+{
+  "version": "0.1.1",
+  "kind": "local_test_evidence",
+  "test_observed_at_utc": "2026-11-20T23:51:42.356549+00:00",
+  "tested_source_commit": "08d71dff4c455c1f300c2f255346c542e3b20da9",
+  "test_command": "python3 -m unittest -v test_inspector",
+  "tests": {
+    "returncode": 0,
+    "total": 19,
+    "added_test_methods": 1,
+    "new_regression_subcases": 4,
+    "suite_runs_this_turn": 1,
+    "reason": "Actual parser correction following reproduced misclassification"
+  },
+  "tested_file_sha256": {
+    "inspect_buildfile.py": "73954f51030d8c1d6e35d088bf4d2e5fe68e6b2c65b30ec5ef68bdbc99d6699a",
+    "test_inspector.py": "5a1159920e35c99e3f9f413bd3af2a79d146ca46a2a3d215f548be308bf6a3ed"
+  },
+  "test_output_file": "tests-0.1.1.txt",
+  "test_output_sha256": "1b41d3d4455d04ae682aa999cbf93979a7473b5d69c7b45659eccdf4965c28b8",
+  "synthetic_cli_observation": {
+    "returncode": 2,
+    "summary": {
+      "entries": 1,
+      "global_directives": 1,
+      "inline_blocks": 0,
+      "repeated_literal_groups": 0,
+      "stop_diagnostics": 1
+    },
+    "diagnostics": [
+      {
+        "line": 3,
+        "code": "INSPECTION_STOPPED",
+        "message": "QNX 8 documents the physical attribute as not implemented; no boot mode inferred; subsequent declarations not interpreted. This is not a QNX compiler verdict."
+      }
+    ],
+    "accepted_targets": [
+      "known"
+    ],
+    "calls": 1
+  },
+  "limits": [
+    "These are local Python tests, not QNX compiler/target validation or an independent review.",
+    "No GitHub CI result is claimed.",
+    "The CLI observation used synthetic text; no referenced command was executed.",
+    "Historical external recipe validation belongs to version 0.1.0; no 0.1.1 external-recipe rerun.",
+    "HTML escaping tests passed; visual layout is unverified.",
+    "This source release is not a competition registration or submission."
+  ]
+}

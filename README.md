@@ -1,12 +1,12 @@
-# QNX Buildfile Scope Inspector — local prototype
+# QNX Buildfile Scope Inspector
 
 Read a QNX buildfile as text and inspect which declared attributes reach each top-level file entry. Every attribute carries its source line. Inline data, bootstrap and script blocks stay opaque, so their configuration headers or commands cannot accidentally change the outer attribute state.
 
-This original, AI-assisted prototype is private and has not been registered, submitted or reviewed by the QNX competition. It does not contain the SDK or an OS image.
+This original, AI-assisted host-tool prototype has not been registered, submitted or reviewed by the QNX competition. It does not contain the SDK or an OS image.
 
 ## Run
 
-Python 3.11 or newer, standard library only. No install or service.
+Python 3.11 or newer, standard library only. No install or service. Run against your own buildfile (`sample.build` below is a placeholder input path):
 
 ```sh
 python3 inspect_buildfile.py sample.build --json new-report.json --html new-report.html
@@ -27,7 +27,9 @@ A report does not establish full grammar compliance, binary availability, image 
 
 New synthetic tests exercise scope isolation, opaque data, partial/unsupported syntax, absent external reads, path uncertainty, HTML escaping and refusal to overwrite. They are local parser tests, not QNX tests or model calls.
 
-The separate private evidence receipt records a read-only run on an external author's pinned QNX 8 recipe, with manual line-based expectations. The recipe is authored by Deniz Eren, carries GPL-3.0-or-later in its header, and is not bundled in this source directory. No OS binaries or original project scripts are downloaded or executed. Any later redistribution of that source requires its attribution/license obligations to be handled separately.
+Version 0.1.1 passed 19 local tests on November 21, 2026 (Beijing). This includes one regression test covering four `physical` declaration forms; it is not 19 additional tests. The [validation receipt](validation/receipt.json) pins the tested code and test-file hashes, and the [actual test output](validation/tests-0.1.1.txt) is included. These are local results, not a GitHub CI run or independent review. The HTML report has static escaping checks; its visual layout has not been verified.
+
+A separate historical version 0.1.0 receipt records a read-only run on an external author's pinned QNX 8 recipe, with manual line-based expectations: 88 entries, 6 global directives and 4 inline blocks. That external input was not rerun for 0.1.1. The recipe is authored by Deniz Eren, carries GPL-3.0-or-later in its header, and is not bundled in this source directory. No OS binaries or scripts referenced by that recipe were downloaded or executed. Any later redistribution of that source requires its attribution/license obligations to be handled separately.
 
 Primary technical references:
 - [QNX 8 buildfile syntax](https://qnx.com/developers/docs/8.0/com.qnx.doc.neutrino.building/topic/buildfiles/buildfile_syntax.html)
