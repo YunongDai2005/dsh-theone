@@ -9,7 +9,7 @@ import re
 import sys
 from pathlib import Path
 
-VERSION = "0.1.1"
+VERSION = "0.1.2"
 MAX_BYTES = 1024 * 1024
 MAX_LINES = 10000
 MAX_RECORDS = 2000
@@ -235,8 +235,10 @@ def inspect_bytes(data: bytes, label: str = "<input>") -> dict:
         attrs = entry["effective_declared_attributes"]
         if target is None or any(c in target for c in "$\\"):
             continue
-        context = tuple(str(attrs.get(k, {}).get("value", "<implicit>")) for k in ("prefix", "mount"))
-        if any("$" in c or "\\" in c for c in context):
+        # Absence is not a string value: a literal prefix/mount can itself be
+        # "<implicit>". JSON null preserves that distinction in the report.
+        context = tuple(str(attrs[k]["value"]) if k in attrs else None for k in ("prefix", "mount"))
+        if any(c is not None and ("$" in c or "\\" in c) for c in context):
             continue
         groups.setdefault((target, context), []).append(entry)
     report["repeated_literal_targets"] = [

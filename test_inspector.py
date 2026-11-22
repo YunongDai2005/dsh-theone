@@ -107,6 +107,23 @@ class InspectionTests(unittest.TestCase):
         r = inspect("$OUT=a\n$OUT=b\n")
         self.assertEqual(r["repeated_literal_targets"], [])
 
+    def test_missing_context_is_distinct_from_literal_placeholder(self):
+        for declaration, expected_context in (
+            ('prefix="<implicit>"', ["<implicit>", None]),
+            ('mount="<implicit>"', [None, "<implicit>"]),
+            ('prefix="<implicit>" mount="<implicit>"', ["<implicit>", "<implicit>"]),
+        ):
+            with self.subTest(declaration=declaration):
+                r = inspect("same=a\n[" + declaration + "] same=b\n[" +
+                            declaration + "] same=c\nsame=d\n")
+                groups = r["repeated_literal_targets"]
+                self.assertTrue(r["inspection_complete"])
+                self.assertEqual([g["lines"] for g in groups], [[1, 4], [2, 3]])
+                # Check the serialized contract: null is absence, text is explicit.
+                serialized = json.loads(json.dumps(groups))
+                self.assertEqual(serialized[0]["prefix_mount_context"], [None, None])
+                self.assertEqual(serialized[1]["prefix_mount_context"], expected_context)
+
     def test_size_lines_and_encoding_limits(self):
         for data in (b"x"*(MAX_BYTES+1), b"x\n"*10001, b"\xff"):
             with self.subTest(size=len(data)):

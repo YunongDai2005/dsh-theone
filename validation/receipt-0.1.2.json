@@ -1,0 +1,47 @@
+{
+  "version": "0.1.2",
+  "kind": "local_test_evidence",
+  "test_observed_at_utc": "2026-11-22T05:51:39.444527+00:00",
+  "test_command": "python3 -m unittest -v test_inspector",
+  "tests": {
+    "returncode": 0,
+    "total": 20,
+    "added_test_methods": 1,
+    "new_regression_subcases": 3,
+    "suite_runs_this_turn": 1,
+    "pre_fix_targeted_runs": 1,
+    "pre_fix_failures": 3,
+    "reason": "Reproduced false grouping of absent context and literal placeholder values; corrected representation and grouping."
+  },
+  "tested_file_sha256": {
+    "inspect_buildfile.py": "e66c62442791a1db46c145dc13d90c9611877aa7ac5e9aa28108b6163853402c",
+    "test_inspector.py": "aae880f981fa9ccfe9fea7b6f40ecb1c86829fd8516567702376e6fb7a48b5a1"
+  },
+  "test_output_file": "tests-0.1.2.txt",
+  "test_output_sha256": "f2ba1e2ee072b0894c9bc20b2fb30a7cd959bafc6fbffe12194e0f8cc692ae17",
+  "expected_regression_groups": [
+    [
+      1,
+      4
+    ],
+    [
+      2,
+      3
+    ]
+  ],
+  "observed_before_groups": [
+    [
+      1,
+      2,
+      3,
+      4
+    ]
+  ],
+  "format_change": "prefix_mount_context uses null for absence; a literal <implicit> stays a string. This records declarations, not QNX defaults or emitted paths.",
+  "limits": [
+    "Local Python parser tests, not QNX compiler/target validation, CI or independent review.",
+    "No separate CLI example, external recipe or model rerun. Existing 0.1.0/0.1.1 evidence remains historical.",
+    "Static HTML test only; no visual verification or browser action.",
+    "No registration, final submission or additional delivery."
+  ]
+}
