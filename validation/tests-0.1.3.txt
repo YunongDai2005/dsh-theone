@@ -1,0 +1,29 @@
+test_boot_and_script_content_do_not_mutate_global_state (test_inspector.InspectionTests.test_boot_and_script_content_do_not_mutate_global_state) ... ok
+test_cli_writes_real_reports_and_refuses_overwrite (test_inspector.InspectionTests.test_cli_writes_real_reports_and_refuses_overwrite) ... Inspection failed: Refusing to overwrite an existing output
+ok
+test_conditional_attributes_keep_explicit_state (test_inspector.InspectionTests.test_conditional_attributes_keep_explicit_state) ... ok
+test_escaped_inline_brace_and_hash_preserved (test_inspector.InspectionTests.test_escaped_inline_brace_and_hash_preserved) ... ok
+test_filter_variable_and_shell_text_are_never_evaluated (test_inspector.InspectionTests.test_filter_variable_and_shell_text_are_never_evaluated) ... ok
+test_global_and_file_scope_do_not_leak (test_inspector.InspectionTests.test_global_and_file_scope_do_not_leak) ... ok
+test_html_escapes_hostile_names_and_has_no_active_content (test_inspector.InspectionTests.test_html_escapes_hostile_names_and_has_no_active_content) ... ok
+test_include_does_not_open_any_file (test_inspector.InspectionTests.test_include_does_not_open_any_file) ... ok
+test_inherited_attribute_growth_is_bounded (test_inspector.InspectionTests.test_inherited_attribute_growth_is_bounded) ... ok
+test_inline_config_headers_are_not_attributes (test_inspector.InspectionTests.test_inline_config_headers_are_not_attributes) ... ok
+test_link_target_is_not_host_file (test_inspector.InspectionTests.test_link_target_is_not_host_file) ... ok
+test_missing_context_is_distinct_from_literal_placeholder (test_inspector.InspectionTests.test_missing_context_is_distinct_from_literal_placeholder) ... ok
+test_non_newline_separators_do_not_expose_comment_declarations (test_inspector.InspectionTests.test_non_newline_separators_do_not_expose_comment_declarations) ... ok
+test_non_newline_separators_preserve_opaque_inline_digest (test_inspector.InspectionTests.test_non_newline_separators_preserve_opaque_inline_digest) ... ok
+test_quoted_spaces_and_hash (test_inspector.InspectionTests.test_quoted_spaces_and_hash) ... ok
+test_record_growth_is_bounded (test_inspector.InspectionTests.test_record_growth_is_bounded) ... ok
+test_repeated_targets_keep_provenance_without_picking_winner (test_inspector.InspectionTests.test_repeated_targets_keep_provenance_without_picking_winner) ... ok
+test_size_lines_and_encoding_limits (test_inspector.InspectionTests.test_size_lines_and_encoding_limits) ... ok
+test_unclosed_inline_is_partial (test_inspector.InspectionTests.test_unclosed_inline_is_partial) ... ok
+test_unimplemented_physical_mode_stops_before_misclassifying_content (test_inspector.InspectionTests.test_unimplemented_physical_mode_stops_before_misclassifying_content) ... ok
+test_universal_newline_counts_and_provenance (test_inspector.InspectionTests.test_universal_newline_counts_and_provenance) ... ok
+test_unresolved_variables_not_grouped_as_path_collision (test_inspector.InspectionTests.test_unresolved_variables_not_grouped_as_path_collision) ... ok
+test_unsupported_syntax_stops_without_cascading_claims (test_inspector.InspectionTests.test_unsupported_syntax_stops_without_cascading_claims) ... ok
+
+----------------------------------------------------------------------
+Ran 23 tests in 0.021s
+
+OK

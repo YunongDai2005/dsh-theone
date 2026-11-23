@@ -1,3 +1,4 @@
+import hashlib
 import json
 import tempfile
 import unittest
@@ -58,6 +59,40 @@ class InspectionTests(unittest.TestCase):
         r = inspect("f={\n\\} # data\n}\nx\n")
         self.assertTrue(r["inspection_complete"])
         self.assertEqual(r["entries"][0]["inline_body_lines"], 1)
+
+    def test_non_newline_separators_do_not_expose_comment_declarations(self):
+        for separator in "\v\f\x1c\x1d\x1e\x85\u2028\u2029":
+            with self.subTest(codepoint=f"U+{ord(separator):04X}"):
+                r = inspect("[uid=4]\n# comment" + separator + "[uid=99]\nfile\n")
+                self.assertTrue(r["inspection_complete"])
+                self.assertEqual(r["entries"][0]["effective_declared_attributes"]["uid"]["value"], "4")
+                self.assertEqual(r["entries"][0]["line"], 3)
+                self.assertEqual(r["input_lines"], 3)
+
+    def test_non_newline_separators_preserve_opaque_inline_digest(self):
+        for separator in "\v\f\x1c\x1d\x1e\x85\u2028\u2029":
+            with self.subTest(codepoint=f"U+{ord(separator):04X}"):
+                body = "left" + separator + "right"
+                r = inspect("f={\n" + body + "\n}\nnext\n")
+                entry = r["entries"][0]
+                self.assertTrue(r["inspection_complete"])
+                self.assertEqual(entry["inline_body_sha256"], hashlib.sha256(body.encode()).hexdigest())
+                self.assertEqual((entry["inline_body_lines"], entry["end_line"]), (1, 3))
+                self.assertEqual(r["entries"][1]["line"], 4)
+
+    def test_universal_newline_counts_and_provenance(self):
+        for newline in ("\n", "\r\n", "\r"):
+            for terminal in (False, True):
+                with self.subTest(newline=repr(newline), terminal=terminal):
+                    source = newline.join(["[uid=7]", "f={", "body", "}", "after"])
+                    r = inspect(source + (newline if terminal else ""))
+                    self.assertTrue(r["inspection_complete"])
+                    self.assertEqual(r["input_lines"], 5)
+                    self.assertEqual([(e["line"], e["end_line"]) for e in r["entries"]], [(2, 4), (5, 5)])
+                    self.assertEqual(r["entries"][0]["inline_body_sha256"], hashlib.sha256(b"body").hexdigest())
+                    self.assertEqual(r["entries"][1]["effective_declared_attributes"]["uid"]["line"], 1)
+        self.assertEqual(inspect("")["input_lines"], 0)
+        self.assertEqual(inspect("\n")["input_lines"], 1)
 
     def test_unclosed_inline_is_partial(self):
         r = inspect("f={\nx\n")

@@ -9,7 +9,7 @@ import re
 import sys
 from pathlib import Path
 
-VERSION = "0.1.2"
+VERSION = "0.1.3"
 MAX_BYTES = 1024 * 1024
 MAX_LINES = 10000
 MAX_RECORDS = 2000
@@ -23,6 +23,8 @@ LIMITS = [
     "Backslash escapes/continuations outside inline data and include processing stop inspection.",
     "The physical attribute stops inspection: QNX 8 documents it as not implemented; no boot mode is inferred.",
     "Inline contents are opaque; script/bootstrap semantics and executable availability are not validated.",
+    "Input lines use LF, CRLF or CR; other Unicode/control separators do not start declarations.",
+    "Inline hashes join opaque body lines with LF and omit the final line ending; they are not emitted-file hashes.",
     "Inspection stops at 2,000 records, 80 distinct declared attributes, or 8,192 inherited attribute characters.",
 ]
 
@@ -126,7 +128,12 @@ def inspect_bytes(data: bytes, label: str = "<input>") -> dict:
     if len(data) > MAX_BYTES:
         raise ValueError("Input exceeds 1 MiB")
     source = data.decode("utf-8")
-    lines = source.splitlines()
+    # str.splitlines() also splits Unicode/control separators. That can turn
+    # comment text into declarations and rewrite supposedly opaque inline data.
+    # Use universal newline boundaries only, retaining empty input/EOF counts.
+    lines = re.split(r"\r\n|\r|\n", source) if source else []
+    if source.endswith(("\n", "\r")):
+        lines.pop()
     if len(lines) > MAX_LINES:
         raise ValueError("Input exceeds 10,000 lines")
     report = {
