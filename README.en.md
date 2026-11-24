@@ -129,6 +129,8 @@ Use Feedback at the bottom of Topic workspaces: it includes the version and diag
 
 ## Recent changes
 
+Version 0.4.7 restores tool calls on newer DSH hosts, shows the saved progress in main chat, and adds a four-page tour for new and returning users.
+
 Version 0.4.6 turns every topic into a cell under main chat so you can see where each message goes, keeps main chat to the conversation, and routes more accurately for less.
 
 Version 0.4.5 adds a short setup after installing or updating, lets topic sessions sit in the sidebar, and turns TheOne's mark into a breathing cell.

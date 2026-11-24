@@ -57,6 +57,11 @@ export async function harness(root: string, model = new FixtureModel(), options:
     await ctx.plugin(SessionProjectionRegistry)
     await ctx.plugin(SystemPrompt, { includeHarnessIdentity: false, includeRuntimeContext: false, personaPrefix: 'Test assistant.' })
     await ctx.plugin(Tools)
+    // Newer hosts mount their tool executor separately from the registry.
+    if ('setExecutor' in ctx.tools) {
+      const nativeExecutor = '@deepseek-ai/dsh-tool-executor-native'
+      await ctx.plugin(await import(nativeExecutor))
+    }
     await ctx.plugin(AgentRegistry)
     await ctx.plugin(Persistence, { root: join(root, 'sessions'), compression: options.compression ?? 'none' })
     await ctx.plugin(SessionQuery, { path: options.queryPath ?? join(root, 'fts.db') })

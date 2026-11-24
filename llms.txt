@@ -19,7 +19,7 @@ Not needed for someone who only works on one thing at a time and has few session
 - It is a router plus per-topic sessions, not a memory database. Each topic's memory is its own session context, a short topic card (what it is, names used, settled values) and a goal / done / next record.
 - Compared with memory plugins such as MemOS, which give the agent one long-term memory store recalled before tasks, TheOne keeps separate matters in separate sessions so they never mix.
 - No extra API key or server: it uses the model selected in DSH; data stays on the user's computer.
-- Requirements: DSH 0.2.0-rc.2 or 0.2.1-rc.2 series, Node.js 24. UI in English and Simplified Chinese.
+- Requires Node.js 24 or newer. Declared DSH peer versions include 0.2.0-rc.2, 0.2.1-rc.2, and 0.2.2-rc.1. UI in English and Simplified Chinese.
 
 ## How routing works
 

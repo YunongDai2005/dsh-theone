@@ -69,6 +69,8 @@ jobs:
         run: npm test
       - if: ${{ steps.plan.outputs.skip != 'true' }}
         run: npm run pack:plugin
+      - if: ${{ steps.plan.outputs.skip != 'true' }}
+        run: npm run test:compat
       - name: Create the GitHub Release with the plugin archive
         if: ${{ steps.plan.outputs.skip != 'true' && steps.plan.outputs.create == 'true' }}
         env:

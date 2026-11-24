@@ -17,6 +17,17 @@ test('engines.dsh accepts every DSH 0.2 release, so a DSH update does not mark T
   for (const version of ['0.2.0-rc.1', '0.3.0-alpha.1', '0.3.0']) assert.ok(!accepts(version), version)
 })
 
+test('plugin peers accept the packages on both tested DSH runtimes', () => {
+  const require = createRequire(import.meta.resolve('@deepseek-ai/dsh-app-boot'))
+  const semver = require('semver') as { satisfies(version: string, range: string): boolean }
+  const { peerDependencies } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { peerDependencies: Record<string, string> }
+  const host = JSON.parse(readFileSync(new URL('./compat/dsh-0.2.2-rc.1.json', import.meta.url), 'utf8')) as { dependencies: Record<string, string> }
+  for (const [name, range] of Object.entries(peerDependencies)) {
+    const installed = require(name + '/package.json') as { version: string }
+    for (const version of [installed.version, host.dependencies[name]]) assert.ok(semver.satisfies(version, range), `${name}@${version} outside ${range}`)
+  }
+})
+
 test('the release archive includes ongoing-task documentation and excludes local data', { timeout: 30000 }, async () => {
   const target = await mkdtemp(join(tmpdir(), 'theone-release-test-'))
   try {
